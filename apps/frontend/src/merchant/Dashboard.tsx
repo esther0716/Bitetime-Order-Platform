@@ -48,13 +48,13 @@ function DashboardInner() {
   // Count of pending "new" orders — surfaced as a badge on the Orders nav item.
   // Refetched whenever an order's status changes so the badge stays live.
   const [newOrders, setNewOrders] = useState(0)
+  const merchantId = merchant?.id
   const refreshNewOrders = useCallback(() => {
-    const id = merchant?.id
-    if (!id) return
-    fetchMerchantOrders(id).then(orders => {
+    if (!merchantId) return
+    fetchMerchantOrders(merchantId).then(orders => {
       setNewOrders(orders.filter(o => (o.status ?? 'new') === 'new').length)
     })
-  }, [merchant?.id])
+  }, [merchantId])
   useEffect(() => { refreshNewOrders() }, [refreshNewOrders])
 
   const nav: NavItem[] = SECTIONS.map(s => ({
