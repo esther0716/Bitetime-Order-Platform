@@ -1,4 +1,4 @@
-import { MAX_CART_QTY, MAX_CART_LINES, type OrderRefusal } from '@bitetime/shared'
+import { MAX_CART_QTY, MAX_CART_LINES, type OrderRefusal, type QuoteRefusal } from '@bitetime/shared'
 
 /**
  * What a refusal SAYS and what it DOES to the checkout, as data.
@@ -172,6 +172,72 @@ export function orderRefusalPlan(code: OrderRefusalCode | undefined, ctx: OrderR
       const _exhaustive: never = code as never
       void _exhaustive
       return generic(t)
+    }
+  }
+}
+
+export interface QuoteRefusalCtx {
+  readonly t: Translate
+  readonly pickupEscape: boolean
+}
+
+/** Everything the quote's catch block can see: the wire codes plus the browser's own. */
+export type QuoteRefusalCode = QuoteRefusal | 'network'
+
+/**
+ * Why a delivery could not be quoted, in the customer's words.
+ *
+ * A MESSAGE ONLY, no action list: the quote path has nothing to recover — it shows the reason
+ * beside the address field and waits for the customer to change something.
+ *
+ * This used to receive a NARROWED code. `quoteDelivery` collapsed the endpoint's eight refusals
+ * into five, folding `merchant_not_found`, `merchant_inactive` and `quota_exceeded` into
+ * `lookup_failed` — so a closed shop and a shop whose daily Google ceiling is spent both told
+ * the customer to try again. The ceiling does not clear for up to 24 hours, and the order path
+ * has always refused to make that promise (see `distance_lookup_failed`). The quote path now
+ * agrees with it.
+ */
+export function quoteRefusalPlan(code: QuoteRefusalCode | undefined, ctx: QuoteRefusalCtx): string {
+  const { t, pickupEscape } = ctx
+  const lookupFailed = pickupEscape
+    ? t('We could not work out the delivery fee just now. Please try again, or choose pickup.', '暂时无法计算运费，请重试或选择自取。')
+    : t('We could not work out the delivery fee just now. Please try again.', '暂时无法计算运费，请重试。')
+
+  switch (code) {
+    case 'out_of_range':
+      // Beyond max_km and no-road-route are ONE message because they are one fact.
+      return pickupEscape
+        ? t('Sorry, this shop does not deliver to that address. You can still choose pickup.', '抱歉，本店不配送到该地址。您仍可选择自取。')
+        : t('Sorry, this shop does not deliver to that address.', '抱歉，本店不配送到该地址。')
+
+    case 'rate_limited':
+      return t('Too many address lookups just now. Please wait a moment and try again.', '地址查询过于频繁，请稍候再试。')
+
+    case 'quota_exceeded':
+      // The one new string this change introduces. It must not say "try again": the shop's daily
+      // ceiling on billable lookups does not clear for up to 24 hours, so a retry meets the same
+      // refusal. The honest advice is a different method or a different day.
+      return pickupEscape
+        ? t('This shop cannot quote delivery for the rest of today. Please choose pickup, or come back tomorrow.', '本店今日已无法计算运费，请改选自取或明日再试。')
+        : t('This shop cannot quote delivery for the rest of today. Please come back tomorrow.', '本店今日已无法计算运费，请明日再试。')
+
+    case 'merchant_inactive':
+    case 'merchant_not_found':
+      // The same sentence the order path uses for these two codes — one fact, one wording.
+      return t('This shop is not taking orders right now.', '本店目前暂不接单。')
+
+    case 'not_distance_priced':
+    case 'lookup_failed':
+    case 'invalid_body':
+      return lookupFailed
+
+    case 'network':
+      return t('Could not reach the shop. Check your connection and try again.', '无法连接店铺，请检查网络后重试。')
+
+    default: {
+      const _exhaustive: never = code as never
+      void _exhaustive
+      return lookupFailed
     }
   }
 }

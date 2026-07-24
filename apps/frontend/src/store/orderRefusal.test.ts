@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { ORDER_REFUSALS } from '@bitetime/shared'
-import { orderRefusalPlan, type OrderRefusalCtx } from './orderRefusal'
+import { ORDER_REFUSALS, QUOTE_REFUSALS } from '@bitetime/shared'
+import { orderRefusalPlan, quoteRefusalPlan, type OrderRefusalCtx, type QuoteRefusalCtx } from './orderRefusal'
 
 const t = (en: string) => en
 const ctx = (over: Partial<OrderRefusalCtx> = {}): OrderRefusalCtx =>
@@ -75,5 +75,43 @@ describe('orderRefusalPlan', () => {
   it('asks for nothing back when the shop is closed', () => {
     expect(orderRefusalPlan('merchant_inactive', ctx()).actions).toEqual([])
     expect(orderRefusalPlan('merchant_not_found', ctx()).actions).toEqual([])
+  })
+})
+
+const qctx = (over: Partial<QuoteRefusalCtx> = {}): QuoteRefusalCtx =>
+  ({ t, pickupEscape: false, ...over })
+
+const QUOTE_GENERIC = 'We could not work out the delivery fee just now. Please try again.'
+
+describe('quoteRefusalPlan', () => {
+  it.each([...QUOTE_REFUSALS, 'network' as const])('%s has a message', (code) => {
+    expect(quoteRefusalPlan(code, qctx()).length).toBeGreaterThan(0)
+  })
+
+  it('stops telling a quota-exhausted shop to try again', () => {
+    // The collapse this replaces mapped `quota_exceeded` onto `lookup_failed`'s copy, which says
+    // "try again" — for a ceiling that does not clear for up to 24 hours.
+    const msg = quoteRefusalPlan('quota_exceeded', qctx())
+    expect(msg).not.toBe(QUOTE_GENERIC)
+    expect(msg).not.toContain('try again')
+  })
+
+  it('says a closed shop is closed instead of blaming the lookup', () => {
+    for (const code of ['merchant_inactive', 'merchant_not_found'] as const) {
+      expect(quoteRefusalPlan(code, qctx())).toBe('This shop is not taking orders right now.')
+    }
+  })
+
+  it('keeps out-of-range as one message for both facts', () => {
+    expect(quoteRefusalPlan('out_of_range', qctx())).toContain('does not deliver')
+  })
+
+  it('offers pickup only when the shop offers pickup', () => {
+    expect(quoteRefusalPlan('lookup_failed', qctx({ pickupEscape: true }))).toContain('pickup')
+    expect(quoteRefusalPlan('lookup_failed', qctx({ pickupEscape: false }))).not.toContain('pickup')
+  })
+
+  it('falls back for a stale client', () => {
+    expect(quoteRefusalPlan('some_new_code' as never, qctx())).toBe(QUOTE_GENERIC)
   })
 })
