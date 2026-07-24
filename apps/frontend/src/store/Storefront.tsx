@@ -6,6 +6,7 @@ import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
 import { Images, Expand } from 'lucide-react'
 import { fetchProducts, lookupProducts, placeOrder, fetchMerchantVoucher, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails, quoteDelivery, DeliveryQuoteError } from '../store'
+import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, promoState, MAX_CART_QTY, MAX_CART_LINES, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { FulfilmentMethod } from '@bitetime/shared'
 import { prefillFromProfile, savedDetailsFromOrder } from '../savedDetails'
@@ -69,25 +70,6 @@ interface SuccessState {
   fulfilDate: string | null
 }
 
-/**
- * The three ways the server can refuse a voucher at checkout, each with something the
- * customer can actually do about it. Keyed by the backend's own error codes — these are a
- * wire contract, not prose (see OrderErrorCode in store.ts).
- *
- * Every one of them means the order was rolled back and NOTHING was written, so each message
- * has to end by asking for the order again, without the voucher.
- */
-const VOUCHER_REFUSALS = {
-  voucher_not_found: (t: (en: string, zh: string) => string) =>
-    t('That voucher is no longer valid. Please place the order without it.', '该优惠券已失效，请不使用优惠券重新下单。'),
-  voucher_already_used: (t: (en: string, zh: string) => string) =>
-    t('You have already used this voucher. Please place the order without it.', '你已使用过此优惠券，请不使用优惠券重新下单。'),
-  voucher_fully_used: (t: (en: string, zh: string) => string) =>
-    t('This voucher has been fully claimed. Please place the order without it.', '此优惠券已被领完，请不使用优惠券重新下单。'),
-  voucher_requires_account: (t: (en: string, zh: string) => string) =>
-    t('Please sign in to use a voucher, then place the order again.', '使用优惠券需先登录，登录后请重新下单。'),
-} as const
-
 export default function Storefront() {
   const { merchant: merchantNullable, refresh: refreshMerchant } = useMerchant()
   const merchant = merchantNullable as NonNullable<typeof merchantNullable>
@@ -150,26 +132,14 @@ export default function Storefront() {
     } catch (err) {
       if (requestedPlaceIdRef.current !== placeId) return // superseded — see the ref's own comment
       setQuote(null)
-      const code = err instanceof DeliveryQuoteError ? err.code : 'lookup_failed'
+      // What each refusal says is `orderRefusal.ts`'s decision, including which of them may
+      // point at pickup — a message cannot offer a button the shop does not have.
       setQuoteError({
         placeId,
-        // Out-of-range and no-route are ONE message because they are one fact. Only a lookup
-        // failure invites a retry, and pickup is offered as an escape ONLY when the shop offers
-        // it (`pickupEscape`) — pointing at a button that is not there is worse than no suggestion.
-        message: code === 'out_of_range'
-          ? (pickupEscape
-              ? t('Sorry, this shop does not deliver to that address. You can still choose pickup.',
-                  '抱歉，本店不配送到该地址。您仍可选择自取。')
-              : t('Sorry, this shop does not deliver to that address.',
-                  '抱歉，本店不配送到该地址。'))
-          : code === 'rate_limited'
-            ? t('Too many address lookups just now. Please wait a moment and try again.',
-                '地址查询过于频繁，请稍候再试。')
-            : (pickupEscape
-                ? t('We could not work out the delivery fee just now. Please try again, or choose pickup.',
-                    '暂时无法计算运费，请重试或选择自取。')
-                : t('We could not work out the delivery fee just now. Please try again.',
-                    '暂时无法计算运费，请重试。')),
+        message: quoteRefusalPlan(
+          err instanceof DeliveryQuoteError ? err.code : undefined,
+          { t, pickupEscape },
+        ),
       })
     } finally {
       // Conditional — unlike the invalidator below, which clears `quoting` UNCONDITIONALLY. This
@@ -696,6 +666,31 @@ export default function Storefront() {
     }
   }
 
+  /**
+   * Run a refusal's recovery, IN ORDER. The order is `orderRefusal.ts`'s decision, not this
+   * function's — `refresh_sources` adopts the server clock the refusal carried, and re-quoting
+   * before that would re-quote against the same skewed offset and be refused again (I-3, #69).
+   *
+   * `serverNow` is `price_changed`'s own `now` field; every other refusal passes undefined and
+   * `refreshQuoteSources` falls back to re-syncing.
+   */
+  const applyActions = async (actions: readonly RefusalAction[], serverNow?: string) => {
+    for (const action of actions) {
+      if (action === 'drop_voucher') {
+        setAppliedVoucher(null)
+      } else if (action === 'refresh_sources') {
+        await refreshQuoteSources(serverNow)
+      } else if (action === 'clear_quote') {
+        setQuote(null)
+      } else if (action === 'requote') {
+        // A re-quote moments after the original is a cache HIT, which consumes no ceiling.
+        if (address.place_id) void fetchQuote(address.place_id)
+      } else if (action === 'clear_date') {
+        setFulfilDate(null)
+      }
+    }
+  }
+
   const handleSubmit = async () => {
     if (!canSubmit) return
     setBusy(true)
@@ -773,153 +768,22 @@ export default function Storefront() {
       })
       toast.success(t('Order placed!', '订单已提交！'))
     } catch (err: any) {
-      // A refused order wrote NOTHING — the transaction rolled back. So for the three voucher
-      // refusals the honest thing is to drop the voucher and tell them to place the order
-      // again without it: the discount they were promised is gone, but the order is theirs to
-      // retry. Saying "failed, try again" while silently keeping a voucher the server has
-      // already refused would just fail them again, forever.
-      const code: string | undefined = err?.code
-      const voucherRefusal = VOUCHER_REFUSALS[code as keyof typeof VOUCHER_REFUSALS]
-      if (voucherRefusal) {
-        setAppliedVoucher(null)
-        setVoucherMsg(voucherRefusal(t))
-        setError(voucherRefusal(t))
-        toast.error(voucherRefusal(t))
-      } else if (code === 'merchant_inactive' || code === 'merchant_not_found') {
-        const msg = t('This shop is not taking orders right now.', '本店目前暂不接单。')
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'price_changed') {
-        // The shop's prices moved while they were checking out. NOTHING was written. Show them
-        // the new numbers and let them decide — charging the new total silently would bill a
-        // number they never agreed to, and honouring the stale one would let an old quote buy a
-        // discount the shop withdrew.
-        //
-        // The VOUCHER is re-read alongside the products, and it has to be: an edited
-        // `vouchers.amount` moves the total exactly as an edited price does, and re-quoting from
-        // the stale voucher would be refused again on the very next tap — the same refusal loop,
-        // forever, until the customer thought to remove and re-apply the code themselves.
-        //
-        // `err.now` (I-3, #69): this refusal is itself proof the connection to the backend
-        // works, and it carries the backend's own clock — so recovery adopts THAT instead of
-        // re-fetching `/api/time`, which is exactly the request that can be persistently
-        // unreachable in the scenario this whole mechanism exists to fix.
-        await refreshQuoteSources(err?.now)
-        // The DISTANCE can be part of what moved (a merchant editing the rate mid-checkout prices
-        // exactly like an edited product). Drop the stale quote so the customer does not place an
-        // order against a number that is no longer trustworthy.
-        setQuote(null)
-        // Re-quote immediately rather than waiting for an effect that cannot re-fire: the auto-quote
-        // effect is guarded on `requestedPlaceIdRef` (already stamped with this exact place id) AND
-        // a dependency array that does not change here, so without this call the customer is left
-        // holding a disabled Place Order button and an instruction to "place it again" that they
-        // have no way to act on (#101 review, Finding — price_changed strands a distance customer).
-        // A re-quote moments after the original is a cache HIT, which consumes no ceiling — see the
-        // quote endpoint's peek.
-        if (expressPriced && address.place_id) void fetchQuote(address.place_id)
-        const msg = t(
-          'Prices at this shop just changed. Please review your order and place it again.',
-          '本店价格刚刚有所调整，请确认订单后重新下单。',
-        )
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'product_unavailable') {
-        // Something in the cart stopped being on sale mid-checkout. Refetching is what RECOVERS
-        // the checkout, not just what refreshes the menu: `adoptProducts` takes the new menu and
-        // drops the cart ids that are gone, saying which. Without that, the invisible id stayed
-        // in the cart and every retry was refused identically.
-        await refreshQuoteSources()
-        const msg = t(
-          'Something in your cart is no longer available. It has been removed — please review your order and place it again.',
-          '购物车中有商品已下架，已为你移除，请确认订单后重新下单。',
-        )
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'delivery_state_required') {
-        // Unreachable from this form — `deliveryReady` will not let a stateless delivery be
-        // submitted — and it is here precisely because that gate is the ONLY thing making it so.
-        // A delivery with no state is priced at zero shipping, which is why the backend refuses
-        // it rather than quietly eating the fee.
-        const msg = t(
-          'Please choose the state you are delivering to.',
-          '请选择送货的州属。',
-        )
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'method_not_offered') {
-        // Unreachable from this form — it renders no button for a method the shop does not
-        // offer — and messaged anyway, because the alternative is the customer reading the
-        // literal string `method_not_offered` on the checkout screen. It fires if the merchant
-        // switches a method off while someone is mid-checkout.
-        const msg = t('This shop no longer offers that option. Please choose another.',
-                      '本店已不再提供该方式，请另选一种。')
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'delivery_out_of_range') {
-        // Point at pickup ONLY when the shop offers it — see `pickupEscape`.
-        const msg = pickupEscape
-          ? t('Sorry, this shop does not deliver to that address. Please choose pickup instead.',
-              '抱歉，本店不配送到该地址，请改选自取。')
-          : t('Sorry, this shop does not deliver to that address.',
-              '抱歉，本店不配送到该地址。')
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'distance_lookup_failed') {
-        // Matches the quote-path copy verbatim (`fetchQuote`'s own 'lookup_failed' branch,
-        // above) — and NOT the old submit-path wording, which promised "in a moment". This code
-        // is also what a QUOTA-exhausted shop throws, and quota does not clear for up to 24
-        // hours: a time promise is a lie for that shop. Pickup is offered as an escape only when
-        // the shop offers it (#101 review, Finding 2).
-        const msg = pickupEscape
-          ? t('We could not work out the delivery fee just now. Please try again, or choose pickup.',
-              '暂时无法计算运费，请重试或选择自取。')
-          : t('We could not work out the delivery fee just now. Please try again.',
-              '暂时无法计算运费，请重试。')
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'delivery_place_required') {
-        // Unreachable from this form — `deliveryReady` will not let an unselected address be
-        // submitted — and messaged anyway, because the alternative is the customer reading the
-        // literal string `delivery_place_required` on the checkout screen.
-        const msg = t('Please pick your delivery address from the suggestions.',
-                   '请从建议列表中选择您的配送地址。')
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'fulfil_date_unavailable' || code === 'fulfil_date_required') {
-        // `fulfil_date_required` is unreachable from this form — `canSubmit` will not let a
-        // dateless order be submitted — and it is here precisely because that gate is the ONLY
-        // thing making it so. `fulfil_date_unavailable` IS reachable honestly: a checkout left
-        // open past midnight, or a merchant who closed a day mid-checkout. Clearing the
-        // selection is what recovers it, since the re-render drops the stale date from the grid.
-        setFulfilDate(null)
-        const msg = t(
-          'Please choose a date for your order.',
-          '请选择订单日期。',
-        )
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'invalid_body') {
-        // The door refused the SHAPE of the order, not the order — almost always a cart past
-        // the caps, which `updateQty` now stops at, so an honest checkout should never get
-        // here. It is a permanent refusal: retrying the same cart is refused identically. Say
-        // what would change it, in words. Without this branch the customer read the literal
-        // string `invalid_body` on the checkout screen — `OrderError`'s `super(code)` puts the
-        // wire code in `err.message`, and the final `else` renders it.
-        const msg = t(
-          `Your order is too large. Please order at most ${MAX_CART_QTY} of any one item, and at most ${MAX_CART_LINES} different items.`,
-          `订单过大。每种商品最多 ${MAX_CART_QTY} 件，每单最多 ${MAX_CART_LINES} 种不同商品。`,
-        )
-        setError(msg)
-        toast.error(msg)
-      } else if (code === 'network') {
-        // The request never landed, so no order exists and retrying is safe to suggest.
-        const msg = t('Could not reach the shop. Check your connection and try again.', '无法连接店铺，请检查网络后重试。')
-        setError(msg)
-        toast.error(msg)
-      } else {
-        setError(err.message || t('Failed to place order. Please try again.', '下单失败，请重试。'))
-        toast.error(t('Failed to place order. Please try again.', '下单失败，请重试。'))
-      }
+      // Which refusal this is, what the customer is told, and what we do about it are all one
+      // decision, and it lives in `orderRefusal.ts` where it can be tested. This block only
+      // performs it. A refused order wrote NOTHING — the transaction rolled back — which is why
+      // several of the plans ask for the order again rather than reporting a failure.
+      const plan = orderRefusalPlan(err?.code, {
+        t,
+        pickupEscape,
+        // A re-quote is only possible for a distance-priced order that still holds a place id.
+        canRequote: expressPriced && Boolean(address.place_id),
+      })
+      await applyActions(plan.actions, typeof err?.now === 'string' ? err.now : undefined)
+      // The voucher's own strip echoes the refusal, so a customer who scrolls back up sees why
+      // the discount went away.
+      if (plan.actions.includes('drop_voucher')) setVoucherMsg(plan.message)
+      setError(plan.message)
+      toast.error(plan.message)
     } finally {
       setBusy(false)
     }
