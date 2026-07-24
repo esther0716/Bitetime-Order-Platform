@@ -90,15 +90,26 @@ export const requireOwnsChild = (
   param: string,
   opts: { mayCreate?: boolean } = {},
 ): MiddlewareHandler<AppEnv> => async (c, next) => {
-  const id = c.req.param('id')
+  // The shop `requireMerchantOwns` PROVED the caller owns — deliberately not `c.req.param('id')`,
+  // which is only the shop they NAMED. The two are the same string on every route today, and
+  // reading the proven one is what keeps them the same: chained without that guard there is
+  // nothing proven to compare against, and the honest answer is that the route is misconfigured,
+  // not that the child row is fine.
+  const merchant = c.get('merchant')
+  if (!merchant) return c.json({ error: 'Lookup failed' }, 500)
   const childId = c.req.param(param)
   if (!childId) return c.json({ error: 'Not found' }, 404)
-  const { data: existing } = await admin.from(table).select('merchant_id').eq('id', childId).maybeSingle()
+  const { data: existing, error } = await admin.from(table).select('merchant_id').eq('id', childId).maybeSingle()
+  // A FAILED QUERY IS NOT "no such row", and the difference is the whole guard. Read as one, a
+  // transient database error would send `mayCreate` down the create path against a row this never
+  // cleared — and that route's upsert forces `merchant_id` to the caller's shop, which is exactly
+  // the cross-tenant takeover this exists to stop. Fail closed; the caller retries.
+  if (error) return c.json({ error: 'Lookup failed' }, 500)
   if (!existing) {
     if (!opts.mayCreate) return c.json({ error: 'Not found' }, 404)
     return await next()
   }
-  if (existing.merchant_id !== id) return c.json({ error: 'Not found' }, 404)
+  if (existing.merchant_id !== merchant.id) return c.json({ error: 'Not found' }, 404)
   await next()
 }
 
