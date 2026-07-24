@@ -1,6 +1,6 @@
 import type postgres from 'postgres'
 import { priceOrder, voucherFromRow, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, exceedsMaxKm, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
-import type { PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods } from '@bitetime/shared'
+import type { PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
 import { COUNTER_START, formatOrderNumber, orderDay } from './orderNumber.js'
 import { resolveDistance, CACHE_TTL_MS, type DistanceDeps } from './distance.js'
@@ -8,69 +8,13 @@ import { liveDistanceDeps } from './distanceCache.js'
 import { quoteMerchantWindow, quoteIpWindow } from './quotaWindows.js'
 
 /**
- * The machine-readable reasons an order can be refused. The storefront reacts to these, so
- * they are part of the wire contract — not prose to be reworded.
- *
- * DELIBERATE TWIN of `OrderErrorCode` in `apps/frontend/src/store.ts` (the frontend is a
- * separate workspace and cannot import this). Add a code here and it must be added there too,
- * with a customer-facing `t(en, zh)` message in Storefront.tsx's `handleSubmit` catch block
- * (VOUCHER_REFUSALS is the table for the voucher ones) — otherwise the customer is told
- * "something went wrong" for a refusal whose reason we know.
+ * The codes this module refuses with. They used to be declared here and hand-copied into the
+ * frontend, which drifted — see `packages/shared/src/refusal.ts`, which now owns the vocabulary,
+ * each code's meaning, and the HTTP status it carries. Adding a code there fails this build
+ * until `REFUSAL_STATUS` names its status, and fails the frontend's until the storefront gives
+ * it copy.
  */
-export type OrderErrorCode =
-  | 'merchant_not_found'
-  | 'merchant_inactive'
-  | 'voucher_not_found'
-  | 'voucher_already_used'
-  | 'voucher_fully_used'
-  | 'voucher_requires_account'
-  | 'price_changed'
-  | 'product_unavailable'
-  | 'delivery_state_required'
-  | 'fulfil_date_unavailable'
-  | 'fulfil_date_required'
-  /**
-   * A distance-priced shop was handed a delivery with no destination place id. The same rule as
-   * `delivery_state_required` one policy over: an unresolvable destination is REFUSED, never
-   * priced — with no distance, `shippingFee` would fall through to 0 and the shop would drive
-   * 40 km for free.
-   */
-  | 'delivery_place_required'
-  /**
-   * Beyond the shop's `max_km`, OR no road route exists. ONE code, because to the customer they
-   * are the same fact: this shop does not deliver there. Only `distance_lookup_failed` is worth
-   * retrying.
-   */
-  | 'delivery_out_of_range'
-  /**
-   * The shop does not offer the method this order names. Checked in the transaction because the
-   * flags live on the shop's row, which only the backend reads — the storefront renders no
-   * button for a disabled method, so an honest checkout never sees this.
-   */
-  | 'method_not_offered'
-  /**
-   * The routing lookup itself did not happen, and the ONLY distance failure that is retryable
-   * at all — but "retryable" covers two causes that recover on very different clocks, and the
-   * wire code does not distinguish them:
-   *
-   *   * a provider outage — retryable within seconds, the ordinary case;
-   *   * the shop's daily Google-spend ceiling (Finding 6, fix wave 2) — does NOT clear for up
-   *     to 24 hours. A customer who retries this one moments later meets the same refusal.
-   *
-   * One code for both anyway: the customer's only available action is "try again later" either
-   * way, and a fourth wire code would cost the frontend a twin for a distinction it cannot act
-   * on differently.
-   *
-   * ONE EXCEPTION: a distance-priced shop whose configuration cannot price (`!policy.usable`)
-   * also raises this code, and no amount of retrying fixes a merchant's own dormant/incomplete
-   * setup — that would be the permanent-refusal-loop shape the ADR rejects elsewhere. This case
-   * is now blocked at the schema level (`merchants_distance_requires_origin`, tightened to
-   * refuse an empty-string origin too), so a shop that reaches intake in `distance` mode is
-   * expected to always have a usable origin — but the check above still throws this same code
-   * as the honest answer, since a config that predates the constraint or fails validation for
-   * some other reason must not silently fall back to a dormant region rate.
-   */
-  | 'distance_lookup_failed'
+export type OrderErrorCode = OrderRefusal
 
 /** A refusal the customer can act on, as opposed to a bug. Thrown inside the transaction. */
 export class OrderError extends Error {

@@ -36,7 +36,7 @@ import { processReferralReward } from './referralRewardGrant.js'
 import { trackOrder } from './orderTracking.js'
 import { placeOrder, OrderError } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus } from './feedback.js'
-import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, exceedsMaxKm } from '@bitetime/shared'
+import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, exceedsMaxKm, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS } from '@bitetime/shared'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
 import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
@@ -1127,7 +1127,9 @@ app.post('/api/orders', async (c) => {
       // refusals already have in tests/api stay exact.
       const body: Record<string, unknown> = { error: err.code }
       if (err.code === 'price_changed') body.now = new Date().toISOString()
-      return c.json(body, err.code === 'merchant_not_found' ? 404 : 409)
+      // The status is a property of the code, and it lives with the code (`REFUSAL_STATUS` is a
+      // TOTAL Record, so a new refusal cannot reach here without someone deciding its status).
+      return c.json(body, REFUSAL_STATUS[err.code])
     }
     console.error('Order intake failed:', err instanceof Error ? err.message : String(err))
     return c.json({ error: 'order_failed' }, 500)
@@ -1218,18 +1220,18 @@ app.post('/api/shipping/quote', async (c) => {
   const body = await c.req.json().catch(() => null)
   const b = (body ?? {}) as Record<string, unknown>
   if (typeof b.merchantId !== 'string' || !b.merchantId || typeof b.placeId !== 'string' || !b.placeId) {
-    return c.json({ error: 'invalid_body' }, 400)
+    return c.json({ error: 'invalid_body' }, QUOTE_REFUSAL_STATUS.invalid_body)
   }
 
-  if (!quoteIpWindow.allow(ipOf(c))) return c.json({ error: 'rate_limited' }, 429)
+  if (!quoteIpWindow.allow(ipOf(c))) return c.json({ error: 'rate_limited' }, QUOTE_REFUSAL_STATUS.rate_limited)
 
   const { data: merchant } = await admin
     .from('merchants')
     .select('id, currency, status, express_enabled, delivery_base_fee, delivery_rate_per_km, delivery_max_km, origin_place_id')
     .eq('id', b.merchantId)
     .maybeSingle()
-  if (!merchant) return c.json({ error: 'merchant_not_found' }, 404)
-  if (merchant.status !== 'active') return c.json({ error: 'merchant_inactive' }, 409)
+  if (!merchant) return c.json({ error: 'merchant_not_found' }, QUOTE_REFUSAL_STATUS.merchant_not_found)
+  if (merchant.status !== 'active') return c.json({ error: 'merchant_inactive' }, QUOTE_REFUSAL_STATUS.merchant_inactive)
 
   // `shopDistance`, not a local read of these columns: the storefront quotes from this exact
   // function and order intake charges from it, and a third reading here is a third rule the
@@ -1237,7 +1239,7 @@ app.post('/api/shipping/quote', async (c) => {
   const policy = shopDistance(merchant)
   // `not_distance_priced` keeps its wire name — the storefront already branches on it, and
   // renaming a refusal code is a separate, customer-visible change.
-  if (!policy.enabled || !policy.usable) return c.json({ error: 'not_distance_priced' }, 409)
+  if (!policy.enabled || !policy.usable) return c.json({ error: 'not_distance_priced' }, QUOTE_REFUSAL_STATUS.not_distance_priced)
 
   // The ceiling is checked against PROVIDER CALLS, so a cache hit is free. Peek at the cache
   // first for exactly that reason.
@@ -1255,7 +1257,7 @@ app.post('/api/shipping/quote', async (c) => {
     console.error('Distance cache peek failed:', err instanceof Error ? err.message : String(err))
   }
   if (cached === null && !quoteMerchantWindow.allow(merchant.id)) {
-    return c.json({ error: 'quota_exceeded' }, 429)
+    return c.json({ error: 'quota_exceeded' }, QUOTE_REFUSAL_STATUS.quota_exceeded)
   }
 
   const outcome = cached !== null
@@ -1267,11 +1269,11 @@ app.post('/api/shipping/quote', async (c) => {
 
   // NO ROUTE AND OUT-OF-RANGE ARE THE SAME ANSWER to the customer — "this shop does not deliver
   // there" — because they are the same fact. Only `failed` invites a retry.
-  if (outcome.status === 'no_route') return c.json({ error: 'out_of_range' }, 409)
-  if (outcome.status === 'failed') return c.json({ error: 'lookup_failed' }, 409)
+  if (outcome.status === 'no_route') return c.json({ error: 'out_of_range' }, QUOTE_REFUSAL_STATUS.out_of_range)
+  if (outcome.status === 'failed') return c.json({ error: 'lookup_failed' }, QUOTE_REFUSAL_STATUS.lookup_failed)
 
   const km = routedKm(outcome.metres)
-  if (exceedsMaxKm(policy, km)) return c.json({ error: 'out_of_range' }, 409)
+  if (exceedsMaxKm(policy, km)) return c.json({ error: 'out_of_range' }, QUOTE_REFUSAL_STATUS.out_of_range)
 
   return c.json({ km, fee: distanceFee(policy, km), currency: merchant.currency ?? 'MYR' })
 })
