@@ -14,7 +14,7 @@ import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
-import { requireUser, requireSuperadmin, requireMerchantOwns, requirePro, hasProAccess, REQUIRES_PRO, type AppEnv } from './mw.js'
+import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, requirePro, hasProAccess, REQUIRES_PRO, type AppEnv } from './mw.js'
 import { stripe, priceFor, isValidPlan, isValidCycle } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileMerchantPlan, LIVE_STATUSES } from './billing.js'
 import { downgradePhases, ScheduleError, type LivePhase } from './subscriptionSchedule.js'
@@ -344,11 +344,9 @@ app.get('/api/merchants/:id/products', async (c) => {
 // ALL THREE promo columns are checked, not just `promo_price`: a shop that dropped to basic
 // still has its old promo row, and a body carrying only `promo_limit`/`promo_end` would
 // otherwise let it raise the cap or push back the end date on a live sale for free.
-app.put('/api/merchants/:id/products/:productId', requireMerchantOwns, async (c) => {
+app.put('/api/merchants/:id/products/:productId', requireMerchantOwns, requireOwnsChild('products', 'productId', { mayCreate: true }), async (c) => {
   const id = c.req.param('id')
   const productId = c.req.param('productId')
-  const { data: existing } = await admin.from('products').select('merchant_id').eq('id', productId).maybeSingle()
-  if (existing && existing.merchant_id !== id) return c.json({ error: 'Not found' }, 404)
   const fields = pickProductFields(await c.req.json().catch(() => ({})))
   const asksForPromo = (['promo_price', 'promo_limit', 'promo_end'] as const)
     .some(k => fields[k] != null)
@@ -365,11 +363,8 @@ app.put('/api/merchants/:id/products/:productId', requireMerchantOwns, async (c)
 // productId, so an owner of shop A could otherwise delete shop B's product by nesting it under
 // :id = A. Loading the product and checking merchant_id === :id before deleting is what closes
 // that hole (Global Constraint 2).
-app.delete('/api/merchants/:id/products/:productId', requireMerchantOwns, async (c) => {
-  const id = c.req.param('id')
+app.delete('/api/merchants/:id/products/:productId', requireMerchantOwns, requireOwnsChild('products', 'productId'), async (c) => {
   const productId = c.req.param('productId')
-  const { data: existing } = await admin.from('products').select('merchant_id').eq('id', productId).maybeSingle()
-  if (!existing || existing.merchant_id !== id) return c.json({ error: 'Not found' }, 404)
   const { error } = await admin.from('products').delete().eq('id', productId)
   if (error) return c.json({ error: 'Delete failed' }, 500)
   return c.json({ ok: true })
@@ -418,11 +413,8 @@ app.post('/api/merchants/:id/vouchers', requireMerchantOwns, requirePro, async (
 // about voucherId, so an owner of shop A could otherwise delete shop B's voucher by nesting
 // it under :id = A. Loading the voucher and checking merchant_id === :id before deleting is
 // what closes that hole (Global Constraint 2), mirroring the product DELETE handler above.
-app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requirePro, async (c) => {
-  const id = c.req.param('id')
+app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requirePro, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
   const voucherId = c.req.param('voucherId')
-  const { data: existing } = await admin.from('vouchers').select('merchant_id').eq('id', voucherId).maybeSingle()
-  if (!existing || existing.merchant_id !== id) return c.json({ error: 'Not found' }, 404)
   const { error } = await admin.from('vouchers').delete().eq('id', voucherId)
   if (error) return c.json({ error: 'Delete failed' }, 500)
   return c.json({ ok: true })
@@ -436,41 +428,28 @@ app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requir
 // owner of shop A could otherwise patch shop B's order by nesting it under :id = A. Loading the
 // order and checking merchant_id === :id before updating is what closes that hole (Global
 // Constraint 2), mirroring the product/voucher handlers above.
-app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, async (c) => {
-  const id = c.req.param('id')
+app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, requireOwnsChild('orders', 'orderId'), async (c) => {
   const orderId = c.req.param('orderId')
   const patch = pickOrderFields(await c.req.json().catch(() => ({})))
   if ('status' in patch && !ORDER_STATUSES.includes(patch.status as string)) {
     return c.json({ error: 'Invalid status' }, 400)
   }
   if (Object.keys(patch).length === 0) return c.json({ error: 'No updatable fields' }, 400)
-  const { data: existing } = await admin.from('orders').select('merchant_id').eq('id', orderId).maybeSingle()
-  if (!existing || existing.merchant_id !== id) return c.json({ error: 'Not found' }, 404)
   const { data, error } = await admin.from('orders').update(patch).eq('id', orderId).select().single()
   if (error) return c.json({ error: 'Update failed' }, 500)
   return c.json(data)
 })
 
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
-app.post('/api/checkout', async (c) => {
+app.post('/api/checkout', requireOwnMerchant, async (c) => {
   const body = await c.req.json().catch(() => ({}))
   const { plan, billing } = body
   if (!isValidPlan(plan) || !isValidCycle(billing)) {
     return c.json({ error: 'Invalid plan or billing cycle' }, 400)
   }
-  // Authenticate the caller via their Supabase JWT.
-  const token = (c.req.header('Authorization') || '').replace(/^Bearer\s+/i, '')
-  const user = await getUserFromToken(token)
-  if (!user) return c.json({ error: 'Unauthorized' }, 401)
-
-  // Load the caller's merchant (service role; one merchant per owner).
-  const { data: merchant, error } = await admin
-    .from('merchants')
-    .select('id, name')
-    .eq('owner_id', user.id)
-    .maybeSingle()
-  if (error) return c.json({ error: 'Lookup failed' }, 500)
-  if (!merchant) return c.json({ error: 'No merchant for this account' }, 404)
+  // Caller and their own shop both resolved by `requireOwnMerchant` — one merchant per owner.
+  const user = c.get('user')
+  const merchant = c.get('merchant')
 
   // Reuse an existing Stripe customer if we have one, else create and store it.
   const { data: existing } = await admin
@@ -697,13 +676,8 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
 // ── Stripe billing portal for the signed-in merchant ───────────────────────────
 // Where a trialing merchant adds their card, and a past_due one updates it.
 // Requires the portal to be enabled once in the Stripe Dashboard.
-app.post('/api/billing/portal', async (c) => {
-  const token = (c.req.header('Authorization') || '').replace(/^Bearer\s+/i, '')
-  const user = await getUserFromToken(token)
-  if (!user) return c.json({ error: 'Unauthorized' }, 401)
-  const { data: merchant } = await admin
-    .from('merchants').select('id').eq('owner_id', user.id).maybeSingle()
-  if (!merchant) return c.json({ error: 'No merchant for this account' }, 404)
+app.post('/api/billing/portal', requireOwnMerchant, async (c) => {
+  const merchant = c.get('merchant')
   const { data: billing } = await admin
     .from('merchant_billing').select('stripe_customer_id').eq('merchant_id', merchant.id).maybeSingle()
   if (!billing?.stripe_customer_id) return c.json({ error: 'No billing account yet' }, 404)
@@ -733,12 +707,8 @@ app.post('/api/billing/portal', async (c) => {
 
 /** The signed-in merchant's live subscription, or the response explaining why there isn't one. */
 async function liveSubscription(c: Context<AppEnv>) {
-  const token = (c.req.header('Authorization') || '').replace(/^Bearer\s+/i, '')
-  const user = await getUserFromToken(token)
-  if (!user) return { res: c.json({ error: 'Unauthorized' }, 401) }
-  const { data: merchant } = await admin
-    .from('merchants').select('id').eq('owner_id', user.id).maybeSingle()
-  if (!merchant) return { res: c.json({ error: 'No merchant for this account' }, 404) }
+  // Caller and shop are `requireOwnMerchant`'s job — every route that calls this chains it.
+  const merchant = c.get('merchant')
   const { data: billing } = await admin
     .from('merchant_billing')
     .select('stripe_subscription_id, status')
@@ -773,7 +743,7 @@ async function releaseSchedule(subscriptionId: string) {
 // Step down to Basic at the end of the period already paid for. Never immediate: the merchant
 // has been charged for Pro through this period, and taking the features now would drop live
 // vouchers under customers mid-checkout.
-app.post('/api/billing/downgrade', async (c) => {
+app.post('/api/billing/downgrade', requireOwnMerchant, async (c) => {
   const found = await liveSubscription(c)
   if ('res' in found) return found.res
   const { merchantId, subscriptionId } = found
@@ -826,7 +796,7 @@ app.post('/api/billing/downgrade', async (c) => {
 
 // End the subscription when the current period runs out. The shop stays open and fully
 // functional until then; `customer.subscription.deleted` is what suspends it.
-app.post('/api/billing/cancel', async (c) => {
+app.post('/api/billing/cancel', requireOwnMerchant, async (c) => {
   const found = await liveSubscription(c)
   if ('res' in found) return found.res
   const { merchantId, subscriptionId } = found
@@ -844,7 +814,7 @@ app.post('/api/billing/cancel', async (c) => {
 // Undo whichever wind-down is pending — a cancellation, a scheduled downgrade, or both. One
 // route because it answers one question ("keep things as they are"), and because leaving a
 // merchant to undo two pending changes in two clicks is how one of them gets forgotten.
-app.post('/api/billing/resume', async (c) => {
+app.post('/api/billing/resume', requireOwnMerchant, async (c) => {
   const found = await liveSubscription(c)
   if ('res' in found) return found.res
   const { merchantId, subscriptionId } = found
@@ -911,20 +881,16 @@ function ipOf(c: { req: { header: (n: string) => string | undefined }; env: unkn
 // only because it filtered on a code derived from auth.uid(), which the caller could not
 // choose. The same property holds here: the code comes from the verified JWT and from
 // nothing else. Do not add a code parameter to this route.
-app.get('/api/referrals/shops', async (c) => {
-  const token = (c.req.header('Authorization') || '').replace(/^Bearer\s+/i, '')
-  const user = await getUserFromToken(token)
-  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+app.get('/api/referrals/shops', requireUser, async (c) => {
+  const user = c.get('user')
 
   return c.json(await listReferredShops(user.id))
 })
 
 // The referral rewards this member has earned. Same JWT-derived scoping as /shops — the
 // caller's merchant comes from the verified token, never the request.
-app.get('/api/referrals/rewards', async (c) => {
-  const token = (c.req.header('Authorization') || '').replace(/^Bearer\s+/i, '')
-  const user = await getUserFromToken(token)
-  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+app.get('/api/referrals/rewards', requireUser, async (c) => {
+  const user = c.get('user')
 
   return c.json(await listEarnedRewards(user.id))
 })
