@@ -57,6 +57,76 @@ export const requireMerchantOwns: MiddlewareHandler<AppEnv> = async (c, next) =>
 }
 
 /**
+ * The tables that hang off a merchant and can therefore be nested under `:id` in a route.
+ *
+ * A closed union, not a string, and that is not fastidiousness: `admin` is RLS-EXEMPT, so this
+ * guard is not defence in depth over a database rule — it IS the rule. A typo that compiles
+ * would aim the check at a table nobody vetted, on a connection where no policy would catch it.
+ */
+type ChildTable = 'products' | 'vouchers' | 'orders'
+
+/**
+ * Chain AFTER `requireMerchantOwns` on any route carrying a SECOND id below `:id`.
+ *
+ * `requireMerchantOwns` proves the caller owns `:id` and says NOTHING about a child id nested
+ * under it — so an owner of shop A could otherwise reach shop B's product, voucher or order by
+ * nesting its id under `:id = A`. This loads the child row and refuses unless it belongs to the
+ * shop the caller was just proven to own (Global Constraint 2).
+ *
+ * The refusal is a 404, deliberately, and not a 403: a "forbidden" would confirm to the caller
+ * that the row exists in somebody else's shop.
+ *
+ * `mayCreate` is for the ONE route where a missing row is legitimate — the product upsert, which
+ * creates when `:productId` is new. Everywhere else a missing row is a 404. That difference used
+ * to be carried by `existing &&` versus `!existing ||` inside four otherwise identical lines,
+ * which is a poor place to keep the decision that separates "creates a product" from "cannot
+ * create a product". It is a named mode now, read at the route.
+ *
+ * The loaded row is deliberately NOT stashed: no handler needs it, and an interface nobody asked
+ * for is one somebody starts depending on.
+ */
+export const requireOwnsChild = (
+  table: ChildTable,
+  param: string,
+  opts: { mayCreate?: boolean } = {},
+): MiddlewareHandler<AppEnv> => async (c, next) => {
+  const id = c.req.param('id')
+  const childId = c.req.param(param)
+  if (!childId) return c.json({ error: 'Not found' }, 404)
+  const { data: existing } = await admin.from(table).select('merchant_id').eq('id', childId).maybeSingle()
+  if (!existing) {
+    if (!opts.mayCreate) return c.json({ error: 'Not found' }, 404)
+    return await next()
+  }
+  if (existing.merchant_id !== id) return c.json({ error: 'Not found' }, 404)
+  await next()
+}
+
+/**
+ * For routes that act on THE CALLER'S OWN shop — no `:id` in the path to name one. Resolves the
+ * caller, loads the single merchant they own, and stashes it under the same key
+ * `requireMerchantOwns` uses, so handlers downstream cannot tell which guard ran.
+ *
+ * NO SUPERADMIN BYPASS, unlike `requireMerchantOwns`, and the asymmetry is the point: there is no
+ * `:id` here to stand in for. A superadmin who owns no shop has no shop of their own, and handing
+ * them somebody else's would be a guess. They get the same "no merchant for this account" answer
+ * anyone else in that position gets.
+ */
+export const requireOwnMerchant: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const user = await getUserFromToken(bearer(c))
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+  const { data: merchant, error } = await admin
+    .from('merchants').select('*').eq('owner_id', user.id).maybeSingle()
+  // A failed lookup is a server fault, not an answer. Reading it as "you have no shop" (which two
+  // of these routes used to do) tells a merchant their shop is gone because a query blipped.
+  if (error) return c.json({ error: 'Lookup failed' }, 500)
+  if (!merchant) return c.json({ error: 'No merchant for this account' }, 404)
+  c.set('user', user)
+  c.set('merchant', merchant)
+  await next()
+}
+
+/**
  * The one entitlement check (#110). A shop may use a Pro feature iff `merchants.plan === 'pro'`
  * — nothing else, and a NULL plan (every pre-billing shop) is not Pro. The field is trustworthy
  * because it is a field and not a request: the browser holds no grant on `merchants` and `plan`
