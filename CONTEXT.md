@@ -70,7 +70,19 @@ The promo's end-of-day is in the timezone of the browser the **merchant** set it
 
 ## Order intake
 
-The flow that collects a cart and customer details and commits an order: `collect → priceOrder → placeOrder → notifyOrder`. The multi-tenant **Storefront** (`store/Storefront.tsx`) is the only intake path; the legacy single-tenant order form has been deleted. `notifyOrder` is a single post-commit call that fans out to two recipients — see *Order notifications*.
+The flow that collects a cart and customer details and commits an order: `collect → priceOrder → placeOrder → notifyOrder`. The multi-tenant **Storefront** (`store/Storefront.tsx`) is the only intake path; the legacy single-tenant order form has been deleted. `notifyOrder` is a single post-commit call that fans out to two recipients — see *Order notifications*. Every way this flow can say no is named — see *Refusal* below.
+
+## Refusal
+
+A reason the backend would not take an order or price a delivery, named by a **wire code** the customer's browser can act on — as opposed to a bug, which carries no code and is never dressed up as one. The vocabulary is `packages/shared/src/refusal.ts`: the codes, what each one means, and the HTTP status it carries.
+
+It is shared for the same reason `priceOrder` is — it must hold identically on both sides of the wire — and it is shared because the hand-copied version **drifted**. `method_not_offered` was added to the backend's union, handled in the storefront as a bare string comparison, and never added to the frontend's own union, so nothing could see the gap. Nothing *could*: `handleSubmit` reads `err?.code` off an `any`, so the compiler was never looking. A code is now added in one place and **breaks both builds** until it is handled — the backend's on `REFUSAL_STATUS` (a total `Record`, no default), the frontend's on `orderRefusalPlan`'s exhaustiveness check.
+
+**What a refusal says and does is not shared, deliberately.** The backend renders no message, `t(en, zh)` is the browser's, and two messages depend on whether the shop offers pickup — a refusal must not point at a button that is not on screen. `orderRefusalPlan` (`store/orderRefusal.ts`) turns a code into `{ message, actions }`, where `actions` is an **ordered** list: `refresh_sources` → `clear_quote` → `requote` for `price_changed`, and the order is load-bearing. `refresh_sources` adopts the server clock the refusal itself carried; re-quoting first would re-quote against the same skewed offset and be refused again — the permanent refusal loop of I-3, #69. Order as data is what lets a test hold that shut; as statement order in a catch block it was only ever a comment.
+
+**Exhaustive at build time, forgiving at run time.** A deployed browser is always older than the server, so an unknown code falls back to a generic sentence — never the raw wire code on the checkout screen, which is what used to happen before `invalid_body` was given a branch.
+
+**The quote path tells the same truth as the order path.** `quoteDelivery` used to narrow the endpoint's eight codes to five, folding `merchant_not_found`, `merchant_inactive` and `quota_exceeded` into `lookup_failed` — whose copy says *try again*. A shop's daily ceiling on billable lookups does not clear for up to 24 hours, and the order path had always refused to make that promise (see `distance_lookup_failed`). All eight now survive, and a closed shop reads as a closed shop.
 
 ## Order notifications
 
