@@ -1,6 +1,6 @@
 import type { User } from '@supabase/supabase-js';
-import { voucherFromRow } from '@bitetime/shared';
-import type { FeedbackDraft, FeedbackStatus } from '@bitetime/shared';
+import { voucherFromRow, QUOTE_REFUSALS } from '@bitetime/shared';
+import type { FeedbackDraft, FeedbackStatus, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
 import { supabase } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
@@ -559,45 +559,20 @@ export async function fetchEarnedRewards(): Promise<EarnedReward[]> {
 const ORDER_STATUSES = ['new', 'preparing', 'ready', 'completed', 'cancelled']
 
 /**
- * Why an order was refused, in the backend's own words.
+ * A refusal the customer can act on, as opposed to a bug.
  *
- * A DELIBERATE TWIN of `OrderErrorCode` in `apps/backend/src/orders.ts` — the backend is a
- * separate workspace, and these codes are the wire contract between them. Add a code there and
- * you must add it here and give it a `t(en, zh)` message in `Storefront.tsx`'s `handleSubmit`
- * catch block (VOUCHER_REFUSALS is the table for the voucher ones), or the customer gets
- * "something went wrong" for a refusal we know the reason for.
- */
-export type OrderErrorCode =
-  | 'merchant_not_found'
-  | 'merchant_inactive'
-  | 'voucher_not_found'
-  | 'voucher_already_used'
-  | 'voucher_fully_used'
-  | 'voucher_requires_account'
-  | 'price_changed'
-  | 'product_unavailable'
-  | 'delivery_state_required'
-  | 'fulfil_date_unavailable'
-  | 'fulfil_date_required'
-  | 'delivery_place_required'
-  | 'delivery_out_of_range'
-  | 'distance_lookup_failed'
-
-/**
- * A refusal the customer can do something about — retry without the voucher, come back later.
+ * The codes come from `@bitetime/shared` (`refusal.ts`). They used to be declared here as a
+ * hand-copied twin of the backend's own union, and they drifted: `method_not_offered` was
+ * thrown by the backend and handled in `Storefront.tsx` as a bare string, but was never added
+ * here, so the compiler could not see the gap. `network` is the browser's own and has no
+ * backend twin — a fetch that never landed.
  *
- * `network` and `order_failed` are the browser's own additions, and have no backend twin: the
- * first is a fetch that never landed, the second a server fault with no code to explain it.
- *
- * `invalid_body` is the route's own 400 (app.ts, not orders.ts) — the body did not have the
- * shape of an order at all. It reaches the customer only if the UI has built a cart the door
- * refuses, which the shared caps (`MAX_CART_QTY`/`MAX_CART_LINES`) exist to make impossible;
- * it still needs a message, because `super(code)` means the alternative is the customer
- * reading the literal string "invalid_body" on the checkout screen.
+ * What each code SAYS to the customer, and what the checkout does about it, lives in
+ * `store/orderRefusal.ts`.
  */
 export class OrderError extends Error {
   constructor(
-    readonly code: OrderErrorCode | 'invalid_body' | 'order_failed' | 'network',
+    readonly code: OrderRefusal | 'network',
     /**
      * The server's own clock, present only on `price_changed` (`app.ts`'s OrderError handler).
      * This is what lets `price_changed` recovery fix a persistently-unreachable `/api/time`
@@ -673,12 +648,15 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
 }
 
 /**
- * Why a delivery could not be quoted. `out_of_range` covers "beyond this shop's maximum" AND
- * "no road route exists" — the same fact to the customer, and the same message. Only
- * `lookup_failed` is worth retrying.
+ * Why a delivery could not be quoted. Every code the endpoint can return survives to the caller:
+ * this used to narrow eight into five, folding `merchant_not_found`, `merchant_inactive` and
+ * `quota_exceeded` into `lookup_failed` — so a closed shop, and a shop out of daily lookup
+ * budget, both told the customer to try again. The budget does not clear for up to 24 hours.
+ *
+ * See `store/orderRefusal.ts` for what each one now says.
  */
 export class DeliveryQuoteError extends Error {
-  constructor(readonly code: 'out_of_range' | 'lookup_failed' | 'not_distance_priced' | 'rate_limited' | 'network') {
+  constructor(readonly code: QuoteRefusal | 'network') {
     super(code)
     this.name = 'DeliveryQuoteError'
   }
@@ -701,8 +679,10 @@ export async function quoteDelivery(merchantId: string, placeId: string): Promis
   if (!res.ok) {
     const payload = (await res.json().catch(() => ({}))) as { error?: string }
     const code = payload.error
+    // Recognised codes pass through untouched; anything else is a body we do not understand,
+    // which is a lookup failure as far as the customer is concerned.
     throw new DeliveryQuoteError(
-      code === 'out_of_range' || code === 'not_distance_priced' || code === 'rate_limited' ? code : 'lookup_failed',
+      code && (QUOTE_REFUSALS as readonly string[]).includes(code) ? (code as QuoteRefusal) : 'lookup_failed',
     )
   }
   return (await res.json()) as { km: number; fee: number }

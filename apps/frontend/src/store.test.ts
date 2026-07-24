@@ -113,6 +113,7 @@ import {
   fetchMerchantVouchers,
   createMerchantVoucher,
   deleteMerchantVoucher,
+  quoteDelivery,
 } from './store'
 import * as supabaseModule from './supabase'
 
@@ -1270,5 +1271,29 @@ describe('deleteMerchantVoucher', () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'nope' }) }))
     await expect(deleteMerchantVoucher('v9', 'm1')).rejects.toThrow('nope')
+  })
+})
+
+describe('quoteDelivery', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const refuses = (error: string) =>
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error }) }))
+
+  it('passes a quota refusal through instead of calling it a lookup failure', async () => {
+    // The narrowing this replaces mapped `quota_exceeded` onto `lookup_failed`, and the customer
+    // was told to try again for a ceiling that does not clear for up to 24 hours.
+    refuses('quota_exceeded')
+    await expect(quoteDelivery('m1', 'place-1')).rejects.toMatchObject({ code: 'quota_exceeded' })
+  })
+
+  it('passes a closed shop through as a closed shop', async () => {
+    refuses('merchant_inactive')
+    await expect(quoteDelivery('m1', 'place-1')).rejects.toMatchObject({ code: 'merchant_inactive' })
+  })
+
+  it('still reports an unrecognised body as a lookup failure', async () => {
+    refuses('something_new')
+    await expect(quoteDelivery('m1', 'place-1')).rejects.toMatchObject({ code: 'lookup_failed' })
   })
 })
