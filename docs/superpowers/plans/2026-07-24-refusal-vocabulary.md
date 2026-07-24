@@ -859,9 +859,12 @@ export function quoteRefusalPlan(code: QuoteRefusalCode | undefined, ctx: QuoteR
       // The one new string this change introduces. It must not say "try again": the shop's daily
       // ceiling on billable lookups does not clear for up to 24 hours, so a retry meets the same
       // refusal. The honest advice is a different method or a different day.
+      // "come back tomorrow", NOT "try again tomorrow" — the test above asserts the message does
+      // not contain "try again", because that is the phrase the lookup-failure copy owns and the
+      // one this refusal must not borrow.
       return pickupEscape
-        ? t('This shop cannot quote delivery for the rest of today. Please choose pickup, or try again tomorrow.', '本店今日已无法计算运费，请改选自取或明日再试。')
-        : t('This shop cannot quote delivery for the rest of today. Please try again tomorrow.', '本店今日已无法计算运费，请明日再试。')
+        ? t('This shop cannot quote delivery for the rest of today. Please choose pickup, or come back tomorrow.', '本店今日已无法计算运费，请改选自取或明日再试。')
+        : t('This shop cannot quote delivery for the rest of today. Please come back tomorrow.', '本店今日已无法计算运费，请明日再试。')
 
     case 'merchant_inactive':
     case 'merchant_not_found':

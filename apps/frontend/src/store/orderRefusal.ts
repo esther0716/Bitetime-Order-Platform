@@ -56,6 +56,23 @@ const generic = (t: Translate): RefusalPlan => ({
 })
 
 /**
+ * Two sentences the order path and the quote path both need, written once.
+ *
+ * Both paths can meet the same fact — this shop is shut, or its delivery fee cannot be worked
+ * out — and the second of those arrives under a different code on each (`distance_lookup_failed`
+ * at intake, `lookup_failed` at the quote). One fact deserves one wording, and two copies of a
+ * sentence are how two wordings are born.
+ */
+const shopClosed = (t: Translate) =>
+  t('This shop is not taking orders right now.', '本店目前暂不接单。')
+
+/** Pickup is offered as an escape ONLY when the shop offers it — never point at an absent button. */
+const feeUnavailable = (t: Translate, pickupEscape: boolean) =>
+  pickupEscape
+    ? t('We could not work out the delivery fee just now. Please try again, or choose pickup.', '暂时无法计算运费，请重试或选择自取。')
+    : t('We could not work out the delivery fee just now. Please try again.', '暂时无法计算运费，请重试。')
+
+/**
  * Every voucher refusal means the order rolled back and NOTHING was written, so each message
  * ends by asking for the order again without the voucher. Saying "failed, try again" while
  * silently keeping a voucher the server has already refused would fail them again, forever.
@@ -76,7 +93,7 @@ export function orderRefusalPlan(code: OrderRefusalCode | undefined, ctx: OrderR
 
     case 'merchant_inactive':
     case 'merchant_not_found':
-      return { message: t('This shop is not taking orders right now.', '本店目前暂不接单。'), actions: [] }
+      return { message: shopClosed(t), actions: [] }
 
     case 'price_changed':
       // The shop's prices moved mid-checkout. NOTHING was written. Show the new numbers and let
@@ -132,12 +149,7 @@ export function orderRefusalPlan(code: OrderRefusalCode | undefined, ctx: OrderR
     case 'distance_lookup_failed':
       // Deliberately does NOT promise "in a moment": this code is also what a QUOTA-exhausted
       // shop throws, and quota does not clear for up to 24 hours.
-      return {
-        message: pickupEscape
-          ? t('We could not work out the delivery fee just now. Please try again, or choose pickup.', '暂时无法计算运费，请重试或选择自取。')
-          : t('We could not work out the delivery fee just now. Please try again.', '暂时无法计算运费，请重试。'),
-        actions: [],
-      }
+      return { message: feeUnavailable(t, pickupEscape), actions: [] }
 
     case 'delivery_place_required':
       return { message: t('Please pick your delivery address from the suggestions.', '请从建议列表中选择您的配送地址。'), actions: [] }
@@ -199,9 +211,7 @@ export type QuoteRefusalCode = QuoteRefusal | 'network'
  */
 export function quoteRefusalPlan(code: QuoteRefusalCode | undefined, ctx: QuoteRefusalCtx): string {
   const { t, pickupEscape } = ctx
-  const lookupFailed = pickupEscape
-    ? t('We could not work out the delivery fee just now. Please try again, or choose pickup.', '暂时无法计算运费，请重试或选择自取。')
-    : t('We could not work out the delivery fee just now. Please try again.', '暂时无法计算运费，请重试。')
+  const lookupFailed = feeUnavailable(t, pickupEscape)
 
   switch (code) {
     case 'out_of_range':
@@ -224,7 +234,7 @@ export function quoteRefusalPlan(code: QuoteRefusalCode | undefined, ctx: QuoteR
     case 'merchant_inactive':
     case 'merchant_not_found':
       // The same sentence the order path uses for these two codes — one fact, one wording.
-      return t('This shop is not taking orders right now.', '本店目前暂不接单。')
+      return shopClosed(t)
 
     case 'not_distance_priced':
     case 'lookup_failed':
