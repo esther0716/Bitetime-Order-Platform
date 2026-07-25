@@ -65,8 +65,9 @@ export default function SignupScreen() {
         return
       }
       // Pro pays upfront: hand off to Stripe Checkout; webhook activates the shop.
-      const url = await startCheckout({ plan, billing })
-      window.location.assign(url)
+      const checkout = await startCheckout({ plan, billing })
+      if (!checkout.ok) { setMsg(checkout.error.message || t('Could not start checkout', '无法开始结账')); setBusy(false); return }
+      window.location.assign(checkout.data)
     } catch (err: any) {
       setMsg(err.message || t('Something went wrong.', '出错了。'))
       setBusy(false)

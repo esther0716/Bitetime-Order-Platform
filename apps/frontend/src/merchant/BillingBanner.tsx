@@ -19,7 +19,7 @@ export default function BillingBanner() {
   useEffect(() => {
     if (!merchantId) return
     let on = true
-    fetchMyBilling(merchantId).then(b => { if (on) setBilling(b) })
+    fetchMyBilling(merchantId).then(r => { if (on && r.ok) setBilling(r.data) })
     return () => { on = false }
   }, [merchantId])
 
@@ -28,8 +28,9 @@ export default function BillingBanner() {
 
   async function toPortal() {
     setBusy(true)
-    try { window.location.assign(await openBillingPortal()) }
-    catch { setBusy(false) }
+    const r = await openBillingPortal()
+    if (r.ok) window.location.assign(r.data)
+    else setBusy(false) // this banner's audience always has a subscription; a failure just re-enables the button
   }
 
   // An ending subscription is urgent by definition: when it lapses the shop is suspended and

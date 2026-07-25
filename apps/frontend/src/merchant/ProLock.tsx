@@ -55,16 +55,15 @@ export function UpgradeButton({ className }: { className?: string }) {
   const [busy, setBusy] = useState(false)
   async function toPortal() {
     setBusy(true)
-    try { window.location.assign(await openBillingPortal()) }
-    catch (err: any) {
-      // Say something. This CTA's whole audience is shops that are NOT paying for Pro, and
-      // `POST /api/billing/portal` answers 404 "No billing account yet" for a shop with no
-      // Stripe customer — a comped or pre-checkout basic shop. Swallowing that (as
-      // BillingBanner can afford to, since its audience always has a subscription) would
-      // leave the one button on this panel doing nothing at all, with no word why.
-      toast.error(err?.message || t('Could not open the billing portal', '无法打开账单门户'))
-      setBusy(false)
-    }
+    const r = await openBillingPortal()
+    if (r.ok) { window.location.assign(r.data); return }
+    // Say something. This CTA's whole audience is shops that are NOT paying for Pro, and
+    // `POST /api/billing/portal` answers 404 "No billing account yet" for a shop with no
+    // Stripe customer — a comped or pre-checkout basic shop. Swallowing that (as
+    // BillingBanner can afford to, since its audience always has a subscription) would
+    // leave the one button on this panel doing nothing at all, with no word why.
+    toast.error(r.error.message || t('Could not open the billing portal', '无法打开账单门户'))
+    setBusy(false)
   }
   // size="sm" deliberately: the default size is `w-full` (it is the auth/save button geometry),
   // which stretches this CTA across a settings card or a product dialog.

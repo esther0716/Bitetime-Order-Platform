@@ -7,22 +7,8 @@ import { SignupError, signupErrorCode } from './signupError'
 import type { AddressParts, EarnedReward, FeedbackItem, MerchantCustomer, Order, ReferredShop, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
-import { API_URL, apiGet, apiSend, unwrap, mapOk, toVoid } from './api'
+import { API_URL, apiGet, apiSend, mapOk, toVoid } from './api'
 import type { Result } from './api'
-
-// ── Transient migration scaffolding ─────────────────────────────────────────────
-// The old throwing / `{ ok }` contracts, re-expressed on top of the Result-native
-// `apiGet`. Store functions still on these are not yet migrated to the one Result
-// convention (#122); each is moved off as its resource slice lands. Only the billing
-// reads (`fetchAllBilling`, `fetchMyBilling`) remain — these two helpers are deleted
-// once the billing slice lands.
-async function legacyGet<T>(path: string, opts?: { auth?: boolean }): Promise<T> {
-  return unwrap(await apiGet<T>(path, opts))
-}
-async function legacyTry<T>(path: string, opts?: { auth?: boolean }): Promise<{ ok: true; data: T } | { ok: false }> {
-  const r = await apiGet<T>(path, opts)
-  return r.ok ? { ok: true, data: r.data } : { ok: false }
-}
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -184,21 +170,9 @@ export async function createMerchant({ name, plan = 'basic', billing = 'monthly'
 
 // Create a Stripe Checkout Session for the current merchant and return its URL.
 // Every subscription is charged in MYR; the backend no longer takes a region.
-export async function startCheckout({ plan, billing }: { plan: string; billing: string }) {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/checkout`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ plan, billing }),
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Could not start checkout')
-  }
-  const { url } = await res.json()
-  return url
+export async function startCheckout({ plan, billing }: { plan: string; billing: string }): Promise<Result<string>> {
+  const r = await apiSend<{ url: string }>('/api/checkout', 'POST', { plan, billing }, { auth: 'required' })
+  return mapOk(r, (d) => d.url)
 }
 
 // Platform subscription pricing from the backend, always in MYR. `country` is an
@@ -247,50 +221,26 @@ export interface MerchantBilling {
 }
 
 // Superadmin: read every merchant's billing row (RLS grants superadmins read on all).
-export async function fetchAllBilling(): Promise<MerchantBilling[]> {
-  return legacyGet<MerchantBilling[]>('/api/billing', { auth: true })
+export async function fetchAllBilling(): Promise<Result<MerchantBilling[]>> {
+  return apiGet<MerchantBilling[]>('/api/billing', { auth: true })
 }
 
 // Read the merchant's authoritative billing row (owner-readable via RLS).
-export async function fetchMyBilling(merchantId: string) {
-  if (!merchantId) return null
-  const r = await legacyTry<any>(`/api/merchants/${merchantId}/billing`, { auth: true })
-  return r.ok ? r.data : null
+export async function fetchMyBilling(merchantId: string): Promise<Result<any | null>> {
+  if (!merchantId) return { ok: true, data: null }
+  return apiGet<any | null>(`/api/merchants/${merchantId}/billing`, { auth: true })
 }
 
 // Superadmin approval goes through the backend: it creates the Stripe customer
 // + cardless trialing subscription and flips the shop active in one step.
-export async function approveMerchant(merchantId: string) {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/admin/approve-merchant`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ merchantId }),
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Approval failed')
-  }
-  return res.json()
+export async function approveMerchant(merchantId: string): Promise<Result<any>> {
+  return apiSend<any>('/api/admin/approve-merchant', 'POST', { merchantId }, { auth: 'required' })
 }
 
 // Open the Stripe billing portal for the signed-in merchant (add/update card).
-export async function openBillingPortal(): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/billing/portal`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Could not open billing portal')
-  }
-  const { url } = await res.json()
-  return url
+export async function openBillingPortal(): Promise<Result<string>> {
+  const r = await apiSend<{ url: string }>('/api/billing/portal', 'POST', undefined, { auth: 'required' })
+  return mapOk(r, (d) => d.url)
 }
 
 /**
@@ -298,22 +248,12 @@ export async function openBillingPortal(): Promise<string> {
  * downgrading both land on a period boundary, so no money moves and there is nothing a payment
  * screen needs to explain. See CONTEXT.md → Plan entitlement.
  *
- * Each returns nothing and throws the backend's error code on failure — the caller decides what
- * `no_live_subscription` should say, because it means "the subscription changed under this tab",
- * not "something broke".
+ * Each returns `Result<void>` and carries the backend's error code in `error.code` on failure —
+ * the caller decides what `no_live_subscription` should say, because it means "the subscription
+ * changed under this tab", not "something broke".
  */
-async function billingAction(path: 'cancel' | 'resume' | 'downgrade'): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/billing/${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || `Could not ${path} the subscription`)
-  }
+async function billingAction(path: 'cancel' | 'resume' | 'downgrade'): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/billing/${path}`, 'POST', undefined, { auth: 'required' }))
 }
 
 /** Step down to Basic when the paid-for period ends. Pro features stay until then. */

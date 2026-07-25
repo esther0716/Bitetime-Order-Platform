@@ -177,14 +177,16 @@ export default function AdminMerchants() {
 
   // The admin list is a throw-preferring caller (no per-row error UI), so unwrap() surfaces a
   // could-not-ask as a throw — symmetric with fetchAllBilling, which still throws.
+  // The admin list is a throw-preferring caller (no per-row error UI), so unwrap() surfaces a
+  // could-not-ask as a throw for both the merchants and the billing reads.
   async function load() {
     const [ms, bs] = await Promise.all([fetchAllMerchants(), fetchAllBilling()])
-    setBilling(Object.fromEntries(bs.map(b => [b.merchant_id, b])))
+    setBilling(Object.fromEntries(unwrap(bs).map(b => [b.merchant_id, b])))
     setRows(unwrap(ms))
   }
   useEffect(() => {
     Promise.all([fetchAllMerchants(), fetchAllBilling()]).then(([ms, bs]) => {
-      setBilling(Object.fromEntries(bs.map(b => [b.merchant_id, b])))
+      setBilling(Object.fromEntries(unwrap(bs).map(b => [b.merchant_id, b])))
       setRows(unwrap(ms))
     })
   }, [])
@@ -199,9 +201,10 @@ export default function AdminMerchants() {
 
   async function approve(id: string) {
     setBusy(id)
-    try { await approveMerchant(id); await load() }
-    catch (e) { toast.error(e instanceof Error ? e.message : t('Approval failed', '批准失败')) }
-    finally { setBusy(null) }
+    const r = await approveMerchant(id)
+    if (r.ok) await load()
+    else toast.error(r.error.message || t('Approval failed', '批准失败'))
+    setBusy(null)
   }
 
   async function comp(id: string) {
