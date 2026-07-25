@@ -54,6 +54,24 @@ function isAddressShaped(a: unknown): a is AddressParts {
   return ['line1', 'postcode', 'city', 'state'].every(k => typeof parts[k] === 'string')
 }
 
+/**
+ * Does an order placed by this method carry an address at all?
+ *
+ * "NOT A PICKUP", never "IS A DELIVERY" — and it is a named rule rather than an inline `!==`
+ * because the two places that must agree on it drifted, and the drift cost every express order
+ * (#127). The checkout payload asked `mode === 'delivery'` while the profile save asked
+ * `mode !== 'pickup'`, so an express order sent no address to intake — which lifts `place_id` off
+ * that very object and refuses an order without one — and the customer met a refusal telling them
+ * to pick the address they had already picked.
+ *
+ * The two callers want the address for different purposes, which is what made the wrong test look
+ * right: a region order's address is PRINTED for the merchant, an express order's is ROUTED. Both
+ * still have one. Only a pickup does not.
+ */
+export function carriesAddress(mode: 'pickup' | 'delivery' | 'express'): boolean {
+  return mode !== 'pickup'
+}
+
 export function savedDetailsFromOrder(order: {
   mode: 'pickup' | 'delivery' | 'express'
   wa: string
@@ -64,9 +82,8 @@ export function savedDetailsFromOrder(order: {
   if (whatsapp) saved.whatsapp = whatsapp
   // A pickup order carries no address. Writing the form's empty one would blank the address the
   // customer saved on their last delivery — and they would only discover it at the next
-  // checkout. The test is "not a pickup", not "is a delivery": an express order carries an
-  // address too, and it is just as worth keeping.
-  if (order.mode !== 'pickup' && isCompleteAddress(order.address)) {
+  // checkout.
+  if (carriesAddress(order.mode) && isCompleteAddress(order.address)) {
     saved.delivery_address = order.address
   }
   return saved
