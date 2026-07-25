@@ -1,12 +1,14 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
 import { Images, Expand } from 'lucide-react'
-import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails, quoteDelivery } from '../store'
+import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
+import { useDeliveryQuote } from './useDeliveryQuote'
+import { submitGate } from './submitGate'
 import { pruneCart, pruneMessage, nextCart, cartRefusalMessage } from './cartRules'
 import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { FulfilmentMethod } from '@bitetime/shared'
@@ -106,69 +108,25 @@ export default function Storefront() {
   // while it was in flight.
   const patchAddress = (patch: Partial<AddressParts>) => setAddressInput(prev => ({ ...prev, ...patch }))
 
-  // The LAST place id a quote was started for — a ref, not state, because it must be readable
-  // synchronously from inside an async response handler without itself causing a re-render.
+  // The one function that writes `line1` and drops the place id with it — Google's guarantee is
+  // good only for the exact text the customer picked, not for whatever they type next.
   //
-  // It is the one piece of sequencing this whole quote flow needs: a response — success OR
-  // failure — is only applied if it is still the answer for the CURRENTLY selected address.
-  // Pick A (slow), then pick B (fast): B's success overwrites the ref before A ever resolves, so
-  // when A finally lands — success or failure — `requestedPlaceIdRef.current !== A` and it is
-  // dropped. The FAILURE branch is the one that actually bites: a stale success is already
-  // rejected downstream by `quotedForThisAddress`'s own `placeId` check, but the failure branch
-  // unconditionally wiped the quote and stamped a refusal — onto an address that had quoted
-  // fine a moment later (#101 review, Finding 5).
-  //
-  // It also doubles as the auto-quote effect's loop guard (Finding 3, below): once a place id has
-  // been requested — in flight, succeeded, or failed — the effect will not request it again.
-  const requestedPlaceIdRef = useRef<string | null>(null)
-
-  const fetchQuote = async (placeId: string) => {
-    requestedPlaceIdRef.current = placeId
-    setQuoting(true)
-    setQuoteError(null)
-    const r = await quoteDelivery(merchant.id, placeId)
-    // Superseded — a newer request now owns `quoting` and will clear it; this one does nothing.
-    // (The old `finally` cleared `quoting` only when still current; returning early here is the
-    // same guard: we only reach the setQuoting(false) below when this request is still current.)
-    if (requestedPlaceIdRef.current !== placeId) return
-    if (r.ok) {
-      setQuote({ placeId, ...r.data })
-    } else {
-      setQuote(null)
-      // What each refusal says is `orderRefusal.ts`'s decision, including which of them may
-      // point at pickup — a message cannot offer a button the shop does not have.
-      setQuoteError({ placeId, message: quoteRefusalPlan(r.error.code, { t, pickupEscape }) })
-    }
-    setQuoting(false)
-  }
-
-  // The one function that writes `line1` and invalidates everything a stale value could carry:
-  // the place id (Google's guarantee is only good for the exact text the customer picked, not
-  // whatever they type next), any request still in flight for the address just left, and the
-  // spinner it was showing. Every writer of `line1` MUST go through this rather than calling
-  // `patchAddress({ line1, ... })` directly — forgetting the place id half of this once already
-  // let a fee be quoted for an address the customer no longer had in the field (#101 review,
-  // Finding 5's predecessor), and a third `line1` writer that skipped this helper would be free
-  // to reopen that exact hole.
-  //
-  // `setQuoting(false)` here is UNCONDITIONAL, not the token-guarded kind `fetchQuote`'s own
-  // `finally` uses (see the comment there). Before this existed, typing over an in-flight pick
-  // nulled `requestedPlaceIdRef` here but left `quoting` untouched — so when that request's
-  // response landed, BOTH of `fetchQuote`'s own guards (success and failure) saw a mismatched
-  // token and dropped it, and `setQuoting(false)` never ran. The spinner then read "Calculating
-  // delivery fee…" forever, next to a summary that had already given up and said "not calculated
-  // yet" (#101 review, Finding 1). Clearing it here, at the moment the request becomes moot, is
-  // what a conditional `finally` structurally cannot do for itself.
+  // It no longer touches the quote at all. `useDeliveryQuote` keys everything it holds to the
+  // place id and SELECTS against the one in the form, so dropping the id here is already the
+  // whole invalidation: the fee stops being shown, the spinner stops being true, and a response
+  // still in flight for the abandoned address lands on a slot that no longer wants it. The
+  // "every writer of `line1` MUST go through this helper" hazard — which cost a stuck spinner
+  // (#101 review, Finding 1) and a fee quoted for an address the customer no longer had in the
+  // field (Finding 5's predecessor) — is gone with it: there is nothing left to forget.
   const clearAddressForNewText = (text: string) => {
     patchAddress({ line1: text, place_id: undefined })
-    setQuote(null)
-    requestedPlaceIdRef.current = null
-    setQuoting(false)
   }
 
   // Fires on a SELECTION, never on a keystroke: every quote is a request the platform pays for,
-  // and a free-text address cannot be routed anyway.
-  async function pickDestination(detail: { placeId: string; formatted: string; postcode: string; city: string; state: string }) {
+  // and a free-text address cannot be routed anyway. Writing the place id is the whole of it —
+  // the hook asks for the quote itself, on the same rule that prices a returning customer's
+  // saved address on load.
+  function pickDestination(detail: { placeId: string; formatted: string; postcode: string; city: string; state: string }) {
     patchAddress({
       line1: detail.formatted,
       postcode: detail.postcode,
@@ -176,8 +134,6 @@ export default function Storefront() {
       state: detail.state,
       place_id: detail.placeId,
     })
-    if (!expressPriced) return
-    await fetchQuote(detail.placeId)
   }
 
   const [busy, setBusy] = useState(false)
@@ -261,65 +217,29 @@ export default function Storefront() {
   // backend's allowlist make it unconstructible) and honoured anyway.
   const expressPriced = expressChosen && distance.usable
 
-  // The quote for the address currently selected. `null` means "not calculated" — which is a
-  // state the UI must SAY, never a 0 it can show as a fee.
-  const [quote, setQuote] = useState<{ placeId: string; km: number; fee: number } | null>(null)
-  // Keyed to the place id it was raised against — the SAME shape as `quote` above, not a bare
-  // string a mode toggle can wipe wholesale. A refusal belongs to the ADDRESS, not to "delivery
-  // mode" in general: see the effect below.
-  const [quoteError, setQuoteError] = useState<{ placeId: string; message: string } | null>(null)
-  const [quoting, setQuoting] = useState(false)
-
-  // A saved address that predates #101 has no place id and cannot be routed. It still PREFILLS,
-  // and the fee simply stays uncalculated until the customer picks it from the list once — the
-  // identifier is then saved back with the order. That costs a pick once per SAVED address, not
-  // once ever: `savedDetailsFromOrder` overwrites the saved address wholesale, so an intervening
-  // order placed at a REGION shop (whose form has no place id to save) blanks it again, and the
-  // next distance visit pays for the pick a second time (#101 review, Finding 6).
-  // Silently geocoding an old string into a fee they never confirmed was rejected.
-  const routedPlaceId = address.place_id ?? ''
-  const quotedForThisAddress = quote !== null && quote.placeId === routedPlaceId && routedPlaceId !== ''
-  // Same idea for the error: rendered only when it still names the address in the form. An
-  // untouched, refused address surviving a Pickup → Delivery round trip relies on this, not on
-  // anything clearing early — see the effect below for what DOES clear it.
-  const quoteErrorForThisAddress = quoteError && quoteError.placeId === routedPlaceId ? quoteError : null
-
-  // Makes the once-per-saved-address pick (above) actually pay off. Without this, a RETURNING
-  // customer whose profile already carries a routable place id (Finding 4 is what lets that
-  // survive a save) still saw "not calculated yet" on every fresh load, because nothing ever
-  // quoted from a place id that arrived via prefill rather than a live pick.
-  //
-  // Deliberately narrow: only fires when express is the chosen method and priceable, for a place
-  // id that has never been requested (`requestedPlaceIdRef` — the SAME token Finding 5 uses to sequence
-  // manual picks). That one guard does three jobs at once: it stops this effect from re-firing on
-  // every render (the id it just requested is now "seen"), it stops it from looping after a
-  // failure (a failed id stays "seen" — the customer must actively re-pick to try again, same as
-  // any other quote failure), and it stops it from double-firing alongside a manual pick, since
-  // `pickDestination` sets the SAME ref synchronously before this effect's dependency (the address
-  // it just wrote) is even committed.
-  //
-  // The cost objection this answers is weak besides: the quote endpoint peeks the distance cache
-  // before metering, so a cache hit — the normal case for a saved, previously-quoted address —
-  // consumes no quota at all.
-  useEffect(() => {
-    if (!expressPriced) return
-    const placeId = address.place_id
-    if (!placeId || requestedPlaceIdRef.current === placeId) return
-    fetchQuote(placeId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expressPriced, mode, address.place_id])
-
-  // What actually invalidates a refusal is the ADDRESS it was raised against changing, never the
-  // fulfilment MODE — clearing on every `mode` flip threw away a still-applicable refusal the
-  // instant Pickup → Delivery ran, leaving a refused address sitting in the field with no "this
-  // shop does not deliver there" and no pickup offer: the exact state the one-message rule exists
-  // to prevent (#101 review, Finding 2). `quoteErrorForThisAddress` above already gates the
-  // RENDER on the same key; this effect drops the STORED value too, once it no longer belongs to
-  // anything the form could show, so it does not linger to be resurrected by some future address
-  // that happens to reuse the id.
-  useEffect(() => {
-    setQuoteError(prev => (prev && prev.placeId === (address.place_id ?? '') ? prev : null))
-  }, [address.place_id])
+  /**
+   * The distance quote, and every decision about when to ask for one — `quoteMachine.ts`, wired
+   * up by `useDeliveryQuote`. What used to live here was three pieces of state, a `useRef`
+   * sequencing token and two effects; what is left is one call and the values it hands back.
+   *
+   * Three properties this replaces, all of them now structural rather than remembered:
+   *
+   * - A quote, a refusal and the spinner are each SELECTED against the place id in the form, so
+   *   none of them can outlive the address they belong to (#101 review, Findings 1 and 5).
+   * - A refusal is invalidated by the ADDRESS changing and by nothing else — a mode flip leaves
+   *   it standing, which is what Finding 2 asked for and what an effect keyed on `mode` broke.
+   * - A returning customer's saved, already-routable address prices itself on load rather than
+   *   waiting for a re-pick. A saved address that predates #101 carries no place id and still
+   *   simply stays uncalculated until they pick it from the list once (Finding 6); silently
+   *   geocoding an old string into a fee they never confirmed was rejected.
+   *
+   * `expressPriced` is the enable: a region-priced order asks for nothing, and every quote is a
+   * request the platform pays for. The cost objection to the load-time quote is weak besides —
+   * the endpoint peeks the distance cache before metering, so the normal case for a saved,
+   * previously-quoted address consumes no quota at all.
+   */
+  const { quote, quoteError, quoting, invalidate: invalidateQuote, requote } =
+    useDeliveryQuote(merchant?.id, address.place_id, expressPriced)
 
   // The voucher's one-per-customer key — the account email, and nothing else. It must match
   // what the SERVER keys on (the JWT's email), or this pre-flight green-lights a claim the
@@ -466,8 +386,10 @@ export default function Storefront() {
     resolvedShipping: mode === 'delivery' && !address.state ? baseDeliveryFee : undefined,
     distance,
     // `quote.km` is already the rounded km the backend derived, so `km × 1000` re-enters
-    // `routedKm` unchanged (`routedKm(25200) === 25.2`) and reproduces the same fee.
-    routedMetres: quotedForThisAddress ? quote!.km * 1000 : null,
+    // `routedKm` unchanged (`routedKm(25200) === 25.2`) and reproduces the same fee. `quote` is
+    // already the quote for the address in the form or nothing at all — the hook selects it
+    // against the place id, so there is no second "is this still ours" test to get wrong.
+    routedMetres: quote ? quote.km * 1000 : null,
     voucher: appliedVoucher,
     // The SAME mapper the order transaction charges with. A second reading of these columns
     // here is a second rule, and the customer meets it as a refused checkout (`price_changed`).
@@ -480,21 +402,16 @@ export default function Storefront() {
   const fee = bd.shipping
   const taxAmount = bd.tax
   const taxRate = bd.taxRate
-  const deliveryReady =
-    mode === 'pickup' ||
-    (mode === 'express'
-      // `!distance.usable` refuses outright — no address form is even rendered in that state
-      // (see the Fulfilment section below), so there is nothing here that could become "ready".
-      // At a priceable express shop the address must have been SELECTED (so it has a place id)
-      // and a fee must have come back. This gate is load-bearing for the PRICE, not just form
-      // validity: it is the only thing stopping an order the shop would have to cancel (story 38).
-      ? distance.usable && quotedForThisAddress && address.line1.trim() !== ''
-      : address.line1.trim() !== '' &&
-        address.postcode.length === 5 &&
-        address.city.trim() !== '' &&
-        address.state.trim() !== '')
-  const canSubmit = cartItems.length > 0 && name.trim() !== '' && wa.trim() !== '' && !busy
-    && deliveryReady && chosenDate !== null && !noMethods
+  // Whether this order may be placed, decided in `submitGate.ts` rather than in render scope.
+  // It is the last thing standing between a customer and an order the shop would have to cancel,
+  // and it is load-bearing for the PRICE, not just for form validity — see the module.
+  const { canSubmit } = submitGate({
+    lineCount: cartItems.length,
+    name, wa, mode, address,
+    distanceUsable: distance.usable,
+    quoted: quote !== null,
+    chosenDate, noMethods, busy,
+  })
 
   // The one decision that says whether this customer is ever asked to sign in. `account` is
   // `undefined` until the session resolves — 'pending' holds the checkout back for that beat
@@ -641,10 +558,20 @@ export default function Storefront() {
       } else if (action === 'refresh_sources') {
         await refreshQuoteSources(serverNow)
       } else if (action === 'clear_quote') {
-        setQuote(null)
+        // The one invalidation the hook cannot make for itself: the address has not moved, but a
+        // merchant editing the distance rate mid-checkout moved the ANSWER. Every other way a
+        // quote stops applying is a change of place id, which the hook already handles by not
+        // selecting it.
+        invalidateQuote()
       } else if (action === 'requote') {
         // A re-quote moments after the original is a cache HIT, which consumes no ceiling.
-        if (address.place_id) void fetchQuote(address.place_id)
+        //
+        // Kept EXPLICIT even though the hook's own auto-quote would now fire for a slot that
+        // `clear_quote` just emptied. The recovery's steps are `orderRefusal.ts`'s decision and
+        // are asserted there as an ordered list; leaning on a side effect to supply one of them
+        // would trade a recovery a test can read for one it cannot. The hook writes its pending
+        // slot synchronously, so this and the effect cannot both fire — one request, not two.
+        requote()
       } else if (action === 'clear_date') {
         setFulfilDate(null)
       }
@@ -748,10 +675,10 @@ export default function Storefront() {
       await notifyOrderPlacedRemote(merchant.id, result.data.orderNumber, lang)
       setSuccess({
         orderNumber: result.data.orderNumber, items: cartItems, subtotal, fee, discount, taxAmount, taxRate, total,
-        // The SAME value the summary just labelled the fee with — `quotedForThisAddress` is what
-        // gated submission in the first place, so at this point it can only be true or this was
-        // never a distance order at all.
-        feeKm: quotedForThisAddress ? quote!.km : null,
+        // The SAME value the summary just labelled the fee with — a non-null `quote` is what
+        // gated submission in the first place (`submitGate`'s `quoted`), so at this point it can
+        // only be present or this was never a distance order at all.
+        feeKm: quote ? quote.km : null,
         fulfilDate: chosenDate,
       })
       toast.success(t('Order placed!', '订单已提交！'))
@@ -1148,7 +1075,16 @@ export default function Storefront() {
                         </p>
                       </div>
                       {quoting && <p className="text-[13px] text-rose-muted">{t('Calculating delivery fee…', '正在计算运费…')}</p>}
-                      {quoteErrorForThisAddress && <p className="text-[13px] text-oxblood">{quoteErrorForThisAddress.message}</p>}
+                      {/* Rendered from the refusal CODE at paint time, not from a sentence frozen
+                          when the request failed. `LanguageSelect` sits in this page's own header,
+                          and `pickupEscape` can turn on under a merchant refresh — a stored string
+                          would go on speaking English, and go on withholding a pickup offer the
+                          shop now has, while the page around it changed. */}
+                      {quoteError && (
+                        <p className="text-[13px] text-oxblood">
+                          {quoteRefusalPlan(quoteError, { t, pickupEscape })}
+                        </p>
+                      )}
                     </>
                 ) : (
                   // `usable === false`: no address field at all. Offering one would invite a pick
@@ -1384,7 +1320,7 @@ export default function Storefront() {
                     label={
                       bd.shippingPending
                         ? t('Express delivery fee (not calculated yet)', '快速配送费（尚未计算）')
-                        : feeLineLabel(mode, quotedForThisAddress ? quote!.km : null, t)
+                        : feeLineLabel(mode, quote ? quote.km : null, t)
                     }
                     value={bd.shippingPending ? t('—', '—') : formatMoney(fee, currency)}
                   />
