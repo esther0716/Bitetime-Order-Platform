@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import { updateMerchantConfig } from '../store'
+import { useSaved } from './useSaved'
 import { fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -43,20 +44,22 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
       timezone: merchant!.timezone ?? DEFAULT_TIMEZONE,
     }
   }
-  const [saved, setSaved] = useState(initial)
-  const [fields, setFields] = useState(saved)
+  const [initialFields] = useState(initial)
+  const [fields, setFields] = useState(initialFields)
   const [busy, setBusy] = useState(false)
 
-  const dirty =
-    fields.lead !== saved.lead ||
-    fields.window !== saved.window ||
-    fields.timezone !== saved.timezone ||
-    fields.closed.join(',') !== saved.closed.join(',')
-
-  // The container tracks one dirty flag for the active tab and registers it with the NavGuard.
-  // Not ShopSettings' `useTabDirty`, which is typed to SettingsFields (a flat string map) and
-  // cannot hold this tab's number[] of closed weekdays. Same contract, different shape.
-  useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
+  // Same shared save-cycle hook as ShopSettings' tabs (#123), but with this tab's own `eq`:
+  // the shape carries a `number[]` of closed weekdays that the flat-map `isDirty` cannot hold.
+  const { commit } = useSaved(
+    initialFields,
+    fields,
+    (a, b) =>
+      a.lead === b.lead &&
+      a.window === b.window &&
+      a.timezone === b.timezone &&
+      a.closed.join(',') === b.closed.join(','),
+    onDirtyChange,
+  )
 
   const allClosed = fields.closed.length === 7
 
@@ -102,7 +105,7 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
         timezone: fields.timezone,
       }
       setFields(applied)
-      setSaved(applied)
+      commit(applied)
       toast.success(t('Fulfilment saved', '取货设置已保存'))
     } catch (err: any) {
       toast.error(err.message || t('Save failed', '保存失败'))
