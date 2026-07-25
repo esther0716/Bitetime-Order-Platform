@@ -1,9 +1,21 @@
 import { describe, it, expect } from 'vitest'
-import { savedDetailsFromOrder, prefillFromProfile } from './savedDetails'
+import { savedDetailsFromOrder, prefillFromProfile, carriesAddress } from './savedDetails'
 import type { AddressParts } from './types'
 
 const address: AddressParts = { line1: '12 Jalan Bukit', postcode: '58200', city: 'Kuala Lumpur', state: 'Kuala Lumpur' }
 const blank: AddressParts = { line1: '', postcode: '', city: '', state: '' }
+
+describe('carriesAddress', () => {
+  it('says yes for both delivery methods and no for pickup', () => {
+    // The rule the checkout payload and the profile save must BOTH read. They once disagreed —
+    // `mode === 'delivery'` at the checkout, `mode !== 'pickup'` at the save — and the express
+    // order that fell through the gap could not be placed at all: intake lifts `place_id` off
+    // the address the checkout omitted, and refuses an order without one (#127).
+    expect(carriesAddress('delivery')).toBe(true)
+    expect(carriesAddress('express')).toBe(true)
+    expect(carriesAddress('pickup')).toBe(false)
+  })
+})
 
 describe('savedDetailsFromOrder', () => {
   it('saves the number from a delivery order, with the address', () => {

@@ -37,4 +37,25 @@ describe('feeLineLabel', () => {
     expect(feeLineLabel('delivery', null, en)).toBe('Delivery fee')
     expect(feeLineLabel('delivery', null, zh)).toBe('送货费')
   })
+
+  it('refuses a distance on a region-priced order even when handed one', () => {
+    // #128. The METHOD decides whether a fee was priced by distance, never the presence of a km
+    // argument. A quote belongs to the ADDRESS and deliberately survives a method switch (#101
+    // review, Finding 2), so a customer who quoted an express fee and then chose flat `delivery`
+    // still holds one — and the summary printed `Delivery fee (13.9 km)` next to an RM 8.00 flat
+    // rate that the kilometres played no part in producing.
+    expect(feeLineLabel('delivery', 13.9, en)).toBe('Delivery fee')
+    expect(feeLineLabel('delivery', 13.9, zh)).toBe('送货费')
+  })
+
+  it('names no distance on a pickup order, which has no fee line to reconcile', () => {
+    expect(feeLineLabel('pickup', 13.9, en)).toBe('Delivery fee')
+  })
+
+  it('treats an unknown mode as not distance-priced', () => {
+    // An old row from before a method was renamed must not start naming kilometres it cannot
+    // account for.
+    expect(feeLineLabel('sameday', 13.9, en)).toBe('Delivery fee')
+    expect(feeLineLabel(null, 13.9, en)).toBe('Delivery fee')
+  })
 })
