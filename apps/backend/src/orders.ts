@@ -1,9 +1,10 @@
 import type postgres from 'postgres'
-import { priceOrder, voucherFromRow, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, exceedsMaxKm, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import { priceOrder, voucherFromRow, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
 import { COUNTER_START, formatOrderNumber, orderDay } from './orderNumber.js'
-import { resolveDistance, CACHE_TTL_MS, type DistanceDeps } from './distance.js'
+import { type DistanceDeps } from './distance.js'
+import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
 import { quoteMerchantWindow, quoteIpWindow } from './quotaWindows.js'
 
@@ -352,48 +353,31 @@ async function resolveRoutedMetres(
   const destination = (input.destinationPlaceId ?? '').trim()
   if (!destination) throw new OrderError('delivery_place_required')
 
-  const notBefore = new Date(now.getTime() - CACHE_TTL_MS)
-  // A cache read that throws degrades to a MISS, exactly as `resolveDistance` does with its own
-  // read — and exactly as the quote endpoint's own peek does. This peek exists only to decide
-  // whether the lookup below should cost the shop a slot of its daily ceiling, so a database
-  // blip must not turn a resolvable delivery into a 500.
-  let cached: number | null = null
-  try {
-    cached = await deps.readCache(policy.originPlaceId!, destination, notBefore)
-  } catch (err) {
-    console.error('Distance cache peek failed:', err instanceof Error ? err.message : String(err))
-  }
-
-  // A cache HIT costs nothing and must never consume a slot of the shop's daily ceiling; a MISS
-  // is a real Google call and must. Identical rule to the quote endpoint, deliberately sharing
-  // the SAME bucket — it is one bill for one shop, and intake is a second spender on it.
-  if (cached === null) {
-    // A COURTESY bound, not an abuse control, and worth being precise about: `clientIp` trusts
-    // `cf-connecting-ip` first, and this backend does not sit behind Cloudflare, so a determined
-    // caller rotates that header and mints a fresh key per request. What actually stops a runaway
-    // is the per-shop ceiling below, which is keyed on the row's own id and cannot be re-spelled.
-    // This one stops accidental hammering, and it is on the MISS path only: a blanket limit on
-    // order placement would refuse legitimate customers behind carrier-grade NAT, which is worse
-    // than the abuse it would prevent.
-    if (input.callerIp && !quoteIpWindow.allow(input.callerIp)) {
-      throw new OrderError('distance_lookup_failed')
-    }
-    if (!quoteMerchantWindow.allow(merchantId)) {
-      throw new OrderError('distance_lookup_failed')
-    }
-  }
-
-  const outcome = cached !== null
-    ? ({ status: 'ok', metres: cached } as const)
-    : await resolveDistance(
-        deps,
-        { originPlaceId: policy.originPlaceId!, destinationPlaceId: destination },
-        now,
-      )
-  // No route and beyond-the-maximum are ONE refusal: same fact, same message.
-  if (outcome.status === 'no_route') throw new OrderError('delivery_out_of_range')
+  // The peek, the per-shop daily ceiling and the no-route / beyond-max-km mapping all live in
+  // `resolveRoutedDistance`, shared with the quote endpoint so the number quoted and the number
+  // charged cannot drift apart (#119). What is intake-specific stays here: the courtesy per-IP
+  // bound, run via `onMiss` so it fires only on a real Google call, and the mapping of the
+  // wire-agnostic outcome to this module's OrderError codes.
+  const outcome = await resolveRoutedDistance(policy, destination, deps, now, {
+    merchantKey: merchantId,
+    merchantWindow: quoteMerchantWindow,
+    // A COURTESY bound, not an abuse control: `clientIp` trusts `cf-connecting-ip` first, and this
+    // backend does not sit behind Cloudflare, so a determined caller rotates that header and mints
+    // a fresh key per request. What actually stops a runaway is the per-shop ceiling above, keyed
+    // on the row's own id and unspoofable. This one stops accidental hammering, on the MISS path
+    // only: a blanket limit on order placement would refuse legitimate customers behind carrier-
+    // grade NAT, which is worse than the abuse it would prevent.
+    onMiss: () => {
+      if (input.callerIp && !quoteIpWindow.allow(input.callerIp)) {
+        throw new OrderError('distance_lookup_failed')
+      }
+    },
+  })
+  // No route and beyond-the-maximum are ONE refusal: same fact, same message. A spent ceiling and
+  // a provider failure both read as "could not work out the fee just now" on intake's side.
+  if (outcome.status === 'out_of_range') throw new OrderError('delivery_out_of_range')
+  if (outcome.status === 'quota_exceeded') throw new OrderError('distance_lookup_failed')
   if (outcome.status === 'failed') throw new OrderError('distance_lookup_failed')
-  if (exceedsMaxKm(policy, routedKm(outcome.metres))) throw new OrderError('delivery_out_of_range')
   return outcome.metres
 }
 
