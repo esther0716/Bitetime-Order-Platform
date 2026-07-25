@@ -255,11 +255,9 @@ export interface PlatformPricing {
   estimate: { currency: string; rate: number } | null
 }
 
-export async function fetchPlatformPricing(country?: string): Promise<PlatformPricing> {
+export async function fetchPlatformPricing(country?: string): Promise<Result<PlatformPricing>> {
   const qs = country ? `?country=${encodeURIComponent(country)}` : ''
-  const res = await fetch(`${API_URL}/api/pricing${qs}`)
-  if (!res.ok) throw new Error('Could not load pricing')
-  return res.json()
+  return apiGet<PlatformPricing>(`/api/pricing${qs}`)
 }
 
 /**
