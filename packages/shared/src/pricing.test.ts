@@ -3,7 +3,7 @@ import {
   priceOrder, voucherError, voucherFromRow, shopRates, shopTax, DEFAULT_WM_RATE,
   promoClaims, productFromRow, promoState,
   shopDistance, routedKm, distanceFee, exceedsMaxKm,
-  shopMethods, offersMethod, firstOfferedMethod,
+  shopMethods, offersMethod, firstOfferedMethod, isDistancePriced,
 } from './pricing.js'
 import type { PricedProduct } from './pricing.js'
 
@@ -787,5 +787,36 @@ describe('region pricing is untouched', () => {
     expect(after.tax).toBe(before.tax)
     expect(after.total).toBe(before.total)
     expect(after.shippingPending).toBe(false)
+  })
+})
+
+describe('isDistancePriced', () => {
+  it('is true for express and false for everything else', () => {
+    // The one rule that says whether a fee may be CHARGED or NAMED by road distance. It was
+    // written out three times before this — here, in the backend's order intake, and implicitly
+    // in the storefront, which read "a quote exists" as if it meant the same thing (#128).
+    expect(isDistancePriced('express')).toBe(true)
+    expect(isDistancePriced('delivery')).toBe(false)
+    expect(isDistancePriced('pickup')).toBe(false)
+  })
+
+  it('is what priceOrder itself branches on', () => {
+    // If these ever disagree, the browser quotes one fee and the backend charges another — which
+    // the customer meets as a refused checkout (`price_changed`).
+    const products = [product('a', 10)]
+    const distance = shopDistance({
+      express_enabled: true, delivery_base_fee: 4, delivery_rate_per_km: 1.5,
+      origin_place_id: 'ChIJorigin',
+    })
+    for (const mode of ['pickup', 'delivery', 'express'] as const) {
+      const bd = priceOrder({
+        products, cart: { a: 1 }, now: NOW, mode,
+        state: mode === 'delivery' ? 'Selangor' : null,
+        rates: RATES, distance, routedMetres: 13_900,
+      })
+      // `shippingPending` is only ever set for a distance-priced method, and the routed metres
+      // above are only consumed by one: the flat methods ignore them entirely.
+      expect(bd.shipping === 4 + 1.5 * 13.9).toBe(isDistancePriced(mode))
+    }
   })
 })

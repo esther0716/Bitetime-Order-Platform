@@ -274,6 +274,27 @@ export type FulfilmentMethod = 'pickup' | 'delivery' | 'express'
 /** Precedence order, and the order the storefront renders them in. */
 export const FULFILMENT_METHODS: readonly FulfilmentMethod[] = ['pickup', 'delivery', 'express']
 
+/**
+ * Is an order placed by this method priced by ROAD DISTANCE rather than by region?
+ *
+ * The fee rule follows the METHOD the customer chose, not a policy on the shop: one shop can
+ * offer flat-rate `delivery` and distance-priced `express` side by side (#103).
+ *
+ * Named and exported because it had been written out three times — here, in the backend's order
+ * intake, and implicitly in the storefront, which read "a quote exists" as if it meant the same
+ * thing. It does not: a quote belongs to the ADDRESS and survives a fulfilment-method switch on
+ * purpose (#101 review, Finding 2), so a customer who quoted an express fee and then chose flat
+ * `delivery` still holds one. The storefront labelled the region fee with that leftover distance,
+ * printing `Delivery fee (13.9 km)` beside a flat RM 8.00 the kilometres played no part in
+ * producing (#128).
+ *
+ * Anything deciding whether a distance may be CHARGED or NAMED must ask this, never the presence
+ * of a quote.
+ */
+export function isDistancePriced(mode: FulfilmentMethod): boolean {
+  return mode === 'express'
+}
+
 export interface ShopMethods {
   pickup: boolean
   /** Flat region rate (WM/EM). */
@@ -359,9 +380,7 @@ export function priceOrder(input: PriceInput): PriceBreakdown {
   // that override exists so the storefront can show a region placeholder before a state is known,
   // and routing a real charge through it would put the fee formula back in the callers — the one
   // thing this module exists to prevent.
-  // The fee rule follows the METHOD the customer chose, not a policy on the shop: one shop can
-  // offer flat-rate `delivery` and distance-priced `express` side by side (#103).
-  const distancePriced = input.mode === 'express'
+  const distancePriced = isDistancePriced(input.mode)
   const canPriceDistance =
     distancePriced && input.distance!.usable &&
     // `>= 0`, not merely finite: a NEGATIVE distance would price the delivery DOWNWARDS — a
