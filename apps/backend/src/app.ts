@@ -24,7 +24,7 @@ import { notifyOrderPlaced, emailOrderConfirmation, telegramSend } from './notif
 import { signUpCustomer, isDuplicateEmailError } from './customerSignup.js'
 import { createSlidingWindow } from './rateLimit.js'
 import { clientIp } from './clientIp.js'
-import { resolveDistance, CACHE_TTL_MS } from './distance.js'
+import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
 import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow } from './quotaWindows.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
@@ -36,7 +36,7 @@ import { processReferralReward } from './referralRewardGrant.js'
 import { trackOrder } from './orderTracking.js'
 import { placeOrder, OrderError } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus } from './feedback.js'
-import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, exceedsMaxKm, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS } from '@bitetime/shared'
+import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS } from '@bitetime/shared'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
 import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
@@ -1207,40 +1207,26 @@ app.post('/api/shipping/quote', async (c) => {
   // renaming a refusal code is a separate, customer-visible change.
   if (!policy.enabled || !policy.usable) return c.json({ error: 'not_distance_priced' }, QUOTE_REFUSAL_STATUS.not_distance_priced)
 
-  // The ceiling is checked against PROVIDER CALLS, so a cache hit is free. Peek at the cache
-  // first for exactly that reason.
-  //
-  // A cache read that throws degrades to a MISS, exactly as `resolveDistance` does with its own
-  // read. The peek exists only to decide whether this request should cost the shop a slot of its
-  // daily ceiling, so a database blip must not turn a quotable address into a 500 — it just means
-  // this one is metered like any other miss.
-  let cached: number | null = null
-  try {
-    cached = await liveDistanceDeps.readCache(
-      policy.originPlaceId!, b.placeId, new Date(Date.now() - CACHE_TTL_MS),
-    )
-  } catch (err) {
-    console.error('Distance cache peek failed:', err instanceof Error ? err.message : String(err))
-  }
-  if (cached === null && !quoteMerchantWindow.allow(merchant.id)) {
-    return c.json({ error: 'quota_exceeded' }, QUOTE_REFUSAL_STATUS.quota_exceeded)
-  }
-
-  const outcome = cached !== null
-    ? ({ status: 'ok', metres: cached } as const)
-    : await resolveDistance(liveDistanceDeps, {
-        originPlaceId: policy.originPlaceId!,
-        destinationPlaceId: b.placeId,
-      })
+  // The peek, the per-shop daily ceiling and the no-route / beyond-max-km mapping all live in
+  // `resolveRoutedDistance`, shared with order intake so the number quoted here and the number
+  // charged there cannot drift apart (#119). What is quote-specific stays here: the per-IP request
+  // bound checked up front above (hits and misses alike — this endpoint spends money on a miss, so
+  // it is bounded twice over), and the mapping of the wire-agnostic outcome to this endpoint's
+  // refusal codes.
+  const outcome = await resolveRoutedDistance(policy, b.placeId, liveDistanceDeps, new Date(), {
+    merchantKey: merchant.id,
+    merchantWindow: quoteMerchantWindow,
+    // No `onMiss`: the per-IP bound is handled up front, not on the miss path.
+  })
 
   // NO ROUTE AND OUT-OF-RANGE ARE THE SAME ANSWER to the customer — "this shop does not deliver
-  // there" — because they are the same fact. Only `failed` invites a retry.
-  if (outcome.status === 'no_route') return c.json({ error: 'out_of_range' }, QUOTE_REFUSAL_STATUS.out_of_range)
+  // there" — because they are the same fact. Only `failed` invites a retry; `quota_exceeded` is
+  // the shop's ceiling, which the storefront branches on separately.
+  if (outcome.status === 'out_of_range') return c.json({ error: 'out_of_range' }, QUOTE_REFUSAL_STATUS.out_of_range)
+  if (outcome.status === 'quota_exceeded') return c.json({ error: 'quota_exceeded' }, QUOTE_REFUSAL_STATUS.quota_exceeded)
   if (outcome.status === 'failed') return c.json({ error: 'lookup_failed' }, QUOTE_REFUSAL_STATUS.lookup_failed)
 
   const km = routedKm(outcome.metres)
-  if (exceedsMaxKm(policy, km)) return c.json({ error: 'out_of_range' }, QUOTE_REFUSAL_STATUS.out_of_range)
-
   return c.json({ km, fee: distanceFee(policy, km), currency: merchant.currency ?? 'MYR' })
 })
 

@@ -1,9 +1,12 @@
-// Resolving an (origin, destination) pair to a road distance: read the cache, and on a miss ask
-// the routing provider and write the cache.
+// Resolving a KNOWN-MISS (origin, destination) pair to a road distance: ask the routing provider
+// and, only on a real answer, write the cache. The cache PEEK does not live here — it lives in
+// `routedDistance.ts`, which peeks once to decide whether the lookup should cost a shop a slot of
+// its daily ceiling, then calls this on a miss. Keeping the peek out of here is what lets that one
+// module own the whole quote-and-charge sequence.
 //
-// This is POLICY, not I/O. The provider call and the two cache statements are injected
-// adapters — the same shape as `telegramSend` in notify.ts — so every rule here (the 30-day
-// expiry, what is cached, which outcomes are distinct) is unit-testable without a network or a
+// This is POLICY, not I/O. The provider call and the cache write are injected adapters — the same
+// shape as `telegramSend` in notify.ts — so every rule here (what is cached, which outcomes are
+// distinct, the write degrading to a cost problem) is unit-testable without a network or a
 // database.
 //
 // The three outcomes must stay distinct all the way to the customer: `no_route` is an answer
@@ -29,28 +32,18 @@ export interface DistanceDeps {
  */
 export const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
-export async function resolveDistance(
+/**
+ * Ask the provider for a KNOWN MISS and cache a real answer. The caller has already peeked the
+ * cache (in `routedDistance.ts`) and metered the call — this is the miss path and does no peek of
+ * its own.
+ */
+export async function lookupAndCache(
   deps: DistanceDeps,
   input: { originPlaceId: string; destinationPlaceId: string },
-  now = new Date(),
 ): Promise<DistanceOutcome> {
   const { originPlaceId, destinationPlaceId } = input
   // A missing id cannot name a place, and asking Google about `''` is a billable nothing.
   if (!originPlaceId || !destinationPlaceId) return { status: 'failed' }
-
-  const notBefore = new Date(now.getTime() - CACHE_TTL_MS)
-  // A cache READ that throws degrades to a MISS, never to an exception. This function's contract
-  // is that it always returns an outcome: a caller that gets a thrown database blip instead
-  // reports a 500, where the honest answer is the retryable "could not work out the fee just
-  // now". The cost of the degradation is one extra provider call, which is the same thing a
-  // genuine miss costs.
-  let cached: number | null = null
-  try {
-    cached = await deps.readCache(originPlaceId, destinationPlaceId, notBefore)
-  } catch (err) {
-    console.error('Distance cache read failed:', err instanceof Error ? err.message : String(err))
-  }
-  if (cached !== null) return { status: 'ok', metres: cached }
 
   const outcome = await deps.lookup(originPlaceId, destinationPlaceId)
   if (outcome.status !== 'ok') return outcome
