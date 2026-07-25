@@ -453,7 +453,9 @@ function PaymentTab({ onDirtyChange }: TabProps) {
 
   useEffect(() => {
     let active = true
-    merchantHasOrders(merchant!.id).then(r => { if (active && r.ok) setCurrencyLocked(r.data) })
+    // Fail CLOSED: a could-not-ask keeps the currency selector locked, so a dropped packet can
+    // never open the door to re-denominating a shop that may already have orders.
+    merchantHasOrders(merchant!.id).then(r => { if (active) setCurrencyLocked(r.ok ? r.data : true) })
     return () => { active = false }
   }, [merchant!.id])
 

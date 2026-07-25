@@ -7,8 +7,8 @@ import { SignupError, signupErrorCode } from './signupError'
 import type { AddressParts, EarnedReward, FeedbackItem, MerchantCustomer, Order, ReferredShop, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
-import { API_URL, apiGet, apiSend, unwrap } from './api'
-import type { ApiError, Result } from './api'
+import { API_URL, apiGet, apiSend, unwrap, mapOk, toVoid } from './api'
+import type { Result } from './api'
 
 // ── Transient migration scaffolding ─────────────────────────────────────────────
 // The old throwing / `{ ok }` contracts, re-expressed on top of the Result-native
@@ -24,16 +24,6 @@ async function legacyTry<T>(path: string, opts?: { auth?: boolean }): Promise<{ 
 }
 async function legacySend<T>(path: string, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', body?: unknown, opts?: { auth?: boolean }): Promise<T> {
   return unwrap(await apiSend<T>(path, method, body, opts))
-}
-
-// Map the `data` of a successful Result, passing a failure through untouched. Lets a store
-// function apply its row → domain mapper without unpacking the Result by hand.
-function mapOk<T, U>(r: Result<T>, f: (data: T) => U): Result<U> {
-  return r.ok ? { ok: true, data: f(r.data) } : r
-}
-// Collapse a write whose body the caller does not use down to `Result<void>`.
-function toVoid(r: Result<unknown>): Result<void> {
-  return r.ok ? { ok: true, data: undefined } : r
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────

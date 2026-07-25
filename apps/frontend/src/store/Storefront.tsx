@@ -649,10 +649,10 @@ export default function Storefront() {
     // inputs: this function's callers await it and then let the customer retry — an un-awaited
     // resync/adopt landed the corrected offset a tick after the error toast, so an instant second
     // tap could eat a second `price_changed` refusal before the clock was actually fixed.
-    const failed = { ok: false as const, error: { message: 'unreachable' } }
     const [freshProducts, voucher] = await Promise.all([
-      lookupProducts(merchant.id).catch(() => failed),
-      code ? lookupMerchantVoucher(merchant.id, code).catch(() => failed) : null,
+      // No `.catch`: apiGet turns a rejection into `{ ok:false }` itself, so these never reject.
+      lookupProducts(merchant.id),
+      code ? lookupMerchantVoucher(merchant.id, code) : null,
       serverNow ? Promise.resolve(adoptClock(serverNow)) : resyncClock(),
       // Tax/shipping/config all live on this row. Self-contained: unlike the other two fetches,
       // it applies its own result (or nothing, on failure) rather than returning data for us to

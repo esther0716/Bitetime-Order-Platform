@@ -39,6 +39,17 @@ export function unwrap<T, E>(r: Result<T, E>): T {
     : new Error((r.error as { message?: string })?.message || 'Request failed')
 }
 
+// Map the `data` of a successful Result, passing a failure through untouched — lets a caller
+// apply a row → domain mapper without unpacking the Result by hand.
+export function mapOk<T, U, E>(r: Result<T, E>, f: (data: T) => U): Result<U, E> {
+  return r.ok ? { ok: true, data: f(r.data) } : r
+}
+
+// Collapse a write whose body the caller does not use down to `Result<void>`.
+export function toVoid<E>(r: Result<unknown, E>): Result<void, E> {
+  return r.ok ? { ok: true, data: undefined } : r
+}
+
 //   false      — no Authorization header.
 //   true       — attach the token IF a session exists (guest-tolerant reads/writes).
 //   'required' — no session short-circuits to a `not_signed_in` failure WITHOUT sending.
