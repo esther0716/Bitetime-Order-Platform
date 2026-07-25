@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Images, Expand } from 'lucide-react'
 import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
+import { noticeText, type Notice } from './notice'
 import { useDeliveryQuote } from './useDeliveryQuote'
 import { submitGate } from './submitGate'
 import { pruneCart, pruneMessage, nextCart, cartRefusalMessage } from './cartRules'
@@ -137,7 +138,9 @@ export default function Storefront() {
   }
 
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // WHAT HAPPENED, not a sentence about it — see `notice.ts`. Rendered at paint time so it
+  // follows a language switch and a merchant refresh instead of freezing at the moment it was set.
+  const [error, setError] = useState<Notice | null>(null)
   const [success, setSuccess] = useState<SuccessState | null>(null)
 
   const [gallery, setGallery] = useState<Product | null>(null)
@@ -145,7 +148,7 @@ export default function Storefront() {
 
   const [voucherInput, setVoucherInput] = useState('')
   const [appliedVoucher, setAppliedVoucher] = useState<Voucher | null>(null)
-  const [voucherMsg, setVoucherMsg] = useState('')
+  const [voucherMsg, setVoucherMsg] = useState<Notice | null>(null)
   const [voucherBusy, setVoucherBusy] = useState(false)
 
   const merchantId = merchant?.id
@@ -273,10 +276,7 @@ export default function Storefront() {
     if (!account && appliedVoucher) {
       setAppliedVoucher(null)
       setVoucherInput('')
-      setVoucherMsg(t(
-        `Signed out — the voucher ${appliedVoucher.code} was removed. Sign in again to use it.`,
-        `已退出登录 — 优惠券 ${appliedVoucher.code} 已移除，请重新登录后使用。`,
-      ))
+      setVoucherMsg({ kind: 'voucher_signed_out', voucherCode: appliedVoucher.code })
     }
   }
 
@@ -413,6 +413,13 @@ export default function Storefront() {
     chosenDate, noMethods, busy,
   })
 
+  /**
+   * Everything a stored notice needs in order to become a sentence — read HERE, during render,
+   * which is the whole point: the language, the shop's currency and whether pickup can be offered
+   * are all things that can change while a message sits on screen (#134).
+   */
+  const noticeCtx = { t, currency, pickupEscape, canRequote: expressPriced && Boolean(address.place_id) }
+
   // The one decision that says whether this customer is ever asked to sign in. `account` is
   // `undefined` until the session resolves — 'pending' holds the checkout back for that beat
   // so a signed-in customer never sees the gate flash.
@@ -425,7 +432,7 @@ export default function Storefront() {
     // customer who already redeemed this code (even earlier in this session)
     // sees a false "applied" that only fails at Place Order. Catch reuse here.
     setVoucherBusy(true)
-    setVoucherMsg(t('Checking voucher…', '验证优惠券…'))
+    setVoucherMsg({ kind: 'voucher_checking' })
     // A could-not-ask reads as "no voucher" here — applyVoucher was never going to apply a
     // voucher it could not read, so the customer sees the invalid message and can retry.
     const lookup = await lookupMerchantVoucher(merchant.id, code)
@@ -437,27 +444,17 @@ export default function Storefront() {
     })
     if (err || !v) {
       setAppliedVoucher(null)
-      setVoucherMsg(voucherErrorText(err ?? 'invalid'))
+      setVoucherMsg({ kind: 'voucher_error', code: err ?? 'invalid' })
       return
     }
     setAppliedVoucher(v)
-    const label = (v as any).type === 'percent' ? `${(v as any).value}% off` : `${formatMoney((v as any).value, currency)} off`
-    setVoucherMsg(t(`✓ Voucher applied: ${label}`, `✓ 优惠券已应用：${label}`))
+    setVoucherMsg({ kind: 'voucher_applied', type: (v as any).type, value: (v as any).value })
   }
 
   const removeVoucher = () => {
     setAppliedVoucher(null)
     setVoucherInput('')
-    setVoucherMsg('')
-  }
-
-  function voucherErrorText(code: string): string {
-    switch (code) {
-      case 'invalid': return t('❌ Invalid voucher code.', '❌ 无效的优惠码。')
-      case 'fully_used': return t('❌ This voucher has been fully redeemed.', '❌ 此优惠券已用完。')
-      case 'already_used': return t('❌ You have already used this voucher.', '❌ 您已使用过此优惠券。')
-      default: return ''
-    }
+    setVoucherMsg(null)
   }
 
   /**
@@ -538,7 +535,7 @@ export default function Storefront() {
     if (voucher?.ok) {
       setAppliedVoucher(voucher.data)
       if (!voucher.data) {
-        setVoucherMsg(t('❌ That voucher is no longer available.', '❌ 此优惠券已失效。'))
+        setVoucherMsg({ kind: 'voucher_gone' })
       }
     }
   }
@@ -598,8 +595,8 @@ export default function Storefront() {
           })
           if (verr) {
             setAppliedVoucher(null)
-            setVoucherMsg(voucherErrorText(verr))
-            setError(voucherErrorText(verr))
+            setVoucherMsg({ kind: 'voucher_error', code: verr })
+            setError({ kind: 'voucher_error', code: verr })
             return
           }
           // ADOPT it, don't just read it. The fresh row is what the backend prices from — it
@@ -656,9 +653,11 @@ export default function Storefront() {
         })
         await applyActions(plan.actions, result.error.now)
         // The voucher's own strip echoes the refusal, so a customer who scrolls back up sees why
-        // the discount went away.
-        if (plan.actions.includes('drop_voucher')) setVoucherMsg(plan.message)
-        setError(plan.message)
+        // the discount went away. The strips remember the CODE; `plan.message` here is only for
+        // the toast, which is transient and has nothing to re-render.
+        const refusal: Notice = { kind: 'order_refusal', code: result.error.code }
+        if (plan.actions.includes('drop_voucher')) setVoucherMsg(refusal)
+        setError(refusal)
         toast.error(plan.message)
         return
       }
@@ -688,7 +687,7 @@ export default function Storefront() {
       const plan = orderRefusalPlan(undefined, {
         t, pickupEscape, canRequote: expressPriced && Boolean(address.place_id),
       })
-      setError(plan.message)
+      setError({ kind: 'order_refusal', code: undefined })
       toast.error(plan.message)
     } finally {
       setBusy(false)
@@ -1271,7 +1270,7 @@ export default function Storefront() {
               </div>
             )}
             {voucherMsg && (
-              <p className="mt-2 text-[13px]">{voucherMsg}</p>
+              <p className="mt-2 text-[13px]">{noticeText(voucherMsg, noticeCtx)}</p>
             )}
           </div>
 
@@ -1353,7 +1352,7 @@ export default function Storefront() {
 
           {error && (
             <div className="text-[13px] text-danger bg-rose-pale border border-danger-border rounded-md px-[13px] py-[10px] mb-[10px] leading-[1.5]">
-              {error}
+              {noticeText(error, noticeCtx)}
             </div>
           )}
 
