@@ -5,7 +5,7 @@ import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
 import { Images, Expand } from 'lucide-react'
-import { fetchProducts, lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails, quoteDelivery, DeliveryQuoteError } from '../store'
+import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails, quoteDelivery, DeliveryQuoteError } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, promoState, MAX_CART_QTY, MAX_CART_LINES, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { FulfilmentMethod } from '@bitetime/shared'
@@ -433,7 +433,9 @@ export default function Storefront() {
   // compiler's lint (rightly) refuses a hook that reaches back up for a value declared later.
   useEffect(() => {
     if (!merchantId) return
-    fetchProducts(merchantId).then(adoptProducts)
+    // Adopt only a real answer: a could-not-ask must not prune the (empty, at mount) cart or
+    // blank the menu — same rule the recovery path below leans on.
+    lookupProducts(merchantId).then(r => { if (r.ok) adoptProducts(r.data) })
     // adoptProducts is re-made every render, and depending on it would re-fetch the menu on each
     // one; the menu is a per-SHOP load. Its closure over `cart` is the mount's empty one, and
     // that is exactly right — nothing can be in the cart before the menu it is chosen from.
@@ -647,20 +649,21 @@ export default function Storefront() {
     // inputs: this function's callers await it and then let the customer retry — an un-awaited
     // resync/adopt landed the corrected offset a tick after the error toast, so an instant second
     // tap could eat a second `price_changed` refusal before the clock was actually fixed.
+    const failed = { ok: false as const, error: { message: 'unreachable' } }
     const [freshProducts, voucher] = await Promise.all([
-      lookupProducts(merchant.id).catch(() => null),
-      code ? lookupMerchantVoucher(merchant.id, code).catch(() => ({ ok: false as const, error: { message: 'unreachable' } })) : null,
+      lookupProducts(merchant.id).catch(() => failed),
+      code ? lookupMerchantVoucher(merchant.id, code).catch(() => failed) : null,
       serverNow ? Promise.resolve(adoptClock(serverNow)) : resyncClock(),
       // Tax/shipping/config all live on this row. Self-contained: unlike the other two fetches,
       // it applies its own result (or nothing, on failure) rather than returning data for us to
       // adopt below — see MerchantContext.refresh for why a dropped packet here changes nothing.
       refreshMerchant().catch(() => null),
     ])
-    // `[]` is an ANSWER — the shop really sells nothing, and pruning the whole cart is right.
-    // `null` is the absence of one, and prunes nothing.
+    // `{ ok:true, data:[] }` is an ANSWER — the shop really sells nothing, and pruning the whole
+    // cart is right. `{ ok:false }` is the absence of one, and prunes nothing.
     // adoptProducts, not setProducts: a refusal that refreshed the menu but left the dead id in
     // the cart would be refused again on the very next tap.
-    if (freshProducts) adoptProducts(freshProducts)
+    if (freshProducts.ok) adoptProducts(freshProducts.data)
     if (voucher?.ok) {
       setAppliedVoucher(voucher.data)
       if (!voucher.data) {

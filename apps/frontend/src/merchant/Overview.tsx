@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ReceiptText, Wallet, Users, TrendingUp } from 'lucide-react'
 import { useSession } from '../SessionContext'
-import { fetchMerchantOrders, fetchProducts, fetchMerchantCustomers, fetchMerchantVouchers } from '../store'
+import { fetchMerchantOrders, lookupProducts, fetchMerchantCustomers, fetchMerchantVouchers } from '../store'
 import { SkeletonText } from '../components/Loaders'
 import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from '../components/charts/DashCharts'
 import { computeMerchantStats, type MerchantStats } from './overviewStats'
@@ -23,10 +23,10 @@ export default function Overview() {
     let active = true
     Promise.all([
       fetchMerchantOrders(id),
-      fetchProducts(id),
+      // products + vouchers are on the Result convention (#122); collapse could-not-ask to `[]`
+      // here — this stats panel only displays, and the other two fetchers are not migrated yet.
+      lookupProducts(id).then(r => (r.ok ? r.data : [])),
       fetchMerchantCustomers(id),
-      // vouchers is on the Result convention (#122); the other three are not yet, so collapse
-      // could-not-ask to `[]` here for parity until their slices land.
       fetchMerchantVouchers(id).then(r => (r.ok ? r.data : [])),
     ]).then(([orders, products, customers, vouchers]) => {
       if (active) setStats(computeMerchantStats(orders, products, customers, vouchers))

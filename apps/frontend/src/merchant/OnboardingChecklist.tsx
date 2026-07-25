@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Circle, CheckCircle2, ChevronRight, Copy, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { fetchProducts, updateMerchantConfig } from '../store'
+import { lookupProducts, updateMerchantConfig } from '../store'
 import { storefrontUrl } from '../storefrontUrl'
 import { onboardingSteps } from './onboardingSteps'
 import SpotlightTour from './SpotlightTour'
@@ -43,8 +43,9 @@ export default function OnboardingChecklist({ section, onNavigate }: { section: 
     const id = merchant?.id
     if (!id || !merchant) return
     let active = true
-    fetchProducts(id).then(ps => {
+    lookupProducts(id).then(r => {
       if (!active) return
+      const ps = r.ok ? r.data : []
       setProductCount(ps.length)
       // Auto-open the tour once, on the first visit of a shop that hasn't seen it and
       // still has work to do. Decided here in the async callback (not a synchronous
@@ -56,7 +57,7 @@ export default function OnboardingChecklist({ section, onNavigate }: { section: 
       if (onboardingSteps(merchant, ps.length).allDone) return
       tourOpenedRef.current = true
       goToStep(0)
-      updateMerchantConfig(id, { onboarding_tour_seen: true }).then(r => { if (r.ok) return refreshMerchant() }).catch(() => {})
+      updateMerchantConfig(id, { onboarding_tour_seen: true }).then(cfg => { if (cfg.ok) return refreshMerchant() }).catch(() => {})
     })
     return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps

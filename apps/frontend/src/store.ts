@@ -796,47 +796,31 @@ export async function fetchMerchantCustomers(merchantId: string): Promise<Mercha
 // ── Products ──────────────────────────────────────────────────────────────────
 
 /**
- * The shop's menu — or `null`, meaning WE COULD NOT ASK.
- *
- * That distinction is the whole point of this function existing next to `fetchProducts`.
- * supabase-js does not reject on a network or PostgREST failure: it RESOLVES with
- * `{ data: null, error }`. So a fetcher that returns `[]` on error is telling its caller "this
- * shop sells nothing" — and a caller that PRUNES the cart against the menu (Storefront's
- * `adoptProducts` does, and must) would answer a flaky connection by deleting every line the
- * customer chose, blanking the menu behind it, and blaming the shop. That is a destroyed order,
- * not a retry.
- *
- * `[]` from here is the real answer to a real question: the shop genuinely sells nothing, and
- * pruning everything is CORRECT. `null` is not an answer at all. Do not collapse them.
+ * The shop's menu, on the one Result convention: `{ ok:true, data:[] }` is a real answer (the
+ * shop genuinely sells nothing, so pruning the cart against it is CORRECT), while `{ ok:false }`
+ * means WE COULD NOT ASK and a caller that PRUNES the cart against the menu (Storefront's
+ * `adoptProducts`) must change nothing — answering a flaky connection by deleting every line the
+ * customer chose is a destroyed order, not a retry. That is the whole reason this stays a Result
+ * and there is no `[]`-on-failure twin: a display-only caller collapses `r.ok ? r.data : []`
+ * itself, so the choice to treat a could-not-ask as "empty menu" is visible where it is made.
  */
-export async function lookupProducts(merchantId: string) {
-  if (!merchantId) return []
-  const r = await legacyTry<any[]>(`/api/merchants/${merchantId}/products`)
-  // r.ok === false is the "could not ask" case → null, exactly as the comment above demands.
-  // A 200 with [] is the real answer (the shop sells nothing) and must NOT become null.
-  return r.ok ? r.data : null
-}
-
-// The menu, with a failure reported as an empty shop. Kept for the callers that only DISPLAY
-// the rows (the merchant's product manager, the order-history name lookup): an empty list
-// there costs a render, and they were all written against it. A caller that deletes anything
-// on the strength of this list must use `lookupProducts` and do nothing on `null`.
-export async function fetchProducts(merchantId: string) {
-  return (await lookupProducts(merchantId)) ?? []
+export async function lookupProducts(merchantId: string): Promise<Result<any[]>> {
+  if (!merchantId) return { ok: true, data: [] }
+  return apiGet<any[]>(`/api/merchants/${merchantId}/products`)
 }
 
 // merchant_id and id are both threaded from `product` — ProductsManager's callers always set
 // both (merchant_id from `merchant!.id`, id from the row or a client-generated draftId) — so
 // the URL carries the same tenant/row identity the backend then forces server-side anyway.
-export async function upsertProduct(product: any) {
-  return legacySend<any>(`/api/merchants/${product.merchant_id}/products/${product.id}`, 'PUT', product, { auth: true })
+export async function upsertProduct(product: any): Promise<Result<any>> {
+  return apiSend<any>(`/api/merchants/${product.merchant_id}/products/${product.id}`, 'PUT', product, { auth: true })
 }
 
 // Signature change: `merchantId` now threads the URL's tenant segment — the backend nests
 // product deletes under /api/merchants/:id/products/:productId (see writes.ts /
 // requireMerchantOwns) so it can verify tenancy before deleting. Callers must pass it.
-export async function deleteProduct(id: string, merchantId: string) {
-  await legacySend(`/api/merchants/${merchantId}/products/${id}`, 'DELETE', undefined, { auth: true })
+export async function deleteProduct(id: string, merchantId: string): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/merchants/${merchantId}/products/${id}`, 'DELETE', undefined, { auth: true }))
 }
 
 // ── Product images (Supabase Storage: public `product-images` bucket) ──────────
