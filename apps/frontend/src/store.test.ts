@@ -137,13 +137,13 @@ describe('fetchProfileByUserId', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/me\/profile$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toMatchObject({ id: 'p1', name: 'Fai' })
+    expect(result).toMatchObject({ ok: true, data: { id: 'p1', name: 'Fai' } })
   })
 
-  it('returns null when the request fails', async () => {
+  it('returns { ok:false } when the request fails', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await fetchProfileByUserId('u1')).toBeNull()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
+    expect((await fetchProfileByUserId('u1')).ok).toBe(false)
   })
 })
 
@@ -882,12 +882,20 @@ describe('saveCustomerDetails', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('swallows a rejected fetch — best-effort, never throws', async () => {
+  it('never throws on a rejected fetch — returns { ok:false } for the caller to ignore', async () => {
     __mocks.getUser.mockResolvedValueOnce({ data: { user } })
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('network down')))
 
-    await expect(saveCustomerDetails({ whatsapp: '60123456789' })).resolves.toBeUndefined()
+    const r = await saveCustomerDetails({ whatsapp: '60123456789' })
+    expect(r.ok).toBe(false)
+  })
+
+  it('resolves { ok:true } for a guest and an empty patch without reaching the network', async () => {
+    __mocks.getUser.mockResolvedValueOnce({ data: { user: null } })
+    vi.stubGlobal('fetch', vi.fn())
+    expect(await saveCustomerDetails({ whatsapp: '6012' })).toEqual({ ok: true, data: undefined })
+    expect(await saveCustomerDetails({})).toEqual({ ok: true, data: undefined })
   })
 })
 

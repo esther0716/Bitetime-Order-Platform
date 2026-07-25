@@ -29,8 +29,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const loadProfile = useCallback(async (user: User | null) => {
     if (!user) { setProfile(null); return }
-    try { setProfile(await fetchProfileByUserId(user.id)) }
-    catch { setProfile(null) }
+    const r = await fetchProfileByUserId(user.id)
+    setProfile(r.ok ? r.data : null)
   }, [])
 
   // The one seam that reads the signed-in user's own shop. A lookup that never landed leaves

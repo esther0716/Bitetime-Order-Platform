@@ -98,32 +98,25 @@ export async function signUpCustomer(email: string, password: string) {
 
 // Upserts the caller's GLOBAL profile (merchant_id null) via the backend, which forces
 // user_id/merchant_id server-side and allowlists the rest (pickProfileFields in
-// apps/backend/src/writes.ts) — see Global Constraint 1. Best-effort: returns any error
-// instead of throwing (never null on failure, never throws), because both callers below treat
-// a failure as "try again later", not as a hard stop. In particular, during merchant signup
-// there is no session yet (email confirmation is on project-wide) — the fetch 401s exactly as
-// RLS used to block the equivalent browser write, and it's retried from onAuthChange once a
-// session exists.
+// apps/backend/src/writes.ts) — see Global Constraint 1. Best-effort: returns the failure as a
+// Result rather than throwing, because both callers below treat a failure as "try again later",
+// not as a hard stop. In particular, during merchant signup there is no session yet (email
+// confirmation is on project-wide) — the fetch 401s exactly as RLS used to block the equivalent
+// browser write, and it's retried from onAuthChange once a session exists.
 async function ensureGlobalProfile(fields: {
   user_id: string
   name: string
   email?: string | null
   email_confirmed: boolean
   referral_code?: string
-}): Promise<Error | null> {
-  try {
-    // user_id is forced to the caller server-side; send everything else.
-    const { user_id: _user_id, ...rest } = fields
-    await legacySend('/api/me/profile', 'PUT', rest, { auth: true })
-    return null
-  } catch (e) {
-    return e as Error
-  }
+}): Promise<Result<void>> {
+  // user_id is forced to the caller server-side; send everything else.
+  const { user_id: _user_id, ...rest } = fields
+  return toVoid(await apiSend('/api/me/profile', 'PUT', rest, { auth: true }))
 }
 
-export async function fetchProfileByUserId(_userId: string) {
-  const r = await legacyTry<any>('/api/me/profile', { auth: true })
-  return r.ok ? r.data : null
+export async function fetchProfileByUserId(_userId: string): Promise<Result<any | null>> {
+  return apiGet<any | null>('/api/me/profile', { auth: true })
 }
 
 /**
@@ -131,20 +124,19 @@ export async function fetchProfileByUserId(_userId: string) {
  * shop or any other. Silent: the customer asked for none of this and is shown no checkbox.
  *
  * Best-effort by design. It runs after an order is already placed, so a failure here must cost
- * the customer nothing but a retype next time; it must never surface as a failed order.
+ * the customer nothing but a retype next time; it must never surface as a failed order — which
+ * is now the CALLER's choice: it returns a Result<void> and the storefront simply does not act
+ * on `{ ok:false }` (the swallow is at the call site, not baked in here).
  *
  * Writes the GLOBAL profile (merchant_id null) — the same row `ensureGlobalProfile` maintains,
  * via the same `PUT /api/me/profile` upsert. An address belongs to the customer, not to a shop.
  */
-export async function saveCustomerDetails(fields: SavedDetails): Promise<void> {
-  if (Object.keys(fields).length === 0) return
+export async function saveCustomerDetails(fields: SavedDetails): Promise<Result<void>> {
+  if (Object.keys(fields).length === 0) return { ok: true, data: undefined }
   const user = await getCurrentUser()
-  if (!user) return // a guest saves nothing, ever — that is what makes the gate's warning true
-  try {
-    await legacySend('/api/me/profile', 'PUT', fields, { auth: true })
-  } catch {
-    // best-effort: a failure here must never surface as a failed order
-  }
+  // a guest saves nothing, ever — that is what makes the gate's warning true
+  if (!user) return { ok: true, data: undefined }
+  return toVoid(await apiSend('/api/me/profile', 'PUT', fields, { auth: true }))
 }
 
 const MERCHANT_STATUSES = ['pending', 'active', 'suspended']
@@ -439,8 +431,8 @@ export function onAuthChange(callback: (user: User | null, event?: string) => vo
           email: user.email,
           email_confirmed: !!user.email_confirmed_at,
           referral_code: referralCodeOf(user.id),
-        }).then((error) => {
-          if (error) console.error('Profile upsert failed:', error.message);
+        }).then((r) => {
+          if (!r.ok) console.error('Profile upsert failed:', r.error.message);
         });
       }, 0);
     }

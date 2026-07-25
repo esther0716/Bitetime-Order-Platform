@@ -761,7 +761,7 @@ export default function Storefront() {
       // (`saveCustomerDetails` checks the session itself), which is what keeps the gate honest.
       if (account) {
         saveCustomerDetails(savedDetailsFromOrder({ mode, wa, address }))
-          .then(refreshProfile) // so a second order in this same session prefills too
+          .then(r => { if (r.ok) return refreshProfile() }) // so a second order this session prefills too
           .catch(() => {})
       }
       // Best-effort server-side Telegram notify; never blocks a placed order.
