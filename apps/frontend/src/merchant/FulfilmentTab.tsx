@@ -87,10 +87,11 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
           closed_weekdays: fields.closed,
         },
       })
-      await updateMerchantConfig(merchant!.id, {
+      const saved = await updateMerchantConfig(merchant!.id, {
         config: { ...(merchant!.config ?? {}), fulfilment },
         timezone: fields.timezone,
       })
+      if (!saved.ok) { toast.error(saved.error.message || t('Save failed', '保存失败')); return }
       await refreshMerchant()
       // Show back what was SAVED, not what was typed: `fulfilmentConfig` clamps, and a merchant
       // who typed 999 must not be left reading 999 while their shop offers 90.

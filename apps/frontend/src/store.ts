@@ -537,35 +537,15 @@ export function referralCodeOf(userId: string) {
 // The code is never sent — the backend derives it from the bearer token, exactly as the
 // my_referred_shops RPC this replaces derived it from auth.uid(). Sending it would turn the
 // endpoint into a cross-tenant read of any referrer's shops.
-export async function fetchReferredShops(): Promise<ReferredShop[]> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/referrals/shops`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Could not load referred shops')
-  }
-  return (await res.json()) as ReferredShop[]
+export async function fetchReferredShops(): Promise<Result<ReferredShop[]>> {
+  return apiGet<ReferredShop[]>('/api/referrals/shops', { auth: 'required' })
 }
 
 // The referral rewards the current user has earned — free months for shops they brought in
 // that started paying. Like fetchReferredShops, the code is never sent: the backend scopes
 // to the caller's own merchant from the bearer token.
-export async function fetchEarnedRewards(): Promise<EarnedReward[]> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/referrals/rewards`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Could not load referral rewards')
-  }
-  return (await res.json()) as EarnedReward[]
+export async function fetchEarnedRewards(): Promise<Result<EarnedReward[]>> {
+  return apiGet<EarnedReward[]>('/api/referrals/rewards', { auth: 'required' })
 }
 
 // ── Multi-tenant order placement ─────────────────────────────────────────────
@@ -904,41 +884,39 @@ export async function deleteProductImages(paths: string[]): Promise<void> {
 
 // ── Merchant config & secrets ─────────────────────────────────────────────────
 
-export async function updateMerchantConfig(id: string, patch: any) {
-  return legacySend<any>(`/api/merchants/${id}`, 'PATCH', patch, { auth: true })
+export async function updateMerchantConfig(id: string, patch: any): Promise<Result<any>> {
+  return apiSend<any>(`/api/merchants/${id}`, 'PATCH', patch, { auth: true })
 }
 
-export async function fetchMerchantSecret(merchantId: string) {
-  if (!merchantId) return null
-  const r = await legacyTry<{ tg_token: string | null; tg_chat_id: string | null }>(
-    `/api/merchants/${merchantId}/secret`, { auth: true })
-  return r.ok ? r.data : null
+export async function fetchMerchantSecret(merchantId: string): Promise<Result<{ tg_token: string | null; tg_chat_id: string | null } | null>> {
+  if (!merchantId) return { ok: true, data: null }
+  return apiGet<{ tg_token: string | null; tg_chat_id: string | null } | null>(`/api/merchants/${merchantId}/secret`, { auth: true })
 }
 
-export async function upsertMerchantSecret(merchantId: string, secret: any) {
-  await legacySend(`/api/merchants/${merchantId}/secret`, 'PUT', secret, { auth: true })
+export async function upsertMerchantSecret(merchantId: string, secret: any): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/merchants/${merchantId}/secret`, 'PUT', secret, { auth: true }))
 }
 
 // ── Merchant platform feedback (#89) ────────────────────────────────────────────
 // merchantId scopes the route; the backend re-derives ownership from the bearer token
 // and ignores anything else in the body, so there is nothing else to send.
 //
-// Returns nothing: the POST responds with a bare merchant_feedback row, which is NOT a
+// Returns no data: the POST responds with a bare merchant_feedback row, which is NOT a
 // FeedbackItem — it carries no shop_name / shop_slug, and only the admin list joins those
-// in. Claiming the richer type here would be a cast the compiler cannot check. Throws on
-// failure (apiSend's contract), which is what the form renders.
-export async function submitFeedback(merchantId: string, draft: FeedbackDraft): Promise<void> {
-  await legacySend<unknown>(`/api/merchants/${merchantId}/feedback`, 'POST', draft, { auth: true })
+// in. Claiming the richer type here would be a cast the compiler cannot check, so the success
+// carries `void`; the form renders `error` on failure.
+export async function submitFeedback(merchantId: string, draft: FeedbackDraft): Promise<Result<void>> {
+  return toVoid(await apiSend<unknown>(`/api/merchants/${merchantId}/feedback`, 'POST', draft, { auth: true }))
 }
 
-export async function fetchAdminFeedback(status?: FeedbackStatus): Promise<FeedbackItem[]> {
+export async function fetchAdminFeedback(status?: FeedbackStatus): Promise<Result<FeedbackItem[]>> {
   const qs = status ? `?status=${status}` : ''
-  return legacyGet<FeedbackItem[]>(`/api/admin/feedback${qs}`, { auth: true })
+  return apiGet<FeedbackItem[]>(`/api/admin/feedback${qs}`, { auth: true })
 }
 
 // The PATCH route now joins the shop the same way the admin list does (see
 // updateFeedbackStatus in apps/backend/src/feedback.ts), so this genuinely returns a full
 // FeedbackItem — the spread in AdminFeedback is correct, not merely harmless.
-export async function setFeedbackStatus(id: string, status: FeedbackStatus): Promise<FeedbackItem> {
-  return legacySend<FeedbackItem>(`/api/admin/feedback/${id}`, 'PATCH', { status }, { auth: true })
+export async function setFeedbackStatus(id: string, status: FeedbackStatus): Promise<Result<FeedbackItem>> {
+  return apiSend<FeedbackItem>(`/api/admin/feedback/${id}`, 'PATCH', { status }, { auth: true })
 }

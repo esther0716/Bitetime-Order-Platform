@@ -38,9 +38,10 @@ export default function AdminFeedback() {
   useEffect(() => {
     let cancelled = false
     fetchAdminFeedback(openOnly ? 'open' : undefined)
-      .then(rows => { if (!cancelled) { setItems(rows); setError('') } })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : t('Could not load feedback', '无法加载反馈'))
+      .then(r => {
+        if (cancelled) return
+        if (r.ok) { setItems(r.data); setError('') }
+        else setError(r.error.message || t('Could not load feedback', '无法加载反馈'))
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -48,15 +49,16 @@ export default function AdminFeedback() {
 
   const toggle = async (item: FeedbackItem) => {
     const next: FeedbackStatus = item.status === 'open' ? 'resolved' : 'open'
-    try {
-      const updated = await setFeedbackStatus(item.id, next)
-      // Filtering to open means a resolved row no longer belongs in the list.
-      setItems(prev => openOnly && next === 'resolved'
-        ? prev.filter(row => row.id !== item.id)
-        : prev.map(row => (row.id === item.id ? { ...row, ...updated } : row)))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t('Could not update feedback', '无法更新反馈'))
+    const r = await setFeedbackStatus(item.id, next)
+    if (!r.ok) {
+      setError(r.error.message || t('Could not update feedback', '无法更新反馈'))
+      return
     }
+    const updated = r.data
+    // Filtering to open means a resolved row no longer belongs in the list.
+    setItems(prev => openOnly && next === 'resolved'
+      ? prev.filter(row => row.id !== item.id)
+      : prev.map(row => (row.id === item.id ? { ...row, ...updated } : row)))
   }
 
   const formatDate = (iso: string) =>

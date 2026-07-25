@@ -56,7 +56,7 @@ export default function OnboardingChecklist({ section, onNavigate }: { section: 
       if (onboardingSteps(merchant, ps.length).allDone) return
       tourOpenedRef.current = true
       goToStep(0)
-      updateMerchantConfig(id, { onboarding_tour_seen: true }).then(refreshMerchant).catch(() => {})
+      updateMerchantConfig(id, { onboarding_tour_seen: true }).then(r => { if (r.ok) return refreshMerchant() }).catch(() => {})
     })
     return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -77,7 +77,8 @@ export default function OnboardingChecklist({ section, onNavigate }: { section: 
     if (!merchant) return
     setDismissing(true)
     try {
-      await updateMerchantConfig(merchant.id, { onboarding_dismissed: true })
+      const r = await updateMerchantConfig(merchant.id, { onboarding_dismissed: true })
+      if (!r.ok) { toast.error(r.error.message || t('Could not dismiss — try again', '无法关闭 — 请重试')); setDismissing(false); return }
       await refreshMerchant()
     } catch (e: any) {
       toast.error(e.message || t('Could not dismiss — try again', '无法关闭 — 请重试'))

@@ -23,7 +23,7 @@ export default function ShareStorefront() {
   const markShared = () => {
     if (!merchant.onboarding_link_shared) {
       updateMerchantConfig(merchant.id, { onboarding_link_shared: true })
-        .then(refreshMerchant)
+        .then(r => { if (r.ok) return refreshMerchant() })
         .catch(() => {})
     }
   }
