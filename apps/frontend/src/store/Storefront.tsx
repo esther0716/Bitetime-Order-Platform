@@ -9,7 +9,7 @@ import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, no
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, promoState, MAX_CART_QTY, MAX_CART_LINES, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { FulfilmentMethod } from '@bitetime/shared'
-import { prefillFromProfile, savedDetailsFromOrder } from '../savedDetails'
+import { prefillFromProfile, savedDetailsFromOrder, carriesAddress } from '../savedDetails'
 import { fulfilmentLabel, feeLineLabel } from '../fulfilmentLabel'
 import { formatMoney } from '../currency'
 import { formatTaxRate } from '../receipt'
@@ -736,7 +736,12 @@ export default function Storefront() {
         customerName: name.trim(),
         customerWa: wa.trim(),
         mode,
-        address: mode === 'delivery' ? address : '',
+        // The SAME rule the profile save reads, not a second reading of it. Asking
+        // `mode === 'delivery'` here while `savedDetailsFromOrder` asked `mode !== 'pickup'` is
+        // what made every express order unplaceable: intake lifts `place_id` off this very object
+        // and refuses an order without one (`delivery_place_required`), so the customer was told
+        // to pick the address they had just picked, with no action left to take (#127).
+        address: carriesAddress(mode) ? address : '',
         // What they want, and what they saw. Never what it costs: the shop's own rows are the
         // only thing that may say that, and `bd` is only ever a quote.
         cart: Object.fromEntries(Object.entries(cart).filter(([, qty]) => qty > 0)),
