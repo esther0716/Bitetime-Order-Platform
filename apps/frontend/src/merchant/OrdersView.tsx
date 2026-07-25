@@ -107,7 +107,7 @@ export default function OrdersView(
   const [selected, setSelected] = useState<any | null>(null)
 
   useEffect(() => {
-    fetchMerchantOrders(merchant!.id).then(setOrders)
+    fetchMerchantOrders(merchant!.id).then(r => { if (r.ok) setOrders(r.data) })
   }, [merchant!.id])
 
   function patchOrder(updated: any) {

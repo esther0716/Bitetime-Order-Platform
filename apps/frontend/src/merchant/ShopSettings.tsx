@@ -453,7 +453,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
 
   useEffect(() => {
     let active = true
-    merchantHasOrders(merchant!.id).then(has => { if (active) setCurrencyLocked(has) })
+    merchantHasOrders(merchant!.id).then(r => { if (active && r.ok) setCurrencyLocked(r.data) })
     return () => { active = false }
   }, [merchant!.id])
 

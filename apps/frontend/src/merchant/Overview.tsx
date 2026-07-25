@@ -22,11 +22,11 @@ export default function Overview() {
     if (!id) return
     let active = true
     Promise.all([
-      fetchMerchantOrders(id),
-      // products + vouchers are on the Result convention (#122); collapse could-not-ask to `[]`
-      // here — this stats panel only displays, and the other two fetchers are not migrated yet.
+      // All four are on the Result convention (#122); this stats panel only displays, so it
+      // collapses could-not-ask to `[]` at the call site.
+      fetchMerchantOrders(id).then(r => (r.ok ? r.data : [])),
       lookupProducts(id).then(r => (r.ok ? r.data : [])),
-      fetchMerchantCustomers(id),
+      fetchMerchantCustomers(id).then(r => (r.ok ? r.data : [])),
       fetchMerchantVouchers(id).then(r => (r.ok ? r.data : [])),
     ]).then(([orders, products, customers, vouchers]) => {
       if (active) setStats(computeMerchantStats(orders, products, customers, vouchers))

@@ -709,38 +709,37 @@ export const ORDER_HISTORY_LIMIT = 20
  * own storefront's history would be handed every customer's order at that shop. Filtering by the
  * signed-in uid is what makes "your orders" mean yours.
  */
-export async function fetchMyOrdersAtShop(merchantId: string): Promise<Order[]> {
-  if (!merchantId) return []
+export async function fetchMyOrdersAtShop(merchantId: string): Promise<Result<Order[]>> {
+  if (!merchantId) return { ok: true, data: [] }
   const user = await getCurrentUser()
-  if (!user) return [] // a guest has no history — by design, and permanently
-  return legacyGet<Order[]>(`/api/merchants/${merchantId}/my-orders`, { auth: true })
+  if (!user) return { ok: true, data: [] } // a guest has no history — by design, and permanently
+  return apiGet<Order[]>(`/api/merchants/${merchantId}/my-orders`, { auth: true })
 }
 
-export async function fetchMerchantOrders(merchantId: string) {
-  if (!merchantId) return []
-  const r = await legacyTry<any[]>(`/api/merchants/${merchantId}/orders`, { auth: true })
-  return r.ok ? r.data : []
+export async function fetchMerchantOrders(merchantId: string): Promise<Result<any[]>> {
+  if (!merchantId) return { ok: true, data: [] }
+  return apiGet<any[]>(`/api/merchants/${merchantId}/orders`, { auth: true })
 }
 
 // True once the merchant has ≥1 order — used to lock the currency selector so
 // past orders and dashboard aggregates never silently re-denominate.
-export async function merchantHasOrders(merchantId: string) {
-  if (!merchantId) return false
-  const r = await legacyTry<{ count: number }>(`/api/merchants/${merchantId}/orders/count`, { auth: true })
-  return r.ok ? r.data.count > 0 : false
+export async function merchantHasOrders(merchantId: string): Promise<Result<boolean>> {
+  if (!merchantId) return { ok: true, data: false }
+  const r = await apiGet<{ count: number }>(`/api/merchants/${merchantId}/orders/count`, { auth: true })
+  return mapOk(r, (d) => d.count > 0)
 }
 
-export async function setOrderStatus(orderId: string, status: string, merchantId: string) {
-  if (!ORDER_STATUSES.includes(status)) throw new Error('Invalid status')
-  return legacySend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { status }, { auth: true })
+export async function setOrderStatus(orderId: string, status: string, merchantId: string): Promise<Result<any>> {
+  if (!ORDER_STATUSES.includes(status)) return { ok: false, error: { code: 'invalid_status', message: 'Invalid status' } }
+  return apiSend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { status }, { auth: true })
 }
 
-export async function setOrderNote(orderId: string, note: string, merchantId: string) {
-  return legacySend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { note }, { auth: true })
+export async function setOrderNote(orderId: string, note: string, merchantId: string): Promise<Result<any>> {
+  return apiSend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { note }, { auth: true })
 }
 
-export async function setOrderTracking(orderId: string, courier: string | null, awb: string, merchantId: string) {
-  return legacySend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { courier, awb }, { auth: true })
+export async function setOrderTracking(orderId: string, courier: string | null, awb: string, merchantId: string): Promise<Result<any>> {
+  return apiSend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { courier, awb }, { auth: true })
 }
 
 /**
@@ -775,8 +774,10 @@ export async function fetchOrderTracking(merchantId: string, orderNumber: string
   } | null
 }
 
-export async function fetchMerchantCustomers(merchantId: string): Promise<MerchantCustomer[]> {
-  const orders = await fetchMerchantOrders(merchantId)
+export async function fetchMerchantCustomers(merchantId: string): Promise<Result<MerchantCustomer[]>> {
+  const r = await fetchMerchantOrders(merchantId)
+  if (!r.ok) return r // could not read the orders → could not aggregate the customers
+  const orders = r.data
   const byWa = new Map<string, MerchantCustomer>()
   for (const o of orders) {
     const key = o.customer_wa || o.customer_name || '—'
@@ -790,7 +791,7 @@ export async function fetchMerchantCustomers(merchantId: string): Promise<Mercha
   for (const c of byWa.values()) {
     c.orders.sort((a, b) => ((a.created_at ?? '') < (b.created_at ?? '') ? 1 : (a.created_at ?? '') > (b.created_at ?? '') ? -1 : 0))
   }
-  return [...byWa.values()]
+  return { ok: true, data: [...byWa.values()] }
 }
 
 // ── Products ──────────────────────────────────────────────────────────────────

@@ -50,8 +50,11 @@ export default function OrderHistory() {
     if (!merchantId || !userId) return
     let live = true
     fetchMyOrdersAtShop(merchantId)
-      .then(rows => { if (live) setLoaded({ state: 'orders', userId, merchantId, rows }) })
-      .catch(() => { if (live) setLoaded({ state: 'failed', userId, merchantId }) })
+      .then(r => {
+        if (!live) return
+        if (r.ok) setLoaded({ state: 'orders', userId, merchantId, rows: r.data })
+        else setLoaded({ state: 'failed', userId, merchantId })
+      })
     // The menu, only to read item names back in the customer's language: an order stores the name
     // as it was at checkout, in whichever language was on screen then.
     lookupProducts(merchantId).then(r => { if (live && r.ok) setProducts(r.data) })
