@@ -25,7 +25,9 @@ export default function Overview() {
       fetchMerchantOrders(id),
       fetchProducts(id),
       fetchMerchantCustomers(id),
-      fetchMerchantVouchers(id),
+      // vouchers is on the Result convention (#122); the other three are not yet, so collapse
+      // could-not-ask to `[]` here for parity until their slices land.
+      fetchMerchantVouchers(id).then(r => (r.ok ? r.data : [])),
     ]).then(([orders, products, customers, vouchers]) => {
       if (active) setStats(computeMerchantStats(orders, products, customers, vouchers))
     })

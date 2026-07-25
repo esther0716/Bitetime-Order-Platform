@@ -29,5 +29,8 @@ export function useProAccess(): boolean {
  * answer is an upgrade prompt instead of a bare error string.
  */
 export function isRequiresPro(err: unknown): boolean {
-  return err instanceof Error && err.message === REQUIRES_PRO
+  // A thrown Error (callers not yet on the Result convention) OR an ApiError `{ code }` from a
+  // Result's `error` branch (#122) — the backend answers `403 requires_pro` either way.
+  if (err instanceof Error) return err.message === REQUIRES_PRO
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === REQUIRES_PRO
 }

@@ -5,7 +5,7 @@ import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
 import { Images, Expand } from 'lucide-react'
-import { fetchProducts, lookupProducts, placeOrder, fetchMerchantVoucher, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails, quoteDelivery, DeliveryQuoteError } from '../store'
+import { fetchProducts, lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails, quoteDelivery, DeliveryQuoteError } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, promoState, MAX_CART_QTY, MAX_CART_LINES, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { FulfilmentMethod } from '@bitetime/shared'
@@ -534,7 +534,10 @@ export default function Storefront() {
     // sees a false "applied" that only fails at Place Order. Catch reuse here.
     setVoucherBusy(true)
     setVoucherMsg(t('Checking voucher…', '验证优惠券…'))
-    const v = await fetchMerchantVoucher(merchant.id, code)
+    // A could-not-ask reads as "no voucher" here — applyVoucher was never going to apply a
+    // voucher it could not read, so the customer sees the invalid message and can retry.
+    const lookup = await lookupMerchantVoucher(merchant.id, code)
+    const v = lookup.ok ? lookup.data : null
     setVoucherBusy(false)
     const err = voucherError(v, {
       userEmail: voucherEntry,
@@ -646,7 +649,7 @@ export default function Storefront() {
     // tap could eat a second `price_changed` refusal before the clock was actually fixed.
     const [freshProducts, voucher] = await Promise.all([
       lookupProducts(merchant.id).catch(() => null),
-      code ? lookupMerchantVoucher(merchant.id, code).catch(() => ({ ok: false as const })) : null,
+      code ? lookupMerchantVoucher(merchant.id, code).catch(() => ({ ok: false as const, error: { message: 'unreachable' } })) : null,
       serverNow ? Promise.resolve(adoptClock(serverNow)) : resyncClock(),
       // Tax/shipping/config all live on this row. Self-contained: unlike the other two fetches,
       // it applies its own result (or nothing, on failure) rather than returning data for us to
@@ -659,8 +662,8 @@ export default function Storefront() {
     // the cart would be refused again on the very next tap.
     if (freshProducts) adoptProducts(freshProducts)
     if (voucher?.ok) {
-      setAppliedVoucher(voucher.voucher)
-      if (!voucher.voucher) {
+      setAppliedVoucher(voucher.data)
+      if (!voucher.data) {
         setVoucherMsg(t('❌ That voucher is no longer available.', '❌ 此优惠券已失效。'))
       }
     }
@@ -701,7 +704,9 @@ export default function Storefront() {
       // so a customer could otherwise re-apply and be granted the discount again
       // while used_by stayed at 1. On a fetch miss, fall through to the RPC guard.
       if (appliedVoucher) {
-        const fresh = await fetchMerchantVoucher(merchant.id, appliedVoucher.code)
+        // On a fetch miss, fall through to the server's own guard (fresh = null).
+        const reread = await lookupMerchantVoucher(merchant.id, appliedVoucher.code)
+        const fresh = reread.ok ? reread.data : null
         if (fresh) {
           const verr = voucherError(fresh, {
             userEmail: voucherEntry,
