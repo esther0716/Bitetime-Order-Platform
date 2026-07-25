@@ -1,5 +1,5 @@
 import type postgres from 'postgres'
-import { priceOrder, voucherFromRow, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import { priceOrder, voucherFromRow, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
 import { COUNTER_START, formatOrderNumber, orderDay } from './orderNumber.js'
@@ -142,9 +142,10 @@ export async function placeOrder(
       throw new OrderError('method_not_offered')
     }
 
-    // The fee rule follows the METHOD, not the shop: `delivery` is the flat region rate and
-    // `express` is priced by the routed distance, and one shop may offer both.
-    const distancePriced = input.mode === 'express'
+    // The SAME rule `priceOrder` branches on, not a second reading of it: this decides whether a
+    // distance is charged, and disagreeing with the module that computes the fee is a refused
+    // checkout at best and a wrong charge at worst.
+    const distancePriced = isDistancePriced(input.mode)
 
     // A REGION-priced delivery with no state prices at ZERO — `shippingFee` reads the region off
     // the state, and with none it falls through to `return 0`. That is the same species of hole

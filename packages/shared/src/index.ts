@@ -14,7 +14,7 @@ export {
   priceOrder, voucherError, shippingFee, voucherFromRow, shopRates, shopTax,
   promoState, promoClaims, productFromRow,
   shopDistance, routedKm, distanceFee, exceedsMaxKm,
-  shopMethods, offersMethod, firstOfferedMethod, FULFILMENT_METHODS,
+  shopMethods, offersMethod, firstOfferedMethod, FULFILMENT_METHODS, isDistancePriced,
   EM_STATES, DEFAULT_WM_RATE,
 } from './pricing.js'
 export type {
