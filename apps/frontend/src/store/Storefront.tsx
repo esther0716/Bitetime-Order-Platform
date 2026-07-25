@@ -7,7 +7,8 @@ import { toast } from 'sonner'
 import { Images, Expand } from 'lucide-react'
 import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails, quoteDelivery } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
-import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, promoState, MAX_CART_QTY, MAX_CART_LINES, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import { pruneCart, pruneMessage, nextCart, cartRefusalMessage } from './cartRules'
+import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { FulfilmentMethod } from '@bitetime/shared'
 import { prefillFromProfile, savedDetailsFromOrder } from '../savedDetails'
 import { fulfilmentLabel, feeLineLabel } from '../fulfilmentLabel'
@@ -383,39 +384,22 @@ export default function Storefront() {
   const adoptProducts = (fresh: Product[]) => {
     setProducts(fresh)
 
-    const gone = Object.keys(cart).filter(id => !fresh.some(p => p.id === id && p.active))
-    if (gone.length === 0) return
-    setCart(prev => {
-      const next = { ...prev }
-      for (const id of gone) delete next[id]
-      return next
-    })
+    // What goes, and what can be said about it, is `cartRules.ts`'s decision. This performs it.
+    const pruned = pruneCart(cart, fresh)
+    if (pruned.removed === 0) return
+    // Re-run against `prev` rather than writing `pruned.cart` wholesale: a tap on + between this
+    // render and this write would otherwise be thrown away with it. `pruneCart` is pure, so an
+    // updater React chooses to run twice still lands the same cart.
+    setCart(prev => pruneCart(prev, fresh).cart)
 
-    // A vanishing line is told, never silent — that would be the same bug wearing a nicer face.
-    // A DEACTIVATED product is still in the rows (only `active` flipped), so it can be named; a
-    // DELETED one is not, which is why the anonymous half of the message exists rather than a
-    // name we would invent.
-    //
-    // A MIXED prune says both halves. Naming what we can and then throwing those names away
-    // because one line came back unnameable would tell a customer who lost a cake and a coffee
-    // strictly less than we know — and less than either of them alone would have been told.
-    const names = gone
+    // The names are resolved HERE because only this component knows which language the customer
+    // is reading — `productName` picks `name_zh` or `name` off the row. The module decides WHICH
+    // ids can be named at all; it never invents one.
+    const names = pruned.nameableIds
       .map(id => fresh.find(p => p.id === id))
       .filter((p): p is Product => !!p)
       .map(productName)
-    const unnamed = gone.length - names.length
-    const named = names.length > 0
-      ? t(`Removed from your cart — no longer available: ${names.join(', ')}`,
-          `已从购物车移除（已下架）：${names.join('、')}`)
-      : ''
-    const rest = unnamed > 0
-      ? (unnamed === 1
-          ? t('An item in your cart is no longer available and has been removed.',
-              '购物车中有商品已下架，已为你移除。')
-          : t(`${unnamed} items in your cart are no longer available and have been removed.`,
-              `购物车中有 ${unnamed} 件商品已下架，已为你移除。`))
-      : ''
-    toast([named, rest].filter(Boolean).join(' '))
+    toast(pruneMessage(names, pruned.unnameable, t))
   }
 
   // The menu, loaded once per shop. It stands below adoptProducts because it calls it, and the
@@ -560,42 +544,23 @@ export default function Storefront() {
   }
 
   /**
-   * The cart's ceilings, MIRRORED from the backend — the same `MAX_CART_QTY`/`MAX_CART_LINES`
-   * the intake route refuses on, imported from @bitetime/shared rather than retyped.
-   *
-   * They are enforced HERE, at the only place a cart can grow, so the UI cannot build a basket
-   * the door will reject: an over-cap cart is refused with `invalid_body`, and a 400 at Place
-   * Order is a dead end the customer cannot reason their way out of. Stopping them at the
-   * ceiling, and SAYING so, turns a refusal into an instruction.
-   *
-   * Checked against `cart` in render scope rather than inside the updater: the toast is a side
-   * effect, and setState updaters must stay pure (React may run one twice).
+   * The only place a cart can grow. What the ceilings are and when they bind is `cartRules.ts`'s
+   * decision; the toast is this component's, which is why the module RETURNS a refusal rather
+   * than performing one — a setState updater must stay pure, and React may run one twice.
    */
   const updateQty = (productId: string, delta: number) => {
-    const current = cart[productId] || 0
-    const next = Math.max(0, current + delta)
-    if (next === current) return
-
-    if (next > MAX_CART_QTY) {
-      toast(t(`You can order at most ${MAX_CART_QTY} of one item.`,
-              `每种商品每单最多 ${MAX_CART_QTY} 件。`))
+    const change = nextCart(cart, productId, delta)
+    if (change.refused) {
+      // `noop` says nothing — refusing to go below zero is not something the customer did wrong.
+      const message = cartRefusalMessage(change.refused, t)
+      if (message) toast(message)
       return
     }
-    // A new LINE, not a bigger one: only an id that is not in the cart yet can breach the
-    // line cap, so raising an existing line is never blocked by it.
-    if (current === 0 && Object.keys(cart).length >= MAX_CART_LINES) {
-      toast(t(`You can order at most ${MAX_CART_LINES} different items in one order.`,
-              `每单最多 ${MAX_CART_LINES} 种不同商品。`))
-      return
-    }
-
-    setCart(prev => {
-      if (next === 0) {
-        const { [productId]: _removed, ...rest } = prev
-        return rest
-      }
-      return { ...prev, [productId]: next }
-    })
+    // Re-run against `prev`, for the same reason the prune does: two taps on DIFFERENT lines
+    // before a re-render both read the same stale `cart`, and writing a whole cart computed from
+    // it would drop the first one. `?? prev` keeps a ceiling that only binds against the newer
+    // cart from blanking the line instead of refusing it.
+    setCart(prev => nextCart(prev, productId, delta).cart ?? prev)
   }
 
   /**
