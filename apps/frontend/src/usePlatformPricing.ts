@@ -6,8 +6,8 @@ import { fetchPlatformPricing, type PlatformPricing } from './store'
 export const FALLBACK_PRICING: PlatformPricing = {
   currency: 'MYR',
   prices: {
-    basic: { monthly: 9.9, yearly: 99 },
-    pro: { monthly: 39.9, yearly: 399 },
+    basic: { monthly: 9.99, yearly: 99.9 },
+    pro: { monthly: 39.99, yearly: 399.9 },
   },
   estimate: null,
 }
