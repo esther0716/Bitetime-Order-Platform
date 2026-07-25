@@ -55,7 +55,8 @@ export default function SignupScreen() {
                  '账号已创建。请查收邮件确认，然后登录以完成店铺设置。'))
         setBusy(false); return
       }
-      await createMerchant({ name, plan, billing, referredByCode: ref })
+      const created = await createMerchant({ name, plan, billing, referredByCode: ref })
+      if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
       await refreshMerchant()
       if (plan === 'basic') {
         // Cardless trial: no Checkout. The shop waits for platform approval,

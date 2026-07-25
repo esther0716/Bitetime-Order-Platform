@@ -83,7 +83,7 @@ vi.mock('./supabase', () => {
 })
 
 import {
-  fetchMerchantBySlug,
+  lookupMerchantBySlug,
   fetchProfileByUserId,
   signUp,
   lookupMyMerchant,
@@ -197,15 +197,15 @@ describe('signUp profile write', () => {
   })
 })
 
-// ── fetchMerchantBySlug (Task 1.2) ────────────────────────────────────────────
+// ── lookupMerchantBySlug (Task 1.2) ───────────────────────────────────────────
 
-describe('fetchMerchantBySlug', () => {
+describe('lookupMerchantBySlug', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns null for a reserved slug without hitting the network', async () => {
+  it('returns { ok:true, data:null } for a reserved slug without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchMerchantBySlug('admin')).toBeNull()
+    expect(await lookupMerchantBySlug('admin')).toEqual({ ok: true, data: null })
     expect(fetchMock).not.toHaveBeenCalled()
   })
   it('GETs /api/merchants/:slug with no auth header and returns the merchant row when found', async () => {
@@ -213,16 +213,20 @@ describe('fetchMerchantBySlug', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => row })
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await fetchMerchantBySlug('shop-a')
+    const result = await lookupMerchantBySlug('shop-a')
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/shop-a$/)
     expect(init.headers).toEqual({})
-    expect(result).toEqual(row)
+    expect(result).toEqual({ ok: true, data: row })
   })
-  it('returns null when not found', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await fetchMerchantBySlug('missing')).toBeNull()
+  it('returns { ok:true, data:null } when the backend answers 200 with a null body (no such shop)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => null }))
+    expect(await lookupMerchantBySlug('missing')).toEqual({ ok: true, data: null })
+  })
+  it('returns { ok:false } on a could-not-ask (non-2xx) — never collapsed to "no shop"', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
+    expect((await lookupMerchantBySlug('shop-a')).ok).toBe(false)
   })
 })
 
@@ -242,13 +246,13 @@ describe('lookupMyMerchant', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/me\/merchant$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toEqual({ ok: true, merchant: row })
+    expect(result).toEqual({ ok: true, data: row })
   })
 
   it('answers "you own no shop" when the API says so', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => null }))
-    expect(await lookupMyMerchant('u1')).toEqual({ ok: true, merchant: null })
+    expect(await lookupMyMerchant('u1')).toEqual({ ok: true, data: null })
   })
 
   // The distinction #98 turned on: a request that never landed is NOT the answer
@@ -257,19 +261,19 @@ describe('lookupMyMerchant', () => {
   it('reports "could not ask" on a non-2xx', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await lookupMyMerchant('u1')).toEqual({ ok: false })
+    expect((await lookupMyMerchant('u1')).ok).toBe(false)
   })
 
   it('reports "could not ask" when the request is blocked outright (CORS/offline)', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch')))
-    expect(await lookupMyMerchant('u1')).toEqual({ ok: false })
+    expect((await lookupMyMerchant('u1')).ok).toBe(false)
   })
 
   it('answers "no shop" immediately for null userId without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await lookupMyMerchant(null as any)).toEqual({ ok: true, merchant: null })
+    expect(await lookupMyMerchant(null as any)).toEqual({ ok: true, data: null })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
@@ -299,13 +303,15 @@ describe('createMerchant', () => {
     expect(JSON.parse(init.body)).toEqual({
       name: 'My Shop', plan: 'basic', billing: 'monthly',
     })
-    expect(result).toEqual(merchantRow)
+    expect(result).toEqual({ ok: true, data: merchantRow })
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false, error } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'Missing name' }) }))
-    await expect(createMerchant({ name: '' })).rejects.toThrow('Missing name')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ error: 'Missing name' }) }))
+    const r = await createMerchant({ name: '' })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('Missing name')
   })
 })
 
@@ -314,17 +320,19 @@ describe('createMerchant', () => {
 describe('updateMerchantSlug', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('throws for a reserved slug without hitting the network', async () => {
+  it('returns { ok:false, code:reserved_slug } for a reserved slug without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    await expect(updateMerchantSlug('m1', 'admin')).rejects.toThrow('Reserved or empty slug')
+    const r = await updateMerchantSlug('m1', 'admin')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('reserved_slug')
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('throws for an empty slug without hitting the network', async () => {
+  it('returns { ok:false } for an empty slug without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    await expect(updateMerchantSlug('m1', '')).rejects.toThrow('Reserved or empty slug')
+    expect((await updateMerchantSlug('m1', '')).ok).toBe(false)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -343,15 +351,17 @@ describe('updateMerchantSlug', () => {
     expect(init.method).toBe('PATCH')
     expect(init.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(init.body)).toEqual({ slug: 'new-shop' })
-    expect(result).toEqual(updated)
+    expect(result).toEqual({ ok: true, data: updated })
   })
 
-  it('throws when the backend reports the slug is taken', async () => {
+  it('returns { ok:false } when the backend reports the slug is taken', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'Slug already taken' }),
+      ok: false, status: 409, json: async () => ({ error: 'Slug already taken' }),
     }))
-    await expect(updateMerchantSlug('m1', 'taken-slug')).rejects.toThrow('Slug already taken')
+    const r = await updateMerchantSlug('m1', 'taken-slug')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('Slug already taken')
   })
 })
 
@@ -371,19 +381,19 @@ describe('fetchAllMerchants', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toEqual(rows)
+    expect(result).toEqual({ ok: true, data: rows })
   })
 
-  it('returns an empty array when the backend has none — a 200 returning []', async () => {
+  it('returns { ok:true, data:[] } when the backend has none — a 200 returning []', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => [] }))
-    expect(await fetchAllMerchants()).toEqual([])
+    expect(await fetchAllMerchants()).toEqual({ ok: true, data: [] })
   })
 
-  it('throws on a non-ok response', async () => {
+  it('returns { ok:false } on a non-ok response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'DB fail' }) }))
-    await expect(fetchAllMerchants()).rejects.toThrow('DB fail')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ error: 'DB fail' }) }))
+    expect((await fetchAllMerchants()).ok).toBe(false)
   })
 })
 
@@ -392,23 +402,32 @@ describe('fetchAllMerchants', () => {
 describe('setMerchantStatus', () => {
   const okSession = { data: { session: { access_token: 'tok' } } }
 
-  it('throws "Invalid status" for an unknown status without calling the backend', async () => {
+  it('returns { ok:false, code:invalid_status } for an unknown status without calling the backend', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    await expect(setMerchantStatus('m1', 'banned')).rejects.toThrow('Invalid status')
+    const r = await setMerchantStatus('m1', 'banned')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('invalid_status')
     expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
 
-  it('throws when there is no session (not signed in)', async () => {
+  it('returns { ok:false, code:not_signed_in } when there is no session (auth:required, no fetch)', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
-    await expect(setMerchantStatus('m1', 'active')).rejects.toThrow('Not signed in')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const r = await setMerchantStatus('m1', 'active')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('not_signed_in')
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 
   it('POSTs merchantId + status to the admin endpoint with a bearer token', async () => {
     __mocks.getSession.mockResolvedValueOnce(okSession)
+    const row = { ok: true, status: 'suspended' }
     const fetchMock = vi.fn().mockResolvedValueOnce({
-      ok: true, json: async () => ({ ok: true, status: 'suspended' }),
+      ok: true, json: async () => row, text: async () => JSON.stringify(row),
     })
     vi.stubGlobal('fetch', fetchMock)
     const result = await setMerchantStatus('m1', 'suspended')
@@ -418,16 +437,18 @@ describe('setMerchantStatus', () => {
     expect(opts.method).toBe('POST')
     expect(opts.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(opts.body)).toEqual({ merchantId: 'm1', status: 'suspended' })
-    expect(result).toEqual({ ok: true, status: 'suspended' })
+    expect(result).toEqual({ ok: true, data: row })
     vi.unstubAllGlobals()
   })
 
-  it('throws with the backend error message on a non-ok response', async () => {
+  it('returns { ok:false } with the backend error message on a non-ok response', async () => {
     __mocks.getSession.mockResolvedValueOnce(okSession)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'Forbidden' }),
+      ok: false, status: 403, json: async () => ({ error: 'Forbidden' }),
     }))
-    await expect(setMerchantStatus('m1', 'active')).rejects.toThrow('Forbidden')
+    const r = await setMerchantStatus('m1', 'active')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('Forbidden')
     vi.unstubAllGlobals()
   })
 })

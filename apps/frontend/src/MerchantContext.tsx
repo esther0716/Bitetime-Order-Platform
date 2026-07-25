@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
-import { fetchMerchantBySlug, lookupMerchantBySlug } from './store'
+import { lookupMerchantBySlug } from './store'
 import type { MerchantState } from './types'
 
 const MerchantContext = createContext<MerchantState>({ merchant: null, loading: true, notFound: false, refresh: async () => {} })
@@ -16,7 +16,10 @@ export function MerchantProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<FetchedState>({ slug: null, merchant: null, loading: true, notFound: false })
   useEffect(() => {
     let on = true
-    fetchMerchantBySlug(slug).then((m) => {
+    lookupMerchantBySlug(slug).then((r) => {
+      // Initial load: collapse could-not-ask to "not found" here (parity with the old
+      // fetchMerchantBySlug). The recovery path below is the one that must NOT collapse.
+      const m = r.ok ? r.data : null
       if (on) setState({ slug, merchant: m, loading: false, notFound: !m })
     })
     return () => { on = false }
@@ -40,8 +43,8 @@ export function MerchantProvider({ children }: { children: ReactNode }) {
   // clobber it.
   const refresh = useCallback(async () => {
     const found = await lookupMerchantBySlug(slug)
-    if (found.ok && found.merchant) {
-      setState(s => (s.slug === slug ? { ...s, merchant: found.merchant, notFound: false } : s))
+    if (found.ok && found.data) {
+      setState(s => (s.slug === slug ? { ...s, merchant: found.data, notFound: false } : s))
     }
   }, [slug])
 

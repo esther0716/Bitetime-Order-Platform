@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { onAuthChange, fetchProfileByUserId, lookupMyMerchant, fetchMerchantBySlug, getCurrentUser } from './store'
+import { onAuthChange, fetchProfileByUserId, lookupMyMerchant, lookupMerchantBySlug, getCurrentUser } from './store'
 import type { Lang, Merchant, Profile, Role, SessionValue } from './types'
 
 // TODO(P3): remove this transitional fallback once superadmin role is seeded in DB.
@@ -38,7 +38,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const loadOwnMerchant = useCallback(async (userId: string | null | undefined) => {
     if (!userId) { setOwnMerchant(null); setMerchantUnknown(false); setMerchantLoaded(true); return }
     const found = await lookupMyMerchant(userId)
-    setOwnMerchant(found.ok ? found.merchant : null)
+    setOwnMerchant(found.ok ? found.data : null)
     setMerchantUnknown(!found.ok)
     setMerchantLoaded(true)
   }, [])
@@ -59,7 +59,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const merchant = impersonatedMerchant ?? ownMerchant
 
   const impersonate = useCallback(async (slug: string) => {
-    const m = await fetchMerchantBySlug(slug)
+    const r = await lookupMerchantBySlug(slug)
+    const m = r.ok ? r.data : null
     setImpersonatedMerchant(m)
     return m
   }, [])
@@ -70,9 +71,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Resolve the user freshly rather than closing over `account`, which is stale
   // immediately after signup/login (the just-signed-in user isn't in this render yet).
   const refreshMerchant = async () => {
-    // While impersonating, refresh the viewed shop — never clobber it with own merchant.
+    // While impersonating, refresh the viewed shop — never clobber it with own merchant, and
+    // never blank it on a could-not-ask (a dropped packet keeps the current shop).
     if (impersonatedMerchant) {
-      setImpersonatedMerchant(await fetchMerchantBySlug(impersonatedMerchant.slug))
+      const r = await lookupMerchantBySlug(impersonatedMerchant.slug)
+      if (r.ok) setImpersonatedMerchant(r.data)
       return
     }
     const user = await getCurrentUser()

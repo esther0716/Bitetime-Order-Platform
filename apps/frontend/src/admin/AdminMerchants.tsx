@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { MoreHorizontal } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { fetchAllMerchants, setMerchantStatus, approveMerchant, compMerchant, fetchAllBilling, type MerchantBilling } from '../store'
+import { unwrap } from '../api'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
 import type { Merchant, MerchantStatus } from '../types'
@@ -174,22 +175,26 @@ export default function AdminMerchants() {
   const [billing, setBilling] = useState<Record<string, MerchantBilling>>({})
   const [busy, setBusy] = useState<string | null>(null)
 
+  // The admin list is a throw-preferring caller (no per-row error UI), so unwrap() surfaces a
+  // could-not-ask as a throw — symmetric with fetchAllBilling, which still throws.
   async function load() {
     const [ms, bs] = await Promise.all([fetchAllMerchants(), fetchAllBilling()])
     setBilling(Object.fromEntries(bs.map(b => [b.merchant_id, b])))
-    setRows(ms)
+    setRows(unwrap(ms))
   }
   useEffect(() => {
     Promise.all([fetchAllMerchants(), fetchAllBilling()]).then(([ms, bs]) => {
       setBilling(Object.fromEntries(bs.map(b => [b.merchant_id, b])))
-      setRows(ms)
+      setRows(unwrap(ms))
     })
   }, [])
 
   async function act(id: string, status: MerchantStatus) {
     setBusy(id)
-    try { await setMerchantStatus(id, status); await load() }
-    finally { setBusy(null) }
+    const r = await setMerchantStatus(id, status)
+    if (r.ok) await load()
+    else toast.error(r.error.message || t('Could not update status', '无法更新状态'))
+    setBusy(null)
   }
 
   async function approve(id: string) {
@@ -201,9 +206,10 @@ export default function AdminMerchants() {
 
   async function comp(id: string) {
     setBusy(id)
-    try { await compMerchant(id); toast.success(t('Comped to Pro', '已赠送 Pro')); await load() }
-    catch (e) { toast.error(e instanceof Error ? e.message : t('Comp failed', '赠送失败')) }
-    finally { setBusy(null) }
+    const r = await compMerchant(id)
+    if (r.ok) { toast.success(t('Comped to Pro', '已赠送 Pro')); await load() }
+    else toast.error(r.error.message || t('Comp failed', '赠送失败'))
+    setBusy(null)
   }
 
   const data = useMemo<MerchantRow[]>(
