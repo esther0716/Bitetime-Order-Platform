@@ -711,7 +711,7 @@ describe('placeOrder', () => {
       quotedTotal: 24,
       fulfilDate: '2026-07-21',
     })
-    expect(result).toEqual({ orderNumber: 'BT-260714-0050' })
+    expect(result).toEqual({ ok: true, data: { orderNumber: 'BT-260714-0050' } })
   })
 
   it('sends a signed-in customer’s bearer token, so the backend can attribute the order', async () => {
@@ -744,31 +744,49 @@ describe('placeOrder', () => {
   })
 
   // The storefront needs to know WHICH refusal it was, so it can drop the voucher and tell the
-  // customer to retry without it. A generic "failed" would strand them.
-  it('throws the backend’s refusal code, not a generic failure', async () => {
+  // customer to retry without it. A generic "failed" would strand them. The refusal survives as
+  // the Result's error — a full OrderError carrying `code` (and `now` on price_changed).
+  it('returns the backend’s refusal code in error, not a generic failure', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
     fetchRefused('voucher_already_used')
 
-    await expect(placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any))
-      .rejects.toMatchObject({ code: 'voucher_already_used' })
+    const r = await placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('voucher_already_used')
   })
 
-  // fetch REJECTS on a network failure rather than returning !ok, so without a catch the
-  // customer sees a raw "Failed to fetch" on the checkout screen.
+  // fetch REJECTS on a network failure rather than returning !ok, so without the catch the
+  // customer would see a raw "Failed to fetch" — the storefront gets { code: 'network' } instead.
   it('reports a network failure as a refusal the storefront can phrase', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
-    await expect(placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any))
-      .rejects.toMatchObject({ code: 'network' })
+    const r = await placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('network')
   })
 
   it('falls back to order_failed when the backend gives no code', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => { throw new Error('no body') } }))
 
-    await expect(placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any))
-      .rejects.toMatchObject({ code: 'order_failed' })
+    const r = await placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('order_failed')
+  })
+
+  it('carries the server clock (now) on a price_changed refusal — the #69 offset fix', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, json: async () => ({ error: 'price_changed', now: '2026-07-25T00:00:00Z' }),
+    }))
+
+    const r = await placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error.code).toBe('price_changed')
+      expect(r.error.now).toBe('2026-07-25T00:00:00Z')
+    }
   })
 })
 
@@ -1311,20 +1329,30 @@ describe('quoteDelivery', () => {
   const refuses = (error: string) =>
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error }) }))
 
+  const quoteCode = async () => {
+    const r = await quoteDelivery('m1', 'place-1')
+    return r.ok ? null : r.error.code
+  }
+
+  it('returns { ok:true, data } with the km + fee on success', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ km: 3.2, fee: 6 }) }))
+    expect(await quoteDelivery('m1', 'place-1')).toEqual({ ok: true, data: { km: 3.2, fee: 6 } })
+  })
+
   it('passes a quota refusal through instead of calling it a lookup failure', async () => {
     // The narrowing this replaces mapped `quota_exceeded` onto `lookup_failed`, and the customer
     // was told to try again for a ceiling that does not clear for up to 24 hours.
     refuses('quota_exceeded')
-    await expect(quoteDelivery('m1', 'place-1')).rejects.toMatchObject({ code: 'quota_exceeded' })
+    expect(await quoteCode()).toBe('quota_exceeded')
   })
 
   it('passes a closed shop through as a closed shop', async () => {
     refuses('merchant_inactive')
-    await expect(quoteDelivery('m1', 'place-1')).rejects.toMatchObject({ code: 'merchant_inactive' })
+    expect(await quoteCode()).toBe('merchant_inactive')
   })
 
   it('still reports an unrecognised body as a lookup failure', async () => {
     refuses('something_new')
-    await expect(quoteDelivery('m1', 'place-1')).rejects.toMatchObject({ code: 'lookup_failed' })
+    expect(await quoteCode()).toBe('lookup_failed')
   })
 })

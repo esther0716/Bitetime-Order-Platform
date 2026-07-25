@@ -501,13 +501,16 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
   voucherCode?: string | null
   /** `YYYY-MM-DD` on the shop's clock. The backend re-checks it against the shop's window. */
   fulfilDate: string | null
-}) {
+}): Promise<Result<{ orderNumber: string }, OrderError>> {
   // Optional: a guest has no session, and guest checkout is a first-class path.
   const { data: { session } } = await supabase.auth.getSession()
   const token = session?.access_token
 
   // `fetch` REJECTS on a network or CORS failure rather than returning a non-ok response, so
   // an offline customer would otherwise get a raw "Failed to fetch" on the checkout screen.
+  // The Result's error is a full OrderError (not the generic ApiError): the storefront branches
+  // on `error.code` (the refusal union) and adopts `error.now` — the server clock the refusal
+  // carried — to close the #69 offset loop. That domain payload is why `E` is parameterised.
   const res = await fetch(`${API_URL}/api/orders`, {
     method: 'POST',
     headers: {
@@ -519,13 +522,13 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
       cart, quotedTotal, voucherCode, fulfilDate,
     }),
   }).catch(() => null)
-  if (!res) throw new OrderError('network')
+  if (!res) return { ok: false, error: new OrderError('network') }
 
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}))
-    throw new OrderError(payload?.error ?? 'order_failed', typeof payload?.now === 'string' ? payload.now : undefined)
+    return { ok: false, error: new OrderError(payload?.error ?? 'order_failed', typeof payload?.now === 'string' ? payload.now : undefined) }
   }
-  return (await res.json()) as { orderNumber: string }
+  return { ok: true, data: (await res.json()) as { orderNumber: string } }
 }
 
 /**
@@ -550,36 +553,34 @@ export class DeliveryQuoteError extends Error {
  * The row this writes is the same row order intake reads a moment later, which is what makes the
  * quote and the charge the same number.
  */
-export async function quoteDelivery(merchantId: string, placeId: string): Promise<{ km: number; fee: number }> {
+export async function quoteDelivery(merchantId: string, placeId: string): Promise<Result<{ km: number; fee: number }, DeliveryQuoteError>> {
   const res = await fetch(`${API_URL}/api/shipping/quote`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ merchantId, placeId }),
   }).catch(() => null)
-  if (!res) throw new DeliveryQuoteError('network')
+  if (!res) return { ok: false, error: new DeliveryQuoteError('network') }
   if (!res.ok) {
     const payload = (await res.json().catch(() => ({}))) as { error?: string }
     const code = payload.error
     // Recognised codes pass through untouched; anything else is a body we do not understand,
     // which is a lookup failure as far as the customer is concerned.
-    throw new DeliveryQuoteError(
+    return { ok: false, error: new DeliveryQuoteError(
       code && (QUOTE_REFUSALS as readonly string[]).includes(code) ? (code as QuoteRefusal) : 'lookup_failed',
-    )
+    ) }
   }
-  return (await res.json()) as { km: number; fee: number }
+  return { ok: true, data: (await res.json()) as { km: number; fee: number } }
 }
 
 // Trigger the server-side order notification fan-out: the merchant's Telegram and
 // the signed-in customer's confirmation email. The bot token and the recipient
 // address both stay on the backend — the browser sends only the order reference
 // and `lang`, which selects the email's language (never who receives it).
-export async function notifyOrderPlacedRemote(merchantId: string, orderNumber: string, lang: 'en' | 'zh') {
-  const res = await fetch(`${API_URL}/api/notify/order`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ merchantId, orderNumber, lang }),
-  })
-  if (!res.ok) throw new Error('Order notification failed')
+//
+// Best-effort: returns Result<void> and the storefront ignores it — a notify failure must never
+// surface as a failed order, and the order is already committed by the time this runs.
+export async function notifyOrderPlacedRemote(merchantId: string, orderNumber: string, lang: 'en' | 'zh'): Promise<Result<void>> {
+  return toVoid(await apiSend('/api/notify/order', 'POST', { merchantId, orderNumber, lang }))
 }
 
 /**
