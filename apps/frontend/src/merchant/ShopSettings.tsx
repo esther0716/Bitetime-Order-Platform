@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge'
 import { useNavGuard } from './NavGuard'
 import { isDirty, type SettingsFields } from './settingsDirty'
+import { useSaved } from './useSaved'
 import ReferralTab from './ReferralTab'
 import FulfilmentTab from './FulfilmentTab'
 import { ProLock } from './ProLock'
@@ -135,12 +136,8 @@ type ShippingFields = SettingsFields & {
   originLng?: string
 }
 
-// Reports dirty state up whenever `saved` vs `fields` diverge. Returns a stable helper set.
-function useTabDirty(saved: SettingsFields, fields: SettingsFields, onDirtyChange: (d: boolean) => void) {
-  const dirty = isDirty(saved, fields)
-  useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
-  return dirty
-}
+// `eq` for `useSaved` on this file's flat-map tabs: the negation of the shared `isDirty`.
+const settingsEq = (a: SettingsFields, b: SettingsFields) => !isDirty(a, b)
 
 function SaveRow({ busy, label }: { busy: boolean; label: { idle: string; busy: string } }) {
   return (
@@ -152,7 +149,7 @@ function SaveRow({ busy, label }: { busy: boolean; label: { idle: string; busy: 
 
 function ShippingTab({ onDirtyChange }: TabProps) {
   const { t, merchant, refreshMerchant } = useSession()
-  const [saved, setSaved] = useState<ShippingFields>(() => {
+  const [initial] = useState<ShippingFields>(() => {
     // shopRates/shopDistance/shopMethods, not local fallbacks: this form shows the merchant what
     // a row with a missing key CHARGES/OFFERS, and that is decided by these functions on both
     // sides of the wire — a third fallback rule here would show a price nobody bills.
@@ -175,9 +172,9 @@ function ShippingTab({ onDirtyChange }: TabProps) {
       originLng: merchant!.origin_lng != null ? String(merchant!.origin_lng) : '',
     }
   })
-  const [fields, setFields] = useState<ShippingFields>(saved)
+  const [fields, setFields] = useState<ShippingFields>(initial)
   const [busy, setBusy] = useState(false)
-  useTabDirty(saved, fields, onDirtyChange)
+  const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
 
   // Rate-input labels show the shop's saved currency symbol. Currency is edited on the Payment
   // tab now, so this reads the persisted value, not a live field. (Currency locks after the
@@ -272,7 +269,7 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         originLng: merchant!.origin_lng != null ? String(merchant!.origin_lng) : '',
       }
       setFields(applied)
-      setSaved(applied)
+      commit(applied)
       toast.success(t('Settings saved', '设置已保存'))
     } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
     finally { setBusy(false) }
@@ -432,7 +429,7 @@ function ShippingTab({ onDirtyChange }: TabProps) {
 
 function PaymentTab({ onDirtyChange }: TabProps) {
   const { t, merchant, refreshMerchant } = useSession()
-  const [saved, setSaved] = useState<SettingsFields>(() => {
+  const [initial] = useState<SettingsFields>(() => {
     // shopTax, not a local `?? 0`: this form shows the merchant what their shop CHARGES, and the
     // charge is decided by that one function on both sides of the wire.
     const tax = shopTax(merchant!)
@@ -444,12 +441,12 @@ function PaymentTab({ onDirtyChange }: TabProps) {
       note: merchant!.payment_note ?? '',
     }
   })
-  const [fields, setFields] = useState<SettingsFields>(saved)
+  const [fields, setFields] = useState<SettingsFields>(initial)
   const [busy, setBusy] = useState(false)
   // Currency locks after the first order so past orders/aggregates never
   // re-denominate. Assume locked until the check clears, so it can't flip open.
   const [currencyLocked, setCurrencyLocked] = useState(true)
-  useTabDirty(saved, fields, onDirtyChange)
+  const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
 
   useEffect(() => {
     let active = true
@@ -485,7 +482,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
         taxRate: tax.rate ? String(tax.rate) : '',
       }
       setFields(applied)
-      setSaved(applied)
+      commit(applied)
       toast.success(t('Payment saved', '付款已保存'))
     } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
     finally { setBusy(false) }
@@ -575,28 +572,29 @@ function PaymentTab({ onDirtyChange }: TabProps) {
 // tab's mount, rather than hidden in a wrapper here.
 function NotificationsTab({ onDirtyChange }: TabProps) {
   const { t, merchant } = useSession()
-  const [saved, setSaved] = useState<SettingsFields>({ tgToken: '', tgChat: '' })
-  const [fields, setFields] = useState<SettingsFields>({ tgToken: '', tgChat: '' })
+  const initial: SettingsFields = { tgToken: '', tgChat: '' }
+  const [fields, setFields] = useState<SettingsFields>(initial)
   const [busy, setBusy] = useState(false)
   const loaded = useRef(false)
-  useTabDirty(saved, fields, onDirtyChange)
+  const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
 
   useEffect(() => {
     fetchMerchantSecret(merchant!.id).then((r) => {
       const s = r.ok ? r.data : null
       const v = { tgToken: s?.tg_token ?? '', tgChat: s?.tg_chat_id ?? '' }
-      setSaved(v)
+      commit(v)
       // Only overwrite in-flight edits if the user hasn't started typing yet.
       if (!loaded.current) setFields(v)
       loaded.current = true
     })
-  }, [merchant!.id])
+    // `commit` is a stable useState setter; listed only to satisfy exhaustive-deps.
+  }, [merchant!.id, commit])
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true)
     const r = await upsertMerchantSecret(merchant!.id, { tg_token: fields.tgToken, tg_chat_id: fields.tgChat })
     if (r.ok) {
-      setSaved(fields)
+      commit(fields)
       toast.success(t('Notifications saved', '通知已保存'))
     } else {
       // The form only renders for a Pro shop, so this is the fallback for a `plan` that moved
