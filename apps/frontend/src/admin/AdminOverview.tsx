@@ -14,7 +14,7 @@ export default function AdminOverview() {
 
   useEffect(() => {
     let active = true
-    fetchAllMerchants().then(ms => { if (active) setStats(computeAdminStats(ms)) })
+    fetchAllMerchants().then(r => { if (active && r.ok) setStats(computeAdminStats(r.data)) })
     return () => { active = false }
   }, [])
 

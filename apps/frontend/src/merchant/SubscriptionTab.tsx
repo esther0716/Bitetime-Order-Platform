@@ -6,6 +6,7 @@ import {
   fetchMyBilling, openBillingPortal, startCheckout,
   cancelSubscription, downgradeToBasic, resumeSubscription,
 } from '../store'
+import type { Result } from '../api'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
 import { fmtDate } from '../merchantDate'
@@ -51,9 +52,10 @@ function useBillingPortal() {
   const [busy, setBusy] = useState(false)
   async function toPortal() {
     setBusy(true)
-    try { window.location.assign(await openBillingPortal()) }
-    catch (err: any) {
-      toast.error(err?.message || t('Could not open the billing portal', '无法打开账单门户'))
+    const r = await openBillingPortal()
+    if (r.ok) window.location.assign(r.data)
+    else {
+      toast.error(r.error.message || t('Could not open the billing portal', '无法打开账单门户'))
       setBusy(false)
     }
   }
@@ -91,9 +93,10 @@ function CheckoutButton({ plan, cycle, label }: { plan: string; cycle: string; l
   const [busy, setBusy] = useState(false)
   async function go() {
     setBusy(true)
-    try { window.location.assign(await startCheckout({ plan, billing: cycle })) }
-    catch (err: any) {
-      toast.error(err?.message || t('Could not start checkout', '无法开始结账'))
+    const r = await startCheckout({ plan, billing: cycle })
+    if (r.ok) window.location.assign(r.data)
+    else {
+      toast.error(r.error.message || t('Could not start checkout', '无法开始结账'))
       setBusy(false)
     }
   }
@@ -131,7 +134,7 @@ function ConfirmAction({
   severe?: boolean
   /** The one-line warning shown in the danger callout when `severe`. */
   alert?: ReactNode
-  run: () => Promise<void>
+  run: () => Promise<Result<void>>
   onDone: () => void
 }) {
   const { t } = useSession()
@@ -141,23 +144,22 @@ function ConfirmAction({
 
   async function confirm() {
     setBusy(true)
-    try {
-      await run()
+    const r = await run()
+    setBusy(false)
+    if (r.ok) {
       setOpen(false)
       // Refetch rather than patch local state: the backend writes the outcome to
       // `merchant_billing` itself, and re-reading it is what keeps this tab honest if Stripe
       // returned something other than what was asked for.
       onDone()
-    } catch (err: any) {
-      toast.error(
-        err?.message === 'no_live_subscription'
-          ? t('This shop no longer has a subscription to change. Reload the page.',
-              '此店铺已无可更改的订阅。请刷新页面。')
-          : err?.message || t('That did not work. Please try again.', '操作失败，请重试。'),
-      )
-    } finally {
-      setBusy(false)
+      return
     }
+    toast.error(
+      r.error.code === 'no_live_subscription'
+        ? t('This shop no longer has a subscription to change. Reload the page.',
+            '此店铺已无可更改的订阅。请刷新页面。')
+        : r.error.message || t('That did not work. Please try again.', '操作失败，请重试。'),
+    )
   }
 
   return (
@@ -369,8 +371,7 @@ export default function SubscriptionTab() {
   const load = useCallback(() => {
     if (!merchantId) return
     fetchMyBilling(merchantId)
-      .then(b => { setBilling(b); setLoaded(true) })
-      .catch(() => setLoaded(true))
+      .then(r => { setBilling(r.ok ? r.data : null); setLoaded(true) })
   }, [merchantId])
 
   useEffect(() => { load() }, [load])
@@ -469,8 +470,10 @@ export default function SubscriptionTab() {
               {state.canResume && (
                 <Button
                   type="button" size="sm" variant="outline"
-                  onClick={() => resumeSubscription().then(load).catch((err: any) =>
-                    toast.error(err?.message || t('Could not undo that', '无法撤销')))}
+                  onClick={() => resumeSubscription().then(r => {
+                    if (r.ok) load()
+                    else toast.error(r.error.message || t('Could not undo that', '无法撤销'))
+                  })}
                 >
                   {state.kind === 'ending'
                     ? t('Keep my subscription', '继续订阅')

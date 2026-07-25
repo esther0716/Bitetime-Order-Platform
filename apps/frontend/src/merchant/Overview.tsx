@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ReceiptText, Wallet, Users, TrendingUp } from 'lucide-react'
 import { useSession } from '../SessionContext'
-import { fetchMerchantOrders, fetchProducts, fetchMerchantCustomers, fetchMerchantVouchers } from '../store'
+import { fetchMerchantOrders, lookupProducts, fetchMerchantCustomers, fetchMerchantVouchers } from '../store'
 import { SkeletonText } from '../components/Loaders'
 import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from '../components/charts/DashCharts'
 import { computeMerchantStats, type MerchantStats } from './overviewStats'
@@ -22,10 +22,12 @@ export default function Overview() {
     if (!id) return
     let active = true
     Promise.all([
-      fetchMerchantOrders(id),
-      fetchProducts(id),
-      fetchMerchantCustomers(id),
-      fetchMerchantVouchers(id),
+      // All four are on the Result convention (#122); this stats panel only displays, so it
+      // collapses could-not-ask to `[]` at the call site.
+      fetchMerchantOrders(id).then(r => (r.ok ? r.data : [])),
+      lookupProducts(id).then(r => (r.ok ? r.data : [])),
+      fetchMerchantCustomers(id).then(r => (r.ok ? r.data : [])),
+      fetchMerchantVouchers(id).then(r => (r.ok ? r.data : [])),
     ]).then(([orders, products, customers, vouchers]) => {
       if (active) setStats(computeMerchantStats(orders, products, customers, vouchers))
     })

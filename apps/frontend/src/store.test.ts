@@ -83,7 +83,7 @@ vi.mock('./supabase', () => {
 })
 
 import {
-  fetchMerchantBySlug,
+  lookupMerchantBySlug,
   fetchProfileByUserId,
   signUp,
   lookupMyMerchant,
@@ -91,7 +91,6 @@ import {
   updateMerchantSlug,
   fetchAllMerchants,
   setMerchantStatus,
-  fetchProducts,
   lookupProducts,
   lookupMerchantVoucher,
   upsertProduct,
@@ -138,13 +137,13 @@ describe('fetchProfileByUserId', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/me\/profile$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toMatchObject({ id: 'p1', name: 'Fai' })
+    expect(result).toMatchObject({ ok: true, data: { id: 'p1', name: 'Fai' } })
   })
 
-  it('returns null when the request fails', async () => {
+  it('returns { ok:false } when the request fails', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await fetchProfileByUserId('u1')).toBeNull()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
+    expect((await fetchProfileByUserId('u1')).ok).toBe(false)
   })
 })
 
@@ -198,15 +197,15 @@ describe('signUp profile write', () => {
   })
 })
 
-// ── fetchMerchantBySlug (Task 1.2) ────────────────────────────────────────────
+// ── lookupMerchantBySlug (Task 1.2) ───────────────────────────────────────────
 
-describe('fetchMerchantBySlug', () => {
+describe('lookupMerchantBySlug', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns null for a reserved slug without hitting the network', async () => {
+  it('returns { ok:true, data:null } for a reserved slug without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchMerchantBySlug('admin')).toBeNull()
+    expect(await lookupMerchantBySlug('admin')).toEqual({ ok: true, data: null })
     expect(fetchMock).not.toHaveBeenCalled()
   })
   it('GETs /api/merchants/:slug with no auth header and returns the merchant row when found', async () => {
@@ -214,16 +213,20 @@ describe('fetchMerchantBySlug', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => row })
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await fetchMerchantBySlug('shop-a')
+    const result = await lookupMerchantBySlug('shop-a')
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/shop-a$/)
     expect(init.headers).toEqual({})
-    expect(result).toEqual(row)
+    expect(result).toEqual({ ok: true, data: row })
   })
-  it('returns null when not found', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await fetchMerchantBySlug('missing')).toBeNull()
+  it('returns { ok:true, data:null } when the backend answers 200 with a null body (no such shop)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => null }))
+    expect(await lookupMerchantBySlug('missing')).toEqual({ ok: true, data: null })
+  })
+  it('returns { ok:false } on a could-not-ask (non-2xx) — never collapsed to "no shop"', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
+    expect((await lookupMerchantBySlug('shop-a')).ok).toBe(false)
   })
 })
 
@@ -243,13 +246,13 @@ describe('lookupMyMerchant', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/me\/merchant$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toEqual({ ok: true, merchant: row })
+    expect(result).toEqual({ ok: true, data: row })
   })
 
   it('answers "you own no shop" when the API says so', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => null }))
-    expect(await lookupMyMerchant('u1')).toEqual({ ok: true, merchant: null })
+    expect(await lookupMyMerchant('u1')).toEqual({ ok: true, data: null })
   })
 
   // The distinction #98 turned on: a request that never landed is NOT the answer
@@ -258,19 +261,19 @@ describe('lookupMyMerchant', () => {
   it('reports "could not ask" on a non-2xx', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await lookupMyMerchant('u1')).toEqual({ ok: false })
+    expect((await lookupMyMerchant('u1')).ok).toBe(false)
   })
 
   it('reports "could not ask" when the request is blocked outright (CORS/offline)', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch')))
-    expect(await lookupMyMerchant('u1')).toEqual({ ok: false })
+    expect((await lookupMyMerchant('u1')).ok).toBe(false)
   })
 
   it('answers "no shop" immediately for null userId without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await lookupMyMerchant(null as any)).toEqual({ ok: true, merchant: null })
+    expect(await lookupMyMerchant(null as any)).toEqual({ ok: true, data: null })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
@@ -300,13 +303,15 @@ describe('createMerchant', () => {
     expect(JSON.parse(init.body)).toEqual({
       name: 'My Shop', plan: 'basic', billing: 'monthly',
     })
-    expect(result).toEqual(merchantRow)
+    expect(result).toEqual({ ok: true, data: merchantRow })
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false, error } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'Missing name' }) }))
-    await expect(createMerchant({ name: '' })).rejects.toThrow('Missing name')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ error: 'Missing name' }) }))
+    const r = await createMerchant({ name: '' })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('Missing name')
   })
 })
 
@@ -315,17 +320,19 @@ describe('createMerchant', () => {
 describe('updateMerchantSlug', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('throws for a reserved slug without hitting the network', async () => {
+  it('returns { ok:false, code:reserved_slug } for a reserved slug without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    await expect(updateMerchantSlug('m1', 'admin')).rejects.toThrow('Reserved or empty slug')
+    const r = await updateMerchantSlug('m1', 'admin')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('reserved_slug')
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('throws for an empty slug without hitting the network', async () => {
+  it('returns { ok:false } for an empty slug without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    await expect(updateMerchantSlug('m1', '')).rejects.toThrow('Reserved or empty slug')
+    expect((await updateMerchantSlug('m1', '')).ok).toBe(false)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -344,15 +351,17 @@ describe('updateMerchantSlug', () => {
     expect(init.method).toBe('PATCH')
     expect(init.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(init.body)).toEqual({ slug: 'new-shop' })
-    expect(result).toEqual(updated)
+    expect(result).toEqual({ ok: true, data: updated })
   })
 
-  it('throws when the backend reports the slug is taken', async () => {
+  it('returns { ok:false } when the backend reports the slug is taken', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'Slug already taken' }),
+      ok: false, status: 409, json: async () => ({ error: 'Slug already taken' }),
     }))
-    await expect(updateMerchantSlug('m1', 'taken-slug')).rejects.toThrow('Slug already taken')
+    const r = await updateMerchantSlug('m1', 'taken-slug')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('Slug already taken')
   })
 })
 
@@ -372,19 +381,19 @@ describe('fetchAllMerchants', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toEqual(rows)
+    expect(result).toEqual({ ok: true, data: rows })
   })
 
-  it('returns an empty array when the backend has none — a 200 returning []', async () => {
+  it('returns { ok:true, data:[] } when the backend has none — a 200 returning []', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => [] }))
-    expect(await fetchAllMerchants()).toEqual([])
+    expect(await fetchAllMerchants()).toEqual({ ok: true, data: [] })
   })
 
-  it('throws on a non-ok response', async () => {
+  it('returns { ok:false } on a non-ok response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'DB fail' }) }))
-    await expect(fetchAllMerchants()).rejects.toThrow('DB fail')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ error: 'DB fail' }) }))
+    expect((await fetchAllMerchants()).ok).toBe(false)
   })
 })
 
@@ -393,23 +402,32 @@ describe('fetchAllMerchants', () => {
 describe('setMerchantStatus', () => {
   const okSession = { data: { session: { access_token: 'tok' } } }
 
-  it('throws "Invalid status" for an unknown status without calling the backend', async () => {
+  it('returns { ok:false, code:invalid_status } for an unknown status without calling the backend', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    await expect(setMerchantStatus('m1', 'banned')).rejects.toThrow('Invalid status')
+    const r = await setMerchantStatus('m1', 'banned')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('invalid_status')
     expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
 
-  it('throws when there is no session (not signed in)', async () => {
+  it('returns { ok:false, code:not_signed_in } when there is no session (auth:required, no fetch)', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
-    await expect(setMerchantStatus('m1', 'active')).rejects.toThrow('Not signed in')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const r = await setMerchantStatus('m1', 'active')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('not_signed_in')
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 
   it('POSTs merchantId + status to the admin endpoint with a bearer token', async () => {
     __mocks.getSession.mockResolvedValueOnce(okSession)
+    const row = { ok: true, status: 'suspended' }
     const fetchMock = vi.fn().mockResolvedValueOnce({
-      ok: true, json: async () => ({ ok: true, status: 'suspended' }),
+      ok: true, json: async () => row, text: async () => JSON.stringify(row),
     })
     vi.stubGlobal('fetch', fetchMock)
     const result = await setMerchantStatus('m1', 'suspended')
@@ -419,30 +437,35 @@ describe('setMerchantStatus', () => {
     expect(opts.method).toBe('POST')
     expect(opts.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(opts.body)).toEqual({ merchantId: 'm1', status: 'suspended' })
-    expect(result).toEqual({ ok: true, status: 'suspended' })
+    expect(result).toEqual({ ok: true, data: row })
     vi.unstubAllGlobals()
   })
 
-  it('throws with the backend error message on a non-ok response', async () => {
+  it('returns { ok:false } with the backend error message on a non-ok response', async () => {
     __mocks.getSession.mockResolvedValueOnce(okSession)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'Forbidden' }),
+      ok: false, status: 403, json: async () => ({ error: 'Forbidden' }),
     }))
-    await expect(setMerchantStatus('m1', 'active')).rejects.toThrow('Forbidden')
+    const r = await setMerchantStatus('m1', 'active')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('Forbidden')
     vi.unstubAllGlobals()
   })
 })
 
-// ── fetchProducts (Task 4.1) ───────────────────────────────────────────────────
+// ── lookupProducts (Task 4.1) ──────────────────────────────────────────────────
 
-describe('fetchProducts', () => {
+// `lookupProducts` is the one menu read, on the Result convention. A 200 with `[]` is a real
+// answer (`{ ok:true, data:[] }` — the shop sells nothing); a failed request is not an answer at
+// all and must come back as `{ ok:false }`, never an empty menu.
+describe('lookupProducts', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns empty array immediately when merchantId is falsy', async () => {
+  it('returns { ok:true, data:[] } immediately when merchantId is falsy, without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchProducts(null as any)).toEqual([])
-    expect(await fetchProducts('')).toEqual([])
+    expect(await lookupProducts(null as any)).toEqual({ ok: true, data: [] })
+    expect(await lookupProducts('')).toEqual({ ok: true, data: [] })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -451,47 +474,27 @@ describe('fetchProducts', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => rows })
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await fetchProducts('m1')
+    const result = await lookupProducts('m1')
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/products$/)
     expect(init.headers).toEqual({})
-    expect(result).toEqual(rows)
+    expect(result).toEqual({ ok: true, data: rows })
   })
 
-  it('returns empty array on a failed request', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await fetchProducts('m1')).toEqual([])
-  })
-})
-
-// `lookupProducts` carries the null-vs-"could not ask" contract that `fetchProducts` (above)
-// collapses with `?? []`. A 200 with `[]` is a real answer (the shop sells nothing); a failed
-// request is not an answer at all and must come back as `null`, never `[]`.
-describe('lookupProducts', () => {
-  afterEach(() => vi.unstubAllGlobals())
-
-  it('returns [] immediately when merchantId is falsy, without hitting the network', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    expect(await lookupProducts(null as any)).toEqual([])
-    expect(await lookupProducts('')).toEqual([])
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('returns [] on a 200 with an empty menu (the real answer: the shop sells nothing)', async () => {
+  it('returns { ok:true, data:[] } on a 200 with an empty menu (the real answer: the shop sells nothing)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => [] }))
-    expect(await lookupProducts('m1')).toEqual([])
+    expect(await lookupProducts('m1')).toEqual({ ok: true, data: [] })
   })
 
-  it('returns null when the request fails to resolve (network/CORS rejection) — could not ask', async () => {
+  it('returns { ok:false } when the request fails to resolve (network/CORS rejection) — could not ask', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch')))
-    expect(await lookupProducts('m1')).toBeNull()
+    expect((await lookupProducts('m1')).ok).toBe(false)
   })
 
-  it('returns null on a non-ok response — could not ask', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await lookupProducts('m1')).toBeNull()
+  it('returns { ok:false } on a non-ok response — could not ask', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
+    expect((await lookupProducts('m1')).ok).toBe(false)
   })
 })
 
@@ -516,15 +519,17 @@ describe('upsertProduct', () => {
     expect(init.method).toBe('PUT')
     expect(init.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(init.body)).toEqual(product)
-    expect(result).toEqual(saved)
+    expect(result).toEqual({ ok: true, data: saved })
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false, error } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'Upsert failed' }),
+      ok: false, status: 500, json: async () => ({ error: 'Upsert failed' }),
     }))
-    await expect(upsertProduct({ id: 'p1', name: 'x', merchant_id: 'm1' })).rejects.toThrow('Upsert failed')
+    const r = await upsertProduct({ id: 'p1', name: 'x', merchant_id: 'm1' })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('Upsert failed')
   })
 })
 
@@ -538,7 +543,7 @@ describe('deleteProduct', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }), text: async () => JSON.stringify({ ok: true }) })
     vi.stubGlobal('fetch', fetchMock)
 
-    await deleteProduct('p1', 'm1')
+    expect(await deleteProduct('p1', 'm1')).toEqual({ ok: true, data: undefined })
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/products\/p1$/)
@@ -546,12 +551,14 @@ describe('deleteProduct', () => {
     expect(init.headers.Authorization).toBe('Bearer tok')
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false, error } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'Delete failed' }),
+      ok: false, status: 500, json: async () => ({ error: 'Delete failed' }),
     }))
-    await expect(deleteProduct('p1', 'm1')).rejects.toThrow('Delete failed')
+    const r = await deleteProduct('p1', 'm1')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('Delete failed')
   })
 })
 
@@ -576,15 +583,17 @@ describe('updateMerchantConfig', () => {
     expect(init.method).toBe('PATCH')
     expect(init.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(init.body)).toEqual(patch)
-    expect(result).toEqual(row)
+    expect(result).toEqual({ ok: true, data: row })
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false, error } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'update failed' }),
+      ok: false, status: 500, json: async () => ({ error: 'update failed' }),
     }))
-    await expect(updateMerchantConfig('m1', { payment_note: 'x' })).rejects.toThrow('update failed')
+    const r = await updateMerchantConfig('m1', { payment_note: 'x' })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('update failed')
   })
 })
 
@@ -604,19 +613,19 @@ describe('fetchMerchantSecret', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/secret$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toEqual(secret)
+    expect(result).toEqual({ ok: true, data: secret })
   })
 
-  it('returns null when no row exists (backend responds not-ok)', async () => {
+  it('returns { ok:false } when the request fails (could not ask)', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await fetchMerchantSecret('m1')).toBeNull()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
+    expect((await fetchMerchantSecret('m1')).ok).toBe(false)
   })
 
-  it('returns null immediately for a missing merchantId without hitting the network', async () => {
+  it('returns { ok:true, data:null } immediately for a missing merchantId without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchMerchantSecret('')).toBeNull()
+    expect(await fetchMerchantSecret('')).toEqual({ ok: true, data: null })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
@@ -634,7 +643,8 @@ describe('upsertMerchantSecret', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await upsertMerchantSecret('m1', secret)
+    const r = await upsertMerchantSecret('m1', secret)
+    expect(r).toEqual({ ok: true, data: undefined })
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/secret$/)
@@ -643,14 +653,14 @@ describe('upsertMerchantSecret', () => {
     expect(JSON.parse(init.body)).toEqual(secret)
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false, error } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'upsert failed' }),
+      ok: false, status: 500, json: async () => ({ error: 'upsert failed' }),
     }))
-    await expect(
-      upsertMerchantSecret('m1', { tg_token: 'x', tg_chat_id: 'y' })
-    ).rejects.toThrow('upsert failed')
+    const r = await upsertMerchantSecret('m1', { tg_token: 'x', tg_chat_id: 'y' })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('upsert failed')
   })
 })
 
@@ -701,7 +711,7 @@ describe('placeOrder', () => {
       quotedTotal: 24,
       fulfilDate: '2026-07-21',
     })
-    expect(result).toEqual({ orderNumber: 'BT-260714-0050' })
+    expect(result).toEqual({ ok: true, data: { orderNumber: 'BT-260714-0050' } })
   })
 
   it('sends a signed-in customer’s bearer token, so the backend can attribute the order', async () => {
@@ -734,31 +744,49 @@ describe('placeOrder', () => {
   })
 
   // The storefront needs to know WHICH refusal it was, so it can drop the voucher and tell the
-  // customer to retry without it. A generic "failed" would strand them.
-  it('throws the backend’s refusal code, not a generic failure', async () => {
+  // customer to retry without it. A generic "failed" would strand them. The refusal survives as
+  // the Result's error — a full OrderError carrying `code` (and `now` on price_changed).
+  it('returns the backend’s refusal code in error, not a generic failure', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
     fetchRefused('voucher_already_used')
 
-    await expect(placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any))
-      .rejects.toMatchObject({ code: 'voucher_already_used' })
+    const r = await placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('voucher_already_used')
   })
 
-  // fetch REJECTS on a network failure rather than returning !ok, so without a catch the
-  // customer sees a raw "Failed to fetch" on the checkout screen.
+  // fetch REJECTS on a network failure rather than returning !ok, so without the catch the
+  // customer would see a raw "Failed to fetch" — the storefront gets { code: 'network' } instead.
   it('reports a network failure as a refusal the storefront can phrase', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
-    await expect(placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any))
-      .rejects.toMatchObject({ code: 'network' })
+    const r = await placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('network')
   })
 
   it('falls back to order_failed when the backend gives no code', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => { throw new Error('no body') } }))
 
-    await expect(placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any))
-      .rejects.toMatchObject({ code: 'order_failed' })
+    const r = await placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('order_failed')
+  })
+
+  it('carries the server clock (now) on a price_changed refusal — the #69 offset fix', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, json: async () => ({ error: 'price_changed', now: '2026-07-25T00:00:00Z' }),
+    }))
+
+    const r = await placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error.code).toBe('price_changed')
+      expect(r.error.now).toBe('2026-07-25T00:00:00Z')
+    }
   })
 })
 
@@ -767,11 +795,11 @@ describe('placeOrder', () => {
 describe('fetchMerchantOrders', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns empty array immediately for falsy merchantId', async () => {
+  it('returns { ok:true, data:[] } immediately for falsy merchantId', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchMerchantOrders(null as any)).toEqual([])
-    expect(await fetchMerchantOrders('')).toEqual([])
+    expect(await fetchMerchantOrders(null as any)).toEqual({ ok: true, data: [] })
+    expect(await fetchMerchantOrders('')).toEqual({ ok: true, data: [] })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -786,13 +814,13 @@ describe('fetchMerchantOrders', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/orders$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toEqual(rows)
+    expect(result).toEqual({ ok: true, data: rows })
   })
 
-  it('returns empty array on a failed request', async () => {
+  it('returns { ok:false } on a failed request', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await fetchMerchantOrders('m1')).toEqual([])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
+    expect((await fetchMerchantOrders('m1')).ok).toBe(false)
   })
 })
 
@@ -818,7 +846,7 @@ describe('fetchMyOrdersAtShop', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/my-orders$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toEqual(rows)
+    expect(result).toEqual({ ok: true, data: rows })
   })
 
   it('states the history cap shown on screen ("your last 20 orders")', () => {
@@ -829,25 +857,26 @@ describe('fetchMyOrdersAtShop', () => {
     __mocks.getUser.mockResolvedValueOnce({ data: { user: null } })
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchMyOrdersAtShop('m1')).toEqual([])
+    expect(await fetchMyOrdersAtShop('m1')).toEqual({ ok: true, data: [] })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('queries nothing without a shop', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchMyOrdersAtShop('')).toEqual([])
+    expect(await fetchMyOrdersAtShop('')).toEqual({ ok: true, data: [] })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('throws on a non-ok response instead of passing an empty list off as "no orders"', async () => {
-    // The screen renders an empty list as "You haven't ordered from this shop yet." Swallowing the
-    // error here would tell a customer with a year of history that they have none — and they would
-    // believe it. An empty history and a broken query must not look alike.
+  it('returns { ok:false } on a non-ok response instead of passing an empty list off as "no orders"', async () => {
+    // The screen renders an empty list as "You haven't ordered from this shop yet." Collapsing the
+    // failure to [] here would tell a customer with a year of history that they have none — and they
+    // would believe it. An empty history and a broken query must not look alike: { ok:false } is the
+    // could-not-ask the screen turns into its 'failed' state.
     __mocks.getUser.mockResolvedValueOnce({ data: { user } })
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'rls' }) }))
-    await expect(fetchMyOrdersAtShop('m1')).rejects.toThrow('rls')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({ error: 'rls' }) }))
+    expect((await fetchMyOrdersAtShop('m1')).ok).toBe(false)
   })
 })
 
@@ -892,12 +921,20 @@ describe('saveCustomerDetails', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('swallows a rejected fetch — best-effort, never throws', async () => {
+  it('never throws on a rejected fetch — returns { ok:false } for the caller to ignore', async () => {
     __mocks.getUser.mockResolvedValueOnce({ data: { user } })
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('network down')))
 
-    await expect(saveCustomerDetails({ whatsapp: '60123456789' })).resolves.toBeUndefined()
+    const r = await saveCustomerDetails({ whatsapp: '60123456789' })
+    expect(r.ok).toBe(false)
+  })
+
+  it('resolves { ok:true } for a guest and an empty patch without reaching the network', async () => {
+    __mocks.getUser.mockResolvedValueOnce({ data: { user: null } })
+    vi.stubGlobal('fetch', vi.fn())
+    expect(await saveCustomerDetails({ whatsapp: '6012' })).toEqual({ ok: true, data: undefined })
+    expect(await saveCustomerDetails({})).toEqual({ ok: true, data: undefined })
   })
 })
 
@@ -938,10 +975,12 @@ describe('requestPasswordReset', () => {
 describe('setOrderStatus', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('throws "Invalid status" for unknown status without calling fetch', async () => {
+  it('returns { ok:false, code:invalid_status } for unknown status without calling fetch', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    await expect(setOrderStatus('ord-1', 'shipped', 'm1')).rejects.toThrow('Invalid status')
+    const r = await setOrderStatus('ord-1', 'shipped', 'm1')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.code).toBe('invalid_status')
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -960,7 +999,7 @@ describe('setOrderStatus', () => {
     expect(init.method).toBe('PATCH')
     expect(init.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(init.body)).toEqual({ status: 'preparing' })
-    expect(result).toEqual(row)
+    expect(result).toEqual({ ok: true, data: row })
   })
 
   it('accepts all five valid statuses: new, preparing, ready, completed, cancelled', async () => {
@@ -971,17 +1010,17 @@ describe('setOrderStatus', () => {
         ok: true, json: async () => row, text: async () => JSON.stringify(row),
       }))
       const result = await setOrderStatus('ord-1', status, 'm1')
-      expect(result.status).toBe(status)
+      expect(result.ok && result.data.status).toBe(status)
       vi.unstubAllGlobals()
     }
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'Update failed' }),
+      ok: false, status: 500, json: async () => ({ error: 'Update failed' }),
     }))
-    await expect(setOrderStatus('ord-1', 'ready', 'm1')).rejects.toThrow('Update failed')
+    expect((await setOrderStatus('ord-1', 'ready', 'm1')).ok).toBe(false)
   })
 })
 
@@ -1003,15 +1042,15 @@ describe('setOrderNote', () => {
     expect(init.method).toBe('PATCH')
     expect(init.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(init.body)).toEqual({ note: 'leave at the door' })
-    expect(result).toEqual(row)
+    expect(result).toEqual({ ok: true, data: row })
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'Update failed' }),
+      ok: false, status: 500, json: async () => ({ error: 'Update failed' }),
     }))
-    await expect(setOrderNote('ord-1', 'x', 'm1')).rejects.toThrow('Update failed')
+    expect((await setOrderNote('ord-1', 'x', 'm1')).ok).toBe(false)
   })
 })
 
@@ -1033,15 +1072,15 @@ describe('setOrderTracking', () => {
     expect(init.method).toBe('PATCH')
     expect(init.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(init.body)).toEqual({ courier: 'jnt', awb: 'AWB123' })
-    expect(result).toEqual(row)
+    expect(result).toEqual({ ok: true, data: row })
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
-      ok: false, json: async () => ({ error: 'Update failed' }),
+      ok: false, status: 500, json: async () => ({ error: 'Update failed' }),
     }))
-    await expect(setOrderTracking('ord-1', null, 'x', 'm1')).rejects.toThrow('Update failed')
+    expect((await setOrderTracking('ord-1', null, 'x', 'm1')).ok).toBe(false)
   })
 })
 
@@ -1061,7 +1100,9 @@ describe('fetchMerchantCustomers', () => {
     ]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => orders }))
 
-    const result = await fetchMerchantCustomers('m1')
+    const res = await fetchMerchantCustomers('m1')
+    if (!res.ok) throw new Error('expected ok')
+    const result = res.data
 
     expect(result).toHaveLength(2)
     const alice = result.find(c => c.wa === '601')!
@@ -1074,7 +1115,7 @@ describe('fetchMerchantCustomers', () => {
   it('returns empty array when merchant has no orders', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => [] }))
-    expect(await fetchMerchantCustomers('m1')).toEqual([])
+    expect(await fetchMerchantCustomers('m1')).toEqual({ ok: true, data: [] })
   })
 
   it('falls back to customer_name as key when customer_wa is missing', async () => {
@@ -1085,7 +1126,9 @@ describe('fetchMerchantCustomers', () => {
     ]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => orders }))
 
-    const result = await fetchMerchantCustomers('m1')
+    const res = await fetchMerchantCustomers('m1')
+    if (!res.ok) throw new Error('expected ok')
+    const result = res.data
 
     expect(result).toHaveLength(1)
     expect(result[0].orderCount).toBe(2)
@@ -1101,7 +1144,9 @@ describe('fetchMerchantCustomers', () => {
     ]
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => orders }))
 
-    const result = await fetchMerchantCustomers('m1')
+    const res = await fetchMerchantCustomers('m1')
+    if (!res.ok) throw new Error('expected ok')
+    const result = res.data
 
     const alice = result.find(c => c.wa === '601')!
     expect(alice.key).toBe('601')
@@ -1140,10 +1185,10 @@ describe('voucherFromRow', () => {
 describe('fetchMerchantVouchers', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns [] for a missing merchantId without hitting the network', async () => {
+  it('returns { ok:true, data:[] } for a missing merchantId without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchMerchantVouchers('')).toEqual([])
+    expect(await fetchMerchantVouchers('')).toEqual({ ok: true, data: [] })
     expect(fetchMock).not.toHaveBeenCalled()
   })
   it('GETs /api/merchants/:id/vouchers with a bearer token and maps rows scoped to the merchant', async () => {
@@ -1157,26 +1202,27 @@ describe('fetchMerchantVouchers', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/vouchers$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toEqual([{ id: 'v1', code: 'A', type: 'fixed', value: 5, maxUses: null, usedBy: [], active: true }])
+    expect(result).toEqual({ ok: true, data: [{ id: 'v1', code: 'A', type: 'fixed', value: 5, maxUses: null, usedBy: [], active: true }] })
   })
-  it('returns [] on a failed request', async () => {
+  it('returns { ok:false } on a failed request', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await fetchMerchantVouchers('m1')).toEqual([])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
+    expect((await fetchMerchantVouchers('m1')).ok).toBe(false)
   })
 })
 
-// `lookupMerchantVoucher` carries the same null-vs-"could not ask" contract as `lookupProducts`:
-// a 200 with a null body is a real answer (the shop has no such voucher), while a failed
-// request must come back as `{ ok:false }`, never collapsed onto "no voucher".
+// `lookupMerchantVoucher` carries the same "could not ask" vs "the answer is empty" contract as
+// `lookupProducts`, now as the shared Result: a 200 with a null body is a real answer
+// (`{ ok:true, data:null }` — the shop has no such voucher), while a failed request comes back
+// as `{ ok:false }`, never collapsed onto "no voucher".
 describe('lookupMerchantVoucher', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns { ok:true, voucher:null } immediately when merchantId or code is falsy, without hitting the network', async () => {
+  it('returns { ok:true, data:null } immediately when merchantId or code is falsy, without hitting the network', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await lookupMerchantVoucher('', 'CODE')).toEqual({ ok: true, voucher: null })
-    expect(await lookupMerchantVoucher('m1', '')).toEqual({ ok: true, voucher: null })
+    expect(await lookupMerchantVoucher('', 'CODE')).toEqual({ ok: true, data: null })
+    expect(await lookupMerchantVoucher('m1', '')).toEqual({ ok: true, data: null })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -1190,17 +1236,17 @@ describe('lookupMerchantVoucher', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/vouchers\/A$/)
     expect(init.headers).toEqual({})
-    expect(result).toEqual({ ok: true, voucher: { id: 'v1', code: 'A', type: 'fixed', value: 5, maxUses: null, usedBy: [], active: true } })
+    expect(result).toEqual({ ok: true, data: { id: 'v1', code: 'A', type: 'fixed', value: 5, maxUses: null, usedBy: [], active: true } })
   })
 
-  it('returns { ok:true, voucher:null } on a 200 with a null body (the real answer: no such voucher)', async () => {
+  it('returns { ok:true, data:null } on a 200 with a null body (the real answer: no such voucher)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => null }))
-    expect(await lookupMerchantVoucher('m1', 'MISSING')).toEqual({ ok: true, voucher: null })
+    expect(await lookupMerchantVoucher('m1', 'MISSING')).toEqual({ ok: true, data: null })
   })
 
   it('returns { ok:false } on a failed request — could not ask', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({}) }))
-    expect(await lookupMerchantVoucher('m1', 'A')).toEqual({ ok: false })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
+    expect((await lookupMerchantVoucher('m1', 'A')).ok).toBe(false)
   })
 })
 
@@ -1229,7 +1275,7 @@ describe('createMerchantVoucher', () => {
     expect(init.headers.Authorization).toBe('Bearer tok')
     // code is sent as-typed — uppercasing/trimming happens server-side now.
     expect(JSON.parse(init.body)).toEqual({ code: 'save10', kind: 'percent', amount: 10, maxUses: 100 })
-    expect(result).toEqual({ id: 'v9', code: 'SAVE10', type: 'percent', value: 10, maxUses: 100, usedBy: [], active: true })
+    expect(result).toEqual({ ok: true, data: { id: 'v9', code: 'SAVE10', type: 'percent', value: 10, maxUses: 100, usedBy: [], active: true } })
   })
 
   it('defaults maxUses to null', async () => {
@@ -1244,10 +1290,12 @@ describe('createMerchantVoucher', () => {
     expect(JSON.parse(init.body)).toEqual({ code: 'X', kind: 'fixed', amount: 5, maxUses: null })
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false, error } on a non-2xx response, carrying the backend message', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'duplicate' }) }))
-    await expect(createMerchantVoucher({ merchantId: 'm1', code: 'X', kind: 'fixed', amount: 5 })).rejects.toThrow('duplicate')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ error: 'duplicate' }) }))
+    const r = await createMerchantVoucher({ merchantId: 'm1', code: 'X', kind: 'fixed', amount: 5 })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('duplicate')
   })
 })
 
@@ -1259,7 +1307,8 @@ describe('deleteMerchantVoucher', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }), text: async () => JSON.stringify({ ok: true }) })
     vi.stubGlobal('fetch', fetchMock)
 
-    await deleteMerchantVoucher('v9', 'm1')
+    const r = await deleteMerchantVoucher('v9', 'm1')
+    expect(r).toEqual({ ok: true, data: undefined })
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/vouchers\/v9$/)
@@ -1267,10 +1316,10 @@ describe('deleteMerchantVoucher', () => {
     expect(init.headers.Authorization).toBe('Bearer tok')
   })
 
-  it('throws on a non-2xx response', async () => {
+  it('returns { ok:false } on a non-2xx response', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'nope' }) }))
-    await expect(deleteMerchantVoucher('v9', 'm1')).rejects.toThrow('nope')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ error: 'nope' }) }))
+    expect((await deleteMerchantVoucher('v9', 'm1')).ok).toBe(false)
   })
 })
 
@@ -1280,20 +1329,30 @@ describe('quoteDelivery', () => {
   const refuses = (error: string) =>
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error }) }))
 
+  const quoteCode = async () => {
+    const r = await quoteDelivery('m1', 'place-1')
+    return r.ok ? null : r.error.code
+  }
+
+  it('returns { ok:true, data } with the km + fee on success', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ km: 3.2, fee: 6 }) }))
+    expect(await quoteDelivery('m1', 'place-1')).toEqual({ ok: true, data: { km: 3.2, fee: 6 } })
+  })
+
   it('passes a quota refusal through instead of calling it a lookup failure', async () => {
     // The narrowing this replaces mapped `quota_exceeded` onto `lookup_failed`, and the customer
     // was told to try again for a ceiling that does not clear for up to 24 hours.
     refuses('quota_exceeded')
-    await expect(quoteDelivery('m1', 'place-1')).rejects.toMatchObject({ code: 'quota_exceeded' })
+    expect(await quoteCode()).toBe('quota_exceeded')
   })
 
   it('passes a closed shop through as a closed shop', async () => {
     refuses('merchant_inactive')
-    await expect(quoteDelivery('m1', 'place-1')).rejects.toMatchObject({ code: 'merchant_inactive' })
+    expect(await quoteCode()).toBe('merchant_inactive')
   })
 
   it('still reports an unrecognised body as a lookup failure', async () => {
     refuses('something_new')
-    await expect(quoteDelivery('m1', 'place-1')).rejects.toMatchObject({ code: 'lookup_failed' })
+    expect(await quoteCode()).toBe('lookup_failed')
   })
 })

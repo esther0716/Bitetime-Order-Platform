@@ -3,7 +3,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Lock, MoreHorizontal, Package } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
-import { fetchProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl } from '../store'
+import { lookupProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl } from '../store'
 import { coerceQuantity, formatUnit } from '../productUnit'
 import { formatMoney, currencyDef } from '../currency'
 import { promoEndFromDate, promoEndToDate } from '../promoEnd'
@@ -160,8 +160,8 @@ export default function ProductsManager() {
   // never a wrong price. `promo_end` is an absolute instant already (see promoEnd.ts).
   const [promoEnded, setPromoEnded] = useState(false)
 
-  async function load() { setRows(await fetchProducts(merchant!.id)) }
-  useEffect(() => { fetchProducts(merchant!.id).then(setRows) }, [merchant!.id])
+  async function load() { const r = await lookupProducts(merchant!.id); setRows(r.ok ? r.data : []) }
+  useEffect(() => { lookupProducts(merchant!.id).then(r => setRows(r.ok ? r.data : [])) }, [merchant!.id])
 
   function openAdd() {
     setEditingProduct(null)
@@ -247,17 +247,15 @@ export default function ProductsManager() {
     e.preventDefault(); setBusy(true); setMsg('')
     const problem = promoProblem(form)
     if (problem) { setMsg(problem); setBusy(false); return }
-    try {
-      if (editingProduct) {
-        // Spread the original row first so sort / active / etc. survive the upsert.
-        await upsertProduct(stripPromo({
+    const r = editingProduct
+      // Spread the original row first so sort / active / etc. survive the upsert.
+      ? await upsertProduct(stripPromo({
           ...editingProduct, ...form, ...promoFields(form),
           image_urls: images,
           price: Number(form.price) || 0,
           unit_quantity: coerceQuantity(form.unit_quantity),
         }))
-      } else {
-        await upsertProduct(stripPromo({
+      : await upsertProduct(stripPromo({
           ...form,
           ...promoFields(form),
           id: draftId,
@@ -266,14 +264,15 @@ export default function ProductsManager() {
           unit_quantity: coerceQuantity(form.unit_quantity),
           merchant_id: merchant!.id,
         }))
-      }
+    if (r.ok) {
       setFormOpen(false); setForm(BLANK); setEditingProduct(null); setImages([]); setDraftId(crypto.randomUUID())
       await load()
       toast.success(t('Product saved', '产品已保存'))
-    } catch (err: any) {
+    } else {
+      const err = r.error
       // `promoProblem` above already catches a promo left above a base price the merchant just
       // lowered in THIS save — it reads `f.price`, which is the price being saved, so `8 >= 7` is
-      // refused with words before this ever runs. This catch is a backstop for a DIFFERENT writer:
+      // refused with words before this ever runs. This branch is a backstop for a DIFFERENT writer:
       // the dashboard form is not the only thing that can touch a `products` row (a script, an
       // admin tool, a direct SQL edit), and `products_promo_below_price` is what stops one of those
       // leaving a promo priced above the item. Postgres's raw constraint string is not something to
@@ -283,20 +282,23 @@ export default function ProductsManager() {
       if (isRequiresPro(err)) {
         setMsg(t('Putting an item on sale is a Pro feature. Upgrade to Pro to set a promo price.',
           '限时优惠是 Pro 功能。升级到 Pro 即可设置优惠价。'))
-      } else if (typeof err?.message === 'string' && err.message.includes('products_promo_below_price')) {
+      } else if (err.message.includes('products_promo_below_price')) {
         setMsg(t('The promo price is no longer below the normal price. Lower or clear the promo price first.',
           '优惠价已不低于原价。请先降低或清除优惠价。'))
       } else {
-        setMsg(err?.message || t('Something went wrong.', '出错了。'))
+        setMsg(err.message || t('Something went wrong.', '出错了。'))
       }
-    } finally { setBusy(false) }
+    }
+    setBusy(false)
   }
 
   async function setProductImages(p: any, image_urls: string[]) {
-    await upsertProduct(stripPromo({ ...p, image_urls })); await load()
+    const r = await upsertProduct(stripPromo({ ...p, image_urls }))
+    if (r.ok) await load()
   }
   async function remove(p: any) {
-    await deleteProduct(p.id, merchant!.id)
+    const r = await deleteProduct(p.id, merchant!.id)
+    if (!r.ok) { toast.error(r.error.message || t('Could not delete product', '无法删除产品')); return }
     if (p.image_urls?.length) { try { await deleteProductImages(p.image_urls) } catch { /* best-effort */ } }
     await load(); toast.success(t('Product deleted', '产品已删除'))
   }

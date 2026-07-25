@@ -29,10 +29,9 @@ export default function DeactivatedVouchers() {
     if (!merchantId) return
     let on = true
     // A failure is silent: this is a footnote to the upgrade panel, and an error card under it
-    // would be louder than the thing it annotates.
+    // would be louder than the thing it annotates. Could-not-ask collapses to `[]` here.
     fetchMerchantVouchers(merchantId)
-      .then(v => { if (on) setRows(v) })
-      .catch(() => { if (on) setRows([]) })
+      .then(r => { if (on) setRows(r.ok ? r.data : []) })
     return () => { on = false }
   }, [merchantId])
 

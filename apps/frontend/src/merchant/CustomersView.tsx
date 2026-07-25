@@ -31,7 +31,7 @@ export default function CustomersView() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
 
   useEffect(() => {
-    fetchMerchantCustomers(merchant!.id).then(setCustomers)
+    fetchMerchantCustomers(merchant!.id).then(r => { if (r.ok) setCustomers(r.data) })
   }, [merchant!.id])
 
   // A status/note/tracking save inside the stacked order detail must reflect in the

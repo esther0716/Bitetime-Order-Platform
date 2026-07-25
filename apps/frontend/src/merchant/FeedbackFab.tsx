@@ -85,21 +85,20 @@ export default function FeedbackFab() {
     const startedIn = session.current
     setBusy(true)
     setError('')
-    try {
-      await submitFeedback(merchant.id, { category: category as FeedbackCategory, message: trimmed })
-      // The dialog may have been closed and reopened while that await was pending — a fresh
-      // session the user is now typing into. This request's result belongs to the session
-      // that started it, which no longer exists on screen; touching state here would stomp
-      // the new one. The row is already written, so nothing is lost by staying quiet.
-      if (session.current !== startedIn) return
+    const r = await submitFeedback(merchant.id, { category: category as FeedbackCategory, message: trimmed })
+    // The dialog may have been closed and reopened while that await was pending — a fresh
+    // session the user is now typing into. This request's result belongs to the session
+    // that started it, which no longer exists on screen; touching state here would stomp
+    // the new one. The row is already written, so nothing is lost by staying quiet.
+    if (session.current !== startedIn) return
+    if (r.ok) {
       setSent(true)
       // Let the thank-you land before the dialog goes away.
       autoCloseTimer.current = setTimeout(() => change(false), 1600)
-    } catch (e) {
-      if (session.current !== startedIn) return
+    } else {
       // Keep what they typed — losing a long message to a failed request is the worst
       // possible outcome for a feedback form.
-      setError(e instanceof Error ? e.message : t('Could not send feedback', '无法发送反馈'))
+      setError(r.error.message || t('Could not send feedback', '无法发送反馈'))
       setBusy(false)
     }
   }

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Truck, ExternalLink, ChevronDown } from 'lucide-react'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
-import { fetchMyOrdersAtShop, fetchProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
+import { fetchMyOrdersAtShop, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
 import { StatusBadge } from '../orderStatus'
 import { courierName, trackingUrl } from '../couriers'
 import { formatMoney } from '../currency'
@@ -50,11 +50,14 @@ export default function OrderHistory() {
     if (!merchantId || !userId) return
     let live = true
     fetchMyOrdersAtShop(merchantId)
-      .then(rows => { if (live) setLoaded({ state: 'orders', userId, merchantId, rows }) })
-      .catch(() => { if (live) setLoaded({ state: 'failed', userId, merchantId }) })
+      .then(r => {
+        if (!live) return
+        if (r.ok) setLoaded({ state: 'orders', userId, merchantId, rows: r.data })
+        else setLoaded({ state: 'failed', userId, merchantId })
+      })
     // The menu, only to read item names back in the customer's language: an order stores the name
     // as it was at checkout, in whichever language was on screen then.
-    fetchProducts(merchantId).then(rows => { if (live) setProducts(rows) }).catch(() => {})
+    lookupProducts(merchantId).then(r => { if (live && r.ok) setProducts(r.data) })
     return () => { live = false }
   }, [merchantId, userId])
 

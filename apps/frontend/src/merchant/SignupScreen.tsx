@@ -55,7 +55,8 @@ export default function SignupScreen() {
                  '账号已创建。请查收邮件确认，然后登录以完成店铺设置。'))
         setBusy(false); return
       }
-      await createMerchant({ name, plan, billing, referredByCode: ref })
+      const created = await createMerchant({ name, plan, billing, referredByCode: ref })
+      if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
       await refreshMerchant()
       if (plan === 'basic') {
         // Cardless trial: no Checkout. The shop waits for platform approval,
@@ -64,8 +65,9 @@ export default function SignupScreen() {
         return
       }
       // Pro pays upfront: hand off to Stripe Checkout; webhook activates the shop.
-      const url = await startCheckout({ plan, billing })
-      window.location.assign(url)
+      const checkout = await startCheckout({ plan, billing })
+      if (!checkout.ok) { setMsg(checkout.error.message || t('Could not start checkout', '无法开始结账')); setBusy(false); return }
+      window.location.assign(checkout.data)
     } catch (err: any) {
       setMsg(err.message || t('Something went wrong.', '出错了。'))
       setBusy(false)

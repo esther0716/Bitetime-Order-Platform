@@ -85,30 +85,35 @@ export default function OrderDetailSheet({
   }
 
   function handleStatusChange(o: any, status: string) {
-    setOrderStatus(o.id, status, merchant!.id).then(onOrderUpdated).catch(() => {
-      toast.error(t('Could not update order status.', '无法更新订单状态。'))
+    setOrderStatus(o.id, status, merchant!.id).then(r => {
+      if (r.ok) onOrderUpdated(r.data)
+      else toast.error(t('Could not update order status.', '无法更新订单状态。'))
     })
   }
 
   function handleNoteSave() {
     if (!order) return
     setSavingNote(true)
-    setOrderNote(order.id, noteDraft, merchant!.id).then(updated => {
-      onOrderUpdated(updated)
-      toast.success(t('Note saved', '备注已保存'))
-    }).catch(() => {
-      toast.error(t('Could not save note.', '无法保存备注。'))
+    setOrderNote(order.id, noteDraft, merchant!.id).then(r => {
+      if (r.ok) {
+        onOrderUpdated(r.data)
+        toast.success(t('Note saved', '备注已保存'))
+      } else {
+        toast.error(t('Could not save note.', '无法保存备注。'))
+      }
     }).finally(() => setSavingNote(false))
   }
 
   function handleTrackingSave() {
     if (!order) return
     setSavingTrack(true)
-    setOrderTracking(order.id, courierDraft || null, awbDraft, merchant!.id).then(updated => {
-      onOrderUpdated(updated)
-      toast.success(t('Tracking saved', '物流已保存'))
-    }).catch(() => {
-      toast.error(t('Could not save tracking.', '无法保存物流。'))
+    setOrderTracking(order.id, courierDraft || null, awbDraft, merchant!.id).then(r => {
+      if (r.ok) {
+        onOrderUpdated(r.data)
+        toast.success(t('Tracking saved', '物流已保存'))
+      } else {
+        toast.error(t('Could not save tracking.', '无法保存物流。'))
+      }
     }).finally(() => setSavingTrack(false))
   }
 

@@ -7,7 +7,8 @@ import { SignupError, signupErrorCode } from './signupError'
 import type { AddressParts, EarnedReward, FeedbackItem, MerchantCustomer, Order, ReferredShop, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
-import { API_URL, apiGet, apiTry, apiSend } from './api'
+import { API_URL, apiGet, apiSend, mapOk, toVoid } from './api'
+import type { Result } from './api'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -71,32 +72,25 @@ export async function signUpCustomer(email: string, password: string) {
 
 // Upserts the caller's GLOBAL profile (merchant_id null) via the backend, which forces
 // user_id/merchant_id server-side and allowlists the rest (pickProfileFields in
-// apps/backend/src/writes.ts) — see Global Constraint 1. Best-effort: returns any error
-// instead of throwing (never null on failure, never throws), because both callers below treat
-// a failure as "try again later", not as a hard stop. In particular, during merchant signup
-// there is no session yet (email confirmation is on project-wide) — the fetch 401s exactly as
-// RLS used to block the equivalent browser write, and it's retried from onAuthChange once a
-// session exists.
+// apps/backend/src/writes.ts) — see Global Constraint 1. Best-effort: returns the failure as a
+// Result rather than throwing, because both callers below treat a failure as "try again later",
+// not as a hard stop. In particular, during merchant signup there is no session yet (email
+// confirmation is on project-wide) — the fetch 401s exactly as RLS used to block the equivalent
+// browser write, and it's retried from onAuthChange once a session exists.
 async function ensureGlobalProfile(fields: {
   user_id: string
   name: string
   email?: string | null
   email_confirmed: boolean
   referral_code?: string
-}): Promise<Error | null> {
-  try {
-    // user_id is forced to the caller server-side; send everything else.
-    const { user_id: _user_id, ...rest } = fields
-    await apiSend('/api/me/profile', 'PUT', rest, { auth: true })
-    return null
-  } catch (e) {
-    return e as Error
-  }
+}): Promise<Result<void>> {
+  // user_id is forced to the caller server-side; send everything else.
+  const { user_id: _user_id, ...rest } = fields
+  return toVoid(await apiSend('/api/me/profile', 'PUT', rest, { auth: true }))
 }
 
-export async function fetchProfileByUserId(_userId: string) {
-  const r = await apiTry<any>('/api/me/profile', { auth: true })
-  return r.ok ? r.data : null
+export async function fetchProfileByUserId(_userId: string): Promise<Result<any | null>> {
+  return apiGet<any | null>('/api/me/profile', { auth: true })
 }
 
 /**
@@ -104,103 +98,71 @@ export async function fetchProfileByUserId(_userId: string) {
  * shop or any other. Silent: the customer asked for none of this and is shown no checkbox.
  *
  * Best-effort by design. It runs after an order is already placed, so a failure here must cost
- * the customer nothing but a retype next time; it must never surface as a failed order.
+ * the customer nothing but a retype next time; it must never surface as a failed order — which
+ * is now the CALLER's choice: it returns a Result<void> and the storefront simply does not act
+ * on `{ ok:false }` (the swallow is at the call site, not baked in here).
  *
  * Writes the GLOBAL profile (merchant_id null) — the same row `ensureGlobalProfile` maintains,
  * via the same `PUT /api/me/profile` upsert. An address belongs to the customer, not to a shop.
  */
-export async function saveCustomerDetails(fields: SavedDetails): Promise<void> {
-  if (Object.keys(fields).length === 0) return
+export async function saveCustomerDetails(fields: SavedDetails): Promise<Result<void>> {
+  if (Object.keys(fields).length === 0) return { ok: true, data: undefined }
   const user = await getCurrentUser()
-  if (!user) return // a guest saves nothing, ever — that is what makes the gate's warning true
-  try {
-    await apiSend('/api/me/profile', 'PUT', fields, { auth: true })
-  } catch {
-    // best-effort: a failure here must never surface as a failed order
-  }
+  // a guest saves nothing, ever — that is what makes the gate's warning true
+  if (!user) return { ok: true, data: undefined }
+  return toVoid(await apiSend('/api/me/profile', 'PUT', fields, { auth: true }))
 }
 
 const MERCHANT_STATUSES = ['pending', 'active', 'suspended']
 
-export async function fetchAllMerchants() {
+export async function fetchAllMerchants(): Promise<Result<any[]>> {
   return apiGet<any[]>('/api/merchants', { auth: true })
 }
 
 // Status is the billing enforcement boundary and is service_role-only at the DB
 // layer (guard_merchant_status trigger). Direct PostgREST updates are blocked, so
 // admin suspend/reject/reactivate goes through the superadmin backend endpoint.
-export async function setMerchantStatus(id: string, status: string) {
-  if (!MERCHANT_STATUSES.includes(status)) throw new Error('Invalid status')
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/admin/set-merchant-status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ merchantId: id, status }),
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Status update failed')
-  }
-  return res.json()
+export async function setMerchantStatus(id: string, status: string): Promise<Result<any>> {
+  if (!MERCHANT_STATUSES.includes(status)) return { ok: false, error: { code: 'invalid_status', message: 'Invalid status' } }
+  return apiSend<any>('/api/admin/set-merchant-status', 'POST', { merchantId: id, status }, { auth: 'required' })
 }
 
 // Superadmin: grant a merchant free Pro (active + pro, no Stripe charge). Goes
 // through the backend, which writes status/plan/billing with the service-role key.
-export async function compMerchant(id: string) {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/admin/comp-merchant`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ merchantId: id }),
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Comp failed')
-  }
-  return res.json()
+export async function compMerchant(id: string): Promise<Result<any>> {
+  return apiSend<any>('/api/admin/comp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
 }
 
-// The "could not ask" vs "the answer is empty" distinction, same shape as
-// `lookupMerchantVoucher` / `lookupProducts`: `{ ok: false }` means the request itself never
-// landed (network/CORS/non-2xx) and a caller that would DROP something on that must not treat
-// it as an answer. `{ ok: true, merchant: null }` is a real answer — the slug is reserved or no
-// row matches — and is safe to adopt. `fetchMerchantBySlug` below collapses both to `null` for
-// callers that only ever DISPLAY the result; `MerchantContext.refresh` uses this directly so a
-// dropped packet mid-checkout cannot blank an already-loaded storefront.
-export async function lookupMerchantBySlug(slug: string | undefined): Promise<{ ok: true; merchant: any | null } | { ok: false }> {
+// The "could not ask" vs "the answer is empty" distinction, now the shared Result:
+// `{ ok: false }` means the request itself never landed (network/CORS/5xx) and a caller that
+// would DROP something on that must not treat it as an answer; `{ ok: true, data: null }` is a
+// real answer — the slug is reserved, or the backend answered 200 with a null body (no such
+// shop). The null-collapsing `fetchMerchantBySlug` twin is gone: a display-only caller takes
+// `r.ok ? r.data : null` itself, and `MerchantContext.refresh` reads `r.ok`/`r.data` directly so
+// a dropped packet mid-checkout cannot blank an already-loaded storefront.
+export async function lookupMerchantBySlug(slug: string | undefined): Promise<Result<any | null>> {
   const s = (slug || '').trim().toLowerCase()
-  if (!s || RESERVED_SLUGS.includes(s)) return { ok: true, merchant: null }
-  const r = await apiTry<any>(`/api/merchants/${encodeURIComponent(s)}`)
-  return r.ok ? { ok: true, merchant: r.data } : { ok: false }
-}
-
-export async function fetchMerchantBySlug(slug: string | undefined) {
-  const found = await lookupMerchantBySlug(slug)
-  return found.ok ? found.merchant : null
+  if (!s || RESERVED_SLUGS.includes(s)) return { ok: true, data: null }
+  return apiGet<any | null>(`/api/merchants/${encodeURIComponent(s)}`)
 }
 
 // The signed-in user's own shop — same "could not ask" vs "the answer is empty" shape as
-// `lookupMerchantBySlug` above, and for a sharper reason. `{ ok: true, merchant: null }` is a
+// `lookupMerchantBySlug` above, and for a sharper reason. `{ ok: true, data: null }` is a
 // real answer: this user owns no shop, so they are a customer. `{ ok: false }` means the
 // request never landed, and the caller knows NOTHING about what they own.
 //
-// There is deliberately no collapsing `fetchMyMerchant` wrapper. Collapsing the two is what
-// broke #98: `SessionContext` derives `role` from this row, so a backend it could not reach
-// read as "owns no shop" → role `customer` → `RequireRole` bounced the merchant to the
+// There is deliberately no collapsing wrapper. Collapsing "could not ask" into "owns no shop"
+// is what broke #98: `SessionContext` derives `role` from this row, so a backend it could not
+// reach read as "owns no shop" → role `customer` → `RequireRole` bounced the merchant to the
 // landing page. In production every /api/* call was CORS-blocked (the backend's FRONTEND_URL
 // did not match the deployed origin), so every merchant login ended on the marketing page
 // with no error shown anywhere.
-export async function lookupMyMerchant(userId: string): Promise<{ ok: true; merchant: any | null } | { ok: false }> {
-  if (!userId) return { ok: true, merchant: null }
-  const r = await apiTry<any>('/api/me/merchant', { auth: true })
-  return r.ok ? { ok: true, merchant: r.data } : { ok: false }
+export async function lookupMyMerchant(userId: string): Promise<Result<any | null>> {
+  if (!userId) return { ok: true, data: null }
+  return apiGet<any | null>('/api/me/merchant', { auth: true })
 }
 
-export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode }: { name: string; plan?: string; billing?: string; referredByCode?: string }) {
+export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode }: { name: string; plan?: string; billing?: string; referredByCode?: string }): Promise<Result<any>> {
   return apiSend<any>('/api/merchants', 'POST', { name, plan, billing, referredByCode }, { auth: true })
 }
 
@@ -208,21 +170,9 @@ export async function createMerchant({ name, plan = 'basic', billing = 'monthly'
 
 // Create a Stripe Checkout Session for the current merchant and return its URL.
 // Every subscription is charged in MYR; the backend no longer takes a region.
-export async function startCheckout({ plan, billing }: { plan: string; billing: string }) {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/checkout`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ plan, billing }),
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Could not start checkout')
-  }
-  const { url } = await res.json()
-  return url
+export async function startCheckout({ plan, billing }: { plan: string; billing: string }): Promise<Result<string>> {
+  const r = await apiSend<{ url: string }>('/api/checkout', 'POST', { plan, billing }, { auth: 'required' })
+  return mapOk(r, (d) => d.url)
 }
 
 // Platform subscription pricing from the backend, always in MYR. `country` is an
@@ -236,11 +186,9 @@ export interface PlatformPricing {
   estimate: { currency: string; rate: number } | null
 }
 
-export async function fetchPlatformPricing(country?: string): Promise<PlatformPricing> {
+export async function fetchPlatformPricing(country?: string): Promise<Result<PlatformPricing>> {
   const qs = country ? `?country=${encodeURIComponent(country)}` : ''
-  const res = await fetch(`${API_URL}/api/pricing${qs}`)
-  if (!res.ok) throw new Error('Could not load pricing')
-  return res.json()
+  return apiGet<PlatformPricing>(`/api/pricing${qs}`)
 }
 
 /**
@@ -273,50 +221,26 @@ export interface MerchantBilling {
 }
 
 // Superadmin: read every merchant's billing row (RLS grants superadmins read on all).
-export async function fetchAllBilling(): Promise<MerchantBilling[]> {
+export async function fetchAllBilling(): Promise<Result<MerchantBilling[]>> {
   return apiGet<MerchantBilling[]>('/api/billing', { auth: true })
 }
 
 // Read the merchant's authoritative billing row (owner-readable via RLS).
-export async function fetchMyBilling(merchantId: string) {
-  if (!merchantId) return null
-  const r = await apiTry<any>(`/api/merchants/${merchantId}/billing`, { auth: true })
-  return r.ok ? r.data : null
+export async function fetchMyBilling(merchantId: string): Promise<Result<any | null>> {
+  if (!merchantId) return { ok: true, data: null }
+  return apiGet<any | null>(`/api/merchants/${merchantId}/billing`, { auth: true })
 }
 
 // Superadmin approval goes through the backend: it creates the Stripe customer
 // + cardless trialing subscription and flips the shop active in one step.
-export async function approveMerchant(merchantId: string) {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/admin/approve-merchant`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ merchantId }),
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Approval failed')
-  }
-  return res.json()
+export async function approveMerchant(merchantId: string): Promise<Result<any>> {
+  return apiSend<any>('/api/admin/approve-merchant', 'POST', { merchantId }, { auth: 'required' })
 }
 
 // Open the Stripe billing portal for the signed-in merchant (add/update card).
-export async function openBillingPortal(): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/billing/portal`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Could not open billing portal')
-  }
-  const { url } = await res.json()
-  return url
+export async function openBillingPortal(): Promise<Result<string>> {
+  const r = await apiSend<{ url: string }>('/api/billing/portal', 'POST', undefined, { auth: 'required' })
+  return mapOk(r, (d) => d.url)
 }
 
 /**
@@ -324,22 +248,12 @@ export async function openBillingPortal(): Promise<string> {
  * downgrading both land on a period boundary, so no money moves and there is nothing a payment
  * screen needs to explain. See CONTEXT.md → Plan entitlement.
  *
- * Each returns nothing and throws the backend's error code on failure — the caller decides what
- * `no_live_subscription` should say, because it means "the subscription changed under this tab",
- * not "something broke".
+ * Each returns `Result<void>` and carries the backend's error code in `error.code` on failure —
+ * the caller decides what `no_live_subscription` should say, because it means "the subscription
+ * changed under this tab", not "something broke".
  */
-async function billingAction(path: 'cancel' | 'resume' | 'downgrade'): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/billing/${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || `Could not ${path} the subscription`)
-  }
+async function billingAction(path: 'cancel' | 'resume' | 'downgrade'): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/billing/${path}`, 'POST', undefined, { auth: 'required' }))
 }
 
 /** Step down to Basic when the paid-for period ends. Pro features stay until then. */
@@ -349,9 +263,9 @@ export const cancelSubscription = () => billingAction('cancel')
 /** Undo whichever wind-down is pending — a cancellation, a scheduled downgrade, or both. */
 export const resumeSubscription = () => billingAction('resume')
 
-export async function updateMerchantSlug(id: string, slug: string) {
+export async function updateMerchantSlug(id: string, slug: string): Promise<Result<any>> {
   const s = (slug || '').trim().toLowerCase()
-  if (!s || RESERVED_SLUGS.includes(s)) throw new Error('Reserved or empty slug')
+  if (!s || RESERVED_SLUGS.includes(s)) return { ok: false, error: { code: 'reserved_slug', message: 'Reserved or empty slug' } }
   return apiSend<any>(`/api/merchants/${id}/slug`, 'PATCH', { slug: s }, { auth: true })
 }
 
@@ -412,8 +326,8 @@ export function onAuthChange(callback: (user: User | null, event?: string) => vo
           email: user.email,
           email_confirmed: !!user.email_confirmed_at,
           referral_code: referralCodeOf(user.id),
-        }).then((error) => {
-          if (error) console.error('Profile upsert failed:', error.message);
+        }).then((r) => {
+          if (!r.ok) console.error('Profile upsert failed:', r.error.message);
         });
       }, 0);
     }
@@ -447,45 +361,32 @@ export function voucherFullyUsed(v: Voucher) {
 // disagree about what a voucher is worth.
 export { voucherFromRow } from '@bitetime/shared'
 
-export async function fetchMerchantVouchers(merchantId: string): Promise<Voucher[]> {
-  if (!merchantId) return []
-  const r = await apiTry<any[]>(`/api/merchants/${merchantId}/vouchers`, { auth: true })
-  return r.ok ? r.data.map(voucherFromRow) : []
+export async function fetchMerchantVouchers(merchantId: string): Promise<Result<Voucher[]>> {
+  if (!merchantId) return { ok: true, data: [] }
+  const r = await apiGet<any[]>(`/api/merchants/${merchantId}/vouchers`, { auth: true })
+  return mapOk(r, (rows) => rows.map(voucherFromRow))
 }
 
 /**
  * The answer to "does this shop still have this voucher?", with "I could not ask" as its own
  * answer and not a `null` shaped like "no".
  *
- * supabase-js does not reject on a network or PostgREST failure — it RESOLVES with
- * `{ data: null, error }`. So a lookup that collapses both onto `null` cannot tell a voucher
- * the merchant deleted from a voucher it simply failed to reach, and a caller that DROPS the
- * voucher on `null` confiscates a perfectly valid one the moment the connection flickers —
- * while telling the customer it "is no longer available", which is a lie about their money.
+ * `{ ok: true, data: null }` means we ASKED and the shop no longer has it — safe to drop.
+ * `{ ok: false }` means the request never landed (network/CORS/non-2xx), and a caller that
+ * would DROP the voucher on that must change nothing: confiscating a valid voucher the moment
+ * the connection flickers — while telling the customer it "is no longer available" — is a lie
+ * about their money. That distinction is now the shared `Result` shape, not a bespoke type.
  */
-export type VoucherLookup =
-  | { ok: true; voucher: Voucher | null }  // we asked; `null` = the shop no longer has it
-  | { ok: false }                          // we could not ask; the caller must change nothing
-
-export async function lookupMerchantVoucher(merchantId: string, code: string): Promise<VoucherLookup> {
-  if (!merchantId || !code) return { ok: true, voucher: null };
-  const r = await apiTry<any>(`/api/merchants/${merchantId}/vouchers/${encodeURIComponent(code)}`);
-  if (!r.ok) return { ok: false };            // could not ask → caller changes nothing
-  return { ok: true, voucher: r.data ? voucherFromRow(r.data) : null };
+export async function lookupMerchantVoucher(merchantId: string, code: string): Promise<Result<Voucher | null>> {
+  if (!merchantId || !code) return { ok: true, data: null }
+  const r = await apiGet<any>(`/api/merchants/${merchantId}/vouchers/${encodeURIComponent(code)}`)
+  return mapOk(r, (row) => (row ? voucherFromRow(row) : null))
 }
 
-// Fetch one voucher by code with its current used_by, bypassing any stale
-// in-memory snapshot. Used to re-validate one-per-customer just before an order
-// is placed (the page-load snapshot never sees this session's own redemption).
-//
-// A failure reads as a MISS here, which is safe only because both of this function's callers
-// treat a miss as "carry on with what you have" — the submit pre-flight falls through to the
-// server's own guard, and applyVoucher was never going to apply a voucher it could not read.
-// A caller that would DROP something on a miss must use `lookupMerchantVoucher` instead.
-export async function fetchMerchantVoucher(merchantId: string, code: string): Promise<Voucher | null> {
-  const found = await lookupMerchantVoucher(merchantId, code);
-  return found.ok ? found.voucher : null;
-}
+// `fetchMerchantVoucher` (the null-collapsing convenience twin of `lookupMerchantVoucher`) is
+// gone with the null contract: a caller that wants "a miss reads as no voucher, carry on" now
+// says so at the call site by taking `r.ok ? r.data : null` itself, so the choice to discard a
+// could-not-ask is visible where it is made rather than hidden in a wrapper.
 
 // `redeemVoucher` is gone, and its absence is the fix. Redemption was a SECOND call made
 // after the order was already committed, so a failure left the customer holding a discount on
@@ -496,18 +397,18 @@ export async function fetchMerchantVoucher(merchantId: string, code: string): Pr
 // by vouchers_write_own).
 export async function createMerchantVoucher(input: {
   merchantId: string; code: string; kind: string; amount: number; maxUses?: number | null;
-}): Promise<Voucher> {
-  const data = await apiSend<any>(`/api/merchants/${input.merchantId}/vouchers`, 'POST', {
+}): Promise<Result<Voucher>> {
+  const r = await apiSend<any>(`/api/merchants/${input.merchantId}/vouchers`, 'POST', {
     code: input.code,
     kind: input.kind,
     amount: input.amount,
     maxUses: input.maxUses ?? null,
-  }, { auth: true });
-  return voucherFromRow(data);
+  }, { auth: true })
+  return mapOk(r, voucherFromRow)
 }
 
-export async function deleteMerchantVoucher(id: string, merchantId: string) {
-  await apiSend(`/api/merchants/${merchantId}/vouchers/${id}`, 'DELETE', undefined, { auth: true });
+export async function deleteMerchantVoucher(id: string, merchantId: string): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/merchants/${merchantId}/vouchers/${id}`, 'DELETE', undefined, { auth: true }))
 }
 
 // ── Referral program ─────────────────────────────────────────────────────────
@@ -523,35 +424,15 @@ export function referralCodeOf(userId: string) {
 // The code is never sent — the backend derives it from the bearer token, exactly as the
 // my_referred_shops RPC this replaces derived it from auth.uid(). Sending it would turn the
 // endpoint into a cross-tenant read of any referrer's shops.
-export async function fetchReferredShops(): Promise<ReferredShop[]> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/referrals/shops`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Could not load referred shops')
-  }
-  return (await res.json()) as ReferredShop[]
+export async function fetchReferredShops(): Promise<Result<ReferredShop[]>> {
+  return apiGet<ReferredShop[]>('/api/referrals/shops', { auth: 'required' })
 }
 
 // The referral rewards the current user has earned — free months for shops they brought in
 // that started paying. Like fetchReferredShops, the code is never sent: the backend scopes
 // to the caller's own merchant from the bearer token.
-export async function fetchEarnedRewards(): Promise<EarnedReward[]> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const token = session?.access_token
-  if (!token) throw new Error('Not signed in')
-  const res = await fetch(`${API_URL}/api/referrals/rewards`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const { error } = await res.json().catch(() => ({}))
-    throw new Error(error || 'Could not load referral rewards')
-  }
-  return (await res.json()) as EarnedReward[]
+export async function fetchEarnedRewards(): Promise<Result<EarnedReward[]>> {
+  return apiGet<EarnedReward[]>('/api/referrals/rewards', { auth: 'required' })
 }
 
 // ── Multi-tenant order placement ─────────────────────────────────────────────
@@ -620,13 +501,16 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
   voucherCode?: string | null
   /** `YYYY-MM-DD` on the shop's clock. The backend re-checks it against the shop's window. */
   fulfilDate: string | null
-}) {
+}): Promise<Result<{ orderNumber: string }, OrderError>> {
   // Optional: a guest has no session, and guest checkout is a first-class path.
   const { data: { session } } = await supabase.auth.getSession()
   const token = session?.access_token
 
   // `fetch` REJECTS on a network or CORS failure rather than returning a non-ok response, so
   // an offline customer would otherwise get a raw "Failed to fetch" on the checkout screen.
+  // The Result's error is a full OrderError (not the generic ApiError): the storefront branches
+  // on `error.code` (the refusal union) and adopts `error.now` — the server clock the refusal
+  // carried — to close the #69 offset loop. That domain payload is why `E` is parameterised.
   const res = await fetch(`${API_URL}/api/orders`, {
     method: 'POST',
     headers: {
@@ -638,13 +522,13 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
       cart, quotedTotal, voucherCode, fulfilDate,
     }),
   }).catch(() => null)
-  if (!res) throw new OrderError('network')
+  if (!res) return { ok: false, error: new OrderError('network') }
 
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}))
-    throw new OrderError(payload?.error ?? 'order_failed', typeof payload?.now === 'string' ? payload.now : undefined)
+    return { ok: false, error: new OrderError(payload?.error ?? 'order_failed', typeof payload?.now === 'string' ? payload.now : undefined) }
   }
-  return (await res.json()) as { orderNumber: string }
+  return { ok: true, data: (await res.json()) as { orderNumber: string } }
 }
 
 /**
@@ -669,36 +553,34 @@ export class DeliveryQuoteError extends Error {
  * The row this writes is the same row order intake reads a moment later, which is what makes the
  * quote and the charge the same number.
  */
-export async function quoteDelivery(merchantId: string, placeId: string): Promise<{ km: number; fee: number }> {
+export async function quoteDelivery(merchantId: string, placeId: string): Promise<Result<{ km: number; fee: number }, DeliveryQuoteError>> {
   const res = await fetch(`${API_URL}/api/shipping/quote`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ merchantId, placeId }),
   }).catch(() => null)
-  if (!res) throw new DeliveryQuoteError('network')
+  if (!res) return { ok: false, error: new DeliveryQuoteError('network') }
   if (!res.ok) {
     const payload = (await res.json().catch(() => ({}))) as { error?: string }
     const code = payload.error
     // Recognised codes pass through untouched; anything else is a body we do not understand,
     // which is a lookup failure as far as the customer is concerned.
-    throw new DeliveryQuoteError(
+    return { ok: false, error: new DeliveryQuoteError(
       code && (QUOTE_REFUSALS as readonly string[]).includes(code) ? (code as QuoteRefusal) : 'lookup_failed',
-    )
+    ) }
   }
-  return (await res.json()) as { km: number; fee: number }
+  return { ok: true, data: (await res.json()) as { km: number; fee: number } }
 }
 
 // Trigger the server-side order notification fan-out: the merchant's Telegram and
 // the signed-in customer's confirmation email. The bot token and the recipient
 // address both stay on the backend — the browser sends only the order reference
 // and `lang`, which selects the email's language (never who receives it).
-export async function notifyOrderPlacedRemote(merchantId: string, orderNumber: string, lang: 'en' | 'zh') {
-  const res = await fetch(`${API_URL}/api/notify/order`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ merchantId, orderNumber, lang }),
-  })
-  if (!res.ok) throw new Error('Order notification failed')
+//
+// Best-effort: returns Result<void> and the storefront ignores it — a notify failure must never
+// surface as a failed order, and the order is already committed by the time this runs.
+export async function notifyOrderPlacedRemote(merchantId: string, orderNumber: string, lang: 'en' | 'zh'): Promise<Result<void>> {
+  return toVoid(await apiSend('/api/notify/order', 'POST', { merchantId, orderNumber, lang }))
 }
 
 /**
@@ -715,37 +597,36 @@ export const ORDER_HISTORY_LIMIT = 20
  * own storefront's history would be handed every customer's order at that shop. Filtering by the
  * signed-in uid is what makes "your orders" mean yours.
  */
-export async function fetchMyOrdersAtShop(merchantId: string): Promise<Order[]> {
-  if (!merchantId) return []
+export async function fetchMyOrdersAtShop(merchantId: string): Promise<Result<Order[]>> {
+  if (!merchantId) return { ok: true, data: [] }
   const user = await getCurrentUser()
-  if (!user) return [] // a guest has no history — by design, and permanently
+  if (!user) return { ok: true, data: [] } // a guest has no history — by design, and permanently
   return apiGet<Order[]>(`/api/merchants/${merchantId}/my-orders`, { auth: true })
 }
 
-export async function fetchMerchantOrders(merchantId: string) {
-  if (!merchantId) return []
-  const r = await apiTry<any[]>(`/api/merchants/${merchantId}/orders`, { auth: true })
-  return r.ok ? r.data : []
+export async function fetchMerchantOrders(merchantId: string): Promise<Result<any[]>> {
+  if (!merchantId) return { ok: true, data: [] }
+  return apiGet<any[]>(`/api/merchants/${merchantId}/orders`, { auth: true })
 }
 
 // True once the merchant has ≥1 order — used to lock the currency selector so
 // past orders and dashboard aggregates never silently re-denominate.
-export async function merchantHasOrders(merchantId: string) {
-  if (!merchantId) return false
-  const r = await apiTry<{ count: number }>(`/api/merchants/${merchantId}/orders/count`, { auth: true })
-  return r.ok ? r.data.count > 0 : false
+export async function merchantHasOrders(merchantId: string): Promise<Result<boolean>> {
+  if (!merchantId) return { ok: true, data: false }
+  const r = await apiGet<{ count: number }>(`/api/merchants/${merchantId}/orders/count`, { auth: true })
+  return mapOk(r, (d) => d.count > 0)
 }
 
-export async function setOrderStatus(orderId: string, status: string, merchantId: string) {
-  if (!ORDER_STATUSES.includes(status)) throw new Error('Invalid status')
+export async function setOrderStatus(orderId: string, status: string, merchantId: string): Promise<Result<any>> {
+  if (!ORDER_STATUSES.includes(status)) return { ok: false, error: { code: 'invalid_status', message: 'Invalid status' } }
   return apiSend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { status }, { auth: true })
 }
 
-export async function setOrderNote(orderId: string, note: string, merchantId: string) {
+export async function setOrderNote(orderId: string, note: string, merchantId: string): Promise<Result<any>> {
   return apiSend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { note }, { auth: true })
 }
 
-export async function setOrderTracking(orderId: string, courier: string | null, awb: string, merchantId: string) {
+export async function setOrderTracking(orderId: string, courier: string | null, awb: string, merchantId: string): Promise<Result<any>> {
   return apiSend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { courier, awb }, { auth: true })
 }
 
@@ -781,8 +662,10 @@ export async function fetchOrderTracking(merchantId: string, orderNumber: string
   } | null
 }
 
-export async function fetchMerchantCustomers(merchantId: string): Promise<MerchantCustomer[]> {
-  const orders = await fetchMerchantOrders(merchantId)
+export async function fetchMerchantCustomers(merchantId: string): Promise<Result<MerchantCustomer[]>> {
+  const r = await fetchMerchantOrders(merchantId)
+  if (!r.ok) return r // could not read the orders → could not aggregate the customers
+  const orders = r.data
   const byWa = new Map<string, MerchantCustomer>()
   for (const o of orders) {
     const key = o.customer_wa || o.customer_name || '—'
@@ -796,53 +679,37 @@ export async function fetchMerchantCustomers(merchantId: string): Promise<Mercha
   for (const c of byWa.values()) {
     c.orders.sort((a, b) => ((a.created_at ?? '') < (b.created_at ?? '') ? 1 : (a.created_at ?? '') > (b.created_at ?? '') ? -1 : 0))
   }
-  return [...byWa.values()]
+  return { ok: true, data: [...byWa.values()] }
 }
 
 // ── Products ──────────────────────────────────────────────────────────────────
 
 /**
- * The shop's menu — or `null`, meaning WE COULD NOT ASK.
- *
- * That distinction is the whole point of this function existing next to `fetchProducts`.
- * supabase-js does not reject on a network or PostgREST failure: it RESOLVES with
- * `{ data: null, error }`. So a fetcher that returns `[]` on error is telling its caller "this
- * shop sells nothing" — and a caller that PRUNES the cart against the menu (Storefront's
- * `adoptProducts` does, and must) would answer a flaky connection by deleting every line the
- * customer chose, blanking the menu behind it, and blaming the shop. That is a destroyed order,
- * not a retry.
- *
- * `[]` from here is the real answer to a real question: the shop genuinely sells nothing, and
- * pruning everything is CORRECT. `null` is not an answer at all. Do not collapse them.
+ * The shop's menu, on the one Result convention: `{ ok:true, data:[] }` is a real answer (the
+ * shop genuinely sells nothing, so pruning the cart against it is CORRECT), while `{ ok:false }`
+ * means WE COULD NOT ASK and a caller that PRUNES the cart against the menu (Storefront's
+ * `adoptProducts`) must change nothing — answering a flaky connection by deleting every line the
+ * customer chose is a destroyed order, not a retry. That is the whole reason this stays a Result
+ * and there is no `[]`-on-failure twin: a display-only caller collapses `r.ok ? r.data : []`
+ * itself, so the choice to treat a could-not-ask as "empty menu" is visible where it is made.
  */
-export async function lookupProducts(merchantId: string) {
-  if (!merchantId) return []
-  const r = await apiTry<any[]>(`/api/merchants/${merchantId}/products`)
-  // r.ok === false is the "could not ask" case → null, exactly as the comment above demands.
-  // A 200 with [] is the real answer (the shop sells nothing) and must NOT become null.
-  return r.ok ? r.data : null
-}
-
-// The menu, with a failure reported as an empty shop. Kept for the callers that only DISPLAY
-// the rows (the merchant's product manager, the order-history name lookup): an empty list
-// there costs a render, and they were all written against it. A caller that deletes anything
-// on the strength of this list must use `lookupProducts` and do nothing on `null`.
-export async function fetchProducts(merchantId: string) {
-  return (await lookupProducts(merchantId)) ?? []
+export async function lookupProducts(merchantId: string): Promise<Result<any[]>> {
+  if (!merchantId) return { ok: true, data: [] }
+  return apiGet<any[]>(`/api/merchants/${merchantId}/products`)
 }
 
 // merchant_id and id are both threaded from `product` — ProductsManager's callers always set
 // both (merchant_id from `merchant!.id`, id from the row or a client-generated draftId) — so
 // the URL carries the same tenant/row identity the backend then forces server-side anyway.
-export async function upsertProduct(product: any) {
+export async function upsertProduct(product: any): Promise<Result<any>> {
   return apiSend<any>(`/api/merchants/${product.merchant_id}/products/${product.id}`, 'PUT', product, { auth: true })
 }
 
 // Signature change: `merchantId` now threads the URL's tenant segment — the backend nests
 // product deletes under /api/merchants/:id/products/:productId (see writes.ts /
 // requireMerchantOwns) so it can verify tenancy before deleting. Callers must pass it.
-export async function deleteProduct(id: string, merchantId: string) {
-  await apiSend(`/api/merchants/${merchantId}/products/${id}`, 'DELETE', undefined, { auth: true })
+export async function deleteProduct(id: string, merchantId: string): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/merchants/${merchantId}/products/${id}`, 'DELETE', undefined, { auth: true }))
 }
 
 // ── Product images (Supabase Storage: public `product-images` bucket) ──────────
@@ -890,34 +757,32 @@ export async function deleteProductImages(paths: string[]): Promise<void> {
 
 // ── Merchant config & secrets ─────────────────────────────────────────────────
 
-export async function updateMerchantConfig(id: string, patch: any) {
+export async function updateMerchantConfig(id: string, patch: any): Promise<Result<any>> {
   return apiSend<any>(`/api/merchants/${id}`, 'PATCH', patch, { auth: true })
 }
 
-export async function fetchMerchantSecret(merchantId: string) {
-  if (!merchantId) return null
-  const r = await apiTry<{ tg_token: string | null; tg_chat_id: string | null }>(
-    `/api/merchants/${merchantId}/secret`, { auth: true })
-  return r.ok ? r.data : null
+export async function fetchMerchantSecret(merchantId: string): Promise<Result<{ tg_token: string | null; tg_chat_id: string | null } | null>> {
+  if (!merchantId) return { ok: true, data: null }
+  return apiGet<{ tg_token: string | null; tg_chat_id: string | null } | null>(`/api/merchants/${merchantId}/secret`, { auth: true })
 }
 
-export async function upsertMerchantSecret(merchantId: string, secret: any) {
-  await apiSend(`/api/merchants/${merchantId}/secret`, 'PUT', secret, { auth: true })
+export async function upsertMerchantSecret(merchantId: string, secret: any): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/merchants/${merchantId}/secret`, 'PUT', secret, { auth: true }))
 }
 
 // ── Merchant platform feedback (#89) ────────────────────────────────────────────
 // merchantId scopes the route; the backend re-derives ownership from the bearer token
 // and ignores anything else in the body, so there is nothing else to send.
 //
-// Returns nothing: the POST responds with a bare merchant_feedback row, which is NOT a
+// Returns no data: the POST responds with a bare merchant_feedback row, which is NOT a
 // FeedbackItem — it carries no shop_name / shop_slug, and only the admin list joins those
-// in. Claiming the richer type here would be a cast the compiler cannot check. Throws on
-// failure (apiSend's contract), which is what the form renders.
-export async function submitFeedback(merchantId: string, draft: FeedbackDraft): Promise<void> {
-  await apiSend<unknown>(`/api/merchants/${merchantId}/feedback`, 'POST', draft, { auth: true })
+// in. Claiming the richer type here would be a cast the compiler cannot check, so the success
+// carries `void`; the form renders `error` on failure.
+export async function submitFeedback(merchantId: string, draft: FeedbackDraft): Promise<Result<void>> {
+  return toVoid(await apiSend<unknown>(`/api/merchants/${merchantId}/feedback`, 'POST', draft, { auth: true }))
 }
 
-export async function fetchAdminFeedback(status?: FeedbackStatus): Promise<FeedbackItem[]> {
+export async function fetchAdminFeedback(status?: FeedbackStatus): Promise<Result<FeedbackItem[]>> {
   const qs = status ? `?status=${status}` : ''
   return apiGet<FeedbackItem[]>(`/api/admin/feedback${qs}`, { auth: true })
 }
@@ -925,6 +790,6 @@ export async function fetchAdminFeedback(status?: FeedbackStatus): Promise<Feedb
 // The PATCH route now joins the shop the same way the admin list does (see
 // updateFeedbackStatus in apps/backend/src/feedback.ts), so this genuinely returns a full
 // FeedbackItem — the spread in AdminFeedback is correct, not merely harmless.
-export async function setFeedbackStatus(id: string, status: FeedbackStatus): Promise<FeedbackItem> {
+export async function setFeedbackStatus(id: string, status: FeedbackStatus): Promise<Result<FeedbackItem>> {
   return apiSend<FeedbackItem>(`/api/admin/feedback/${id}`, 'PATCH', { status }, { auth: true })
 }

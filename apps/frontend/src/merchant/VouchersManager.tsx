@@ -48,39 +48,47 @@ export default function VouchersManager() {
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
 
-  async function load() { setRows(await fetchMerchantVouchers(merchant!.id)) }
-  useEffect(() => { fetchMerchantVouchers(merchant!.id).then(setRows) }, [merchant!.id])
+  // Parity with the old `[]`-on-failure behaviour: a dashboard list that could not load shows
+  // empty rather than a stuck spinner. The load-bearing could-not-ask handling lives on the
+  // customer path (Storefront), not here.
+  async function load() {
+    const r = await fetchMerchantVouchers(merchant!.id)
+    setRows(r.ok ? r.data : [])
+  }
+  useEffect(() => { fetchMerchantVouchers(merchant!.id).then(r => setRows(r.ok ? r.data : [])) }, [merchant!.id])
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true)
-    try {
-      await createMerchantVoucher({
-        merchantId: merchant!.id,
-        code: form.code,
-        kind: form.kind,
-        amount: Number(form.amount) || 0,
-        maxUses: form.maxUses === '' ? null : Number(form.maxUses),
-      })
+    const r = await createMerchantVoucher({
+      merchantId: merchant!.id,
+      code: form.code,
+      kind: form.kind,
+      amount: Number(form.amount) || 0,
+      maxUses: form.maxUses === '' ? null : Number(form.maxUses),
+    })
+    setBusy(false)
+    if (r.ok) {
       setForm(BLANK); await load()
       toast.success(t('Voucher created', '优惠券已创建'))
-    } catch (err) {
+    } else {
       // The whole section is replaced by an upgrade prompt for a basic shop, so this is the
       // fallback for a `plan` that changed under a long-open tab (#110).
-      toast.error(isRequiresPro(err)
+      toast.error(isRequiresPro(r.error)
         ? t('Vouchers are a Pro feature. Upgrade to Pro to create one.', '优惠券是 Pro 功能。升级到 Pro 即可创建。')
         : t('Could not create voucher — is the code already used?', '无法创建优惠券 — 优惠码是否已存在？'))
-    } finally { setBusy(false) }
+    }
   }
 
   async function remove(id: string) {
-    try {
-      await deleteMerchantVoucher(id, merchant!.id); await load()
+    const r = await deleteMerchantVoucher(id, merchant!.id)
+    if (r.ok) {
+      await load()
       toast.success(t('Voucher deleted', '优惠券已删除'))
-    } catch (err) {
+    } else {
       // Delete is gated too (#110) — the backend refuses the whole voucher mutation surface,
-      // not just create. Without this the refusal would be an unhandled rejection and the row
-      // would simply stay put with nothing said.
-      toast.error(isRequiresPro(err)
+      // not just create. Without this the refusal would pass silently and the row would simply
+      // stay put with nothing said.
+      toast.error(isRequiresPro(r.error)
         ? t('Vouchers are a Pro feature. Upgrade to Pro to manage them.', '优惠券是 Pro 功能。升级到 Pro 即可管理。')
         : t('Could not delete voucher', '无法删除优惠券'))
     }

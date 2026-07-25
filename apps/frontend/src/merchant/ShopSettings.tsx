@@ -228,7 +228,7 @@ function ShippingTab({ onDirtyChange }: TabProps) {
       // shopRates writes what it reads on both sides of the wire: a BLANK EM falls back to WM
       // (not free EM shipping); a typed 0 is an honest zero.
       const shipping = shopRates({ WM: fields.wm, EM: fields.em })
-      await updateMerchantConfig(merchant!.id, {
+      const saved = await updateMerchantConfig(merchant!.id, {
         shipping,
         // Saving the Shipping tab completes the onboarding "set pickup / delivery"
         // step (#102). Idempotent — already true after the first save.
@@ -248,6 +248,7 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         origin_lng: fields.originPlaceId && (fields.originLng ?? '').trim() !== '' ? Number(fields.originLng) : null,
         origin_address: fields.originPlaceId ? (fields.originAddress || null) : null,
       })
+      if (!saved.ok) { toast.error(saved.error.message || t('Save failed', '保存失败')); return }
       await refreshMerchant()
       // Show back what was actually SAVED, read through the one function that also reads it on
       // reload, not the raw strings that were typed.
@@ -452,14 +453,16 @@ function PaymentTab({ onDirtyChange }: TabProps) {
 
   useEffect(() => {
     let active = true
-    merchantHasOrders(merchant!.id).then(has => { if (active) setCurrencyLocked(has) })
+    // Fail CLOSED: a could-not-ask keeps the currency selector locked, so a dropped packet can
+    // never open the door to re-denominating a shop that may already have orders.
+    merchantHasOrders(merchant!.id).then(r => { if (active) setCurrencyLocked(r.ok ? r.data : true) })
     return () => { active = false }
   }, [merchant!.id])
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true)
     try {
-      await updateMerchantConfig(merchant!.id, {
+      const saved = await updateMerchantConfig(merchant!.id, {
         // Guard against a stale locked value slipping through: only persist the
         // currency when it is still editable.
         ...(currencyLocked ? {} : { currency: fields.currency }),
@@ -470,6 +473,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
         tax_enabled: fields.taxEnabled,
         tax_rate: Number(fields.taxRate) || 0,
       })
+      if (!saved.ok) { toast.error(saved.error.message || t('Save failed', '保存失败')); return }
       await refreshMerchant()
       // Tax goes through shopTax so a ticked-but-blank rate (`{tax_enabled: true, tax_rate: 0}`)
       // reads back as OFF — carrying `fields.taxEnabled` verbatim would show CHECKED here and
@@ -578,7 +582,8 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
   useTabDirty(saved, fields, onDirtyChange)
 
   useEffect(() => {
-    fetchMerchantSecret(merchant!.id).then((s: any) => {
+    fetchMerchantSecret(merchant!.id).then((r) => {
+      const s = r.ok ? r.data : null
       const v = { tgToken: s?.tg_token ?? '', tgChat: s?.tg_chat_id ?? '' }
       setSaved(v)
       // Only overwrite in-flight edits if the user hasn't started typing yet.
@@ -589,19 +594,19 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true)
-    try {
-      await upsertMerchantSecret(merchant!.id, { tg_token: fields.tgToken, tg_chat_id: fields.tgChat })
+    const r = await upsertMerchantSecret(merchant!.id, { tg_token: fields.tgToken, tg_chat_id: fields.tgChat })
+    if (r.ok) {
       setSaved(fields)
       toast.success(t('Notifications saved', '通知已保存'))
-    } catch (err: any) {
+    } else {
       // The form only renders for a Pro shop, so this is the fallback for a `plan` that moved
       // under a long-open tab — an upgrade prompt, not the raw `requires_pro` code (#110).
-      toast.error(isRequiresPro(err)
+      toast.error(isRequiresPro(r.error)
         ? t('Order notifications are a Pro feature. Upgrade to Pro to turn them on.',
             '订单通知是 Pro 功能。升级到 Pro 即可开启。')
-        : err.message || t('Save failed', '保存失败'))
+        : r.error.message || t('Save failed', '保存失败'))
     }
-    finally { setBusy(false) }
+    setBusy(false)
   }
 
   return (

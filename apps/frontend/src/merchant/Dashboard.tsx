@@ -51,8 +51,8 @@ function DashboardInner() {
   const merchantId = merchant?.id
   const refreshNewOrders = useCallback(() => {
     if (!merchantId) return
-    fetchMerchantOrders(merchantId).then(orders => {
-      setNewOrders(orders.filter(o => (o.status ?? 'new') === 'new').length)
+    fetchMerchantOrders(merchantId).then(r => {
+      if (r.ok) setNewOrders(r.data.filter(o => (o.status ?? 'new') === 'new').length)
     })
   }, [merchantId])
   useEffect(() => { refreshNewOrders() }, [refreshNewOrders])

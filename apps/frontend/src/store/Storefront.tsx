@@ -5,7 +5,7 @@ import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
 import { Images, Expand } from 'lucide-react'
-import { fetchProducts, lookupProducts, placeOrder, fetchMerchantVoucher, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails, quoteDelivery, DeliveryQuoteError } from '../store'
+import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails, quoteDelivery } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, promoState, MAX_CART_QTY, MAX_CART_LINES, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { FulfilmentMethod } from '@bitetime/shared'
@@ -125,31 +125,20 @@ export default function Storefront() {
     requestedPlaceIdRef.current = placeId
     setQuoting(true)
     setQuoteError(null)
-    try {
-      const q = await quoteDelivery(merchant.id, placeId)
-      if (requestedPlaceIdRef.current !== placeId) return // superseded — see the ref's own comment
-      setQuote({ placeId, ...q })
-    } catch (err) {
-      if (requestedPlaceIdRef.current !== placeId) return // superseded — see the ref's own comment
+    const r = await quoteDelivery(merchant.id, placeId)
+    // Superseded — a newer request now owns `quoting` and will clear it; this one does nothing.
+    // (The old `finally` cleared `quoting` only when still current; returning early here is the
+    // same guard: we only reach the setQuoting(false) below when this request is still current.)
+    if (requestedPlaceIdRef.current !== placeId) return
+    if (r.ok) {
+      setQuote({ placeId, ...r.data })
+    } else {
       setQuote(null)
       // What each refusal says is `orderRefusal.ts`'s decision, including which of them may
       // point at pickup — a message cannot offer a button the shop does not have.
-      setQuoteError({
-        placeId,
-        message: quoteRefusalPlan(
-          err instanceof DeliveryQuoteError ? err.code : undefined,
-          { t, pickupEscape },
-        ),
-      })
-    } finally {
-      // Conditional — unlike the invalidator below, which clears `quoting` UNCONDITIONALLY. This
-      // guard is what stops a slow request A from clearing the spinner while a fast request B
-      // (picked while A was still in flight) is the one actually in progress: A's `finally` must
-      // see its own id has been superseded and do nothing. The invalidator has no such case to
-      // guard against — it fires because the customer left the address BEHIND, not because a
-      // newer request replaced it, so there is nothing still in flight for `quoting` to protect.
-      if (requestedPlaceIdRef.current === placeId) setQuoting(false)
+      setQuoteError({ placeId, message: quoteRefusalPlan(r.error.code, { t, pickupEscape }) })
     }
+    setQuoting(false)
   }
 
   // The one function that writes `line1` and invalidates everything a stale value could carry:
@@ -433,7 +422,9 @@ export default function Storefront() {
   // compiler's lint (rightly) refuses a hook that reaches back up for a value declared later.
   useEffect(() => {
     if (!merchantId) return
-    fetchProducts(merchantId).then(adoptProducts)
+    // Adopt only a real answer: a could-not-ask must not prune the (empty, at mount) cart or
+    // blank the menu — same rule the recovery path below leans on.
+    lookupProducts(merchantId).then(r => { if (r.ok) adoptProducts(r.data) })
     // adoptProducts is re-made every render, and depending on it would re-fetch the menu on each
     // one; the menu is a per-SHOP load. Its closure over `cart` is the mount's empty one, and
     // that is exactly right — nothing can be in the cart before the menu it is chosen from.
@@ -534,7 +525,10 @@ export default function Storefront() {
     // sees a false "applied" that only fails at Place Order. Catch reuse here.
     setVoucherBusy(true)
     setVoucherMsg(t('Checking voucher…', '验证优惠券…'))
-    const v = await fetchMerchantVoucher(merchant.id, code)
+    // A could-not-ask reads as "no voucher" here — applyVoucher was never going to apply a
+    // voucher it could not read, so the customer sees the invalid message and can retry.
+    const lookup = await lookupMerchantVoucher(merchant.id, code)
+    const v = lookup.ok ? lookup.data : null
     setVoucherBusy(false)
     const err = voucherError(v, {
       userEmail: voucherEntry,
@@ -645,22 +639,23 @@ export default function Storefront() {
     // resync/adopt landed the corrected offset a tick after the error toast, so an instant second
     // tap could eat a second `price_changed` refusal before the clock was actually fixed.
     const [freshProducts, voucher] = await Promise.all([
-      lookupProducts(merchant.id).catch(() => null),
-      code ? lookupMerchantVoucher(merchant.id, code).catch(() => ({ ok: false as const })) : null,
+      // No `.catch`: apiGet turns a rejection into `{ ok:false }` itself, so these never reject.
+      lookupProducts(merchant.id),
+      code ? lookupMerchantVoucher(merchant.id, code) : null,
       serverNow ? Promise.resolve(adoptClock(serverNow)) : resyncClock(),
       // Tax/shipping/config all live on this row. Self-contained: unlike the other two fetches,
       // it applies its own result (or nothing, on failure) rather than returning data for us to
       // adopt below — see MerchantContext.refresh for why a dropped packet here changes nothing.
       refreshMerchant().catch(() => null),
     ])
-    // `[]` is an ANSWER — the shop really sells nothing, and pruning the whole cart is right.
-    // `null` is the absence of one, and prunes nothing.
+    // `{ ok:true, data:[] }` is an ANSWER — the shop really sells nothing, and pruning the whole
+    // cart is right. `{ ok:false }` is the absence of one, and prunes nothing.
     // adoptProducts, not setProducts: a refusal that refreshed the menu but left the dead id in
     // the cart would be refused again on the very next tap.
-    if (freshProducts) adoptProducts(freshProducts)
+    if (freshProducts.ok) adoptProducts(freshProducts.data)
     if (voucher?.ok) {
-      setAppliedVoucher(voucher.voucher)
-      if (!voucher.voucher) {
+      setAppliedVoucher(voucher.data)
+      if (!voucher.data) {
         setVoucherMsg(t('❌ That voucher is no longer available.', '❌ 此优惠券已失效。'))
       }
     }
@@ -701,7 +696,9 @@ export default function Storefront() {
       // so a customer could otherwise re-apply and be granted the discount again
       // while used_by stayed at 1. On a fetch miss, fall through to the RPC guard.
       if (appliedVoucher) {
-        const fresh = await fetchMerchantVoucher(merchant.id, appliedVoucher.code)
+        // On a fetch miss, fall through to the server's own guard (fresh = null).
+        const reread = await lookupMerchantVoucher(merchant.id, appliedVoucher.code)
+        const fresh = reread.ok ? reread.data : null
         if (fresh) {
           const verr = voucherError(fresh, {
             userEmail: voucherEntry,
@@ -747,19 +744,40 @@ export default function Storefront() {
         voucherCode: appliedVoucher?.code ?? null,
         fulfilDate: chosenDate,
       })
+      if (!result.ok) {
+        // Which refusal this is, what the customer is told, and what we do about it are all one
+        // decision, and it lives in `orderRefusal.ts` where it can be tested. This block only
+        // performs it. A refused order wrote NOTHING — the transaction rolled back — which is why
+        // several of the plans ask for the order again rather than reporting a failure.
+        // `error.now` is the server clock the refusal carried (`price_changed` only), adopted to
+        // close the #69 offset loop.
+        const plan = orderRefusalPlan(result.error.code, {
+          t,
+          pickupEscape,
+          // A re-quote is only possible for a distance-priced order that still holds a place id.
+          canRequote: expressPriced && Boolean(address.place_id),
+        })
+        await applyActions(plan.actions, result.error.now)
+        // The voucher's own strip echoes the refusal, so a customer who scrolls back up sees why
+        // the discount went away.
+        if (plan.actions.includes('drop_voucher')) setVoucherMsg(plan.message)
+        setError(plan.message)
+        toast.error(plan.message)
+        return
+      }
       // Remember what they typed, silently, so they never type it again — at this shop or any
       // other. Best-effort and unawaited: the order is already placed, and a profile write that
       // fails must cost the customer a retype next time, never their order. A guest saves nothing
       // (`saveCustomerDetails` checks the session itself), which is what keeps the gate honest.
       if (account) {
         saveCustomerDetails(savedDetailsFromOrder({ mode, wa, address }))
-          .then(refreshProfile) // so a second order in this same session prefills too
+          .then(r => { if (r.ok) return refreshProfile() }) // so a second order this session prefills too
           .catch(() => {})
       }
-      // Best-effort server-side Telegram notify; never blocks a placed order.
-      await notifyOrderPlacedRemote(merchant.id, result.orderNumber, lang).catch(() => {})
+      // Best-effort server-side Telegram notify; never blocks a placed order (Result ignored).
+      await notifyOrderPlacedRemote(merchant.id, result.data.orderNumber, lang)
       setSuccess({
-        orderNumber: result.orderNumber, items: cartItems, subtotal, fee, discount, taxAmount, taxRate, total,
+        orderNumber: result.data.orderNumber, items: cartItems, subtotal, fee, discount, taxAmount, taxRate, total,
         // The SAME value the summary just labelled the fee with — `quotedForThisAddress` is what
         // gated submission in the first place, so at this point it can only be true or this was
         // never a distance order at all.
@@ -767,21 +785,12 @@ export default function Storefront() {
         fulfilDate: chosenDate,
       })
       toast.success(t('Order placed!', '订单已提交！'))
-    } catch (err: any) {
-      // Which refusal this is, what the customer is told, and what we do about it are all one
-      // decision, and it lives in `orderRefusal.ts` where it can be tested. This block only
-      // performs it. A refused order wrote NOTHING — the transaction rolled back — which is why
-      // several of the plans ask for the order again rather than reporting a failure.
-      const plan = orderRefusalPlan(err?.code, {
-        t,
-        pickupEscape,
-        // A re-quote is only possible for a distance-priced order that still holds a place id.
-        canRequote: expressPriced && Boolean(address.place_id),
+    } catch {
+      // Backstop for an UNEXPECTED throw — placeOrder's refusals are handled above via its Result,
+      // so this only fires if something else in the try threw. Show the generic refusal message.
+      const plan = orderRefusalPlan(undefined, {
+        t, pickupEscape, canRequote: expressPriced && Boolean(address.place_id),
       })
-      await applyActions(plan.actions, typeof err?.now === 'string' ? err.now : undefined)
-      // The voucher's own strip echoes the refusal, so a customer who scrolls back up sees why
-      // the discount went away.
-      if (plan.actions.includes('drop_voucher')) setVoucherMsg(plan.message)
       setError(plan.message)
       toast.error(plan.message)
     } finally {

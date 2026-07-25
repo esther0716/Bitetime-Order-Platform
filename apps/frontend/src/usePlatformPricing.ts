@@ -26,8 +26,7 @@ export function usePlatformPricing() {
     let active = true
     const country = new URLSearchParams(window.location.search).get('country') || undefined
     fetchPlatformPricing(country)
-      .then((p) => { if (active) setPricing(p) })
-      .catch(() => { /* keep FALLBACK_PRICING */ })
+      .then((r) => { if (active && r.ok) setPricing(r.data) /* else keep FALLBACK_PRICING */ })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [])

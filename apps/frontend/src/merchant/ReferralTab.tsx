@@ -24,11 +24,9 @@ export default function ReferralTab() {
   useEffect(() => {
     let alive = true
     fetchReferredShops()
-      .then((rows) => { if (alive) setShops(rows) })
-      .catch(() => { if (alive) setLoadError(true) })
+      .then((r) => { if (!alive) return; if (r.ok) setShops(r.data); else setLoadError(true) })
     fetchEarnedRewards()
-      .then((rows) => { if (alive) setRewards(rows) })
-      .catch(() => { if (alive) setRewardsError(true) })
+      .then((r) => { if (!alive) return; if (r.ok) setRewards(r.data); else setRewardsError(true) })
     return () => { alive = false }
   }, [])
 
