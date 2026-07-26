@@ -2,14 +2,16 @@
 // documents.ts, so a wording change never touches this file and a layout change never touches
 // the wording.
 import { useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import Wordmark from '../components/Wordmark'
 import type { LegalDocument } from './documents'
+import { REFUNDS_ANCHOR } from './anchors'
 import { LEGAL_ENTITY, hasUnfilledEntityDetails } from './entity'
 
 export default function LegalPage({ doc }: { doc: LegalDocument }) {
   const { t } = useSession()
+  const { pathname, hash } = useLocation()
 
   // Where this page starts, which is NOT a detail the browser gets right on its own.
   //
@@ -26,12 +28,16 @@ export default function LegalPage({ doc }: { doc: LegalDocument }) {
   // CSS", and `index.css` sets `html { scroll-behavior: smooth }`. That made this silently
   // dependent on a smooth animation, which never completes in a backgrounded tab and would make
   // a reader following a link watch the whole document fly past instead of simply being there.
+  // Keyed on the LOCATION, not on the document: following "Refunds" from the Terms page itself
+  // changes only the fragment, so `doc` stays the same object and an effect watching it would
+  // never re-run — the link would do nothing at all from the one page it is most likely to be
+  // clicked on.
   useEffect(() => {
-    const id = window.location.hash.slice(1)
+    const id = hash.slice(1)
     const target = id ? document.getElementById(id) : null
     if (target) target.scrollIntoView({ behavior: 'instant', block: 'start' })
     else window.scrollTo({ top: 0, behavior: 'instant' })
-  }, [doc])
+  }, [pathname, hash])
 
   return (
     <div className="mm-land flex flex-col min-h-screen bg-cream text-ink font-sans">
@@ -90,8 +96,14 @@ export default function LegalPage({ doc }: { doc: LegalDocument }) {
             links, and NOT set in clay-border — DESIGN.md keeps that colour for strokes because it
             fails AA on cream at 1.98:1. */}
         <span aria-hidden="true">·</span>
+        {/* The same three as the marketing footer, and for the same reason: a reader who landed
+            on the Privacy Policy must be able to reach the refund policy without going back to
+            the home page to find the link. */}
         <Link to="/terms" className="hover:text-oxblood underline underline-offset-4">
           {t('Terms', '服务条款')}
+        </Link>
+        <Link to={`/terms#${REFUNDS_ANCHOR}`} className="hover:text-oxblood underline underline-offset-4">
+          {t('Refunds', '退款政策')}
         </Link>
         <Link to="/privacy" className="hover:text-oxblood underline underline-offset-4">
           {t('Privacy', '隐私政策')}
