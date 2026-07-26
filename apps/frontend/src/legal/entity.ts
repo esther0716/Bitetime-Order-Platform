@@ -43,6 +43,15 @@ export function isRegisteredEntity(entity: LegalEntity): boolean {
 export const LEGAL_LAST_UPDATED = '26 July 2026'
 
 /**
+ * Has a lawyer actually read these documents?
+ *
+ * Its own flag rather than something inferred, because it is independent of everything else:
+ * every detail can be filled in and the business fully registered while the wording remains
+ * something an engineer drafted. Flip it only when a practitioner has genuinely reviewed them.
+ */
+export const LEGAL_REVIEWED = false
+
+/**
  * Does any field still hold a bracketed placeholder?
  *
  * Exists so "we never filled in the company details" is a condition the code can state, rather

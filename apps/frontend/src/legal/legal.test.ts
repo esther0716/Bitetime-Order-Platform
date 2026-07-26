@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { TERMS, PRIVACY, REFUNDS_ANCHOR } from './documents'
 import { LEGAL_ENTITY, hasUnfilledEntityDetails, isRegisteredEntity } from './entity'
+import { draftCaveats } from './draftNotice'
 
 const DOCUMENTS = [
   ['Terms', TERMS],
@@ -77,6 +78,38 @@ describe('entity details', () => {
   })
 })
 
+describe('the draft notice', () => {
+  const REAL = {
+    name: 'Praxor Studio Sdn Bhd',
+    registration: '202401234567 (1234567-A)',
+    address: '360, Jalan Ayer Tasek, Setapak, 53200 Kuala Lumpur',
+    email: 'support@tinyorder.shop',
+  }
+  const ids = (...args: Parameters<typeof draftCaveats>) => draftCaveats(...args).map((c) => c.id)
+
+  it('says the business is unregistered when it is', () => {
+    expect(ids(LEGAL_ENTITY, true)).toContain('registration')
+  })
+
+  it('does not claim visible blanks when the only gap is the registration', () => {
+    // The regression this pins: while unregistered, the registration field is not RENDERED at
+    // all, so a notice telling the reader to look for square brackets pointed at nothing.
+    expect(ids(LEGAL_ENTITY, true)).not.toContain('placeholders')
+  })
+
+  it('does flag a genuinely visible blank', () => {
+    expect(ids({ ...REAL, address: '[REGISTERED ADDRESS]' }, true)).toContain('placeholders')
+  })
+
+  it('flags the missing legal review independently of everything else', () => {
+    expect(ids(REAL, false)).toEqual(['review'])
+  })
+
+  it('disappears entirely once registered, filled in and reviewed', () => {
+    expect(draftCaveats(REAL, true)).toEqual([])
+  })
+})
+
 describe('registration status', () => {
   it('reads as unregistered while no number is filled in', () => {
     expect(isRegisteredEntity(LEGAL_ENTITY)).toBe(false)
@@ -97,6 +130,13 @@ describe('registration status', () => {
       expect(all).not.toMatch(/registration number/)
       expect(all).not.toMatch(/a company registered in Malaysia/)
     }
+  })
+
+  it('does not say TinyOrder is operated by the business that operates TinyOrder', () => {
+    // The two identity descriptions are worded for their own sentences. The Terms' reads after
+    // "TinyOrder is operated by …", so repeating the operator role there is a tautology.
+    const terms = TERMS.sections.flatMap((s) => s.body).join(' ')
+    expect(terms).not.toMatch(/operated by [^.]*the business that operates TinyOrder/)
   })
 
   it('names the operator and a contact address either way', () => {

@@ -7,11 +7,12 @@ import { useSession } from '../SessionContext'
 import Wordmark from '../components/Wordmark'
 import type { LegalDocument } from './documents'
 import { REFUNDS_ANCHOR } from './anchors'
-import { LEGAL_ENTITY, hasUnfilledEntityDetails } from './entity'
+import { draftCaveats } from './draftNotice'
 
 export default function LegalPage({ doc }: { doc: LegalDocument }) {
   const { t } = useSession()
   const { pathname, hash } = useLocation()
+  const caveats = draftCaveats()
 
   // Where this page starts, which is NOT a detail the browser gets right on its own.
   //
@@ -60,20 +61,24 @@ export default function LegalPage({ doc }: { doc: LegalDocument }) {
           {t('Last updated', '最后更新')} {doc.lastUpdated}
         </p>
 
-        {/* Visible while the company details are still placeholders. This is deliberate: the
-            page should look unfinished until it IS finished, rather than quietly reading
-            "[COMPANY NAME]" to a customer who assumes we meant it. */}
-        {hasUnfilledEntityDetails(LEGAL_ENTITY) && (
-          <p
+        {/* The page should look unfinished while it IS unfinished — but it must say WHY, and the
+            reasons are independent. Listing them separately is what stops this notice drifting
+            out of step with the document: it once told the reader to look for square brackets
+            that, once the unregistered wording landed, appeared nowhere on the page. Each caveat
+            disappears on its own when the thing it describes is actually done. */}
+        {caveats.length > 0 && (
+          <div
             role="note"
             className="mb-10 rounded-xl border-[1.5px] border-dashed border-clay-border bg-oxblood-tint px-4 py-3 text-sm leading-[1.6] text-rose-muted"
           >
-            <strong className="text-oxblood">{t('Draft.', '草稿。')}</strong>{' '}
-            {t(
-              'This document is not final. Details shown in square brackets below have still to be confirmed, and it has not been reviewed by a lawyer.',
-              '本文件尚未定稿。下方方括号内的资料仍待确认，并且尚未经过律师审阅。',
-            )}
-          </p>
+            <p>
+              <strong className="text-oxblood">{t('Draft.', '草稿。')}</strong>{' '}
+              {t('This document is not final:', '本文件尚未定稿：')}
+            </p>
+            <ul className="mt-1.5 list-disc pl-5">
+              {caveats.map(c => <li key={c.id}>{t(c.en, c.zh)}</li>)}
+            </ul>
+          </div>
         )}
 
         {doc.sections.map(section => (

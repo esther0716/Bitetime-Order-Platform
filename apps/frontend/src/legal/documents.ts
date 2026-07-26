@@ -41,13 +41,16 @@ const { name, registration, address, email } = LEGAL_ENTITY
 // registered, the operator is described plainly as the business behind TinyOrder, with no claim
 // of corporate status and no invented number. Filling `registration` in switches both documents
 // to the company wording with no further edit.
+// Reads after "TinyOrder is operated by …", so it must not repeat that it operates TinyOrder.
 const OPERATOR_DESCRIPTION = isRegisteredEntity(LEGAL_ENTITY)
   ? `${name} (registration number ${registration}), a company registered in Malaysia with its registered address at ${address}`
-  : `${name}, the business that operates TinyOrder, at ${address}`
+  : `${name}, of ${address}`
 
+// Stands on its own as the opening of the privacy notice, so here the reader DOES need telling
+// what Praxor Studio is — they may never have read the Terms.
 const DATA_USER_DESCRIPTION = isRegisteredEntity(LEGAL_ENTITY)
   ? `${name} (registration number ${registration}), of ${address}`
-  : `${name}, the business that operates TinyOrder, at ${address}`
+  : `${name}, the business that operates TinyOrder, of ${address}`
 
 // One sentence, both documents. It has to appear in each of them — a reader of the Privacy
 // Policy has not necessarily read the Terms — but it must not be two sentences that can drift.
