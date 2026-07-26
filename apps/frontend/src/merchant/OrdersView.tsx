@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { Lang, Translate } from '../types'
 import { useSession } from '../SessionContext'
@@ -10,6 +10,7 @@ import { SkeletonText } from '../components/Loaders'
 import { DataTable, SortableHeader } from '@/components/ui/data-table'
 import { StatusBadge } from '../orderStatus'
 import { fulfilmentLabel } from '../fulfilmentLabel'
+import { usePoll } from '../usePoll'
 import OrderDetailSheet from './OrderDetailSheet'
 
 // Handlers + language + currency ride on table.options.meta so the column defs
@@ -106,9 +107,17 @@ export default function OrdersView(
   const [orders, setOrders] = useState<any[] | null>(null)
   const [selected, setSelected] = useState<any | null>(null)
 
-  useEffect(() => {
-    fetchMerchantOrders(merchant!.id).then(r => { if (r.ok) setOrders(r.data) })
-  }, [merchant!.id])
+  const merchantId = merchant!.id
+  const load = useCallback(() => {
+    fetchMerchantOrders(merchantId).then(r => { if (r.ok) setOrders(r.data) })
+  }, [merchantId])
+
+  useEffect(() => { load() }, [load])
+
+  // The list a merchant is reading must be the list that exists. Replacing `orders` wholesale is
+  // safe for the table's sort and page: the column defs are declared once outside this component
+  // (see the note above them) precisely so a refetch cannot reset them.
+  usePoll(load)
 
   function patchOrder(updated: any) {
     setOrders(prev => (prev ? prev.map(o => (o.id === updated.id ? updated : o)) : prev))

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildOrderConfirmationEmail } from '../../src/notify.js'
+import { buildOrderConfirmationEmail } from '../../src/orderEmails.js'
 
 // A delivery order the storefront would send, shaped like a real `orders` row.
 const DELIVERY_ORDER = {

@@ -21,6 +21,7 @@ import { todayInZone, DEFAULT_TIMEZONE } from '@bitetime/shared'
 
 const SLUG = 'notify-shop'
 const CUSTOMER_EMAIL = 'notify-customer@test.dev'
+const OWNER_EMAIL = 'notify-owner@test.dev'
 
 const svc = () => serviceClient()
 
@@ -70,10 +71,17 @@ async function placeOrderReturningNumber(payload: unknown, token?: string): Prom
 
 // Captured outbound mail. The Telegram adapter is a no-op success unless a test
 // overrides it. Both are restored after the suite.
+//
+// ONE fake adapter now serves two email arms — the customer's receipt and the shop owner's
+// new-order alert — so every assertion here filters by RECIPIENT rather than counting the
+// array. A bare `toHaveLength(1)` would silently start meaning "one of the two", which is the
+// exact confusion the two arms exist to keep apart.
 type Sent = { to: string; subject: string; body: { text: string; html?: string; from?: string } }
 let sentEmails: Sent[]
 const origEmail = notifyDeps.email
 const origTelegram = notifyDeps.telegram
+
+const mailTo = (addr: string) => sentEmails.filter((e) => e.to === addr)
 
 let merchantId: string
 let productId: string
@@ -81,7 +89,7 @@ let customerToken: string
 
 describe('POST /api/notify/order — customer confirmation email fan-out', () => {
   beforeAll(async () => {
-    const owner = await makeUser('notify-owner@test.dev', 'password123')
+    const owner = await makeUser(OWNER_EMAIL, 'password123')
     const ownerId = (await owner.auth.getUser()).data.user!.id
     merchantId = await seedMerchant({ slug: SLUG, owner_id: ownerId, name: 'Notify Shop', plan: 'pro' })
     productId = await seedProduct({ merchant_id: merchantId, price: 13 })
@@ -110,11 +118,11 @@ describe('POST /api/notify/order — customer confirmation email fan-out', () =>
     const json = (await res.json()) as { email: { ok: boolean } }
     expect(json.email.ok).toBe(true)
 
-    expect(sentEmails).toHaveLength(1)
-    expect(sentEmails[0].to).toBe(CUSTOMER_EMAIL)
-    expect(sentEmails[0].subject).toContain(orderNumber)
-    expect(sentEmails[0].body.html).toBeTruthy()
-    expect(sentEmails[0].body.from).toContain('Notify Shop')
+    const mail = mailTo(CUSTOMER_EMAIL)
+    expect(mail).toHaveLength(1)
+    expect(mail[0].subject).toContain(orderNumber)
+    expect(mail[0].body.html).toBeTruthy()
+    expect(mail[0].body.from).toContain('Notify Shop')
   })
 
   it('sends NO email for a guest order (user_id null), and does not error', async () => {
@@ -124,7 +132,7 @@ describe('POST /api/notify/order — customer confirmation email fan-out', () =>
     const json = (await res.json()) as { email: { ok: boolean; skipped?: boolean } }
     expect(json.email.ok).toBe(true)
     expect(json.email.skipped).toBe(true)
-    expect(sentEmails).toHaveLength(0)
+    expect(mailTo(CUSTOMER_EMAIL)).toHaveLength(0)
   })
 
   it('sends at most one email across repeated calls (dedup via confirmation_emailed_at)', async () => {
@@ -134,15 +142,15 @@ describe('POST /api/notify/order — customer confirmation email fan-out', () =>
     const second = await postNotify({ merchantId, orderNumber, lang: 'en' })
     const json = (await second.json()) as { email: { ok: boolean; skipped?: boolean } }
     expect(json.email.skipped).toBe(true)
-    expect(sentEmails).toHaveLength(1)
+    expect(mailTo(CUSTOMER_EMAIL)).toHaveLength(1)
   })
 
   it('never takes the recipient from the request body', async () => {
     const orderNumber = await placeOrderReturningNumber(orderBody(merchantId, productId), customerToken)
 
     await postNotify({ merchantId, orderNumber, lang: 'en', email: 'attacker@evil.com', to: 'attacker@evil.com' })
-    expect(sentEmails).toHaveLength(1)
-    expect(sentEmails[0].to).toBe(CUSTOMER_EMAIL)
+    expect(mailTo(CUSTOMER_EMAIL)).toHaveLength(1)
+    expect(mailTo('attacker@evil.com')).toHaveLength(0)
   })
 
   it('a Telegram failure does not suppress the customer email', async () => {
@@ -156,7 +164,7 @@ describe('POST /api/notify/order — customer confirmation email fan-out', () =>
 
     expect(json.telegram.ok).toBe(false)
     expect(json.email.ok).toBe(true)
-    expect(sentEmails).toHaveLength(1)
+    expect(mailTo(CUSTOMER_EMAIL)).toHaveLength(1)
 
     await svc().from('merchant_secrets').delete().eq('merchant_id', merchantId)
   })
@@ -176,5 +184,260 @@ describe('POST /api/notify/order — customer confirmation email fan-out', () =>
     expect(json.email.ok).toBe(false)
 
     await svc().from('merchant_secrets').delete().eq('merchant_id', merchantId)
+  })
+})
+
+// ── The third arm ─────────────────────────────────────────────────────────────
+// The shop owner's new-order email. Its whole reason to exist is the one property this suite
+// states first: it sends on EVERY plan, where Telegram sends only on Pro. A basic shop had no
+// notification at all before it.
+// Its OWN shop, owner and customer — not the suite above's. `makeUser` deletes and recreates,
+// so sharing a slug or an email would make the two suites order-dependent, and an order-
+// dependent DB suite fails in whichever order CI happens to pick.
+const M_SLUG = 'notify-merchant-shop'
+const M_OWNER_EMAIL = 'notify-merchant-owner@test.dev'
+const M_CUSTOMER_EMAIL = 'notify-merchant-customer@test.dev'
+
+describe('POST /api/notify/order — merchant new-order email fan-out', () => {
+  let mMerchantId: string
+  let mProductId: string
+  let mCustomerToken: string
+
+  beforeAll(async () => {
+    const owner = await makeUser(M_OWNER_EMAIL, 'password123')
+    const ownerId = (await owner.auth.getUser()).data.user!.id
+    mMerchantId = await seedMerchant({ slug: M_SLUG, owner_id: ownerId, name: 'Merchant Mail Shop', plan: 'basic' })
+    mProductId = await seedProduct({ merchant_id: mMerchantId, price: 13 })
+
+    const customer = await makeUser(M_CUSTOMER_EMAIL, 'password123')
+    mCustomerToken = (await customer.auth.getSession()).data.session!.access_token
+  })
+
+  afterAll(async () => {
+    notifyDeps.email = origEmail
+    notifyDeps.telegram = origTelegram
+    await resetMerchant(M_SLUG)
+  })
+
+  beforeEach(() => {
+    sentEmails = []
+    notifyDeps.email = async (to, subject, body) => { sentEmails.push({ to, subject, body }) }
+    notifyDeps.telegram = async () => {}
+  })
+
+  it('emails a BASIC shop owner — the plan on which Telegram sends nothing', async () => {
+    // A Telegram secret IS seeded, so the arm skipping is the plan gate and not a missing token.
+    await svc().from('merchant_secrets').upsert({ merchant_id: mMerchantId, tg_token: 't0ken', tg_chat_id: '42' })
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+
+    const res = await postNotify({ merchantId: mMerchantId, orderNumber, lang: 'en' })
+    const json = (await res.json()) as {
+      telegram: { ok: boolean; skipped?: boolean }
+      merchantEmail: { ok: boolean }
+    }
+    expect(json.telegram.skipped).toBe(true) // Pro-only
+    expect(json.merchantEmail.ok).toBe(true) // every plan
+
+    const mail = mailTo(M_OWNER_EMAIL)
+    expect(mail).toHaveLength(1)
+    expect(mail[0].subject).toContain(orderNumber)
+    expect(mail[0].body.html).toBeTruthy()
+
+    await svc().from('merchant_secrets').delete().eq('merchant_id', mMerchantId)
+  })
+
+  it('emails a PRO shop owner AS WELL AS its Telegram — upgrading adds a channel, it does not swap one', async () => {
+    await svc().from('merchant_secrets').upsert({ merchant_id: mMerchantId, tg_token: 't0ken', tg_chat_id: '42' })
+    await svc().from('merchants').update({ plan: 'pro' }).eq('id', mMerchantId)
+    let telegramSent = 0
+    notifyDeps.telegram = async () => { telegramSent++ }
+
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+    const res = await postNotify({ merchantId: mMerchantId, orderNumber, lang: 'en' })
+    const json = (await res.json()) as { telegram: { ok: boolean }; merchantEmail: { ok: boolean } }
+
+    expect(json.telegram.ok).toBe(true)
+    expect(telegramSent).toBe(1)
+    expect(json.merchantEmail.ok).toBe(true)
+    expect(mailTo(M_OWNER_EMAIL)).toHaveLength(1)
+
+    await svc().from('merchants').update({ plan: 'basic' }).eq('id', mMerchantId)
+    await svc().from('merchant_secrets').delete().eq('merchant_id', mMerchantId)
+  })
+
+  it('emails the owner for a GUEST order too — the shop must learn of it either way', async () => {
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId)) // no token
+
+    const res = await postNotify({ merchantId: mMerchantId, orderNumber, lang: 'en' })
+    const json = (await res.json()) as {
+      email: { skipped?: boolean }
+      merchantEmail: { ok: boolean }
+    }
+    expect(json.email.skipped).toBe(true) // the guest has no account to receive a receipt
+    expect(json.merchantEmail.ok).toBe(true)
+    expect(mailTo(M_OWNER_EMAIL)).toHaveLength(1)
+  })
+
+  it('sends at most one owner email across repeated calls (dedup via merchant_emailed_at)', async () => {
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+
+    await postNotify({ merchantId: mMerchantId, orderNumber })
+    const second = await postNotify({ merchantId: mMerchantId, orderNumber })
+    const json = (await second.json()) as { merchantEmail: { ok: boolean; skipped?: boolean } }
+    expect(json.merchantEmail.skipped).toBe(true)
+    // The claim is what keeps an anonymous endpoint from being a mail flood at a guessable
+    // order number. Only real against Postgres.
+    expect(mailTo(M_OWNER_EMAIL)).toHaveLength(1)
+  })
+
+  it('takes the owner address from the shop, never from the request body', async () => {
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+
+    await postNotify({ merchantId: mMerchantId, orderNumber, email: 'attacker@evil.com', to: 'attacker@evil.com' })
+    expect(mailTo(M_OWNER_EMAIL)).toHaveLength(1)
+    expect(mailTo('attacker@evil.com')).toHaveLength(0)
+  })
+
+  it('sends from the PLATFORM address, not the shop-named sender the customer receipt wears', async () => {
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+
+    await postNotify({ merchantId: mMerchantId, orderNumber, lang: 'en' })
+    // The shop is the RECIPIENT here; an alert appearing to come from itself reads as a copy of
+    // the customer's receipt — which is exactly what the customer's own mail does wear.
+    expect(mailTo(M_OWNER_EMAIL)[0].body.from).not.toContain('Merchant Mail Shop')
+    expect(mailTo(M_CUSTOMER_EMAIL)[0].body.from).toContain('Merchant Mail Shop')
+  })
+
+  it('is English regardless of the language the customer ordered in', async () => {
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+
+    await postNotify({ merchantId: mMerchantId, orderNumber, lang: 'zh' })
+    const owner = mailTo(M_OWNER_EMAIL)[0]
+    expect(owner.subject).toMatch(/^New order /)
+    expect(owner.body.text).not.toMatch(/[一-鿿]/)
+    // …while the customer, who ordered in Chinese, is answered in Chinese.
+    expect(mailTo(M_CUSTOMER_EMAIL)[0].subject).toContain('订单')
+  })
+
+  it('carries the operational detail the customer receipt omits', async () => {
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+
+    await postNotify({ merchantId: mMerchantId, orderNumber })
+    const owner = mailTo(M_OWNER_EMAIL)[0].body.text
+    expect(owner).toContain('60123456789') // the customer's WhatsApp — the shop's way to reach them
+    expect(owner).toContain('/merchant') // straight to the dashboard
+    // The customer's own receipt never carries their number back to them.
+    expect(mailTo(M_CUSTOMER_EMAIL)[0].body.text).not.toContain('60123456789')
+  })
+
+  // An owner whose ACCOUNT is gone is not a case that can arise: merchants.owner_id carries a
+  // plain `references auth.users (id)` with no cascade, so Postgres refuses to delete an account
+  // that still owns a shop. Two reachable unreachable-owners remain, and both are covered here.
+  it('skips (without erroring) when the shop has no owner to email', async () => {
+    const owner = await makeUser('notify-ownerless@test.dev', 'password123')
+    const ownerId = (await owner.auth.getUser()).data.user!.id
+    const ownerless = await seedMerchant({ slug: 'notify-ownerless', owner_id: ownerId, name: 'Ownerless Shop' })
+    const ownerlessProduct = await seedProduct({ merchant_id: ownerless, price: 13 })
+    const orderNumber = await placeOrderReturningNumber(orderBody(ownerless, ownerlessProduct))
+    await svc().from('merchants').update({ owner_id: null }).eq('id', ownerless)
+
+    const res = await postNotify({ merchantId: ownerless, orderNumber })
+    const json = (await res.json()) as { merchantEmail: { ok: boolean; skipped?: boolean } }
+    expect(json.merchantEmail.ok).toBe(true)
+    expect(json.merchantEmail.skipped).toBe(true)
+    expect(sentEmails).toHaveLength(0)
+
+    // And the one-shot stamp is left UNCLAIMED: a shop unreachable at this moment must not lose
+    // that order's alert forever. This is why the owner is resolved before the claim.
+    const { data } = await svc()
+      .from('orders').select('merchant_emailed_at')
+      .eq('merchant_id', ownerless).eq('order_number', orderNumber).maybeSingle()
+    expect(data?.merchant_emailed_at).toBeNull()
+
+    await resetMerchant('notify-ownerless')
+  })
+
+  it('skips when the owner account carries no address at all', async () => {
+    // A phone-only signup reads back `email: ''` from Auth — falsy, so there is nothing to send
+    // to even though the account plainly exists.
+    const { data: created } = await svc().auth.admin.createUser({
+      phone: '+60123400002', password: 'password123', phone_confirm: true,
+    })
+    const phoneOnlyId = created!.user!.id
+    const shop = await seedMerchant({ slug: 'notify-phone-owner', owner_id: phoneOnlyId, name: 'Phone Owner Shop' })
+    const shopProduct = await seedProduct({ merchant_id: shop, price: 13 })
+    const orderNumber = await placeOrderReturningNumber(orderBody(shop, shopProduct))
+
+    const res = await postNotify({ merchantId: shop, orderNumber })
+    const json = (await res.json()) as { merchantEmail: { ok: boolean; skipped?: boolean } }
+    expect(json.merchantEmail.ok).toBe(true)
+    expect(json.merchantEmail.skipped).toBe(true)
+    expect(sentEmails).toHaveLength(0)
+
+    await resetMerchant('notify-phone-owner')
+    await svc().auth.admin.deleteUser(phoneOnlyId)
+  })
+
+  it('a merchant-email failure does not suppress the customer receipt or Telegram', async () => {
+    await svc().from('merchant_secrets').upsert({ merchant_id: mMerchantId, tg_token: 't0ken', tg_chat_id: '42' })
+    await svc().from('merchants').update({ plan: 'pro' }).eq('id', mMerchantId)
+    let telegramSent = 0
+    notifyDeps.telegram = async () => { telegramSent++ }
+    // Only the owner's send throws; the customer's goes through the same adapter and must not.
+    notifyDeps.email = async (to, subject, body) => {
+      if (to === M_OWNER_EMAIL) throw new Error('resend down')
+      sentEmails.push({ to, subject, body })
+    }
+
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+    const res = await postNotify({ merchantId: mMerchantId, orderNumber, lang: 'en' })
+    const json = (await res.json()) as {
+      telegram: { ok: boolean }
+      email: { ok: boolean }
+      merchantEmail: { ok: boolean }
+    }
+
+    expect(json.merchantEmail.ok).toBe(false)
+    expect(json.email.ok).toBe(true)
+    expect(json.telegram.ok).toBe(true)
+    expect(telegramSent).toBe(1)
+    expect(mailTo(M_CUSTOMER_EMAIL)).toHaveLength(1)
+
+    await svc().from('merchants').update({ plan: 'basic' }).eq('id', mMerchantId)
+    await svc().from('merchant_secrets').delete().eq('merchant_id', mMerchantId)
+  })
+
+  it('survives the OTHER two arms failing — a Telegram outage and a dead customer receipt', async () => {
+    // The mirror of the test above: the merchant's alert is the arm every shop depends on, so it
+    // must be the one that still lands when its neighbours are down.
+    await svc().from('merchant_secrets').upsert({ merchant_id: mMerchantId, tg_token: 't0ken', tg_chat_id: '42' })
+    await svc().from('merchants').update({ plan: 'pro' }).eq('id', mMerchantId)
+    notifyDeps.telegram = async () => { throw new Error('telegram down') }
+    notifyDeps.email = async (to, subject, body) => {
+      if (to === M_CUSTOMER_EMAIL) throw new Error('resend down')
+      sentEmails.push({ to, subject, body })
+    }
+
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+    const res = await postNotify({ merchantId: mMerchantId, orderNumber, lang: 'en' })
+    const json = (await res.json()) as {
+      telegram: { ok: boolean }
+      email: { ok: boolean }
+      merchantEmail: { ok: boolean }
+    }
+
+    expect(json.telegram.ok).toBe(false)
+    expect(json.email.ok).toBe(false)
+    expect(json.merchantEmail.ok).toBe(true)
+    expect(mailTo(M_OWNER_EMAIL)).toHaveLength(1)
+
+    await svc().from('merchants').update({ plan: 'basic' }).eq('id', mMerchantId)
+    await svc().from('merchant_secrets').delete().eq('merchant_id', mMerchantId)
+  })
+
+  it('404s only when the order does not exist — every arm agrees', async () => {
+    const res = await postNotify({ merchantId: mMerchantId, orderNumber: 'NO-SUCH-ORDER' })
+    expect(res.status).toBe(404)
+    expect(sentEmails).toHaveLength(0)
   })
 })
