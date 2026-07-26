@@ -20,6 +20,8 @@ const Storefront = lazy(() => import('./store/Storefront'))
 const TrackOrder = lazy(() => import('./store/TrackOrder'))
 const OrderHistory = lazy(() => import('./store/OrderHistory'))
 const ResetPasswordPage = lazy(() => import('./ResetPasswordPage'))
+const TermsPage = lazy(() => import('./legal/TermsPage'))
+const PrivacyPage = lazy(() => import('./legal/PrivacyPage'))
 
 function RouteFallback() {
   return (
@@ -104,6 +106,11 @@ function AnimatedRoutes() {
               would swallow it, and a suspended shop must never lock a customer out of their own
               account. Role-blind — `?shop=` decides where they land afterwards. */}
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          {/* Top-level for the same reason, and it matters for the same kind of person: a
+              customer of a SUSPENDED shop must still be able to read the notice describing data
+              we already hold about them. A shop's status can never gate that. */}
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/s/:slug/*" element={<MerchantProvider><StorefrontShell /></MerchantProvider>} />
           <Route path="/merchant/signup" element={<SignupScreen />} />
           <Route path="/merchant/login" element={<LoginScreen />} />

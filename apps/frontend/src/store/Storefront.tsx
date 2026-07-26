@@ -826,6 +826,18 @@ export default function Storefront() {
               <h1 className="font-heading text-[26px] font-medium text-oxblood tracking-[0.3px]">{merchant.name}</h1>
               <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">
                 {t('Powered by TinyOrder', 'TinyOrder 提供技术支持')}
+                {' · '}
+                {/* The customer's name, phone and delivery address are collected on THIS page,
+                    so the notice describing what happens to them belongs on it. Opens in a new
+                    tab so reading it never costs a half-filled cart. */}
+                <a
+                  href="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="not-italic underline underline-offset-2 hover:text-oxblood"
+                >
+                  {t('Privacy', '隐私政策')}
+                </a>
               </p>
               <div className="flex items-center gap-3 mt-1">
                 {account ? (

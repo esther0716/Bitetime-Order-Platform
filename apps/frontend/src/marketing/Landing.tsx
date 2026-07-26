@@ -7,6 +7,9 @@ import { formatMoney } from '../currency'
 import LanguageSelect from '../components/LanguageSelect'
 import Wordmark from '../components/Wordmark'
 import { Button } from '../components/ui/button'
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion'
+import { REFUNDS_ANCHOR } from '../legal/anchors'
+import { FAQ } from './faq'
 import { cn } from '../lib/utils'
 import {
   GrainOverlay,
@@ -384,6 +387,36 @@ export default function Landing() {
         </Reveal>
       </section>
 
+      {/* ── FAQ ── */}
+      {/* After pricing and before the closing CTA: a reader who has just seen a price is
+          exactly the reader with objections. Answers live in faq.ts as data — every one of
+          them has to be true of the product as shipped, since these are pre-purchase promises. */}
+      <section id="faq" className="border-t border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className="font-heading text-[26px] text-oxblood text-center mb-2 max-[600px]:text-[22px]">
+            {t('Questions, answered', '常见问题')}
+          </h2>
+          <p className="text-sm text-rose-muted text-center mb-9 max-w-[460px] mx-auto">
+            {t(
+              'The things shop owners ask us before they sign up.',
+              '店主在注册前最常问我们的问题。',
+            )}
+          </p>
+          <Accordion className="max-w-[640px] mx-auto">
+            {FAQ.map(entry => (
+              <AccordionItem key={entry.id} value={entry.id} className="border-clay-border">
+                <AccordionTrigger className="font-heading text-[15px] text-ink text-left py-4">
+                  {t(entry.q.en, entry.q.zh)}
+                </AccordionTrigger>
+                <AccordionContent className="text-[14px] leading-[1.7] text-rose-muted pb-4">
+                  {t(entry.a.en, entry.a.zh)}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </Reveal>
+      </section>
+
       {/* ── Footer CTA ── */}
       <section className="border-t border-clay-border px-8 py-16 text-center bg-oxblood-tint max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
@@ -400,10 +433,24 @@ export default function Landing() {
       </section>
 
       {/* ── Footer ── */}
-      <footer className="mt-auto px-8 py-6 border-t border-clay-border flex items-center justify-center gap-3 text-[13px] text-text-tertiary">
+      <footer className="mt-auto px-8 py-6 border-t border-clay-border flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-text-tertiary">
         <Wordmark className="h-[18px]" />
         <span className="text-clay-border">·</span>
         <span>{t('Built for food businesses', '专为食品业者打造')}</span>
+        {/* aria-hidden, and not clay-border: that colour fails AA on cream (DESIGN.md), so it is
+            a stroke colour rather than a text one. */}
+        <span aria-hidden="true">·</span>
+        <Link to="/terms" className="hover:text-oxblood underline underline-offset-4">
+          {t('Terms', '服务条款')}
+        </Link>
+        {/* Straight to the anchor: a refund policy has to be findable without reading the whole
+            document — Stripe expects that of a business taking subscription payments. */}
+        <Link to={`/terms#${REFUNDS_ANCHOR}`} className="hover:text-oxblood underline underline-offset-4">
+          {t('Refunds', '退款政策')}
+        </Link>
+        <Link to="/privacy" className="hover:text-oxblood underline underline-offset-4">
+          {t('Privacy', '隐私政策')}
+        </Link>
       </footer>
     </div>
   )
