@@ -1,0 +1,30 @@
+# Node + pnpm + installed dependencies, identically for every job.
+#
+# Its own action so the Node version is stated ONCE. Two jobs each pinning their own
+# version is two versions the day one of them is bumped, and the failure that produces —
+# a build that passes in one job and fails in the other — reads as a flake rather than
+# as the drift it is.
+name: Set up the workspace
+description: Install pnpm, Node and the workspace dependencies.
+
+runs:
+  using: composite
+  steps:
+    # No version input: pnpm/action-setup reads `packageManager` from the root
+    # package.json, which is where the repo already pins pnpm.
+    - uses: pnpm/action-setup@v6
+
+    # 22, not the latest: this is the runtime the app is DEPLOYED on (Vercel's current
+    # default for the frontend build, and the target the backend's esbuild bundle is
+    # compiled for). CI exists to fail on what production would fail on, so it tracks
+    # production rather than whatever is newest — a local Node that is ahead of this is
+    # fine and expected.
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+        cache: pnpm
+
+    # Frozen: a lockfile that does not satisfy the manifests is itself a failure, not
+    # something to silently resolve past.
+    - run: pnpm install --frozen-lockfile
+      shell: bash

@@ -45,6 +45,8 @@ Everything that needs a database is run by `test:db` and needs a running local S
 
 UI is verified by running the app (run-and-verify), not component tests.
 
+**All of it runs on every pull request** (`.github/workflows/ci.yml`): one job for lint, typecheck, `test` and both builds, and a second that stands up its own Supabase and runs `test:db` — so the suites that need a database are checked by the thing least likely to forget. It needs **no secrets**: the DB job reads its stack's keys out of `supabase status`, and the Stripe and Google keys are stubbed or forced empty by `vitest.db.config.ts`. Node is pinned once, in `.github/actions/setup`.
+
 ## Architecture
 
 Multi-merchant ordering SaaS. React 19 + Vite + React Router (`react-router-dom` v7). Many independent shops, isolated per tenant by Postgres RLS. No global state library — auth/role/lang live in React context.
