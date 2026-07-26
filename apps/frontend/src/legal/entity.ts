@@ -18,10 +18,25 @@ export interface LegalEntity {
 }
 
 export const LEGAL_ENTITY: LegalEntity = {
-  name: '[COMPANY NAME]',
+  name: 'Praxor Studio',
+  // STILL A PLACEHOLDER, and deliberately so: the business is not registered with SSM yet.
+  // Inventing a number here would be a false statement in a document whose entire purpose is to
+  // be relied upon. While this stays bracketed, `hasUnfilledEntityDetails` reports true and both
+  // documents render their draft notice — which is the correct state of the world.
   registration: '[SSM REGISTRATION NO.]',
-  address: '[REGISTERED ADDRESS]',
-  email: '[CONTACT EMAIL]',
+  address: '360, Jalan Ayer Tasek, Setapak, 53200 Kuala Lumpur',
+  email: 'support@tinyorder.shop',
+}
+
+/**
+ * Is the business registered — i.e. do we have a number to print?
+ *
+ * The documents read differently either way, and the difference is not cosmetic. An unregistered
+ * trading name is not a legal person, so the documents must not describe it as "a company
+ * registered in Malaysia" or imply a registration that does not exist.
+ */
+export function isRegisteredEntity(entity: LegalEntity): boolean {
+  return !(entity.registration.includes('[') && entity.registration.includes(']'))
 }
 
 /** The date both documents carry. Bump it whenever their wording changes materially. */

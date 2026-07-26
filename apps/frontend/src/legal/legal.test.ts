@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { TERMS, PRIVACY, REFUNDS_ANCHOR } from './documents'
-import { LEGAL_ENTITY, hasUnfilledEntityDetails } from './entity'
+import { LEGAL_ENTITY, hasUnfilledEntityDetails, isRegisteredEntity } from './entity'
 
 const DOCUMENTS = [
   ['Terms', TERMS],
@@ -69,8 +69,40 @@ describe('entity details', () => {
   })
 
   it('still ships placeholders — a reminder that survives forgetting', () => {
-    // Deliberately asserts the CURRENT state. When the real details are filled in this test
-    // fails, which is the reminder: flip it to `false` in the same commit.
+    // Deliberately asserts the CURRENT state: the business is not registered with SSM, so there
+    // is no registration number to print and one placeholder legitimately remains. When it is
+    // registered and the number goes in, this test fails — which is the reminder to flip it to
+    // `false` in the same commit, and to check the documents now read as a company.
     expect(hasUnfilledEntityDetails(LEGAL_ENTITY)).toBe(true)
+  })
+})
+
+describe('registration status', () => {
+  it('reads as unregistered while no number is filled in', () => {
+    expect(isRegisteredEntity(LEGAL_ENTITY)).toBe(false)
+  })
+
+  it('reads as registered once a real number is present', () => {
+    expect(isRegisteredEntity({ ...LEGAL_ENTITY, registration: '202401234567 (1234567-A)' })).toBe(true)
+  })
+
+  it('never claims company registration while unregistered', () => {
+    // The documents describe a legal person. An unregistered trading name is not one, and the
+    // sentence "a company registered in Malaysia" would be false — which in these two documents
+    // is the whole failure, not a wording nit.
+    const all = [...TERMS.sections, ...PRIVACY.sections].flatMap((s) => s.body).join(' ')
+    if (isRegisteredEntity(LEGAL_ENTITY)) {
+      expect(all).toMatch(/registration number/)
+    } else {
+      expect(all).not.toMatch(/registration number/)
+      expect(all).not.toMatch(/a company registered in Malaysia/)
+    }
+  })
+
+  it('names the operator and a contact address either way', () => {
+    const all = [...TERMS.sections, ...PRIVACY.sections].flatMap((s) => s.body).join(' ')
+    expect(all).toContain(LEGAL_ENTITY.name)
+    expect(all).toContain(LEGAL_ENTITY.email)
+    expect(all).toContain(LEGAL_ENTITY.address)
   })
 })

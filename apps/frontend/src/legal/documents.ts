@@ -12,7 +12,7 @@
 // by a Malaysian practitioner before they carry weight, particularly the limitation of liability,
 // the governing-law section, and whether the seller model below holds under Malaysian
 // consumer-protection law.
-import { LEGAL_ENTITY, LEGAL_LAST_UPDATED } from './entity'
+import { LEGAL_ENTITY, LEGAL_LAST_UPDATED, isRegisteredEntity } from './entity'
 import { REFUNDS_ANCHOR } from './anchors'
 
 export { REFUNDS_ANCHOR }
@@ -32,6 +32,23 @@ export interface LegalDocument {
 
 const { name, registration, address, email } = LEGAL_ENTITY
 
+// How the operator identifies itself, composed from what is actually known rather than from a
+// fixed sentence with holes in it.
+//
+// An UNREGISTERED trading name is not a legal person and has no registration number, so the
+// documents must not call it "a company registered in Malaysia" — that sentence would be false,
+// in the one kind of document where a false statement is the whole failure. Until the business is
+// registered, the operator is described plainly as the business behind TinyOrder, with no claim
+// of corporate status and no invented number. Filling `registration` in switches both documents
+// to the company wording with no further edit.
+const OPERATOR_DESCRIPTION = isRegisteredEntity(LEGAL_ENTITY)
+  ? `${name} (registration number ${registration}), a company registered in Malaysia with its registered address at ${address}`
+  : `${name}, the business that operates TinyOrder, at ${address}`
+
+const DATA_USER_DESCRIPTION = isRegisteredEntity(LEGAL_ENTITY)
+  ? `${name} (registration number ${registration}), of ${address}`
+  : `${name}, the business that operates TinyOrder, at ${address}`
+
 // One sentence, both documents. It has to appear in each of them — a reader of the Privacy
 // Policy has not necessarily read the Terms — but it must not be two sentences that can drift.
 const AUTHORITATIVE_LANGUAGE =
@@ -45,7 +62,7 @@ export const TERMS: LegalDocument = {
       id: 'who-we-are',
       heading: '1. Who we are',
       body: [
-        `TinyOrder is operated by ${name} (registration number ${registration}), a company registered in Malaysia with its registered address at ${address}. In these terms, "we", "us" and "TinyOrder" mean that company. You can reach us at ${email}.`,
+        `TinyOrder is operated by ${OPERATOR_DESCRIPTION}. In these terms, "we", "us" and "TinyOrder" mean that operator. You can reach us at ${email}.`,
         AUTHORITATIVE_LANGUAGE,
       ],
     },
@@ -172,7 +189,7 @@ export const PRIVACY: LegalDocument = {
       id: 'data-user',
       heading: '1. Who is responsible for your data',
       body: [
-        `${name} (registration number ${registration}), of ${address}, is the data user responsible for the personal data described in this notice. You can reach us at ${email}.`,
+        `${DATA_USER_DESCRIPTION}, is the data user responsible for the personal data described in this notice. You can reach us at ${email}.`,
         AUTHORITATIVE_LANGUAGE,
         'A shop that uses TinyOrder is separately responsible for the customer data it receives and uses in running its own business.',
       ],

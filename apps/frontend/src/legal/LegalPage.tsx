@@ -70,8 +70,8 @@ export default function LegalPage({ doc }: { doc: LegalDocument }) {
           >
             <strong className="text-oxblood">{t('Draft.', '草稿。')}</strong>{' '}
             {t(
-              'This document is not yet complete: the company details in square brackets below have still to be filled in, and it has not been reviewed by a lawyer.',
-              '本文件尚未完成：下方方括号中的公司资料仍待填写，并且尚未经过律师审阅。',
+              'This document is not final. Details shown in square brackets below have still to be confirmed, and it has not been reviewed by a lawyer.',
+              '本文件尚未定稿。下方方括号内的资料仍待确认，并且尚未经过律师审阅。',
             )}
           </p>
         )}
