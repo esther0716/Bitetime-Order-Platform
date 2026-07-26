@@ -12,14 +12,14 @@ runs:
   steps:
     # No version input: pnpm/action-setup reads `packageManager` from the root
     # package.json, which is where the repo already pins pnpm.
-    - uses: pnpm/action-setup@v4
+    - uses: pnpm/action-setup@v6
 
     # 22, not the latest: this is the runtime the app is DEPLOYED on (Vercel's current
     # default for the frontend build, and the target the backend's esbuild bundle is
     # compiled for). CI exists to fail on what production would fail on, so it tracks
     # production rather than whatever is newest — a local Node that is ahead of this is
     # fine and expected.
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
         node-version: '22'
         cache: pnpm
