@@ -16,7 +16,7 @@ const PLANS = ['basic', 'pro']
 const CYCLES = ['monthly', 'yearly']
 
 export default function SignupScreen() {
-  const { t, refreshMerchant } = useSession()
+  const { t, lang, refreshMerchant } = useSession()
   const { pricing } = usePlatformPricing()
   const [params] = useSearchParams()
 
@@ -135,6 +135,30 @@ export default function SignupScreen() {
                 ? t('Start free trial', '开始免费试用')
                 : t('Continue to payment', '前往付款')}
           </Button>
+          {/* Sits under the button, not above it: the merchant reads it at the moment the act
+              happens. The screen said nothing about terms before, so nothing recorded that a
+              merchant had agreed to anything at all. */}
+          {/* One translation unit with the links interpolated into it, NOT a sentence assembled
+              from translated fragments: ' and ' and '.' as their own units bake English word
+              order and spacing into strings a translator cannot reorder, and Chinese wants
+              neither the spaces nor the full stop. */}
+          <p className="text-[14px] leading-[1.6] text-text-tertiary text-center mt-3">
+            {(() => {
+              const terms = (
+                <Link key="terms" to="/terms" className="text-oxblood underline underline-offset-2">
+                  {t('Terms of Service', '服务条款')}
+                </Link>
+              )
+              const privacy = (
+                <Link key="privacy" to="/privacy" className="text-oxblood underline underline-offset-2">
+                  {t('Privacy Policy', '隐私政策')}
+                </Link>
+              )
+              return lang === 'zh'
+                ? <>创建店铺即表示你同意我们的{terms}与{privacy}。</>
+                : <>By creating a shop you agree to our {terms} and {privacy}.</>
+            })()}
+          </p>
         </form>
         <p className="text-[13px] text-rose-muted text-center mt-4">
           <Link to="/merchant/login" className="text-oxblood cursor-pointer underline">{t('Already have a shop? Log in', '已有店铺？登录')}</Link>
