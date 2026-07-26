@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildMerchantOrderEmail } from '../../src/notify.js'
+import { buildMerchantOrderEmail } from '../../src/orderEmails.js'
 
 // The shop's own surface, not the customer's. Twin of orderConfirmationEmail.test.ts, and the
 // differences between the two are the point of this file: English only, and it carries the
@@ -85,7 +85,7 @@ describe('buildMerchantOrderEmail', () => {
     for (const part of [subject, text, html]) expect(part).not.toMatch(/[一-鿿]/)
   })
 
-  it('omits a pickup order`s address, distance and shipping rather than blanking them', () => {
+  it('omits address, distance and shipping on a pickup order rather than blanking them', () => {
     const { text, html } = build(PICKUP_ORDER)
     for (const part of [text, html]) {
       expect(part).toContain('Pickup')
@@ -105,7 +105,7 @@ describe('buildMerchantOrderEmail', () => {
     }
   })
 
-  it('prices in the order`s own stamped currency, falling back to MYR for legacy rows', () => {
+  it('prices in the currency stamped on the order, falling back to MYR for legacy rows', () => {
     expect(build({ ...PICKUP_ORDER, currency: 'SGD' }).text).toContain('S$ 6.00')
     expect(build({ ...PICKUP_ORDER, currency: null }).text).toContain('RM 6.00')
   })
@@ -116,7 +116,7 @@ describe('buildMerchantOrderEmail', () => {
     expect(html).toContain('&lt;script&gt;')
   })
 
-  it('survives an order row with no items, rather than throwing on the merchant`s alert', () => {
+  it('survives an order row with no items, rather than throwing on the alert', () => {
     expect(() => build({ ...PICKUP_ORDER, items: null })).not.toThrow()
   })
 })

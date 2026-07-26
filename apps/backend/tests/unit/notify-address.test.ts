@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildOrderMessage, formatAddress } from '../../src/notify.js'
+import { buildOrderMessage } from '../../src/notify.js'
+import { formatAddress } from '../../src/orderNotice.js'
 
 describe('backend formatAddress', () => {
   it('joins a structured address', () => {
