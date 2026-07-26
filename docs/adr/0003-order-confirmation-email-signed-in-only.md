@@ -1,5 +1,7 @@
 # 3. Order confirmation emails go to signed-in customers only, sourced from Auth
 
+> **Amended by [ADR 0006](0006-every-shop-gets-a-new-order-email.md).** One bullet below no longer holds on its own. *"The endpoint stays anonymous, and that is safe because of the one-shot guard"* was argued from the worst case being one early **customer** confirmation; the fan-out now carries a third arm to the **shop owner**, for whom an unstamped endpoint would be an unbounded mail flood. The conclusion survives — the endpoint is still anonymous, and rate-limiting it is still rejected — but it now rests on `orders.merchant_emailed_at` as well as `confirmation_emailed_at`. Everything else here stands.
+
 Date: 2026-07-23
 Status: Accepted.
 

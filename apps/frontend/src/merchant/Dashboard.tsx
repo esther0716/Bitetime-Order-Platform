@@ -17,6 +17,7 @@ import FeedbackFab from './FeedbackFab'
 import { NavGuardProvider, useNavGuard } from './NavGuard'
 import { UpgradeNavProvider } from './UpgradeNav'
 import { useDashboardSection } from '../useDashboardSection'
+import { usePoll } from '../usePoll'
 import { useProAccess } from '../plan'
 import { ProLock } from './ProLock'
 
@@ -56,6 +57,11 @@ function DashboardInner() {
     })
   }, [merchantId])
   useEffect(() => { refreshNewOrders() }, [refreshNewOrders])
+
+  // …and on its own besides, so an order arriving while the merchant is editing their menu still
+  // shows up on the Orders nav item. It lives HERE rather than in OrdersView so the badge stays
+  // live in every section, which is the whole point of a badge.
+  usePoll(refreshNewOrders, { enabled: !!merchantId })
 
   const nav: NavItem[] = SECTIONS.map(s => ({
     key: s.key,

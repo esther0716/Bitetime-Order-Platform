@@ -61,6 +61,17 @@ const MODE_LABELS: Record<string, string> = {
   express: 'Express delivery',
 }
 
+/**
+ * The routed distance as the merchant surfaces read it: ONE DECIMAL, because that is the km the
+ * fee was computed from (see CONTEXT.md → Shipping policy). Null when there is none to show —
+ * every order placed before #101 has none, and a bare `Distance:` reads as data we lost.
+ */
+function formatKm(km: unknown): string | null {
+  if (km == null) return null
+  const n = Number(km)
+  return Number.isFinite(n) ? `${n.toFixed(1)} km` : null
+}
+
 // Pure: render the Telegram message from an order row, in the order's own
 // stamped currency (falls back to MYR for legacy rows without one).
 export function buildOrderMessage(order: any, merchantName?: string): string {
@@ -85,7 +96,8 @@ export function buildOrderMessage(order: any, merchantName?: string): string {
   if (order.address) msg += `*Address:* ${formatAddress(order.address)}\n`
   // Distance-priced orders only; a region-priced order has no distance and must not print an
   // empty label. `delivery_distance_km` is null for every order placed before #101.
-  if (order.delivery_distance_km != null) msg += `*Distance:* ${Number(order.delivery_distance_km).toFixed(1)} km\n`
+  const km = formatKm(order.delivery_distance_km)
+  if (km) msg += `*Distance:* ${km}\n`
   msg += `\n*Items:*\n${lines}\n`
   if (order.shipping_fee) msg += `*Shipping:* ${formatMoney(order.shipping_fee, cur)}\n`
   msg += `\n*Total: ${formatMoney(order.total ?? 0, cur)}*`
@@ -173,6 +185,62 @@ function esc(s: string): string {
 
 export interface OrderConfirmationEmail { subject: string; text: string; html: string }
 
+// ── Shared email HTML ─────────────────────────────────────────────────────────
+// Both mail builders render the SAME order rows into the SAME shell — only their labels,
+// audience and links differ. These three helpers are that shared markup. Inline styles and
+// literal hex are not drift from DESIGN.md: mail clients support neither CSS variables nor a
+// stylesheet, so an email's only styling is what is inlined on the element.
+
+/** The outer page: one column, system font stack, no images. */
+function emailShell(inner: string): string {
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#111;">
+${inner}
+</div>`
+}
+
+/** `Label: value` detail line. */
+function detailHtml(label: string, value: string): string {
+  return `<p style="margin:4px 0;color:#444;"><strong>${esc(label)}:</strong> ${esc(value)}</p>`
+}
+
+/**
+ * The items table, its optional shipping row and its total.
+ *
+ * Item lines are keyed BY INDEX, never by product id: a promo cap splits one product across two
+ * lines at two prices (CONTEXT.md → Promo), and keying by id would drop one of them.
+ */
+function itemsTableHtml(
+  items: any[],
+  cur: string,
+  labels: { items: string; shipping: string; total: string; promo: string },
+  shippingFee: number | null | undefined,
+  total: number,
+): string {
+  const rows = items
+    .map((i: any) => {
+      const promo = i.promo ? ` <span style="color:#b45309;font-size:12px;">${esc(labels.promo)}</span>` : ''
+      const line = formatMoney((i.price ?? 0) * (i.qty ?? 0), cur)
+      return `<tr>
+        <td style="padding:6px 0;border-bottom:1px solid #eee;">${esc(i.name)}${promo} <span style="color:#666;">× ${esc(String(i.qty ?? 0))}</span></td>
+        <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;">${esc(line)}</td>
+      </tr>`
+    })
+    .join('')
+
+  const shippingRow = shippingFee
+    ? `<tr><td style="padding:6px 0;">${esc(labels.shipping)}</td><td style="padding:6px 0;text-align:right;">${esc(formatMoney(shippingFee, cur))}</td></tr>`
+    : ''
+
+  return `<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
+    <thead><tr><th colspan="2" style="text-align:left;padding:0 0 8px;border-bottom:2px solid #111;">${esc(labels.items)}</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot>
+      ${shippingRow}
+      <tr><td style="padding:8px 0;font-weight:bold;">${esc(labels.total)}</td><td style="padding:8px 0;text-align:right;font-weight:bold;">${esc(formatMoney(total, cur))}</td></tr>
+    </tfoot>
+  </table>`
+}
+
 // Pure: build the customer-facing receipt from a stored order row, in the order's
 // own stamped currency (legacy null ⇒ MYR). A twin of buildOrderMessage — same
 // formatMoney / formatAddress / mode-label rules, different audience and channel.
@@ -226,46 +294,23 @@ export function buildOrderConfirmationEmail(
   textLines.push(`${t('View your order', '查看您的订单')}: ${shopLink}`)
   const text = textLines.join('\n')
 
-  // ── HTML part ── inlined CSS, no images, a styled table receipt.
-  const itemRows = items
-    .map((i: any) => {
-      const promo = i.promo ? ` <span style="color:#b45309;font-size:12px;">${esc(promoTag)}</span>` : ''
-      const line = formatMoney((i.price ?? 0) * (i.qty ?? 0), cur)
-      return `<tr>
-        <td style="padding:6px 0;border-bottom:1px solid #eee;">${esc(i.name)}${promo} <span style="color:#666;">× ${esc(String(i.qty ?? 0))}</span></td>
-        <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;">${esc(line)}</td>
-      </tr>`
-    })
-    .join('')
+  // ── HTML part ──
+  const dateRow = order.fulfil_date ? detailHtml(t('Date', '日期'), String(order.fulfil_date)) : ''
+  const addressBlock = showAddress ? detailHtml(t('Delivery address', '送货地址'), addr) : ''
 
-  const shippingRow = order.shipping_fee
-    ? `<tr><td style="padding:6px 0;">${esc(t('Shipping', '运费'))}</td><td style="padding:6px 0;text-align:right;">${esc(formatMoney(order.shipping_fee, cur))}</td></tr>`
-    : ''
-  const addressBlock = showAddress
-    ? `<p style="margin:4px 0;color:#444;"><strong>${esc(t('Delivery address', '送货地址'))}:</strong> ${esc(addr)}</p>`
-    : ''
-  const dateRow = order.fulfil_date
-    ? `<p style="margin:4px 0;color:#444;"><strong>${esc(t('Date', '日期'))}:</strong> ${esc(String(order.fulfil_date))}</p>`
-    : ''
-
-  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#111;">
-  <p style="font-size:15px;">${esc(t('Thank you for your order!', '感谢您的订单！'))}</p>
+  const html = emailShell(`  <p style="font-size:15px;">${esc(t('Thank you for your order!', '感谢您的订单！'))}</p>
   <h1 style="font-size:20px;margin:0 0 4px;">${esc(shopName)}</h1>
   <p style="margin:0 0 12px;color:#666;">${esc(t('Order for', '订单人'))} ${esc(name)}</p>
   <p style="font-size:18px;margin:12px 0;"><strong>${esc(t('Order No.', '订单号'))}: ${esc(order.order_number)}</strong></p>
   ${dateRow}
-  <p style="margin:4px 0;color:#444;"><strong>${esc(t('Method', '方式'))}:</strong> ${esc(modeLabel)}</p>
+  ${detailHtml(t('Method', '方式'), modeLabel)}
   ${addressBlock}
-  <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
-    <thead><tr><th colspan="2" style="text-align:left;padding:0 0 8px;border-bottom:2px solid #111;">${esc(t('Items', '商品'))}</th></tr></thead>
-    <tbody>${itemRows}</tbody>
-    <tfoot>
-      ${shippingRow}
-      <tr><td style="padding:8px 0;font-weight:bold;">${esc(t('Total', '总计'))}</td><td style="padding:8px 0;text-align:right;font-weight:bold;">${esc(formatMoney(order.total ?? 0, cur))}</td></tr>
-    </tfoot>
-  </table>
-  <p style="margin:20px 0;"><a href="${esc(shopLink)}" style="color:#2563eb;">${esc(t('View your order', '查看您的订单'))}</a></p>
-</div>`
+  ${itemsTableHtml(
+    items, cur,
+    { items: t('Items', '商品'), shipping: t('Shipping', '运费'), total: t('Total', '总计'), promo: promoTag },
+    order.shipping_fee, order.total ?? 0,
+  )}
+  <p style="margin:20px 0;"><a href="${esc(shopLink)}" style="color:#2563eb;">${esc(t('View your order', '查看您的订单'))}</a></p>`)
 
   return { subject, text, html }
 }
@@ -283,6 +328,42 @@ export function senderFrom(shopName: string, emailFrom: string): string {
 }
 
 export interface EmailOrderInput { merchantId: string; orderNumber: string; lang?: string }
+
+// ── Shared plumbing for the two mail arms ─────────────────────────────────────
+
+/**
+ * The atomic one-shot claim, parameterised by which stamp is being claimed.
+ *
+ * Both mail arms need it and neither may be allowed to drift from it: it is the only thing
+ * standing between an anonymous, order-number-addressable endpoint and a mail flood. Only the
+ * caller that flips NULL→now() gets `true`; a concurrent or repeated call gets `false` and must
+ * send nothing. The two columns are separate on purpose — see the migration — so the parameter
+ * is a column name rather than one shared "notified" flag.
+ */
+async function claimOnce(
+  db: any,
+  orderId: string,
+  column: 'confirmation_emailed_at' | 'merchant_emailed_at',
+): Promise<{ claimed: boolean; error?: string }> {
+  const { data, error } = await db
+    .from('orders')
+    .update({ [column]: new Date().toISOString() })
+    .eq('id', orderId)
+    .is(column, null)
+    .select('id')
+  if (error) return { claimed: false, error: 'stamp failed' }
+  return { claimed: !!data && data.length > 0 }
+}
+
+/** Loads the order both mail arms address, keyed the way the wire addresses it. */
+async function loadOrder(db: any, merchantId: string, orderNumber: string) {
+  const { data, error } = await db
+    .from('orders').select('*')
+    .eq('merchant_id', merchantId).eq('order_number', orderNumber).maybeSingle()
+  if (error) return { error: 'order lookup failed' as const }
+  if (!data) return { error: 'order not found' as const }
+  return { order: data }
+}
 
 // Config the send needs but that does not belong to any one request: the
 // storefront base URL (for the "view your order" link) and the platform sending
@@ -312,24 +393,16 @@ export async function emailOrderConfirmation(
   const lang: Lang = input.lang === 'zh' ? 'zh' : 'en'
   if (!merchantId || !orderNumber) return { ok: false, error: 'missing merchantId or orderNumber' }
 
-  const { data: order, error: oErr } = await db
-    .from('orders').select('*')
-    .eq('merchant_id', merchantId).eq('order_number', orderNumber).maybeSingle()
-  if (oErr) return { ok: false, error: 'order lookup failed' }
-  if (!order) return { ok: false, error: 'order not found' }
+  const loaded = await loadOrder(db, merchantId, orderNumber)
+  if (loaded.error) return { ok: false, error: loaded.error }
+  const order = loaded.order
 
   // Guest orders have no account, so no recipient. Structural, not a policy check.
   if (!order.user_id) return { ok: true, skipped: true }
 
-  // Atomic one-shot claim: only the update that flips NULL→now() proceeds.
-  const { data: claimed, error: uErr } = await db
-    .from('orders')
-    .update({ confirmation_emailed_at: new Date().toISOString() })
-    .eq('id', order.id)
-    .is('confirmation_emailed_at', null)
-    .select('id')
-  if (uErr) return { ok: false, error: 'stamp failed' }
-  if (!claimed || claimed.length === 0) return { ok: true, skipped: true } // already emailed
+  const claim = await claimOnce(db, order.id, 'confirmation_emailed_at')
+  if (claim.error) return { ok: false, error: claim.error }
+  if (!claim.claimed) return { ok: true, skipped: true } // already emailed
 
   // Recipient from Auth, keyed by the order's own user_id — same source as merchant
   // owner mail, and chosen because a fresh account may have no profiles row yet.
@@ -344,6 +417,143 @@ export async function emailOrderConfirmation(
   const { subject, text, html } = buildOrderConfirmationEmail(order, shopName, slug, cfg.frontendUrl, lang)
   try {
     await send(to, subject, { text, html, from: senderFrom(shopName, cfg.emailFrom) })
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? String(e) }
+  }
+}
+
+// ── Merchant new-order email ──────────────────────────────────────────────────
+// The THIRD recipient of the fan-out, and the one that sends on every plan.
+//
+// Telegram is a Pro entitlement, so a basic shop had no notification at all: the customer got
+// their receipt and the shop got nothing, learning about the order only by refreshing the
+// dashboard. This arm closes that. Telegram stays Pro and stays the tier's headline — it is the
+// loud, phone-buzzing, staff-shared channel — and a Pro shop simply receives both.
+//
+// It is the shop's surface, so it follows the Telegram rules and not the customer receipt's:
+// English only (the body's `lang` is the CUSTOMER's presentation and is never consulted here),
+// and it carries the operational detail the receipt deliberately omits — the customer's WhatsApp
+// number and the routed distance.
+
+
+// Pure: build the shop's new-order alert from a stored order row. A sibling of
+// buildOrderConfirmationEmail, NOT a reuse of buildOrderMessage — that one emits Telegram
+// Markdown, whose `*bold*` markers render literally in mail.
+export function buildMerchantOrderEmail(
+  order: any,
+  shopName: string,
+  dashboardUrl: string,
+): OrderConfirmationEmail {
+  const cur = order.currency ?? 'MYR'
+  const items = Array.isArray(order.items) ? order.items : []
+  const mode = order.mode as string
+  const modeLabel = MODE_LABELS[mode] ?? mode
+  // Same rule as the customer receipt: an address only where the method has one. A pickup alert
+  // carrying an address the customer never gave for this order would send the merchant driving.
+  const showAddress = (mode === 'delivery' || mode === 'express') && !!order.address
+  const addr = showAddress ? formatAddress(order.address) : ''
+  const distance = formatKm(order.delivery_distance_km)
+  const total = formatMoney(order.total ?? 0, cur)
+
+  // The order and its money, so a merchant can triage the inbox without opening anything.
+  const subject = `New order ${order.order_number} — ${total}`
+
+  // Every optional row is OMITTED, never blanked — `fulfil_date` is null for every order placed
+  // before #91 and `delivery_distance_km` for every one before #101, and a label with nothing
+  // after it reads as data we lost.
+  const rows: Array<[string, string]> = []
+  rows.push(['Order No.', String(order.order_number)])
+  if (order.customer_name) rows.push(['Name', String(order.customer_name)])
+  if (order.customer_wa) rows.push(['WhatsApp', String(order.customer_wa)])
+  if (mode) rows.push(['Method', modeLabel])
+  if (order.fulfil_date) rows.push(['Date', String(order.fulfil_date)])
+  if (showAddress) rows.push(['Address', addr])
+  if (distance) rows.push(['Distance', distance])
+
+  const lineTotal = (i: any) => formatMoney((i.price ?? 0) * (i.qty ?? 0), cur)
+
+  // ── Plain-text part ──
+  const textLines: string[] = []
+  textLines.push(`New order — ${shopName}`)
+  textLines.push('')
+  for (const [label, value] of rows) textLines.push(`${label}: ${value}`)
+  textLines.push('')
+  textLines.push('Items:')
+  for (const i of items) {
+    textLines.push(`• ${i.name}${i.promo ? ' (Promo)' : ''} × ${i.qty} — ${lineTotal(i)}`)
+  }
+  textLines.push('')
+  if (order.shipping_fee) textLines.push(`Shipping: ${formatMoney(order.shipping_fee, cur)}`)
+  textLines.push(`Total: ${total}`)
+  textLines.push('')
+  textLines.push(`Open your dashboard: ${dashboardUrl}`)
+  const text = textLines.join('\n')
+
+  // ── HTML part ── the receipt's shell and table, with the shop's labels.
+  const html = emailShell(`  <h1 style="font-size:20px;margin:0 0 4px;">New order — ${esc(shopName)}</h1>
+  <p style="font-size:18px;margin:12px 0;"><strong>${esc(String(order.order_number))}</strong></p>
+  ${rows.map(([label, value]) => detailHtml(label, value)).join('')}
+  ${itemsTableHtml(
+    items, cur,
+    { items: 'Items', shipping: 'Shipping', total: 'Total', promo: '(Promo)' },
+    order.shipping_fee, order.total ?? 0,
+  )}
+  <p style="margin:20px 0;"><a href="${esc(dashboardUrl)}" style="color:#2563eb;">Open your dashboard</a></p>`)
+
+  return { subject, text, html }
+}
+
+// Load the order, claim the one-shot row, resolve the OWNER from Auth, build and send.
+// Signature mirrors emailOrderConfirmation exactly: `db` reads/stamps the order and reads the
+// merchant, `admin` resolves the owner's Auth email, `send` is the injected adapter.
+//
+// The stamp is claimed BEFORE the send for the same reason as the customer's, and it carries
+// more weight here. ADR 0003 accepted an anonymous notify endpoint because the worst an
+// enumerator achieves is triggering the one legitimate CUSTOMER email early. That reasoning does
+// not extend to a recipient who is not the customer: without this claim, a guessable per-shop
+// daily order number is an unbounded mail flood at a merchant's inbox.
+//
+// Deliberately does NOT read `merchants.plan`. This is the arm every shop gets.
+export async function emailMerchantOrder(
+  db: any,
+  admin: any,
+  send: EmailSend,
+  input: NotifyOrderInput,
+  cfg: EmailOrderConfig,
+): Promise<NotifyResult> {
+  const { merchantId, orderNumber } = input
+  if (!merchantId || !orderNumber) return { ok: false, error: 'missing merchantId or orderNumber' }
+
+  const loaded = await loadOrder(db, merchantId, orderNumber)
+  if (loaded.error) return { ok: false, error: loaded.error }
+  const order = loaded.order
+
+  // The owner is read BEFORE the claim: a shop whose owner has no reachable address must not
+  // burn its one-shot stamp on a send that was never going to happen, or the merchant would
+  // lose the alert permanently the moment the account became reachable again.
+  const { data: merchant } = await db
+    .from('merchants').select('name, owner_id').eq('id', merchantId).maybeSingle()
+  if (!merchant?.owner_id) return { ok: true, skipped: true }
+
+  const { data: userRes } = await admin.auth.admin.getUserById(merchant.owner_id)
+  const to = userRes?.user?.email as string | undefined
+  // An account carrying no address — a phone-only signup reads back `email: ''`.
+  if (!to) return { ok: true, skipped: true }
+
+  const claim = await claimOnce(db, order.id, 'merchant_emailed_at')
+  if (claim.error) return { ok: false, error: claim.error }
+  if (!claim.claimed) return { ok: true, skipped: true } // already emailed
+
+  const { subject, text, html } = buildMerchantOrderEmail(
+    order, merchant.name ?? '', `${cfg.frontendUrl}/merchant`,
+  )
+  try {
+    // The PLATFORM's own address, stated rather than left to the adapter's default: the shop is
+    // the recipient here, and an alert wearing `senderFrom`'s shop name would read as a copy of
+    // the customer's receipt. Passing it explicitly is also what makes the choice observable to
+    // a test instead of an invisible fallback.
+    await send(to, subject, { text, html, from: cfg.emailFrom })
     return { ok: true }
   } catch (e: any) {
     return { ok: false, error: e?.message ?? String(e) }

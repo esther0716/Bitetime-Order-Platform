@@ -86,11 +86,17 @@ It is shared for the same reason `priceOrder` is — it must hold identically on
 
 ## Order notifications
 
-The messages sent **after** an order commits, never inside its transaction — a notification outage must never roll back a paid order. One post-commit call (`POST /api/notify/order`, anonymous) fans out to two independent, best-effort recipients; either can fail or skip without touching the order or the other.
+The messages sent **after** an order commits, never inside its transaction — a notification outage must never roll back a paid order. One post-commit call (`POST /api/notify/order`, anonymous) fans out to three independent, best-effort recipients; any can fail or skip without touching the order or the others.
 
-**Merchant notification** — a Telegram message to the shop. The shop's surface: English only, carries operational detail (WhatsApp, distance). Skips when the merchant has no Telegram configured. Not deduplicated — a repeat is merchant-facing noise.
+The three are not variations on one message, and every difference between them is deliberate: who receives it, whether the plan gates it, whether it is deduplicated, and what language it speaks.
+
+**Merchant notification** — a Telegram message to the shop. The shop's surface: English only, carries operational detail (WhatsApp, distance). Skips when the merchant has no Telegram configured, and skips when the shop is not **Pro** — it is the paid tier's headline feature. Not deduplicated — a repeat is merchant-facing noise.
 
 **Order confirmation email** — a bilingual receipt to the **customer**, and only to a **signed-in** one: the recipient is the account email read server-side from `order.user_id` via Auth, so a guest order (`user_id` null) skips *structurally*, never by a check that can be forgotten. Sent once per order — stamped `orders.confirmation_emailed_at` under an atomic guard, because a customer receiving the same receipt twice reads as broken. Language rides in the request body (presentation only, safe to trust); the recipient never does.
+
+**Merchant order email** — the shop owner's new-order alert, and **the one arm blind to `merchants.plan`**. It exists because Telegram is Pro: a basic shop had no notification at all and learned of an order by refreshing the dashboard, which is not a notification. Telegram stays Pro and stays the difference the tier sells — the loud, phone-buzzing channel in the group the whole shop already sits in — and a Pro shop simply receives both. The recipient is the owner's account email, read from `merchants.owner_id` via Auth (never `profiles`, which a fresh signup may not have); an owner-less shop skips. English only, following the Telegram rule rather than the receipt's — the body's `lang` is the *customer's* presentation and never reaches here. It carries what the receipt deliberately omits: the customer's WhatsApp number and the routed distance. Sent from the **platform's** address, not the shop-named sender the receipt uses — the shop is the recipient, and an alert appearing to come from itself reads as a copy of the customer's mail.
+
+Sent once per order, stamped `orders.merchant_emailed_at`, and here the guard is **load-bearing rather than merely tidy**. ADR 0003 accepted an anonymous notify endpoint on the reasoning that the worst an enumerator achieves is triggering the one legitimate *customer* email slightly early. That argument does not survive a recipient who is not the customer: order numbers are a guessable per-shop daily counter, so without the stamp a guessed number is an unbounded mail flood at a merchant's inbox. The owner is resolved **before** the claim, so a shop with no reachable owner leaves the stamp unclaimed rather than burning its one alert on a send that never happened.
 
 ## Voucher
 

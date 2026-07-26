@@ -20,7 +20,7 @@ import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileMer
 import { downgradePhases, ScheduleError, type LivePhase } from './subscriptionSchedule.js'
 import { canStartTrial, buildTrialReminderEmail } from './billingLifecycle.js'
 import { resendSend } from './email.js'
-import { notifyOrderPlaced, emailOrderConfirmation, telegramSend } from './notify.js'
+import { notifyOrderPlaced, emailOrderConfirmation, emailMerchantOrder, telegramSend } from './notify.js'
 import { signUpCustomer, isDuplicateEmailError } from './customerSignup.js'
 import { createSlidingWindow } from './rateLimit.js'
 import { clientIp } from './clientIp.js'
@@ -1109,36 +1109,46 @@ export const notifyDeps: { telegram: typeof telegramSend; email: typeof resendSe
   email: resendSend,
 }
 
-// ── Order notification — fans out to two recipients ────────────────────────────
-// The customer is anonymous; abuse is bounded by requiring a real order (and, for
-// the email, by the one-shot confirmation_emailed_at guard). One post-commit event
-// produces two independent, best-effort notices: the merchant's Telegram and the
-// signed-in customer's confirmation email. Neither blocks or suppresses the other,
-// and neither touches the already-committed order.
+// ── Order notification — fans out to three recipients ──────────────────────────
+// The customer is anonymous; abuse is bounded by requiring a real order and by the
+// one-shot stamp each email arm claims. One post-commit event produces three
+// independent, best-effort notices: the merchant's Telegram, the signed-in
+// customer's confirmation email, and the shop owner's new-order email. None blocks
+// or suppresses the others, and none touches the already-committed order.
 //
-// `lang` selects the email's presentation only (never identity or money), so a
-// body-supplied value is acceptable; absent/invalid ⇒ English in the builder. The
-// recipient is NEVER taken from the body — it is read from the order's account.
+// The three are NOT interchangeable, and the differences are deliberate:
+//   * Telegram is Pro-only and undeduplicated — a repeat ping is merchant noise.
+//   * The customer receipt is signed-in-only (a guest has no account, so no
+//     recipient) and one-shot.
+//   * The merchant email sends on EVERY plan and is one-shot. It exists because a
+//     basic shop, having no Telegram, otherwise learned of an order by refreshing.
+//
+// `lang` selects the CUSTOMER email's presentation only (never identity or money),
+// so a body-supplied value is acceptable; absent/invalid ⇒ English in the builder.
+// It never reaches the merchant arm, whose surface is English by rule. No recipient
+// is ever taken from the body — each is read from the order or the shop.
 app.post('/api/notify/order', async (c) => {
   const { merchantId, orderNumber, lang } = await c.req.json().catch(() => ({}))
-  // Concurrent, not sequential: the two are independent best-effort sends and a slow Telegram
-  // call must not delay the customer's email. Each returns its own result and never throws, so
-  // Promise.all cannot reject — neither channel blocks or suppresses the other.
-  const [telegram, email] = await Promise.all([
+  const emailCfg = { frontendUrl: env.frontendUrl, emailFrom: env.emailFrom }
+  // Concurrent, not sequential: the three are independent best-effort sends and a slow Telegram
+  // call must not delay either email. Each returns its own result and never throws, so
+  // Promise.all cannot reject — no channel blocks or suppresses another.
+  const [telegram, email, merchantEmail] = await Promise.all([
     notifyOrderPlaced(admin, notifyDeps.telegram, { merchantId, orderNumber }),
-    emailOrderConfirmation(
-      admin, admin, notifyDeps.email,
-      { merchantId, orderNumber, lang },
-      { frontendUrl: env.frontendUrl, emailFrom: env.emailFrom },
-    ),
+    emailOrderConfirmation(admin, admin, notifyDeps.email, { merchantId, orderNumber, lang }, emailCfg),
+    emailMerchantOrder(admin, admin, notifyDeps.email, { merchantId, orderNumber }, emailCfg),
   ])
-  // 404 only when the order genuinely does not exist (both agree). Otherwise 200
-  // with the combined result — either channel skipping or erroring is normal and
-  // the fire-and-forget caller ignores the body.
-  if (telegram.error === 'order not found' && email.error === 'order not found') {
-    return c.json({ telegram, email }, 404)
+  // 404 only when the order genuinely does not exist — which every arm agrees on, since each
+  // looks the same row up. Otherwise 200 with the combined result: any channel skipping or
+  // erroring is normal and the fire-and-forget caller ignores the body.
+  if (
+    telegram.error === 'order not found' &&
+    email.error === 'order not found' &&
+    merchantEmail.error === 'order not found'
+  ) {
+    return c.json({ telegram, email, merchantEmail }, 404)
   }
-  return c.json({ telegram, email })
+  return c.json({ telegram, email, merchantEmail })
 })
 
 // ── Guest order tracking ──────────────────────────────────────────────────────
