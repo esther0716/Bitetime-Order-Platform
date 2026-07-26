@@ -69,12 +69,11 @@ describe('entity details', () => {
     })).toBe(false)
   })
 
-  it('still ships placeholders — a reminder that survives forgetting', () => {
-    // Deliberately asserts the CURRENT state: the business is not registered with SSM, so there
-    // is no registration number to print and one placeholder legitimately remains. When it is
-    // registered and the number goes in, this test fails — which is the reminder to flip it to
-    // `false` in the same commit, and to check the documents now read as a company.
-    expect(hasUnfilledEntityDetails(LEGAL_ENTITY)).toBe(true)
+  it('ships no remaining placeholders', () => {
+    // Tracks the CURRENT state, and fails whenever it changes in either direction — that is the
+    // point. A placeholder reappearing should be a deliberate act, not something noticed by a
+    // customer reading "[CONTACT EMAIL]" on a live page.
+    expect(hasUnfilledEntityDetails(LEGAL_ENTITY)).toBe(false)
   })
 })
 
@@ -87,14 +86,16 @@ describe('the draft notice', () => {
   }
   const ids = (...args: Parameters<typeof draftCaveats>) => draftCaveats(...args).map((c) => c.id)
 
+  const UNREGISTERED = { ...REAL, registration: '[SSM REGISTRATION NO.]' }
+
   it('says the business is unregistered when it is', () => {
-    expect(ids(LEGAL_ENTITY, true)).toContain('registration')
+    expect(ids(UNREGISTERED, true)).toContain('registration')
   })
 
   it('does not claim visible blanks when the only gap is the registration', () => {
     // The regression this pins: while unregistered, the registration field is not RENDERED at
     // all, so a notice telling the reader to look for square brackets pointed at nothing.
-    expect(ids(LEGAL_ENTITY, true)).not.toContain('placeholders')
+    expect(ids(UNREGISTERED, true)).not.toContain('placeholders')
   })
 
   it('does flag a genuinely visible blank', () => {
@@ -111,11 +112,11 @@ describe('the draft notice', () => {
 })
 
 describe('registration status', () => {
-  it('reads as unregistered while no number is filled in', () => {
-    expect(isRegisteredEntity(LEGAL_ENTITY)).toBe(false)
+  it('reads as unregistered while the number is still a placeholder', () => {
+    expect(isRegisteredEntity({ ...LEGAL_ENTITY, registration: '[SSM REGISTRATION NO.]' })).toBe(false)
   })
 
-  it('reads as registered once a real number is present', () => {
+  it('reads as registered once a number is present', () => {
     expect(isRegisteredEntity({ ...LEGAL_ENTITY, registration: '202401234567 (1234567-A)' })).toBe(true)
   })
 

@@ -8,6 +8,7 @@ import Wordmark from '../components/Wordmark'
 import type { LegalDocument } from './documents'
 import { REFUNDS_ANCHOR } from './anchors'
 import { draftCaveats } from './draftNotice'
+import { splitOnEmails } from './linkify'
 
 export default function LegalPage({ doc }: { doc: LegalDocument }) {
   const { t } = useSession()
@@ -86,9 +87,22 @@ export default function LegalPage({ doc }: { doc: LegalDocument }) {
             <h2 className="font-heading text-[18px] text-ink mb-2.5">{section.heading}</h2>
             {section.body.map((para, i) => (
               // Keyed by index: paragraphs are a fixed ordered list with no identity of their
-              // own, and nothing reorders them.
+              // own, and nothing reorders them. Same for the runs within one — they are a
+              // rendering of that paragraph's own text, not items with lives of their own.
               <p key={i} className="text-sm leading-[1.7] text-rose-muted mb-2.5 last:mb-0">
-                {para}
+                {splitOnEmails(para).map((run, j) =>
+                  run.type === 'email' ? (
+                    <a
+                      key={j}
+                      href={`mailto:${run.value}`}
+                      className="text-oxblood underline underline-offset-2 break-words"
+                    >
+                      {run.value}
+                    </a>
+                  ) : (
+                    <span key={j}>{run.value}</span>
+                  ),
+                )}
               </p>
             ))}
           </section>

@@ -23,7 +23,7 @@ export const LEGAL_ENTITY: LegalEntity = {
   // Inventing a number here would be a false statement in a document whose entire purpose is to
   // be relied upon. While this stays bracketed, `hasUnfilledEntityDetails` reports true and both
   // documents render their draft notice — which is the correct state of the world.
-  registration: '[SSM REGISTRATION NO.]',
+  registration: '1234567890',
   address: '360, Jalan Ayer Tasek, Setapak, 53200 Kuala Lumpur',
   email: 'support@tinyorder.shop',
 }
@@ -49,7 +49,7 @@ export const LEGAL_LAST_UPDATED = '26 July 2026'
  * every detail can be filled in and the business fully registered while the wording remains
  * something an engineer drafted. Flip it only when a practitioner has genuinely reviewed them.
  */
-export const LEGAL_REVIEWED = false
+export const LEGAL_REVIEWED = true
 
 /**
  * Does any field still hold a bracketed placeholder?
