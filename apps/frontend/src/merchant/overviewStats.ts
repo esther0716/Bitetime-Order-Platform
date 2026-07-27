@@ -4,7 +4,7 @@
 //
 // This shim keeps the dashboard's importers on their local path. New code should import from
 // '@bitetime/shared' directly.
-export { computeMerchantStats, granularityFor, ordersInWindow } from '@bitetime/shared'
+export { computeMerchantStats, granularityFor, ordersInWindow, windowTotals } from '@bitetime/shared'
 export type {
-  MerchantStats, SeriesPoint, SeriesWindow, Slice, StatusSlice, Delta, Granularity,
+  MerchantStats, SeriesPoint, SeriesWindow, Slice, StatusSlice, Delta, Granularity, WindowTotals,
 } from '@bitetime/shared'

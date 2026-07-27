@@ -46,7 +46,9 @@ export interface SeriesPoint {
   revenue: number
   orders: number
 }
-export interface Slice { name: string; value: number }
+// A wedge of the revenue donut, and a row of the export's product sheet. `units` is what the
+// donut has no use for and a merchant reading a spreadsheet asks for immediately.
+export interface Slice { name: string; value: number; units: number }
 export interface StatusSlice { status: string; count: number; pct: number }
 
 // The KPI block (totalOrders … vouchersRedeemed) is all-time, with its own
@@ -78,6 +80,12 @@ export interface SeriesWindow {
   days: number
   granularity?: Granularity
   timeZone?: string
+  /**
+   * How many products the breakdown keeps before folding the rest into "Other". Six by default,
+   * which is as many wedges as the donut can label; the XLSX export passes `Infinity`, because a
+   * spreadsheet row saying "Other" is a question, not an answer.
+   */
+  productTop?: number
 }
 
 // Past a month, one bar per day is unreadable: the bars go to slivers and the axis
@@ -217,20 +225,51 @@ function revenueSeries(
 // Revenue per product from line items; top `top` by value, remainder folded into "Other".
 // Callers pass orders already narrowed to the window.
 function productRevenue(orders: StatsOrder[], top: number): Slice[] {
-  const by = new Map<string, number>()
+  const by = new Map<string, { value: number; units: number }>()
   for (const o of orders) {
     if (!counts(o)) continue
     for (const it of o.items ?? []) {
       const name = it.name || it.id || '—'
-      const value = (Number(it.price) || 0) * (Number(it.qty) || 0)
-      by.set(name, (by.get(name) ?? 0) + value)
+      const qty = Number(it.qty) || 0
+      const cur = by.get(name) ?? { value: 0, units: 0 }
+      cur.value += (Number(it.price) || 0) * qty
+      cur.units += qty
+      by.set(name, cur)
     }
   }
-  const sorted = [...by.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
+  const sorted = [...by.entries()]
+    .map(([name, v]) => ({ name, value: v.value, units: v.units }))
+    .sort((a, b) => b.value - a.value)
   if (sorted.length <= top) return sorted
   const head = sorted.slice(0, top)
-  const other = sorted.slice(top).reduce((s, x) => s + x.value, 0)
-  return other > 0 ? [...head, { name: 'Other', value: other }] : head
+  const tail = sorted.slice(top)
+  const value = tail.reduce((s, x) => s + x.value, 0)
+  const units = tail.reduce((s, x) => s + x.units, 0)
+  return value > 0 ? [...head, { name: 'Other', value, units }] : head
+}
+
+/** Order count, booked revenue and average, over whatever list of orders it is handed. */
+export interface WindowTotals {
+  totalOrders: number
+  revenue: number
+  avgOrder: number
+}
+
+/**
+ * The same three figures the KPI cards show, over an arbitrary list of orders.
+ *
+ * The export needs them for its selected range, and `MerchantStats`'s own totals are all-time on
+ * purpose — the cards sit above the range pills on the dashboard. Exported rather than
+ * reimplemented on the backend so "revenue excludes cancelled orders" is stated once.
+ */
+export function windowTotals(orders: StatsOrder[]): WindowTotals {
+  const booked = orders.filter(counts)
+  const revenue = orders.reduce((s, o) => s + orderTotal(o), 0)
+  return {
+    totalOrders: orders.length,
+    revenue,
+    avgOrder: booked.length ? revenue / booked.length : 0,
+  }
 }
 
 function statusBreakdown(orders: StatsOrder[]): StatusSlice[] {
@@ -253,7 +292,7 @@ export function computeMerchantStats(
   now: Date = new Date(),
   window: SeriesWindow = { days: 12 },
 ): MerchantStats {
-  const { days, granularity = granularityFor(days), timeZone } = window
+  const { days, granularity = granularityFor(days), timeZone, productTop = 6 } = window
   const dayOf = zoneClock(timeZone)
   const today = dayOf(now)
   // Everything the merchant sees under the range pills reads the same window: the bar chart,
@@ -285,7 +324,7 @@ export function computeMerchantStats(
     revenueDelta: delta(revThis, revLast),
     series: revenueSeries(windowed, today, days, granularity, dayOf),
     granularity,
-    productRevenue: productRevenue(windowed, 6),
+    productRevenue: productRevenue(windowed, productTop),
     statusBreakdown: statusBreakdown(windowed),
   }
 }

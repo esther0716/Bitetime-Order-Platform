@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeMerchantStats } from './merchantStats.js'
+import { computeMerchantStats, ordersInWindow, windowTotals } from './merchantStats.js'
 import type { StatsOrder } from './merchantStats.js'
 
 const NOW = new Date('2026-06-15T12:00:00')
@@ -127,8 +127,8 @@ describe('computeMerchantStats', () => {
       order({ items: [{ id: 'p1', name: 'Cake', qty: 1, price: 10 }] }),
     ]
     const s = computeMerchantStats(orders, [], [], [], NOW)
-    expect(s.productRevenue[0]).toEqual({ name: 'Cake', value: 30 })
-    expect(s.productRevenue[1]).toEqual({ name: 'Tea', value: 5 })
+    expect(s.productRevenue[0]).toEqual({ name: 'Cake', value: 30, units: 3 })
+    expect(s.productRevenue[1]).toEqual({ name: 'Tea', value: 5, units: 1 })
   })
 
   it('folds products beyond the top 6 into "Other"', () => {
@@ -153,7 +153,7 @@ describe('computeMerchantStats', () => {
       order({ status: 'cancelled', total: 99, created_at: old, items: [{ id: 'p2', name: 'Tea', qty: 5, price: 20 }] }),
     ]
     const s = computeMerchantStats(orders, [], [], [], NOW, { days: 12 })
-    expect(s.productRevenue).toEqual([{ name: 'Cake', value: 10 }]) // the old Tea never lands
+    expect(s.productRevenue).toEqual([{ name: 'Cake', value: 10, units: 1 }]) // the old Tea never lands
     expect(s.statusBreakdown).toEqual([{ status: 'completed', count: 1, pct: 100 }])
     // …and the KPI cards above the range pills stay all-time.
     expect(s.totalOrders).toBe(2)
@@ -185,7 +185,7 @@ describe('computeMerchantStats', () => {
       order({ status: 'new', created_at: 'not-a-date', items: [{ id: 'p3', name: 'Bun', qty: 1, price: 40 }] }),
     ]
     const s = computeMerchantStats(orders, [], [], [], NOW, { days: 90 })
-    expect(s.productRevenue).toEqual([{ name: 'Cake', value: 10 }])
+    expect(s.productRevenue).toEqual([{ name: 'Cake', value: 10, units: 1 }])
     expect(s.statusBreakdown).toEqual([{ status: 'completed', count: 1, pct: 100 }])
   })
 })
@@ -233,7 +233,7 @@ describe('computeMerchantStats time zones', () => {
     const edge = order({ total: 5, created_at: '2026-06-12T17:00:00Z', items: [{ id: 'p', name: 'Bun', qty: 1, price: 5 }] })
     const kl = computeMerchantStats([edge], [], [], [], NOW_UTC,
       { days: 3, granularity: 'day', timeZone: 'Asia/Kuala_Lumpur' })
-    expect(kl.productRevenue).toEqual([{ name: 'Bun', value: 5 }])
+    expect(kl.productRevenue).toEqual([{ name: 'Bun', value: 5, units: 1 }])
 
     const utc = computeMerchantStats([edge], [], [], [], NOW_UTC,
       { days: 3, granularity: 'day', timeZone: 'UTC' })
@@ -244,5 +244,60 @@ describe('computeMerchantStats time zones', () => {
     const s = computeMerchantStats([], [], [], [], NOW_UTC, { days: 3, granularity: 'day' })
     expect(s.series).toHaveLength(3)
     expect(s.series[2].start).toBe(s.series[2].end)
+  })
+})
+
+// ── Export-shaped aggregates ─────────────────────────────────────────────────
+// The XLSX export reads the same window as the chart but needs two things the dashboard does
+// not: every product rather than the donut's legible top six, and totals for the WINDOW rather
+// than the all-time KPI cards that sit above the range pills.
+describe('productTop', () => {
+  const items = Array.from({ length: 9 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, qty: 2, price: 9 - i }))
+
+  it('folds beyond the top 6 by default, as the donut needs', () => {
+    const s = computeMerchantStats([order({ items })], [], [], [], NOW)
+    expect(s.productRevenue).toHaveLength(7)
+    expect(s.productRevenue[6].name).toBe('Other')
+  })
+
+  it('returns every product with no Other row when the cap is lifted', () => {
+    const s = computeMerchantStats([order({ items })], [], [], [], NOW, { days: 12, productTop: Infinity })
+    expect(s.productRevenue).toHaveLength(9)
+    expect(s.productRevenue.some(p => p.name === 'Other')).toBe(false)
+  })
+
+  it('counts units alongside revenue, and folds units into Other too', () => {
+    const s = computeMerchantStats([order({ items })], [], [], [], NOW)
+    expect(s.productRevenue[0]).toEqual({ name: 'P0', value: 18, units: 2 })
+    // p6, p7, p8 at prices 3, 2, 1 and two units each.
+    expect(s.productRevenue[6]).toEqual({ name: 'Other', value: 2 * (3 + 2 + 1), units: 6 })
+  })
+
+  it('sums units across separate orders of the same product', () => {
+    const one = order({ items: [{ id: 'a', name: 'Cookie', qty: 2, price: 5 }] })
+    const two = order({ items: [{ id: 'a', name: 'Cookie', qty: 3, price: 5 }] })
+    const s = computeMerchantStats([one, two], [], [], [], NOW)
+    expect(s.productRevenue).toEqual([{ name: 'Cookie', value: 25, units: 5 }])
+  })
+})
+
+describe('windowTotals', () => {
+  it('totals a list of orders, excluding cancelled revenue but counting the row', () => {
+    expect(windowTotals([
+      order({ total: 30 }),
+      order({ total: 20 }),
+      order({ total: 99, status: 'cancelled' }),
+    ])).toEqual({ totalOrders: 3, revenue: 50, avgOrder: 25 })
+  })
+
+  it('is all zeroes on an empty window rather than dividing by nothing', () => {
+    expect(windowTotals([])).toEqual({ totalOrders: 0, revenue: 0, avgOrder: 0 })
+  })
+
+  it('agrees with the all-time KPI block when the window holds everything', () => {
+    const orders = [order({ total: 30 }), order({ total: 20 })]
+    const s = computeMerchantStats(orders, [], [], [], NOW, { days: 90 })
+    const w = windowTotals(ordersInWindow(orders, NOW, 90))
+    expect(w).toEqual({ totalOrders: s.totalOrders, revenue: s.revenue, avgOrder: s.avgOrder })
   })
 })
