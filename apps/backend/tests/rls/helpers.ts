@@ -147,12 +147,52 @@ export async function seedProduct(fields: {
 export async function makeUser(email: string, password: string) {
   const svc = serviceClient()
   // Delete any existing user with this email first (idempotent re-runs).
-  const { data: existing } = await svc.auth.admin.listUsers()
-  const prior = existing?.users?.find(u => u.email === email)
-  if (prior) await svc.auth.admin.deleteUser(prior.id)
+  //
+  // PAGINATED, and it has to be: listUsers() returns the FIRST PAGE ONLY (50 accounts by
+  // default). A developer database accumulates users across suite runs and seed scripts, and
+  // once it passed fifty this lookup silently stopped finding anyone — so the delete was
+  // skipped, createUser failed on the duplicate (its error is not read), and the sign-in below
+  // ran against whatever password the OLD account was made with. The symptom is a null session
+  // several lines later in whichever test happened to reuse an email, which reads as a broken
+  // test rather than a broken helper.
+  // A prior account is REUSED when it cannot be deleted, rather than the delete being assumed
+  // to have worked. orders.user_id and merchants.owner_id are ON DELETE NO ACTION, so an
+  // account that has placed an order or owns a shop CANNOT be removed — the delete 500s, the
+  // create then fails `email_exists`, and the sign-in below runs against whatever password the
+  // old account was made with. On a developer database that has been ordered through, that made
+  // any suite reusing such an email fail with a null session far from the real cause. Resetting
+  // the password to the one the caller asked for gets the same signed-in client either way.
+  const prior = await findUserByEmail(svc, email)
+  if (prior) {
+    const { error } = await svc.auth.admin.deleteUser(prior)
+    if (error) {
+      await svc.auth.admin.updateUserById(prior, { password, email_confirm: true })
+      const reused = anonClient()
+      await reused.auth.signInWithPassword({ email, password })
+      return reused
+    }
+  }
 
-  await svc.auth.admin.createUser({ email, password, email_confirm: true })
+  const { error: createErr } = await svc.auth.admin.createUser({ email, password, email_confirm: true })
+  if (createErr) throw new Error(`creating ${email}: ${createErr.message}`)
   const client = anonClient()
-  await client.auth.signInWithPassword({ email, password })
+  const { error: signInErr } = await client.auth.signInWithPassword({ email, password })
+  if (signInErr) throw new Error(`signing in ${email}: ${signInErr.message}`)
   return client
+}
+
+/** The id of the account with this email, walking every page. Null when there is none. */
+async function findUserByEmail(
+  svc: ReturnType<typeof serviceClient>,
+  email: string,
+): Promise<string | null> {
+  const perPage = 200
+  for (let page = 1; ; page++) {
+    const { data, error } = await svc.auth.admin.listUsers({ page, perPage })
+    if (error) throw new Error(`listing users: ${error.message}`)
+    const users = data?.users ?? []
+    const hit = users.find((u) => u.email === email)
+    if (hit) return hit.id
+    if (users.length < perPage) return null
+  }
 }
