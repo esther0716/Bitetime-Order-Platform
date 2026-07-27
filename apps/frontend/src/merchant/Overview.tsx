@@ -71,9 +71,15 @@ export default function Overview() {
   }, [merchant?.id])
 
   // Range and granularity switches recompute from the rows already in hand — no refetch.
+  // The shop's own zone decides which day an order falls on, not the browser's: the Pro export
+  // builds this same series on a UTC server, and a merchant reading their chart abroad should
+  // still see their shop's days.
   const stats = useMemo(
-    () => rows && computeMerchantStats(rows.orders, rows.products, rows.customers, rows.vouchers, new Date(), { days: rangeDays, granularity }),
-    [rows, rangeDays, granularity],
+    () => rows && computeMerchantStats(
+      rows.orders, rows.products, rows.customers, rows.vouchers, new Date(),
+      { days: rangeDays, granularity, timeZone: merchant?.timezone },
+    ),
+    [rows, rangeDays, granularity, merchant?.timezone],
   )
 
   const statusLabel = (s: string) => ({

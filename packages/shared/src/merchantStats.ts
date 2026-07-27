@@ -6,6 +6,8 @@
 // the chart, the backend builds the XLSX the merchant downloads, and a stat derived on one side
 // only is a file that disagrees with the chart it came from.
 
+import { isTimezone } from './fulfilment.js'
+
 // Shared code cannot import the frontend's `Order`/`Product`/`Voucher`, so it states only the
 // shape it actually reads. The frontend's own types are structurally assignable to these, which
 // is why Overview.tsx keeps compiling without a cast.
@@ -32,8 +34,18 @@ export interface StatsVoucher {
 export interface Delta { pct: number; dir: 'up' | 'down' | 'flat' }
 // One bar of the revenue chart. `label` is what the axis shows; `range` is set only
 // on weekly buckets, where the axis label alone (the week's first day) would be a lie
-// about what the bar contains — the tooltip shows this instead.
-export interface SeriesPoint { key: string; label: string; range?: string; revenue: number; orders: number }
+// about what the bar contains — the tooltip shows this instead. `start`/`end` are the
+// bucket's civil dates in the shop's zone: the chart ignores them, the XLSX export
+// writes them as its two date columns.
+export interface SeriesPoint {
+  key: string
+  label: string
+  range?: string
+  start: string
+  end: string
+  revenue: number
+  orders: number
+}
 export interface Slice { name: string; value: number }
 export interface StatusSlice { status: string; count: number; pct: number }
 
@@ -58,7 +70,15 @@ export type Granularity = 'day' | 'week'
 
 // What the revenue chart covers, and how finely. `granularity` is what the merchant
 // picked; leave it off to get the default for the range.
-export interface SeriesWindow { days: number; granularity?: Granularity }
+//
+// `timeZone` is the SHOP's zone (`merchants.timezone`). Omit it and days are bucketed in the
+// runtime's own zone, which is right for a browser standing in for its merchant and wrong for a
+// UTC server building the same numbers into a file.
+export interface SeriesWindow {
+  days: number
+  granularity?: Granularity
+  timeZone?: string
+}
 
 // Past a month, one bar per day is unreadable: the bars go to slivers and the axis
 // drops most of its labels. Bucket by week instead — 90 days is 13 bars, not 90.
@@ -70,13 +90,6 @@ export const granularityFor = (days: number): Granularity => (days > 30 ? 'week'
 const counts = (o: StatsOrder) => (o.status ?? 'new') !== 'cancelled'
 const orderTotal = (o: StatsOrder) => (counts(o) ? Number(o.total) || 0 : 0)
 
-function monthKey(iso?: string): number | null {
-  if (!iso) return null
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return null
-  return d.getFullYear() * 12 + d.getMonth()
-}
-
 function delta(cur: number, prev: number): Delta {
   if (prev === 0) return { pct: cur > 0 ? 100 : 0, dir: cur > 0 ? 'up' : 'flat' }
   const pct = ((cur - prev) / prev) * 100
@@ -84,46 +97,104 @@ function delta(cur: number, prev: number): Delta {
 }
 
 const MS_PER_DAY = 86_400_000
-const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
-const dayLabel = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`
+const pad = (n: number) => String(n).padStart(2, '0')
 
-// Whole days between two local midnights. Uses UTC arithmetic on the floored dates so a
-// DST shift inside the window cannot round a day to 0.96 and land an order in the wrong bucket.
-function daysAgo(then: Date, now: Date): number {
-  const a = midnight(then), b = midnight(now)
-  return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate())
-    - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / MS_PER_DAY)
+/**
+ * A clock that reports which civil day an instant falls on in `tz`, as a day index (whole days
+ * since the epoch).
+ *
+ * Integer arithmetic from here on: no local midnights, so a DST shift inside the window cannot
+ * round a day to 0.96 and land an order in the wrong bucket, and a UTC container gives the same
+ * answer as the merchant's own browser.
+ *
+ * The formatter is built ONCE per call and reused across every order — constructing an
+ * `Intl.DateTimeFormat` per row is the slow way to do this on a shop with thousands of orders.
+ * An absent or unusable zone falls back to the runtime's own, which is the behaviour this
+ * module had before it left the frontend.
+ */
+function zoneClock(tz?: string): (d: Date) => number {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: isTimezone(tz) ? tz : undefined,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  })
+  return (d: Date) => {
+    const parts = fmt.formatToParts(d)
+    const get = (type: string) => Number(parts.find(p => p.type === type)?.value)
+    return Date.UTC(get('year'), get('month') - 1, get('day')) / MS_PER_DAY
+  }
 }
 
-// Whether an order lands inside the selected range. An order whose created_at is missing or
-// unparseable cannot be placed in the window, so it is out — the same call revenueSeries makes
-// bucket-side, kept here so every ranged panel drops exactly the same rows.
-function inWindow(o: StatsOrder, now: Date, days: number): boolean {
-  if (!o.created_at) return false
-  const d = new Date(o.created_at)
-  if (Number.isNaN(d.getTime())) return false
-  const ago = daysAgo(d, now)
-  return ago >= 0 && ago < days
+// A day index back into calendar fields. Built at UTC midnight, so the UTC getters are exact.
+const civil = (dayIndex: number) => new Date(dayIndex * MS_PER_DAY)
+const isoDay = (dayIndex: number) => {
+  const d = civil(dayIndex)
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`
+}
+const dayLabel = (dayIndex: number) => {
+  const d = civil(dayIndex)
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
+}
+const monthOf = (dayIndex: number) => {
+  const d = civil(dayIndex)
+  return d.getUTCFullYear() * 12 + d.getUTCMonth()
+}
+
+/**
+ * The orders inside the last `days` days ending on `now`, in the shop's zone.
+ *
+ * An order whose `created_at` is missing or unparseable cannot be placed in the window, so it is
+ * out — the same call `revenueSeries` makes bucket-side, kept here so every ranged panel drops
+ * exactly the same rows.
+ *
+ * Exported because the XLSX export needs the window's own totals, and `MerchantStats`'s KPI
+ * block is deliberately all-time (it sits above the range pills on the dashboard).
+ */
+export function ordersInWindow(
+  orders: StatsOrder[], now: Date, days: number, timeZone?: string,
+): StatsOrder[] {
+  const dayOf = zoneClock(timeZone)
+  return filterByWindow(orders, dayOf(now), days, dayOf)
+}
+
+// The same rule against a clock the caller already built, so `computeMerchantStats` does not
+// construct a second `Intl.DateTimeFormat` just to reuse the public helper above.
+function filterByWindow(
+  orders: StatsOrder[], today: number, days: number, dayOf: (d: Date) => number,
+): StatsOrder[] {
+  return orders.filter(o => {
+    if (!o.created_at) return false
+    const d = new Date(o.created_at)
+    if (Number.isNaN(d.getTime())) return false
+    const ago = today - dayOf(d)
+    return ago >= 0 && ago < days
+  })
 }
 
 // Buckets covering the last `days` days ending on `now` (inclusive), oldest first.
 // Weekly buckets are trailing 7-day windows anchored on today — not calendar weeks, so the
 // newest bar is always a full week rather than a part-week that reads as a collapse in sales.
 // The oldest bucket is the short one instead (90 days is 12 whole weeks plus 6 days).
-function revenueSeries(orders: StatsOrder[], now: Date, days: number, granularity: Granularity): SeriesPoint[] {
+function revenueSeries(
+  orders: StatsOrder[],
+  today: number,
+  days: number,
+  granularity: Granularity,
+  dayOf: (d: Date) => number,
+): SeriesPoint[] {
   const span = granularity === 'week' ? 7 : 1
   const bucketCount = Math.ceil(days / span)
   const points: SeriesPoint[] = []
 
   // Bucket b counts back from today: it holds orders `b * span` … `b * span + span - 1` days ago.
   for (let b = bucketCount - 1; b >= 0; b--) {
-    const newest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - b * span)
-    const oldestOffset = Math.min(b * span + span - 1, days - 1)
-    const oldest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - oldestOffset)
+    const newest = today - b * span
+    const oldest = today - Math.min(b * span + span - 1, days - 1)
     points.push({
       key: String(b),
       label: dayLabel(oldest),
       range: granularity === 'week' ? `${dayLabel(oldest)} – ${dayLabel(newest)}` : undefined,
+      start: isoDay(oldest),
+      end: isoDay(newest),
       revenue: 0,
       orders: 0,
     })
@@ -133,7 +204,7 @@ function revenueSeries(orders: StatsOrder[], now: Date, days: number, granularit
     if (!o.created_at) continue
     const d = new Date(o.created_at)
     if (Number.isNaN(d.getTime())) continue
-    const ago = daysAgo(d, now)
+    const ago = today - dayOf(d)
     if (ago < 0 || ago >= days) continue
     const p = points[bucketCount - 1 - Math.floor(ago / span)]
     if (!p) continue
@@ -182,19 +253,24 @@ export function computeMerchantStats(
   now: Date = new Date(),
   window: SeriesWindow = { days: 12 },
 ): MerchantStats {
-  const { days, granularity = granularityFor(days) } = window
+  const { days, granularity = granularityFor(days), timeZone } = window
+  const dayOf = zoneClock(timeZone)
+  const today = dayOf(now)
   // Everything the merchant sees under the range pills reads the same window: the bar chart,
   // the product donut and the status breakdown. They used to disagree — only the chart was
   // ranged, so a shop with older history read all-time figures beside a "last 12 days" chart
   // with nothing on screen saying so. The KPI cards above the pills stay all-time on purpose.
-  const windowed = orders.filter(o => inWindow(o, now, days))
+  const windowed = filterByWindow(orders, today, days, dayOf)
   const booked = orders.filter(counts)
   const revenue = orders.reduce((s, o) => s + orderTotal(o), 0)
-  const thisKey = now.getFullYear() * 12 + now.getMonth()
+  const thisKey = monthOf(today)
 
   let ordersThis = 0, ordersLast = 0, revThis = 0, revLast = 0
   for (const o of orders) {
-    const k = monthKey(o.created_at)
+    if (!o.created_at) continue
+    const d = new Date(o.created_at)
+    if (Number.isNaN(d.getTime())) continue
+    const k = monthOf(dayOf(d))
     if (k === thisKey) { ordersThis++; revThis += orderTotal(o) }
     else if (k === thisKey - 1) { ordersLast++; revLast += orderTotal(o) }
   }
@@ -207,7 +283,7 @@ export function computeMerchantStats(
     vouchersRedeemed: vouchers.reduce((s, v) => s + (v.usedBy?.length ?? 0), 0),
     ordersDelta: delta(ordersThis, ordersLast),
     revenueDelta: delta(revThis, revLast),
-    series: revenueSeries(windowed, now, days, granularity),
+    series: revenueSeries(windowed, today, days, granularity, dayOf),
     granularity,
     productRevenue: productRevenue(windowed, 6),
     statusBreakdown: statusBreakdown(windowed),

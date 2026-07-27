@@ -189,3 +189,60 @@ describe('computeMerchantStats', () => {
     expect(s.statusBreakdown).toEqual([{ status: 'completed', count: 1, pct: 100 }])
   })
 })
+
+// ── Time zones ───────────────────────────────────────────────────────────────
+// The chart runs in the merchant's browser and the XLSX export runs on a UTC server. Unless
+// both bucket by the SHOP's civil day, an evening order lands on different days in the two, and
+// the file disagrees with the chart it came from.
+describe('computeMerchantStats time zones', () => {
+  // 2026-06-14T17:30:00Z is 2026-06-15 01:30 in Asia/Kuala_Lumpur (UTC+8) but still the 14th in UTC.
+  const NOW_UTC = new Date('2026-06-15T04:00:00Z')
+  const LATE = order({ total: 40, created_at: '2026-06-14T17:30:00Z' })
+
+  it('buckets an order by the shop’s civil day, not the runtime’s', () => {
+    const kl = computeMerchantStats([LATE], [], [], [], NOW_UTC,
+      { days: 3, granularity: 'day', timeZone: 'Asia/Kuala_Lumpur' })
+    const today = kl.series[kl.series.length - 1]
+    expect(today.start).toBe('2026-06-15')
+    expect(today.revenue).toBe(40)
+
+    const utc = computeMerchantStats([LATE], [], [], [], NOW_UTC,
+      { days: 3, granularity: 'day', timeZone: 'UTC' })
+    expect(utc.series[utc.series.length - 1].revenue).toBe(0)
+    expect(utc.series[utc.series.length - 2].revenue).toBe(40)
+  })
+
+  it('labels every daily bucket with its own civil date, start equal to end', () => {
+    const s = computeMerchantStats([], [], [], [], NOW_UTC,
+      { days: 3, granularity: 'day', timeZone: 'Asia/Kuala_Lumpur' })
+    expect(s.series.map(p => p.start)).toEqual(['2026-06-13', '2026-06-14', '2026-06-15'])
+    expect(s.series.every(p => p.start === p.end)).toBe(true)
+  })
+
+  it('gives a weekly bucket a seven-day span ending on the shop’s today', () => {
+    const s = computeMerchantStats([], [], [], [], NOW_UTC,
+      { days: 14, granularity: 'week', timeZone: 'Asia/Kuala_Lumpur' })
+    const last = s.series[s.series.length - 1]
+    expect(last.start).toBe('2026-06-09')
+    expect(last.end).toBe('2026-06-15')
+  })
+
+  // The window is ranged in the shop's zone too, not just the buckets — otherwise an order can
+  // survive the filter and then find no bucket to sit in.
+  it('ranges the product and status panels by the shop’s civil day', () => {
+    const edge = order({ total: 5, created_at: '2026-06-12T17:00:00Z', items: [{ id: 'p', name: 'Bun', qty: 1, price: 5 }] })
+    const kl = computeMerchantStats([edge], [], [], [], NOW_UTC,
+      { days: 3, granularity: 'day', timeZone: 'Asia/Kuala_Lumpur' })
+    expect(kl.productRevenue).toEqual([{ name: 'Bun', value: 5 }])
+
+    const utc = computeMerchantStats([edge], [], [], [], NOW_UTC,
+      { days: 3, granularity: 'day', timeZone: 'UTC' })
+    expect(utc.productRevenue).toEqual([])
+  })
+
+  it('falls back to the runtime zone when the window carries none', () => {
+    const s = computeMerchantStats([], [], [], [], NOW_UTC, { days: 3, granularity: 'day' })
+    expect(s.series).toHaveLength(3)
+    expect(s.series[2].start).toBe(s.series[2].end)
+  })
+})
