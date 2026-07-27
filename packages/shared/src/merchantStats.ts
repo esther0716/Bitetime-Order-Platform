@@ -88,6 +88,20 @@ export interface SeriesWindow {
   productTop?: number
 }
 
+/**
+ * The ranges the dashboard offers, and the only ones the XLSX export accepts.
+ *
+ * Shared because it must hold identically on both sides of the wire: the pills offer these, and
+ * the export endpoint REFUSES anything else outright rather than clamping it (a clamped request
+ * returns a file that quietly answers a different question). Two copies of this list could drift,
+ * and a drifted list means a pill the merchant can press that the download then 400s.
+ */
+export const REVENUE_RANGES = [12, 30, 60, 90] as const
+export type RevenueRange = (typeof REVENUE_RANGES)[number]
+
+export const isRevenueRange = (n: unknown): n is RevenueRange =>
+  typeof n === 'number' && (REVENUE_RANGES as readonly number[]).includes(n)
+
 // Past a month, one bar per day is unreadable: the bars go to slivers and the axis
 // drops most of its labels. Bucket by week instead — 90 days is 13 bars, not 90.
 // This is the default only; the merchant can override it either way.

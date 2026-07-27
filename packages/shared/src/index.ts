@@ -31,8 +31,11 @@ export {
 export type { FulfilmentConfig } from './fulfilment.js'
 export { REFUSAL_STATUS, ORDER_REFUSALS, QUOTE_REFUSAL_STATUS, QUOTE_REFUSALS } from './refusal.js'
 export type { OrderRefusal, QuoteRefusal } from './refusal.js'
-export { computeMerchantStats, granularityFor, ordersInWindow, windowTotals } from './merchantStats.js'
+export {
+  computeMerchantStats, granularityFor, ordersInWindow, windowTotals,
+  REVENUE_RANGES, isRevenueRange,
+} from './merchantStats.js'
 export type {
   MerchantStats, SeriesPoint, SeriesWindow, Slice, StatusSlice, Delta, Granularity,
-  StatsOrder, StatsOrderItem, StatsVoucher, WindowTotals,
+  StatsOrder, StatsOrderItem, StatsVoucher, WindowTotals, RevenueRange,
 } from './merchantStats.js'

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeMerchantStats, ordersInWindow, windowTotals } from './merchantStats.js'
+import { computeMerchantStats, ordersInWindow, windowTotals, isRevenueRange, REVENUE_RANGES } from './merchantStats.js'
 import type { StatsOrder } from './merchantStats.js'
 
 const NOW = new Date('2026-06-15T12:00:00')
@@ -299,5 +299,17 @@ describe('windowTotals', () => {
     const s = computeMerchantStats(orders, [], [], [], NOW, { days: 90 })
     const w = windowTotals(ordersInWindow(orders, NOW, 90))
     expect(w).toEqual({ totalOrders: s.totalOrders, revenue: s.revenue, avgOrder: s.avgOrder })
+  })
+})
+
+describe('isRevenueRange', () => {
+  it('accepts exactly the ranges the pills offer', () => {
+    expect(REVENUE_RANGES.every(isRevenueRange)).toBe(true)
+  })
+
+  it('rejects anything else, including the strings a query param arrives as', () => {
+    for (const bad of [7, 0, -12, 91, 12.5, NaN, '12', null, undefined]) {
+      expect(isRevenueRange(bad)).toBe(false)
+    }
   })
 })

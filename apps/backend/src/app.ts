@@ -37,7 +37,7 @@ import { processReferralReward } from './referralRewardGrant.js'
 import { trackOrder } from './orderTracking.js'
 import { placeOrder, OrderError } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus } from './feedback.js'
-import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, computeMerchantStats, ordersInWindow, windowTotals, todayInZone } from '@bitetime/shared'
+import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
 import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
@@ -224,14 +224,30 @@ app.get('/api/merchants/:id/orders/count', requireMerchantOwns, async (c) => {
 // keep atomic. Every sheet is confined to the window, which is why the orders are narrowed BEFORE
 // the totals are taken: `MerchantStats`'s own KPI block is all-time by design, since on the
 // dashboard those cards sit above the range pills.
-const REPORT_DAYS = [12, 30, 60, 90]
+/**
+ * `YYYY-MM-DD HH:mm` in the shop's zone.
+ *
+ * Not an offset-bearing ISO instant: the Summary sheet names the zone in its own row, and what
+ * has to be true is that this stamp and the file's date columns read off the same clock. A
+ * locale-formatted string ("6:05 p.m.") would be neither sortable nor unambiguous in a
+ * spreadsheet, so the parts are assembled explicitly.
+ */
+function stampInZone(timeZone: string, at: Date): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(at)
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? ''
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
+}
 
 app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, requirePro, async (c) => {
   const days = Number(c.req.query('days'))
   const granularity = c.req.query('granularity')
   // Refused, not clamped: a clamped request hands back a file that quietly answers a different
-  // question than the one asked, over a merchant's own accounting.
-  if (!REPORT_DAYS.includes(days)) return c.json({ error: 'bad_range' }, 400)
+  // question than the one asked, over a merchant's own accounting. The list of ranges is
+  // @bitetime/shared's, the same one the dashboard's pills are built from.
+  if (!isRevenueRange(days)) return c.json({ error: 'bad_range' }, 400)
   if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
 
   const m = c.get('merchant')
@@ -239,7 +255,12 @@ app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, requirePro, async
   if (error) return c.json({ error: 'Lookup failed' }, 500)
 
   const now = new Date()
-  const timeZone = m.timezone || DEFAULT_TIMEZONE
+  // Resolved ONCE, here, and validated — not left to each helper's own fallback. `zoneClock`
+  // falls back to the runtime's zone and `todayInZone` falls back to DEFAULT_TIMEZONE, so an
+  // unusable `merchants.timezone` would otherwise bucket the sheets in UTC while dating the
+  // filename in Kuala Lumpur: the file disagreeing with itself, which is the failure this
+  // feature's time-zone work exists to prevent.
+  const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
   const windowed = ordersInWindow(data ?? [], now, days, timeZone)
   const totals = windowTotals(windowed)
   // `productTop: Infinity` — a spreadsheet lists every product, unlike the six-wedge donut.
@@ -257,18 +278,17 @@ app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, requirePro, async
       products: stats.productRevenue,
       statuses: stats.statusBreakdown,
     },
-    { name: m.name, slug: m.slug, currency: m.currency || 'MYR', timeZone },
+    // `merchants.currency` is NOT NULL DEFAULT 'MYR' (20260701120000_merchant_currency.sql), so
+    // there is nothing to fall back to — and a fallback here would silently relabel some other
+    // shop's money as MYR rather than showing that something is wrong.
+    { name: m.name, slug: m.slug, currency: m.currency, timeZone },
     {
       days,
       granularity,
       from: stats.series[0]?.start ?? today,
       to: stats.series[stats.series.length - 1]?.end ?? today,
-      // Stamped in the SHOP's zone, like every other date in the file. A UTC timestamp on a
-      // report whose day boundaries are Kuala Lumpur's is the mismatch this feature exists to
-      // avoid, just moved to a different cell.
-      generatedAt: new Intl.DateTimeFormat('en-CA', {
-        timeZone, dateStyle: 'short', timeStyle: 'short',
-      }).format(now),
+      // Stamped in the SHOP's zone, like every other date in the file.
+      generatedAt: stampInZone(timeZone, now),
     },
   )
 

@@ -8,7 +8,7 @@ import { useSession } from '../SessionContext'
 import { fetchMerchantOrders, lookupProducts, fetchMerchantCustomers, fetchMerchantVouchers, downloadRevenueReport } from '../store'
 import { SkeletonText } from '../components/Loaders'
 import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from '../components/charts/DashCharts'
-import { computeMerchantStats, granularityFor, type Granularity } from './overviewStats'
+import { computeMerchantStats, granularityFor, REVENUE_RANGES, type Granularity, type RevenueRange } from '@bitetime/shared'
 import { useProAccess, isRequiresPro } from '../plan'
 import { ProBadge } from './ProLock'
 import { useUpgradeNav } from './UpgradeNav'
@@ -17,8 +17,6 @@ import ShareStorefront from './ShareStorefront'
 
 const STAT_ICON = { size: 15, strokeWidth: 1.75 }
 
-const REVENUE_RANGES = [12, 30, 60, 90] as const
-type RevenueRange = (typeof REVENUE_RANGES)[number]
 
 type OverviewRows = {
   orders: Order[]
@@ -73,12 +71,18 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
       toast.error(r.error.message || t('Could not build the report', '无法生成报表'))
       return
     }
+    // The anchor has to be IN the document for a programmatic click to download in Firefox, and
+    // the object URL has to outlive the click — revoking it synchronously can race the browser's
+    // own fetch of the blob and produce an empty file.
     const url = URL.createObjectURL(r.data.blob)
     const a = document.createElement('a')
     a.href = url
     a.download = r.data.filename ?? `revenue-${days}d.xlsx`
+    a.style.display = 'none'
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
   }
 
   return (
