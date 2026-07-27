@@ -128,11 +128,13 @@ export default function Overview() {
         <RevenueBarChart data={stats.series} revenueLabel={t('Revenue', '营收')} ordersLabel={t('Orders', '订单')} />
       </ChartPanel>
 
+      {/* Both panels cover the range picked above, so both say so — the pills live on the
+          revenue chart, and without the label these read as all-time figures beside it. */}
       <div className="grid grid-cols-2 gap-5 max-[900px]:grid-cols-1">
-        <ChartPanel title={t('Revenue by product', '产品营收')}>
+        <ChartPanel title={t(`Revenue by product — last ${rangeDays} days`, `产品营收 — 近${rangeDays}天`)}>
           <DonutCard data={stats.productRevenue} />
         </ChartPanel>
-        <ChartPanel title={t('Orders by status', '订单状态')}>
+        <ChartPanel title={t(`Orders by status — last ${rangeDays} days`, `订单状态 — 近${rangeDays}天`)}>
           <BreakdownList rows={stats.statusBreakdown.map(s => ({ label: statusLabel(s.status), value: String(s.count), pct: s.pct }))} />
         </ChartPanel>
       </div>
