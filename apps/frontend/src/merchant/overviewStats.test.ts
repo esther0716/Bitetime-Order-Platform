@@ -55,11 +55,45 @@ describe('computeMerchantStats', () => {
   it('builds a daily series of the requested length, bucketing revenue', () => {
     const orders = [order({ total: 40, created_at: new Date('2026-06-15T08:00:00').toISOString() })]
     const s = computeMerchantStats(orders, [], [], [], NOW, 12)
-    expect(s.daily).toHaveLength(12)
-    const today = s.daily[s.daily.length - 1]
+    expect(s.granularity).toBe('day')
+    expect(s.series).toHaveLength(12)
+    const today = s.series[s.series.length - 1]
     expect(today.label).toBe('6/15')
+    expect(today.range).toBeUndefined() // daily bars need no range in the tooltip
     expect(today.revenue).toBe(40)
     expect(today.orders).toBe(1)
+  })
+
+  it('stays daily at 30 days and switches to weekly past it', () => {
+    expect(computeMerchantStats([], [], [], [], NOW, 30).granularity).toBe('day')
+    expect(computeMerchantStats([], [], [], [], NOW, 30).series).toHaveLength(30)
+    expect(computeMerchantStats([], [], [], [], NOW, 60).granularity).toBe('week')
+    expect(computeMerchantStats([], [], [], [], NOW, 60).series).toHaveLength(9) // 8 whole weeks + a 4-day tail
+    expect(computeMerchantStats([], [], [], [], NOW, 90).series).toHaveLength(13) // 12 whole weeks + a 6-day tail
+  })
+
+  it('weekly buckets are trailing 7-day windows anchored on today, newest one whole', () => {
+    const s = computeMerchantStats([], [], [], [], NOW, 90)
+    const newest = s.series[s.series.length - 1]
+    expect(newest.range).toBe('6/9 – 6/15') // ends today, seven days wide
+    expect(newest.label).toBe('6/9')        // axis shows the window's first day
+    expect(s.series[0].range).toBe('3/18 – 3/23') // oldest window is the short one
+  })
+
+  it('sums a whole week into one weekly bar, and drops orders past the window', () => {
+    const at = (iso: string, total: number) => order({ total, created_at: new Date(iso).toISOString() })
+    const s = computeMerchantStats([
+      at('2026-06-09T09:00:00', 10), // first day of the newest week
+      at('2026-06-15T09:00:00', 15), // last day of the newest week (today)
+      at('2026-06-08T09:00:00', 7),  // one day earlier — previous week
+      at('2026-03-17T09:00:00', 99), // 90 days back — outside the window
+    ], [], [], [], NOW, 90)
+
+    const newest = s.series[s.series.length - 1]
+    expect(newest.revenue).toBe(25)
+    expect(newest.orders).toBe(2)
+    expect(s.series[s.series.length - 2].revenue).toBe(7)
+    expect(s.series.reduce((sum, p) => sum + p.revenue, 0)).toBe(32) // the 99 never lands
   })
 
   it('aggregates product revenue from line items, descending', () => {

@@ -7,6 +7,13 @@
       "runtimeArgs": ["--filter", "@bitetime/frontend", "dev"],
       "port": 5173,
       "autoPort": false
+    },
+    {
+      "name": "bitetime-backend",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@bitetime/backend", "dev"],
+      "port": 8787,
+      "autoPort": false
     }
   ]
 }

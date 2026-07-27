@@ -55,9 +55,13 @@ export function ChartPanel({ title, legend, children }: { title: string; legend?
 
 // ── Revenue + orders bar chart (dual axis) ───────────────────────────────────
 export function RevenueBarChart({ data, revenueLabel, ordersLabel }: {
-  data: { label: string; revenue: number; orders: number }[]; revenueLabel: string; ordersLabel: string
+  data: { label: string; range?: string; revenue: number; orders: number }[]; revenueLabel: string; ordersLabel: string
 }) {
   const showSecondary = ordersLabel !== ''
+  // Weekly bars carry a `range`; the axis can only fit the week's first day, so the
+  // tooltip is where the merchant finds out the bar is seven days wide.
+  const tooltipLabel = (label: unknown, payload: readonly { payload?: { range?: string } }[]) =>
+    payload?.[0]?.payload?.range ?? String(label ?? '')
   return (
     <ResponsiveContainer width="100%" height={240}>
       <BarChart data={data} margin={{ top: 8, right: 4, left: -16, bottom: 0 }} barGap={2}>
@@ -65,7 +69,7 @@ export function RevenueBarChart({ data, revenueLabel, ordersLabel }: {
         <XAxis dataKey="label" tick={{ fontSize: 11, fill: AXIS }} axisLine={{ stroke: GRID }} tickLine={false} />
         <YAxis yAxisId="rev" tick={{ fontSize: 11, fill: AXIS }} axisLine={false} tickLine={false} allowDecimals={false} />
         {showSecondary && <YAxis yAxisId="ord" orientation="right" tick={{ fontSize: 11, fill: AXIS }} axisLine={false} tickLine={false} allowDecimals={false} />}
-        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: '#F5E6E8' }} />
+        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: '#F5E6E8' }} labelFormatter={tooltipLabel} />
         <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'DM Sans, sans-serif' }} />
         <Bar yAxisId="rev" dataKey="revenue" name={revenueLabel} fill={OXBLOOD} radius={[3, 3, 0, 0]} maxBarSize={28} />
         {showSecondary && <Bar yAxisId="ord" dataKey="orders" name={ordersLabel} fill={GOLD} radius={[3, 3, 0, 0]} maxBarSize={28} />}
