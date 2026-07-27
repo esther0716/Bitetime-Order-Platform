@@ -145,6 +145,26 @@ describe('POST /api/notify/order — customer confirmation email fan-out', () =>
     expect(mailTo(CUSTOMER_EMAIL)).toHaveLength(1)
   })
 
+  // The other half of the dedup rule. "At most one" is only half a contract: a claim stamped
+  // BEFORE the send is spent whether or not the mail left, so one Resend blip would retire the
+  // receipt permanently and no retry could ever deliver it. The claim must survive a failure.
+  it('a failed send leaves the claim unspent — a retry still delivers the receipt', async () => {
+    notifyDeps.email = async () => { throw new Error('resend down') }
+    const orderNumber = await placeOrderReturningNumber(orderBody(merchantId, productId), customerToken)
+
+    const first = await postNotify({ merchantId, orderNumber, lang: 'en' })
+    expect(((await first.json()) as { email: { ok: boolean } }).email.ok).toBe(false)
+
+    // Resend recovers.
+    notifyDeps.email = async (to, subject, body) => { sentEmails.push({ to, subject, body }) }
+    const second = await postNotify({ merchantId, orderNumber, lang: 'en' })
+    const json = (await second.json()) as { email: { ok: boolean; skipped?: boolean } }
+
+    expect(json.email.ok).toBe(true)
+    expect(json.email.skipped).toBeUndefined() // not "already emailed" — it never was
+    expect(mailTo(CUSTOMER_EMAIL)).toHaveLength(1)
+  })
+
   it('never takes the recipient from the request body', async () => {
     const orderNumber = await placeOrderReturningNumber(orderBody(merchantId, productId), customerToken)
 
@@ -287,6 +307,25 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
     expect(json.merchantEmail.skipped).toBe(true)
     // The claim is what keeps an anonymous endpoint from being a mail flood at a guessable
     // order number. Only real against Postgres.
+    expect(mailTo(M_OWNER_EMAIL)).toHaveLength(1)
+  })
+
+  // Same rule as the customer arm, and it bites harder here: a basic shop has no Telegram, so
+  // this mail is the ONLY way it learns an order exists. A claim spent on a failed send is an
+  // order the shop never hears about.
+  it('a failed send leaves the claim unspent — a retry still delivers the owner alert', async () => {
+    notifyDeps.email = async () => { throw new Error('resend down') }
+    const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
+
+    const first = await postNotify({ merchantId: mMerchantId, orderNumber })
+    expect(((await first.json()) as { merchantEmail: { ok: boolean } }).merchantEmail.ok).toBe(false)
+
+    notifyDeps.email = async (to, subject, body) => { sentEmails.push({ to, subject, body }) }
+    const second = await postNotify({ merchantId: mMerchantId, orderNumber })
+    const json = (await second.json()) as { merchantEmail: { ok: boolean; skipped?: boolean } }
+
+    expect(json.merchantEmail.ok).toBe(true)
+    expect(json.merchantEmail.skipped).toBeUndefined()
     expect(mailTo(M_OWNER_EMAIL)).toHaveLength(1)
   })
 

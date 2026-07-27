@@ -216,6 +216,32 @@ async function claimOnce(
   return { claimed: !!data && data.length > 0 }
 }
 
+/**
+ * Hand back a claim whose send did not happen.
+ *
+ * The claim is taken BEFORE the send, which is what makes it a concurrency guard rather than a
+ * post-hoc record: two simultaneous calls cannot both reach Resend. The cost of that ordering is
+ * that a claim is spent the moment it is taken, so a send that then throws — a Resend outage, a
+ * 429, a DNS blip — would retire the mail permanently, and no retry could ever deliver it. For a
+ * basic shop the owner alert is the ONLY notice it gets, so that is a silently lost order.
+ *
+ * Releasing restores the null and makes the next call eligible again. It is deliberately NOT
+ * conditional on the current value: the caller only reaches here holding a claim it just won.
+ *
+ * A failure to release is logged and swallowed — the send has already failed, and throwing here
+ * would replace a "mail did not go" result with an exception the fan-out would have to model.
+ */
+async function releaseClaim(
+  db: any,
+  orderId: string,
+  column: 'confirmation_emailed_at' | 'merchant_emailed_at',
+): Promise<void> {
+  const { error } = await db.from('orders').update({ [column]: null }).eq('id', orderId)
+  if (error) {
+    console.error(`Failed to release ${column} for order ${orderId} — mail will not be retried:`, error.message)
+  }
+}
+
 /** Loads the order both mail arms address, keyed the way the wire addresses it. */
 async function loadOrder(db: any, merchantId: string, orderNumber: string) {
   const { data, error } = await db
@@ -280,6 +306,8 @@ export async function emailOrderConfirmation(
     await send(to, subject, { text, html, from: senderFrom(shopName, cfg.emailFrom) })
     return { ok: true }
   } catch (e: any) {
+    // The claim was taken above and the mail did not go — hand it back so a retry can.
+    await releaseClaim(db, order.id, 'confirmation_emailed_at')
     return { ok: false, error: e?.message ?? String(e) }
   }
 }
@@ -417,6 +445,9 @@ export async function emailMerchantOrder(
     await send(to, subject, { text, html, from: cfg.emailFrom })
     return { ok: true }
   } catch (e: any) {
+    // The claim was taken above and the mail did not go — hand it back so a retry can. This is
+    // the shop's only notice on a basic plan, so a permanently retired claim is a lost order.
+    await releaseClaim(db, order.id, 'merchant_emailed_at')
     return { ok: false, error: e?.message ?? String(e) }
   }
 }
