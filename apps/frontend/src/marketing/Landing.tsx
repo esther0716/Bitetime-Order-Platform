@@ -451,6 +451,17 @@ export default function Landing() {
         <Link to="/privacy" className="hover:text-oxblood underline underline-offset-4">
           {t('Privacy', '隐私政策')}
         </Link>
+        {/* Maker's credit, not a policy link — separated by a dot so it doesn't read as one more
+            legal page, and carrying ?ref=tinyorder so Praxor can attribute the visit. */}
+        <span aria-hidden="true">·</span>
+        <a
+          href="https://www.praxor.dev?ref=tinyorder"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-oxblood underline underline-offset-4"
+        >
+          {t('Built by Praxor', '由 Praxor 打造')}
+        </a>
       </footer>
     </div>
   )
