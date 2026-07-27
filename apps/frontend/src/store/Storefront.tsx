@@ -811,9 +811,19 @@ export default function Storefront() {
               <button type="button" className="text-[13px] text-oxblood font-medium cursor-pointer underline inline-block" onClick={handleReset}>
                 {t('Back to shop', '返回商店')}
               </button>
-              <Link to={`/s/${merchant.slug}/track`} className="text-[13px] text-rose-muted underline">
-                {t('Track your order', '追踪订单')}
-              </Link>
+              {/* Same split as the form header: a signed-in customer's order is already in their
+                  history, courier and AWB inline, so /track would only ask them for a number they
+                  can see on this very screen. A guest order carries a null user_id and can never
+                  appear in any history, so /track is their only way back to it. */}
+              {account ? (
+                <Link to={`/s/${merchant.slug}/orders`} className="text-[13px] text-rose-muted underline">
+                  {t('Your orders', '你的订单')}
+                </Link>
+              ) : (
+                <Link to={`/s/${merchant.slug}/track`} className="text-[13px] text-rose-muted underline">
+                  {t('Track your order', '追踪订单')}
+                </Link>
+              )}
             </div>
           </div>
         </div>
