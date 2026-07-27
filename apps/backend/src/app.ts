@@ -37,13 +37,22 @@ import { processReferralReward } from './referralRewardGrant.js'
 import { trackOrder } from './orderTracking.js'
 import { placeOrder, OrderError } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus } from './feedback.js'
-import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS } from '@bitetime/shared'
+import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, computeMerchantStats, ordersInWindow, windowTotals, todayInZone } from '@bitetime/shared'
+import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
 import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
 
-app.use('/api/*', cors({ origin: env.frontendUrl, allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'] }))
+// `exposeHeaders` is what lets the browser READ Content-Disposition on a cross-origin response,
+// and the frontend and backend ARE different origins in production (Vercel ↔ Railway). Without
+// it the revenue report download arrives with a body and no filename, and saves itself as the
+// URL's last path segment.
+app.use('/api/*', cors({
+  origin: env.frontendUrl,
+  allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  exposeHeaders: ['Content-Disposition'],
+}))
 
 const ORDER_HISTORY_LIMIT = 20
 
@@ -204,6 +213,74 @@ app.get('/api/merchants/:id/orders/count', requireMerchantOwns, async (c) => {
     .from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', m.id)
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   return c.json({ count: count ?? 0 })
+})
+
+// The Pro-only revenue export (CONTEXT.md → Plan entitlement). The gate is HERE — the padlock in
+// the dashboard is UX, and this refuses a crafted request from a basic shop's own owner. It sits
+// ahead of the range check on purpose: a basic shop probing the endpoint learns that it needs
+// Pro, not which ranges the paid feature accepts.
+//
+// Read-only and single-statement, so it goes through `admin` and not `db.ts`; there is nothing to
+// keep atomic. Every sheet is confined to the window, which is why the orders are narrowed BEFORE
+// the totals are taken: `MerchantStats`'s own KPI block is all-time by design, since on the
+// dashboard those cards sit above the range pills.
+const REPORT_DAYS = [12, 30, 60, 90]
+
+app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, requirePro, async (c) => {
+  const days = Number(c.req.query('days'))
+  const granularity = c.req.query('granularity')
+  // Refused, not clamped: a clamped request hands back a file that quietly answers a different
+  // question than the one asked, over a merchant's own accounting.
+  if (!REPORT_DAYS.includes(days)) return c.json({ error: 'bad_range' }, 400)
+  if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
+
+  const m = c.get('merchant')
+  const { data, error } = await admin.from('orders').select('*').eq('merchant_id', m.id)
+  if (error) return c.json({ error: 'Lookup failed' }, 500)
+
+  const now = new Date()
+  const timeZone = m.timezone || DEFAULT_TIMEZONE
+  const windowed = ordersInWindow(data ?? [], now, days, timeZone)
+  const totals = windowTotals(windowed)
+  // `productTop: Infinity` — a spreadsheet lists every product, unlike the six-wedge donut.
+  const stats = computeMerchantStats(windowed, [], [], [], now, {
+    days, granularity, timeZone, productTop: Infinity,
+  })
+
+  const today = todayInZone(timeZone, now)
+  const buffer = await buildRevenueWorkbook(
+    {
+      totalOrders: totals.totalOrders,
+      revenue: totals.revenue,
+      avgOrder: totals.avgOrder,
+      series: stats.series,
+      products: stats.productRevenue,
+      statuses: stats.statusBreakdown,
+    },
+    { name: m.name, slug: m.slug, currency: m.currency || 'MYR', timeZone },
+    {
+      days,
+      granularity,
+      from: stats.series[0]?.start ?? today,
+      to: stats.series[stats.series.length - 1]?.end ?? today,
+      // Stamped in the SHOP's zone, like every other date in the file. A UTC timestamp on a
+      // report whose day boundaries are Kuala Lumpur's is the mismatch this feature exists to
+      // avoid, just moved to a different cell.
+      generatedAt: new Intl.DateTimeFormat('en-CA', {
+        timeZone, dateStyle: 'short', timeStyle: 'short',
+      }).format(now),
+    },
+  )
+
+  // A raw Response, not `c.body`: Hono's body type is string | ArrayBuffer | ReadableStream and
+  // a Node Buffer is none of them, though it is a perfectly good BodyInit.
+  return new Response(buffer, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${reportFilename(m.slug, today, days)}"`,
+    },
+  })
 })
 
 app.get('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
