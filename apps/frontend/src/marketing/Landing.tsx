@@ -77,6 +77,10 @@ export default function Landing() {
         t('Orders auto-calculated', '订单自动算总价'),
       ],
       cta: t('Start your shop', '开始建店'),
+      // The trial is Basic-only: signing up Basic is cardless and the 7 days start at
+      // approval. Pro goes straight to Checkout and is charged on day one, so the two
+      // tiers cannot share one risk-reversal line without the Pro card lying.
+      note: t('Free for 7 days · no card', '免费试用 7 天 · 无需信用卡'),
       to: '/merchant/signup',
       highlight: false,
     },
@@ -94,6 +98,7 @@ export default function Landing() {
         t('Priority support — your questions jump the queue', '优先支持——你的问题优先处理'),
       ],
       cta: t('Start your shop', '开始建店'),
+      note: t('Start free on Basic · upgrade anytime', '先免费试用基础版 · 随时升级'),
       to: '/merchant/signup',
       highlight: true,
       badge: t('Most popular', '最受欢迎'),
@@ -269,7 +274,7 @@ export default function Landing() {
           {t('Simple, honest pricing', '简单透明的价格')}
         </h2>
         <p className="-mt-7 mb-8 text-[15px] leading-[1.6] text-ink-soft">
-          {t('Start with a 7-day free trial — no card required. Upgrade when your shop grows.', '7 天免费试用开始，无需信用卡，店铺成长后再升级。')}
+          {t('Start free on Basic — 7 days, no card required. Move to Pro whenever your shop is ready.', '基础版 7 天免费试用，无需信用卡。店铺准备好了随时升级 Pro。')}
         </p>
         </Reveal>
 
@@ -373,9 +378,10 @@ export default function Landing() {
                 >
                   {tier.cta}
                 </Link>
-                {/* Risk reversal sits at the click, not at the foot of the section */}
+                {/* Risk reversal sits at the click, not at the foot of the section — and it is
+                    per-tier, because only Basic has a trial to reverse the risk with */}
                 <p className="mt-2.5 mb-0 text-center text-xs text-rose-muted">
-                  {t('Free for 7 days · no card', '免费试用 7 天 · 无需信用卡')}
+                  {tier.note}
                 </p>
               </div>
             )
@@ -427,7 +433,7 @@ export default function Landing() {
           {t('Become a real, professional food business — orders in one place, more time to bake.', '成为真正专业的美食生意——订单集中一处，专注烘焙。')}
         </p>
         <MagneticButton to="/merchant/signup" className={ctaPrimary}>
-          {t('Start your free trial', '开始免费试用')}
+          {t('Start your shop', '开始建店')}
         </MagneticButton>
         </Reveal>
       </section>
