@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ReceiptText, Wallet, Users, TrendingUp, Download, Lock } from 'lucide-react'
+import { ReceiptText, Wallet, Users, TrendingUp, Download, Lock, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import type { Order, Product, Voucher } from '../types'
 import { useSession } from '../SessionContext'
 import { fetchMerchantOrders, lookupProducts, fetchMerchantCustomers, fetchMerchantVouchers, downloadRevenueReport } from '../store'
@@ -10,7 +9,6 @@ import { SkeletonText } from '../components/Loaders'
 import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from '../components/charts/DashCharts'
 import { computeMerchantStats, granularityFor, REVENUE_RANGES, type Granularity, type RevenueRange } from '@bitetime/shared'
 import { useProAccess, isRequiresPro } from '../plan'
-import { ProBadge } from './ProLock'
 import { useUpgradeNav } from './UpgradeNav'
 import { formatMoney } from '../currency'
 import ShareStorefront from './ShareStorefront'
@@ -85,19 +83,36 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
     setTimeout(() => URL.revokeObjectURL(url), 0)
   }
 
+  // Icon-only, and built from the same geometry as the Pill above rather than from `Button`:
+  // the shared button's smallest size is px-[18px] py-[10px], which next to 11px pills reads as
+  // the panel's primary action when it is a quiet affordance on a chart header.
+  //
+  // The label the icon replaces lives in `title` and `aria-label`, and it is where a basic shop
+  // is told this is Pro — there is no room for the badge at this size, so the padlock carries
+  // the signal and the tooltip explains it.
+  const label = isPro
+    ? t('Download revenue report', '下载营收报表')
+    : t('Download revenue report (Pro)', '下载营收报表（Pro）')
+
   return (
-    <Button
+    <button
       type="button"
-      size="sm"
-      variant="outline"
+      title={busy ? t('Preparing…', '生成中…') : label}
+      aria-label={label}
       disabled={busy}
       onClick={isPro ? download : goToSubscription}
-      aria-label={t('Download revenue report', '下载营收报表')}
+      className={cn(
+        'inline-flex items-center justify-center rounded-full border-[1.5px] p-1.5 transition-colors',
+        'border-rose-border bg-transparent text-text-tertiary',
+        'hover:border-oxblood hover:text-oxblood disabled:opacity-50 disabled:hover:border-rose-border',
+      )}
     >
-      {isPro ? <Download size={14} strokeWidth={1.75} /> : <Lock size={14} strokeWidth={1.75} />}
-      {busy ? t('Preparing…', '生成中…') : t('Download report', '下载报表')}
-      {!isPro && <ProBadge />}
-    </Button>
+      {busy
+        ? <Loader2 size={14} strokeWidth={1.75} className="animate-spin" />
+        : isPro
+          ? <Download size={14} strokeWidth={1.75} />
+          : <Lock size={14} strokeWidth={1.75} />}
+    </button>
   )
 }
 
