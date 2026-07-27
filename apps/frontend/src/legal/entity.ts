@@ -25,7 +25,7 @@ export const LEGAL_ENTITY: LegalEntity = {
   // documents render their draft notice — which is the correct state of the world.
   registration: '1234567890',
   address: '360, Jalan Ayer Tasek, Setapak, 53200 Kuala Lumpur',
-  email: 'support@tinyorder.shop',
+  email: 'enquiry@support.tinyorder.shop',
 }
 
 /**
@@ -40,7 +40,7 @@ export function isRegisteredEntity(entity: LegalEntity): boolean {
 }
 
 /** The date both documents carry. Bump it whenever their wording changes materially. */
-export const LEGAL_LAST_UPDATED = '26 July 2026'
+export const LEGAL_LAST_UPDATED = '27 July 2026'
 
 /**
  * Has a lawyer actually read these documents?
