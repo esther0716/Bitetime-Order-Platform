@@ -54,7 +54,7 @@ describe('computeMerchantStats', () => {
 
   it('builds a daily series of the requested length, bucketing revenue', () => {
     const orders = [order({ total: 40, created_at: new Date('2026-06-15T08:00:00').toISOString() })]
-    const s = computeMerchantStats(orders, [], [], [], NOW, 12)
+    const s = computeMerchantStats(orders, [], [], [], NOW, { days: 12 })
     expect(s.granularity).toBe('day')
     expect(s.series).toHaveLength(12)
     const today = s.series[s.series.length - 1]
@@ -65,15 +65,40 @@ describe('computeMerchantStats', () => {
   })
 
   it('stays daily at 30 days and switches to weekly past it', () => {
-    expect(computeMerchantStats([], [], [], [], NOW, 30).granularity).toBe('day')
-    expect(computeMerchantStats([], [], [], [], NOW, 30).series).toHaveLength(30)
-    expect(computeMerchantStats([], [], [], [], NOW, 60).granularity).toBe('week')
-    expect(computeMerchantStats([], [], [], [], NOW, 60).series).toHaveLength(9) // 8 whole weeks + a 4-day tail
-    expect(computeMerchantStats([], [], [], [], NOW, 90).series).toHaveLength(13) // 12 whole weeks + a 6-day tail
+    expect(computeMerchantStats([], [], [], [], NOW, { days: 30 }).granularity).toBe('day')
+    expect(computeMerchantStats([], [], [], [], NOW, { days: 30 }).series).toHaveLength(30)
+    expect(computeMerchantStats([], [], [], [], NOW, { days: 60 }).granularity).toBe('week')
+    expect(computeMerchantStats([], [], [], [], NOW, { days: 60 }).series).toHaveLength(9) // 8 whole weeks + a 4-day tail
+    expect(computeMerchantStats([], [], [], [], NOW, { days: 90 }).series).toHaveLength(13) // 12 whole weeks + a 6-day tail
+  })
+
+  it('an explicit granularity overrides the default for the range, either way', () => {
+    const daily90 = computeMerchantStats([], [], [], [], NOW, { days: 90, granularity: 'day' })
+    expect(daily90.granularity).toBe('day')
+    expect(daily90.series).toHaveLength(90)
+    expect(daily90.series[0].range).toBeUndefined()
+
+    const weekly12 = computeMerchantStats([], [], [], [], NOW, { days: 12, granularity: 'week' })
+    expect(weekly12.granularity).toBe('week')
+    expect(weekly12.series).toHaveLength(2) // one whole week + a 5-day tail
+    expect(weekly12.series[weekly12.series.length - 1].range).toBe('6/9 – 6/15')
+  })
+
+  it('a forced granularity still bins every order in the window exactly once', () => {
+    const orders = [
+      order({ total: 10, created_at: new Date('2026-06-15T09:00:00').toISOString() }),
+      order({ total: 20, created_at: new Date('2026-05-01T09:00:00').toISOString() }),
+      order({ total: 30, created_at: new Date('2026-03-25T09:00:00').toISOString() }),
+    ]
+    for (const granularity of ['day', 'week'] as const) {
+      const s = computeMerchantStats(orders, [], [], [], NOW, { days: 90, granularity })
+      expect(s.series.reduce((sum, p) => sum + p.revenue, 0)).toBe(60)
+      expect(s.series.reduce((sum, p) => sum + p.orders, 0)).toBe(3)
+    }
   })
 
   it('weekly buckets are trailing 7-day windows anchored on today, newest one whole', () => {
-    const s = computeMerchantStats([], [], [], [], NOW, 90)
+    const s = computeMerchantStats([], [], [], [], NOW, { days: 90 })
     const newest = s.series[s.series.length - 1]
     expect(newest.range).toBe('6/9 – 6/15') // ends today, seven days wide
     expect(newest.label).toBe('6/9')        // axis shows the window's first day
@@ -87,7 +112,7 @@ describe('computeMerchantStats', () => {
       at('2026-06-15T09:00:00', 15), // last day of the newest week (today)
       at('2026-06-08T09:00:00', 7),  // one day earlier — previous week
       at('2026-03-17T09:00:00', 99), // 90 days back — outside the window
-    ], [], [], [], NOW, 90)
+    ], [], [], [], NOW, { days: 90 })
 
     const newest = s.series[s.series.length - 1]
     expect(newest.revenue).toBe(25)

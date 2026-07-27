@@ -28,8 +28,13 @@ export interface MerchantStats {
 
 export type Granularity = 'day' | 'week'
 
+// What the revenue chart covers, and how finely. `granularity` is what the merchant
+// picked; leave it off to get the default for the range.
+export interface SeriesWindow { days: number; granularity?: Granularity }
+
 // Past a month, one bar per day is unreadable: the bars go to slivers and the axis
 // drops most of its labels. Bucket by week instead — 90 days is 13 bars, not 90.
+// This is the default only; the merchant can override it either way.
 export const granularityFor = (days: number): Granularity => (days > 30 ? 'week' : 'day')
 
 // "Booked" revenue counts every order that wasn't cancelled (pending orders are
@@ -135,12 +140,12 @@ export function computeMerchantStats(
   customers: { orderCount?: number }[],
   vouchers: Voucher[],
   now: Date = new Date(),
-  days = 12,
+  window: SeriesWindow = { days: 12 },
 ): MerchantStats {
+  const { days, granularity = granularityFor(days) } = window
   const booked = orders.filter(counts)
   const revenue = orders.reduce((s, o) => s + orderTotal(o), 0)
   const thisKey = now.getFullYear() * 12 + now.getMonth()
-  const granularity = granularityFor(days)
 
   let ordersThis = 0, ordersLast = 0, revThis = 0, revLast = 0
   for (const o of orders) {
