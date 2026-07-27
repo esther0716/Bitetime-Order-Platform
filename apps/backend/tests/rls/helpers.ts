@@ -55,17 +55,38 @@ function assertLocal() {
  * unique slug collides, the insert quietly returns null, and the suite dies in
  * `beforeAll` with an unhelpful "cannot read properties of null".
  */
+/**
+ * The children that BLOCK a merchant delete: every FK to `merchants` declared ON DELETE NO
+ * ACTION. Those are the only ones worth clearing by hand.
+ *
+ * `merchant_secrets`, `merchant_billing`, `merchant_feedback` and `referral_rewards` are all ON
+ * DELETE CASCADE, so they go with the merchant on their own. That is not a tidiness point:
+ * service_role is granted everything on `merchant_feedback` EXCEPT delete, so an explicit delete
+ * of it fails with a permission error — which the old unchecked loop swallowed, along with a
+ * delete against `settings`, a table that has no merchant_id at all (it is a global key/value
+ * table left over from the single-tenant app). Both were no-ops pretending to be cleanup.
+ *
+ * `profiles` is the one that mattered: NO ACTION, and absent from the old list. A merchant-scoped
+ * profile row would have blocked the merchant delete outright.
+ */
+const BLOCKING_CHILDREN = ['orders', 'products', 'vouchers', 'order_counters', 'profiles']
+
 export async function resetMerchant(slug: string) {
   assertLocal()
   const svc = serviceClient()
   const { data } = await svc.from('merchants').select('id').eq('slug', slug).maybeSingle()
   if (!data) return
-  // Children first — they carry FKs back to the merchant. Mirrors the
-  // tenant-scoped tables in CLAUDE.md → Data layer; a new one means adding it here.
-  for (const table of ['orders', 'products', 'merchant_secrets', 'order_counters', 'vouchers', 'settings', 'merchant_feedback']) {
-    await svc.from(table).delete().eq('merchant_id', data.id)
+  for (const table of BLOCKING_CHILDREN) {
+    // Matches merchant-SCOPED rows only. A customer's global profile carries merchant_id null and
+    // is never touched — deleting those would take real accounts with it.
+    const { error } = await svc.from(table).delete().eq('merchant_id', data.id)
+    if (error) throw new Error(`resetMerchant(${slug}): clearing ${table}: ${error.message}`)
   }
-  await svc.from('merchants').delete().eq('id', data.id)
+  // CHECKED. An unchecked delete that the FKs refuse leaves the old merchant in place, and the
+  // failure resurfaces as a duplicate-slug error from the next seed — pointing at the insert
+  // rather than at the cleanup that actually failed.
+  const { error } = await svc.from('merchants').delete().eq('id', data.id)
+  if (error) throw new Error(`resetMerchant(${slug}): ${error.message}`)
 }
 
 /** Seed a merchant, clearing any prior run's copy first. Returns its id. */

@@ -89,7 +89,11 @@ All Supabase calls go through `store.ts`. Shared domain types (Merchant, Profile
 | `orders` | per-merchant orders |
 | `order_counters` | per-merchant daily order counter |
 | `vouchers` | per-merchant promotions |
-| `settings` | per-merchant config (shipping, payment, notifications) |
+| `settings` | **not per-merchant, and not read by anything** — see below |
+
+A shop's config lives in **columns on `merchants`** (shipping rates and mode, tax, fulfilment methods, currency, timezone, pickup address) and in its `products` rows. There is no per-merchant settings table.
+
+`settings` is what the single-tenant app used before the pivot: a global key/value table keyed on `key`, holding one `main` row whose JSON still describes the deleted `src/store.js` — EmailJS template ids, a `sameday` block that became distance pricing, a hardcoded cookie menu. **It has no `merchant_id` column**, nothing in `apps/backend/src` or `apps/frontend/src` reads it, and the browser roles hold no grants on it (`20260718130000_revoke_all_browser_grants.sql`), so its permissive `using (true)` policies are unreachable. Do not write tenant code against it — a `.eq('merchant_id', …)` on this table is an error, not a filter, which is exactly how it sat in `resetMerchant` as a silent no-op.
 
 ### Order flow
 
