@@ -12,6 +12,9 @@ export interface SeriesPoint { key: string; label: string; range?: string; reven
 export interface Slice { name: string; value: number }
 export interface StatusSlice { status: string; count: number; pct: number }
 
+// The KPI block (totalOrders … vouchersRedeemed) is all-time, with its own
+// month-over-month delta. Everything below it — `series`, `productRevenue`,
+// `statusBreakdown` — covers the selected `SeriesWindow` and nothing else.
 export interface MerchantStats {
   totalOrders: number
   revenue: number
@@ -67,6 +70,17 @@ function daysAgo(then: Date, now: Date): number {
     - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / MS_PER_DAY)
 }
 
+// Whether an order lands inside the selected range. An order whose created_at is missing or
+// unparseable cannot be placed in the window, so it is out — the same call revenueSeries makes
+// bucket-side, kept here so every ranged panel drops exactly the same rows.
+function inWindow(o: Order, now: Date, days: number): boolean {
+  if (!o.created_at) return false
+  const d = new Date(o.created_at)
+  if (Number.isNaN(d.getTime())) return false
+  const ago = daysAgo(d, now)
+  return ago >= 0 && ago < days
+}
+
 // Buckets covering the last `days` days ending on `now` (inclusive), oldest first.
 // Weekly buckets are trailing 7-day windows anchored on today — not calendar weeks, so the
 // newest bar is always a full week rather than a part-week that reads as a collapse in sales.
@@ -105,6 +119,7 @@ function revenueSeries(orders: Order[], now: Date, days: number, granularity: Gr
 }
 
 // Revenue per product from line items; top `top` by value, remainder folded into "Other".
+// Callers pass orders already narrowed to the window.
 function productRevenue(orders: Order[], top: number): Slice[] {
   const by = new Map<string, number>()
   for (const o of orders) {
@@ -143,6 +158,11 @@ export function computeMerchantStats(
   window: SeriesWindow = { days: 12 },
 ): MerchantStats {
   const { days, granularity = granularityFor(days) } = window
+  // Everything the merchant sees under the range pills reads the same window: the bar chart,
+  // the product donut and the status breakdown. They used to disagree — only the chart was
+  // ranged, so a shop with older history read all-time figures beside a "last 12 days" chart
+  // with nothing on screen saying so. The KPI cards above the pills stay all-time on purpose.
+  const windowed = orders.filter(o => inWindow(o, now, days))
   const booked = orders.filter(counts)
   const revenue = orders.reduce((s, o) => s + orderTotal(o), 0)
   const thisKey = now.getFullYear() * 12 + now.getMonth()
@@ -162,9 +182,9 @@ export function computeMerchantStats(
     vouchersRedeemed: vouchers.reduce((s, v) => s + (v.usedBy?.length ?? 0), 0),
     ordersDelta: delta(ordersThis, ordersLast),
     revenueDelta: delta(revThis, revLast),
-    series: revenueSeries(orders, now, days, granularity),
+    series: revenueSeries(windowed, now, days, granularity),
     granularity,
-    productRevenue: productRevenue(orders, 6),
-    statusBreakdown: statusBreakdown(orders),
+    productRevenue: productRevenue(windowed, 6),
+    statusBreakdown: statusBreakdown(windowed),
   }
 }
