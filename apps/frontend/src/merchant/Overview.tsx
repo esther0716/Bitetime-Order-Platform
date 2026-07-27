@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ReceiptText, Wallet, Users, TrendingUp } from 'lucide-react'
+import { ReceiptText, Wallet, Users, TrendingUp, Download, Lock } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import type { Order, Product, Voucher } from '../types'
 import { useSession } from '../SessionContext'
-import { fetchMerchantOrders, lookupProducts, fetchMerchantCustomers, fetchMerchantVouchers } from '../store'
+import { fetchMerchantOrders, lookupProducts, fetchMerchantCustomers, fetchMerchantVouchers, downloadRevenueReport } from '../store'
 import { SkeletonText } from '../components/Loaders'
 import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from '../components/charts/DashCharts'
 import { computeMerchantStats, granularityFor, type Granularity } from './overviewStats'
+import { useProAccess, isRequiresPro } from '../plan'
+import { ProBadge } from './ProLock'
+import { useUpgradeNav } from './UpgradeNav'
 import { formatMoney } from '../currency'
 import ShareStorefront from './ShareStorefront'
 
@@ -37,6 +42,58 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * The Pro revenue export, as a button on the panel it exports.
+ *
+ * Show-but-lock, the shape every other Pro surface uses (ProLock.tsx): a basic shop SEES this,
+ * because hiding it would read as a missing feature and leave nothing to sell against. The lock
+ * goes to Settings → Subscription, where the price is — never straight to Stripe.
+ *
+ * None of this is the gate. `GET …/report.xlsx` is `requirePro` and refuses a basic shop whether
+ * or not this renders locked.
+ */
+function DownloadReport({ days, granularity }: { days: number; granularity: Granularity }) {
+  const { t, merchant } = useSession()
+  const isPro = useProAccess()
+  const { goToSubscription } = useUpgradeNav()
+  const [busy, setBusy] = useState(false)
+
+  async function download() {
+    if (!merchant?.id) return
+    setBusy(true)
+    const r = await downloadRevenueReport(merchant.id, { days, granularity })
+    setBusy(false)
+    if (!r.ok) {
+      // A shop downgraded under a long-open tab still reaches here — an upgrade prompt, not the
+      // raw code (#110).
+      if (isRequiresPro(r.error)) { goToSubscription(); return }
+      toast.error(r.error.message || t('Could not build the report', '无法生成报表'))
+      return
+    }
+    const url = URL.createObjectURL(r.data.blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = r.data.filename ?? `revenue-${days}d.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={busy}
+      onClick={isPro ? download : goToSubscription}
+      aria-label={t('Download revenue report', '下载营收报表')}
+    >
+      {isPro ? <Download size={14} strokeWidth={1.75} /> : <Lock size={14} strokeWidth={1.75} />}
+      {busy ? t('Preparing…', '生成中…') : t('Download report', '下载报表')}
+      {!isPro && <ProBadge />}
+    </Button>
   )
 }
 
@@ -128,6 +185,7 @@ export default function Overview() {
                 {t('Weekly', '每周')}
               </Pill>
             </div>
+            <DownloadReport days={rangeDays} granularity={granularity} />
           </div>
         }
       >

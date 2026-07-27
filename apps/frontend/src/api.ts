@@ -92,6 +92,34 @@ export async function apiGet<T>(path: string, opts?: Opts): Promise<Result<T>> {
   }
 }
 
+/**
+ * A GET whose body is a FILE, not JSON.
+ *
+ * `apiGet` parses the body and would choke on a workbook. Everything else is shared with it —
+ * the same headers, the same `errorFromResponse` (failures are still JSON), and the same Result
+ * convention (#122), so a `403 requires_pro` arrives as an `ApiError` that `isRequiresPro`
+ * already recognises.
+ *
+ * The filename comes from `Content-Disposition`, which the backend must EXPOSE via CORS for this
+ * to be readable across origins; `null` when the header is missing, and the caller names the
+ * file itself rather than letting the browser guess from the URL.
+ */
+export async function apiGetFile(
+  path: string,
+  opts?: Opts,
+): Promise<Result<{ blob: Blob; filename: string | null }>> {
+  const h = await resolveHeaders({}, opts?.auth)
+  if ('fail' in h) return { ok: false, error: h.fail }
+  try {
+    const res = await fetch(`${API_URL}${path}`, { headers: h.headers })
+    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    const match = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
+    return { ok: true, data: { blob: await res.blob(), filename: match?.[1] ?? null } }
+  } catch {
+    return { ok: false, error: NETWORK_ERROR }
+  }
+}
+
 type Method = 'POST' | 'PATCH' | 'PUT' | 'DELETE'
 
 export async function apiSend<T>(path: string, method: Method, body?: unknown, opts?: Opts): Promise<Result<T>> {

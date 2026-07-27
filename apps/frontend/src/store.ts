@@ -7,7 +7,7 @@ import { SignupError, signupErrorCode } from './signupError'
 import type { AddressParts, EarnedReward, FeedbackItem, MerchantCustomer, Order, ReferredShop, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
-import { API_URL, apiGet, apiSend, mapOk, toVoid } from './api'
+import { API_URL, apiGet, apiGetFile, apiSend, mapOk, toVoid } from './api'
 import type { Result } from './api'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -607,6 +607,23 @@ export async function fetchMyOrdersAtShop(merchantId: string): Promise<Result<Or
 export async function fetchMerchantOrders(merchantId: string): Promise<Result<any[]>> {
   if (!merchantId) return { ok: true, data: [] }
   return apiGet<any[]>(`/api/merchants/${merchantId}/orders`, { auth: true })
+}
+
+/**
+ * The Pro-only revenue export. Hands back the workbook and the name the server chose for it.
+ *
+ * The range and granularity are the ones the merchant is looking at on the Overview chart — the
+ * file is that panel's contents, not a second range concept in the dashboard. `auth: 'required'`
+ * because a signed-out caller has no shop to report on, and the backend would only 401.
+ */
+export async function downloadRevenueReport(
+  merchantId: string,
+  window: { days: number; granularity: 'day' | 'week' },
+): Promise<Result<{ blob: Blob; filename: string | null }>> {
+  return apiGetFile(
+    `/api/merchants/${merchantId}/report.xlsx?days=${window.days}&granularity=${window.granularity}`,
+    { auth: 'required' },
+  )
 }
 
 // True once the merchant has ≥1 order — used to lock the currency selector so

@@ -32,12 +32,17 @@ import { SkeletonText } from '../components/Loaders'
 const CARD = 'bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4'
 const HEADING = 'font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2'
 
-// What Pro adds, as it exists in code today. #110 gates exactly these three; the other four the
-// marketing page advertises are not built, and listing them here would be selling vapour.
+// What Pro adds, as it exists in code today — the gated surfaces and nothing else; the rest of
+// what the marketing page advertises is not built, and listing it here would be selling vapour.
+//
+// This list is where every Pro lock in the dashboard sends the merchant, so a gated feature
+// missing from it is a merchant clicking a padlock and landing on a page that never mentions
+// the thing they wanted.
 const PRO_FEATURES: [string, string][] = [
   ['Telegram order alerts', 'Telegram 订单通知'],
   ['Discount vouchers', '优惠券'],
   ['Product promo pricing', '商品优惠价'],
+  ['Revenue reports as Excel', '营收报表导出 Excel'],
 ]
 
 /**
@@ -229,6 +234,8 @@ function DowngradeBody({ renewsAt }: { renewsAt: string | null }) {
     ['Telegram order alerts stop', 'Telegram 订单通知将停止'],
     ['Your discount vouchers stop working', '优惠券将失效'],
     ['Any running promo prices end', '进行中的优惠价将结束'],
+    // The dashboard keeps showing the revenue chart on Basic — only the download goes.
+    ['You can no longer download revenue reports', '将无法下载营收报表'],
   ]
   return (
     <>
