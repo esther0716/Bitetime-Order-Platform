@@ -18,10 +18,18 @@ function bearer(c: Parameters<MiddlewareHandler>[0]): string {
   return (c.req.header('Authorization') || '').replace(/^Bearer\s+/i, '')
 }
 
-// TODO(P3): drop the email fallback once the superadmin role is seeded everywhere.
+// The DB role, and nothing else. There was a transitional fallback here that also granted
+// superadmin to one hardcoded address, for the window before the role was seeded anywhere; the
+// role is now seeded in production, so the fallback is gone.
+//
+// Do not reintroduce it. An email is not a credential: it is a value Auth lets an account set
+// and change, so making it a privilege means anyone who gets that address onto an account holds
+// the platform — every shop's orders, billing and merchant status. `app_role` is written by
+// service_role alone (guard_profile_privileges), which is the property this gate rests on.
+// tests/api/reads-admin.test.ts pins the absence.
 async function isSuperadmin(user: AuthedUser): Promise<boolean> {
   const { data } = await admin.from('profiles').select('app_role').eq('user_id', user.id).maybeSingle()
-  return data?.app_role === 'superadmin' || user.email === 'bitetime@praxor.dev'
+  return data?.app_role === 'superadmin'
 }
 
 export const requireUser: MiddlewareHandler<AppEnv> = async (c, next) => {

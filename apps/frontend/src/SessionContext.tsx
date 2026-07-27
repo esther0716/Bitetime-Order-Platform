@@ -4,9 +4,6 @@ import type { User } from '@supabase/supabase-js'
 import { onAuthChange, fetchProfileByUserId, lookupMyMerchant, lookupMerchantBySlug, getCurrentUser } from './store'
 import type { Lang, Merchant, Profile, Role, SessionValue } from './types'
 
-// TODO(P3): remove this transitional fallback once superadmin role is seeded in DB.
-const USER_EMAIL = 'bitetime@praxor.dev'
-
 const SessionContext = createContext<SessionValue | null>(null)
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -52,7 +49,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return unsubscribe
   }, [loadProfile, loadOwnMerchant])
 
-  const isSuper = profile?.app_role === 'superadmin' || account?.email === USER_EMAIL // TODO(P3): drop email fallback
+  // The DB role alone — see the note on isSuperadmin in the backend's mw.ts. This side only
+  // decides what to RENDER; the backend gate is what actually protects the data, and the two
+  // are kept identical so the console never offers a screen its own requests will 403.
+  const isSuper = profile?.app_role === 'superadmin'
   const role: Role = isSuper ? 'superadmin' : (ownMerchant ? 'merchant' : 'customer')
 
   // The active merchant the dashboard operates on: an impersonated shop wins over own.

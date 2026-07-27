@@ -48,6 +48,22 @@ describe('superadmin reads', () => {
     expect((await get('/api/billing', plainToken)).status).toBe(403)
   })
 
+  // The gate is the DB role and nothing else. A transitional fallback used to grant superadmin
+  // to one hardcoded address, which made an email — a value Auth lets an account choose and
+  // change — a privilege. Anyone who could get that address onto an account held the platform.
+  it('grants nothing for the formerly-privileged email when the DB role is absent', async () => {
+    const impostor = await makeUser('bitetime@praxor.dev', 'password123')
+    const { data } = await impostor.auth.getSession()
+    // A profile row exists, as it would for any signup — it simply is not a superadmin one.
+    const svc = serviceClient()
+    await svc.from('profiles').delete().eq('user_id', data.session!.user.id)
+    await svc.from('profiles').insert({ user_id: data.session!.user.id, name: 'Impostor', app_role: 'customer' })
+
+    const token = await tokenOf(impostor)
+    expect((await get('/api/merchants', token)).status).toBe(403)
+    expect((await get('/api/billing', token)).status).toBe(403)
+  })
+
   it('returns all merchants to a superadmin', async () => {
     const res = await get('/api/merchants', superToken)
     expect(res.status).toBe(200)
