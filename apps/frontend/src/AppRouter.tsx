@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import { PageTransition } from './motion'
 import { SessionProvider, useSession } from './SessionContext'
 import { Toaster } from './components/ui/sonner'
+import { TooltipProvider } from './components/ui/tooltip'
 import { MerchantProvider, useMerchant } from './MerchantContext'
 import RequireRole from './RequireRole'
 import { Spinner } from './components/Loaders'
@@ -86,7 +87,12 @@ function StorefrontShell() {
 export default function AppRouter() {
   return (
     <SessionProvider>
-      <AnimatedRoutes />
+      {/* One provider for every tooltip in the app, so they share a delay instead of each
+          usage inventing one. `delay={200}` is long enough that a pointer crossing the
+          dashboard on its way somewhere else does not trail popups behind it. */}
+      <TooltipProvider delay={200}>
+        <AnimatedRoutes />
+      </TooltipProvider>
       <Toaster position="bottom-center" />
     </SessionProvider>
   )

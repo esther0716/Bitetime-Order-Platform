@@ -10,6 +10,7 @@ import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from 
 import { computeMerchantStats, granularityFor, REVENUE_RANGES, type Granularity, type RevenueRange } from '@bitetime/shared'
 import { useProAccess, isRequiresPro } from '../plan'
 import { useUpgradeNav } from './UpgradeNav'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { formatMoney } from '../currency'
 import ShareStorefront from './ShareStorefront'
 
@@ -87,32 +88,42 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
   // the shared button's smallest size is px-[18px] py-[10px], which next to 11px pills reads as
   // the panel's primary action when it is a quiet affordance on a chart header.
   //
-  // The label the icon replaces lives in `title` and `aria-label`, and it is where a basic shop
-  // is told this is Pro — there is no room for the badge at this size, so the padlock carries
-  // the signal and the tooltip explains it.
-  const label = isPro
-    ? t('Download revenue report', '下载营收报表')
-    : t('Download revenue report (Pro)', '下载营收报表（Pro）')
+  // The words the icon drops live in the tooltip and in `aria-label`, and for a basic shop that
+  // is where the padlock gets explained — at this size there is no room for the Pro badge, so
+  // the icon carries the signal and the tooltip says what pressing it would buy.
+  const label = t('Download revenue report', '下载营收报表')
+  const hint = busy
+    ? t('Preparing…', '生成中…')
+    : isPro
+      ? label
+      : t('Download revenue report — available on Pro', '下载营收报表 — Pro 方案可用')
 
   return (
-    <button
-      type="button"
-      title={busy ? t('Preparing…', '生成中…') : label}
-      aria-label={label}
-      disabled={busy}
-      onClick={isPro ? download : goToSubscription}
-      className={cn(
-        'inline-flex items-center justify-center rounded-full border-[1.5px] p-1.5 transition-colors',
-        'border-rose-border bg-transparent text-text-tertiary',
-        'hover:border-oxblood hover:text-oxblood disabled:opacity-50 disabled:hover:border-rose-border',
-      )}
-    >
-      {busy
-        ? <Loader2 size={14} strokeWidth={1.75} className="animate-spin" />
-        : isPro
-          ? <Download size={14} strokeWidth={1.75} />
-          : <Lock size={14} strokeWidth={1.75} />}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            disabled={busy}
+            onClick={isPro ? download : goToSubscription}
+            className={cn(
+              'inline-flex cursor-pointer items-center justify-center rounded-full border-[1.5px] p-1.5 transition-colors',
+              'border-rose-border bg-transparent text-text-tertiary',
+              'hover:border-oxblood hover:text-oxblood',
+              'disabled:cursor-default disabled:opacity-50 disabled:hover:border-rose-border disabled:hover:text-text-tertiary',
+            )}
+          />
+        }
+      >
+        {busy
+          ? <Loader2 size={14} strokeWidth={1.75} className="animate-spin" />
+          : isPro
+            ? <Download size={14} strokeWidth={1.75} />
+            : <Lock size={14} strokeWidth={1.75} />}
+      </TooltipTrigger>
+      <TooltipContent>{hint}</TooltipContent>
+    </Tooltip>
   )
 }
 
