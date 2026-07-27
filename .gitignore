@@ -13,3 +13,8 @@ apps/backend/supabase/.temp
 
 # Wayfinder research notes: may carry live infra posture — keep out of the public repo
 docs/research/
+
+# Playwright e2e output
+apps/frontend/test-results
+apps/frontend/playwright-report
+apps/frontend/blob-report

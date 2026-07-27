@@ -111,3 +111,49 @@ jobs:
             docker logs "supabase_${service}_bitetime-app" 2>&1 | tail -100 || true
             echo "::endgroup::"
           done
+
+  e2e:
+    name: guest order through a real browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      # Same pin as db-tests, same reason: an unpinned CLI turns someone else's release
+      # into a red build on a pull request that changed nothing.
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.107.0
+
+      # The e2e harness shells out to `supabase status` for this stack's URL and keys, so
+      # the CLI has to be on PATH and the stack has to be up before the suite starts. Same
+      # exclusions as db-tests — the seeded product carries no images, so storage has no
+      # caller here either.
+      - name: Start a local Supabase
+        working-directory: apps/backend
+        run: supabase start -x studio,imgproxy,edge-runtime,functions,analytics,vector,realtime,storage
+
+      # `--with-deps` installs the system libraries the browser needs; without it Chromium
+      # launches on a developer machine and fails on a bare runner.
+      - name: Install Chromium
+        working-directory: apps/frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Playwright starts both servers itself (backend on 8788, the production frontend
+      # bundle previewed on 4174) and tears them down after. NO SECRETS: the Supabase keys
+      # come out of the running stack, the Stripe keys are stubs, and GOOGLE_MAPS_API_KEY is
+      # forced empty so a distance lookup can never become a billable call.
+      - run: pnpm --filter @bitetime/frontend test:e2e
+
+      # A browser failure is nearly unreadable from the console alone. The trace is a
+      # frame-by-frame replay of the run — open it with `playwright show-trace`.
+      - name: Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/frontend/playwright-report
+            apps/frontend/test-results
+          retention-days: 7
