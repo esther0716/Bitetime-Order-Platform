@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { computeMerchantStats } from './overviewStats'
-import type { Order } from '../types'
+import { computeMerchantStats } from './merchantStats.js'
+import type { StatsOrder } from './merchantStats.js'
 
 const NOW = new Date('2026-06-15T12:00:00')
 
-function order(o: Partial<Order>): Order {
+function order(o: Partial<StatsOrder>): StatsOrder {
   return { status: 'completed', total: 0, items: [], created_at: NOW.toISOString(), ...o }
 }
 
