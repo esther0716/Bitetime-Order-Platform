@@ -118,15 +118,19 @@ The export mirrors the Overview chart's controls: the current `days` (12 | 30 | 
 `granularity` (`day` | `week`) ride along as query parameters. The merchant downloads the thing they
 are looking at; no second range concept is introduced into the dashboard.
 
-**Known divergence.** `productRevenue()` and `statusBreakdown()` ignore the range entirely today — they
-are all-time while the bar chart above them is ranged. So the Overview's donut and status list already
-disagree with their own panel heading. The report ranges all four sheets, because a workbook headed
-"Last 30 days" whose product sheet covers all time is simply wrong.
+**Resolved before implementation.** This design was written when `productRevenue()` and
+`statusBreakdown()` ignored the range entirely — they were all-time while the bar chart above them was
+ranged, so the Overview's donut and status list disagreed with their own panel heading. That was filed
+separately and fixed in `dda6ba3`, which narrows the orders once inside `computeMerchantStats` and
+feeds the same window to all three panels.
 
-Consequence: for a shop with history older than the selected range, the report's product and status
-sheets will not match the Overview's donut and status list. **The Overview inconsistency is a
-pre-existing bug and is filed separately, not fixed here** — fixing it changes what every merchant sees
-on their dashboard and deserves its own change.
+So the report and the dashboard now range identically, and the divergence this section used to warn
+about does not exist. Two consequences for the design below:
+
+- The report does not need to pre-filter for its **sheets** — `computeMerchantStats` already does.
+- It does still need `ordersInWindow`, for its **Summary totals**: `MerchantStats`'s KPI block
+  (`totalOrders`, `revenue`, `avgOrder`) is all-time on purpose, because those cards sit *above* the
+  range pills on the dashboard. A Summary sheet headed "Last 30 days" cannot use them.
 
 ## Architecture
 
@@ -152,14 +156,14 @@ Handler responsibilities, in order:
    Products are not fetched: `computeMerchantStats`'s `_products` parameter is already unused, and
    product names come from the `items` jsonb on each order. Customers and vouchers are not fetched
    because the Summary sheet no longer reports them.
-3. Filter those orders to the window (in the shop's time zone), then call `computeMerchantStats` from
-   `@bitetime/shared` with the filtered orders, `[]` for customers and vouchers, and
-   `{ days, granularity, timeZone }`.
+3. Narrow the orders to the window with `ordersInWindow`, take the Summary figures from
+   `windowTotals` on that list, and call `computeMerchantStats` with it, `[]` for customers and
+   vouchers, and `{ days, granularity, timeZone, productTop: Infinity }`.
 
-   Filtering **before** the call is what makes all four sheets ranged, since `productRevenue()` and
-   `statusBreakdown()` have no window of their own. The `customerCount`, `vouchersRedeemed`,
+   `windowTotals` exists so "revenue excludes cancelled orders" is stated once in
+   `@bitetime/shared` rather than restated on the backend. The `customerCount`, `vouchersRedeemed`,
    `ordersDelta` and `revenueDelta` fields of the returned `MerchantStats` are meaningless on
-   pre-filtered orders and the report reads none of them.
+   pre-narrowed orders, and the report reads none of them.
 4. Hand the stats plus shop metadata to `buildRevenueWorkbook`.
 
 ### `apps/backend/src/report.ts`
@@ -201,14 +205,14 @@ Three changes travel with it:
    their shop's — their chart's day boundaries shift. That is a correctness fix, and it is the only way
    the two artefacts can be made to agree. Falls back to local time when `timezone` is absent.
 
-2. **Uncapped product revenue.** `productRevenue(orders, top)` becomes callable with no cap so the
-   report gets every product. The Overview keeps its top-6-plus-`Other` behaviour.
+2. **Uncapped product revenue.** `SeriesWindow` gains `productTop`, defaulting to the donut's 6. The
+   report passes `Infinity` and gets every product with no `Other` row.
 
 3. **Units per product.** `Slice` gains `units: number` (sum of line item `qty`). The donut ignores it;
    the report's product sheet needs it.
 
-No windowing is added to `productRevenue` or `statusBreakdown` themselves — the report pre-filters its
-orders instead (see the endpoint's step 3), so the Overview's current all-time behaviour is untouched.
+4. **Window helpers.** `ordersInWindow` and `windowTotals` are exported, for the ranged Summary
+   figures described in the endpoint's step 3.
 
 ### Frontend
 
@@ -275,4 +279,3 @@ tab; a Pro shop downloads a workbook that opens and whose totals match the chart
 - Order-level, line-item and customer exports
 - A custom date-range picker
 - Scheduled or emailed reports
-- Fixing the Overview's all-time donut and status list (filed separately)

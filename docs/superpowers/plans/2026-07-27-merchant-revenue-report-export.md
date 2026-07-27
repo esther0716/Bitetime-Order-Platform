@@ -1,5 +1,21 @@
 # Merchant Revenue Report Export Implementation Plan
 
+> **Status: implemented** — `d18af16` … `003661f`. Kept as the record of what was built.
+>
+> Three things landed differently from the text below, because `dda6ba3` (the Overview ranging fix)
+> merged between planning and execution:
+>
+> 1. `computeMerchantStats` now narrows orders to the window itself, so the report does **not**
+>    pre-filter for its sheets. `ordersInWindow` is still exported and still used — for the Summary
+>    sheet's totals, since the KPI block stays all-time by design.
+> 2. Uncapped products became a `productTop` option on `SeriesWindow` rather than an exported
+>    `productRevenue`, and `windowTotals` was added so "revenue excludes cancelled" is stated once.
+> 3. `statusBreakdown` was never exported — it had no caller left.
+>
+> Also unplanned, and needed: `SubscriptionTab`'s Pro feature list and its downgrade warning both
+> gained the report. A padlock that lands a merchant on a page never mentioning what they clicked is
+> a dead end.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let a Pro shop download the Overview's revenue summary as a four-sheet `.xlsx`, built and gated on the backend.
