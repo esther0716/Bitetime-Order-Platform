@@ -61,7 +61,9 @@ export default function SignupScreen() {
       if (plan === 'basic') {
         // Cardless trial: no Checkout. The shop waits for platform approval,
         // which is what starts the 7-day trial subscription.
-        window.location.assign('/merchant')
+        // `replace`, not `assign`: the shop now exists, so Back must not return to a signup form
+        // that would try to create it a second time.
+        window.location.replace('/merchant')
         return
       }
       // Pro pays upfront: hand off to Stripe Checkout; webhook activates the shop.

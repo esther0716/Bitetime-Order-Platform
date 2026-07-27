@@ -76,20 +76,13 @@ function DashboardInner() {
   // Settings tab cannot be silently discarded by navigating away.
   const selectSection = useCallback((key: string) => guard(() => setSection(key)), [guard, setSection])
 
-  // Same guard, but aimed at a sub-tab and reporting back once the merchant has actually let
-  // the navigation happen (#112).
-  // Bumping this remounts the Settings subtree, which is the ONLY way a sub-tab request lands:
-  // ShopSettings reads its tab from the hash in a `useState` initialiser, so it must be
-  // re-mounted to see a new one. A three-file contract (here, useDashboardSubsection,
-  // ShopSettings) — change one and check the others.
+  // Same guard, but aimed at a sub-tab (#112). Writing the hash is the whole request now that
+  // ShopSettings reads its tab from the router — it used to need a remount key here, because the
+  // hash was written outside the router and a mounted ShopSettings could not see the change.
   //
   // Inside `guard`, so a cancelled confirm neither navigates nor discards the merchant's edits.
-  const [settingsRemounts, setSettingsRemounts] = useState(0)
   const goToSettingsTab = useCallback(
-    (sub: string) => guard(() => {
-      setSection('settings', sub)
-      setSettingsRemounts(n => n + 1)
-    }),
+    (sub: string) => guard(() => setSection('settings', sub)),
     [guard, setSection],
   )
 
@@ -107,7 +100,7 @@ function DashboardInner() {
     >
       <BillingBanner />
       <OnboardingChecklist section={section} onNavigate={selectSection} />
-      <div key={section === 'settings' ? `settings:${settingsRemounts}` : section} {...enter}>
+      <div key={section} {...enter}>
         {section === 'overview'  && <Overview />}
         {section === 'orders'    && <OrdersView onOrdersChanged={refreshNewOrders} />}
         {section === 'products'  && <ProductsManager />}

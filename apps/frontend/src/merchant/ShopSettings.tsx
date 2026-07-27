@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, merchantHasOrders } from '../store'
@@ -32,7 +32,12 @@ export default function ShopSettings() {
   const { t } = useSession()
   const pro = useProAccess()
   const { guard, registerBlocker } = useNavGuard()
-  const [dirty, setDirty] = useState(false)
+  // WHICH tab is dirty, not merely whether one is. Only the active tab can be, so `dirty` falls
+  // out of the comparison — and a tab switch clears it by construction rather than by an effect
+  // that has to remember to. It used to be a bare boolean reset by ShopSettings being remounted;
+  // now the hash is router-owned nothing remounts, and a stale `true` would block the next
+  // navigation and warn on reload about edits that no longer exist.
+  const [dirtyTab, setDirtyTab] = useState<TabKey | null>(null)
 
   const TABS: { key: TabKey; label: string; tag?: string }[] = [
     { key: 'shipping', label: t('Shipping', '运费') },
@@ -49,6 +54,10 @@ export default function ShopSettings() {
   // CTA can link straight at Subscription (#112). Keys come from TABS so a new tab is declared
   // once, not in a parallel list that can drift.
   const [tab, setTab] = useDashboardSubsection('settings', TABS.map(x => x.key), 'shipping')
+
+  const dirty = dirtyTab === tab
+  // Handed to every tab as `onDirtyChange`, so a tab reports only about itself.
+  const setDirty = useCallback((next: boolean) => setDirtyTab(next ? tab : null), [tab])
 
   // Register this section's dirty state so the Dashboard sidebar can guard against it.
   useEffect(() => {

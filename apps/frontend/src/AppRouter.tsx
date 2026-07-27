@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { PageTransition } from './motion'
 import { SessionProvider, useSession } from './SessionContext'
 import { Toaster } from './components/ui/sonner'
@@ -84,6 +85,23 @@ function StorefrontShell() {
   )
 }
 
+// A merchant who is already signed in has no business on the login screen, and Back is exactly how
+// they get there. Renders the form while the session is still resolving — `role` reads 'customer'
+// until the shop lookup lands — so a signed-out visitor never waits behind a spinner; on a
+// client-side Back the session is already resolved above this tree, so the bounce is immediate.
+//
+// Login only, NOT signup: the signup flow signs the merchant in halfway through and then hands a
+// Pro shop off to Stripe Checkout. A bounce there would hijack the redirect and strand a shop that
+// has never paid.
+//
+// Superadmins are left alone: /merchant is not their dashboard (MerchantHome sends them to /admin),
+// so sending them there is a round trip through a screen that only redirects again.
+function RedirectSignedInMerchant({ children }: { children: ReactNode }) {
+  const { role } = useSession()
+  if (role === 'merchant') return <Navigate to="/merchant" replace />
+  return children
+}
+
 export default function AppRouter() {
   return (
     <SessionProvider>
@@ -119,7 +137,7 @@ function AnimatedRoutes() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/s/:slug/*" element={<MerchantProvider><StorefrontShell /></MerchantProvider>} />
           <Route path="/merchant/signup" element={<SignupScreen />} />
-          <Route path="/merchant/login" element={<LoginScreen />} />
+          <Route path="/merchant/login" element={<RedirectSignedInMerchant><LoginScreen /></RedirectSignedInMerchant>} />
           <Route path="/merchant" element={<RequireRole role="merchant"><MerchantHome /></RequireRole>} />
           <Route path="/merchant/:slug" element={<RequireRole role="superadmin"><MerchantHome /></RequireRole>} />
           <Route path="/admin/merchants" element={<RequireRole role="superadmin"><AdminHome /></RequireRole>} />

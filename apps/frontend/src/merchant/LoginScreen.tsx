@@ -56,7 +56,9 @@ export default function LoginScreen() {
       setBusy(false)
       return
     }
-    try { await signIn(email, password); await refreshMerchant(); navigate('/merchant') }
+    // `replace`, not a push: a used login screen is not a place to go back to. Pushed, Back put
+    // an already-signed-in merchant in front of the login form again.
+    try { await signIn(email, password); await refreshMerchant(); navigate('/merchant', { replace: true }) }
     catch (err) { setMsg(signInErrorText(err)); setBusy(false) }
   }
 
