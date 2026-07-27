@@ -145,4 +145,47 @@ describe('computeMerchantStats', () => {
     expect(s.statusBreakdown[0]).toEqual({ status: 'new', count: 2, pct: 50 })
     expect(s.statusBreakdown.reduce((sum, x) => sum + x.count, 0)).toBe(4)
   })
+
+  it('ranges the product donut and the status breakdown with the chart, not all-time', () => {
+    const old = new Date('2026-01-10T09:00:00').toISOString() // months before any window
+    const orders = [
+      order({ status: 'completed', total: 10, items: [{ id: 'p1', name: 'Cake', qty: 1, price: 10 }] }),
+      order({ status: 'cancelled', total: 99, created_at: old, items: [{ id: 'p2', name: 'Tea', qty: 5, price: 20 }] }),
+    ]
+    const s = computeMerchantStats(orders, [], [], [], NOW, { days: 12 })
+    expect(s.productRevenue).toEqual([{ name: 'Cake', value: 10 }]) // the old Tea never lands
+    expect(s.statusBreakdown).toEqual([{ status: 'completed', count: 1, pct: 100 }])
+    // …and the KPI cards above the range pills stay all-time.
+    expect(s.totalOrders).toBe(2)
+  })
+
+  it('widening the range pulls older orders into both panels', () => {
+    const orders = [
+      order({ items: [{ id: 'p1', name: 'Cake', qty: 1, price: 10 }] }),
+      order({
+        status: 'new',
+        created_at: new Date('2026-05-01T09:00:00').toISOString(), // 45 days back
+        items: [{ id: 'p2', name: 'Tea', qty: 1, price: 40 }],
+      }),
+    ]
+    const short = computeMerchantStats(orders, [], [], [], NOW, { days: 30 })
+    expect(short.productRevenue.map(p => p.name)).toEqual(['Cake'])
+    expect(short.statusBreakdown.map(x => x.status)).toEqual(['completed'])
+
+    const long = computeMerchantStats(orders, [], [], [], NOW, { days: 90 })
+    expect(long.productRevenue.map(p => p.name)).toEqual(['Tea', 'Cake'])
+    expect(long.statusBreakdown.map(x => x.count)).toEqual([1, 1])
+    expect(long.statusBreakdown[0].pct).toBe(50)
+  })
+
+  it('drops orders with no usable date from the ranged panels, as the chart already did', () => {
+    const orders = [
+      order({ items: [{ id: 'p1', name: 'Cake', qty: 1, price: 10 }] }),
+      order({ status: 'new', created_at: undefined, items: [{ id: 'p2', name: 'Tea', qty: 1, price: 40 }] }),
+      order({ status: 'new', created_at: 'not-a-date', items: [{ id: 'p3', name: 'Bun', qty: 1, price: 40 }] }),
+    ]
+    const s = computeMerchantStats(orders, [], [], [], NOW, { days: 90 })
+    expect(s.productRevenue).toEqual([{ name: 'Cake', value: 10 }])
+    expect(s.statusBreakdown).toEqual([{ status: 'completed', count: 1, pct: 100 }])
+  })
 })
