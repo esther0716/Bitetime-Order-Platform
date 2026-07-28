@@ -7,17 +7,74 @@
 // The two email arms live in `orderEmails.ts`; what all three share is `orderNotice.ts`.
 import { formatAddress, formatKm, formatMoney, MODE_LABELS, type NotifyOrderInput, type NotifyResult } from './orderNotice.js'
 
+/**
+ * Telegram's own ceiling for `sendMessage` text. Over it, the API does not truncate — it
+ * REFUSES the whole message, and since notify is a separate call after the order has already
+ * committed, that refusal costs the merchant the entire notification for an order that exists.
+ *
+ * A full cart is 100 lines (`MAX_CART_LINES`) at roughly 40 characters each, so the item block
+ * alone can reach this ceiling before the header and totals are counted — and #145's per-item
+ * selections sub-line makes that ordinary rather than theoretical.
+ *
+ * Measured with `String.length` (UTF-16 units) while Telegram counts code points, so an emoji or
+ * a Chinese product name makes this over-count. Erring short is the safe direction.
+ */
+export const TELEGRAM_MAX_CHARS = 4096
+
+/**
+ * What the merchant is told when the cart did not fit. Balanced `*` markers, because the message
+ * goes out with `parse_mode: 'Markdown'` and an unclosed marker is itself a 400 — a truncation
+ * that breaks parsing loses exactly what it was written to save.
+ */
+function truncationNotice(shown: number, total: number): string {
+  return `\n⚠️ *${shown} of ${total} items shown — open your dashboard for the full order.*`
+}
+
+/**
+ * Fit head + items + tail under the ceiling by dropping ITEM lines, never the head or the tail.
+ *
+ * The head carries the order number, the customer and the address; the tail carries the money.
+ * Those are what the merchant acts on, and a cart long enough to overflow is precisely the cart
+ * whose individual lines matter least — so the item block is the part that gives way, and it
+ * says so. Silent truncation reads as a complete order (CONTEXT.md → Merchant order reads).
+ *
+ * Drops one line at a time rather than computing a budget, because the notice's own length moves
+ * with the count it reports. Bounded by the cart cap, so at most 100 iterations.
+ */
+function fitToTelegram(head: string, itemLines: string[], tail: string, orderNumber: string): string {
+  const full = `${head}${itemLines.join('\n')}\n${tail}`
+  if (full.length <= TELEGRAM_MAX_CHARS) return full
+
+  const kept = [...itemLines]
+  while (kept.length > 0) {
+    const body = `${head}${kept.join('\n')}\n${truncationNotice(kept.length, itemLines.length)}\n${tail}`
+    if (body.length <= TELEGRAM_MAX_CHARS) return body
+    kept.pop()
+  }
+
+  const none = `${head}${truncationNotice(0, itemLines.length)}\n${tail}`
+  if (none.length <= TELEGRAM_MAX_CHARS) return none
+
+  // Last resort: the head and tail alone overflow (a pathologically long shop name or address).
+  // Nothing here is worth losing the notification over EXCEPT the order number — with it the
+  // merchant can find the order; without it they cannot. The number is generated server-side and
+  // bounded (`<PREFIX>-YYMMDD-XXXX`), and clamped anyway so this branch cannot itself overflow.
+  return `🛎️ *New order*\n*Order No.:* ${String(orderNumber ?? '').slice(0, 64)}\n${truncationNotice(0, itemLines.length)}`
+}
+
 // Pure: render the Telegram message from an order row, in the order's own
 // stamped currency (falls back to MYR for legacy rows without one).
+//
+// The length cap lives HERE and not at the call site so no caller can forget it: what this
+// function returns is always something `sendMessage` will accept.
 export function buildOrderMessage(order: any, merchantName?: string): string {
   const cur = order.currency ?? 'MYR'
   const items = Array.isArray(order.items) ? order.items : []
   // `(Promo)` is plain text, not a badge — Telegram's Markdown here is already `*bold*` labels
   // and this is the one place in the app that can't reach for the storefront's pill styling.
   // Missing key reads as `false` (older rows never wrote it), never as a crash — see orders.ts.
-  const lines = items
+  const itemLines = items
     .map((i: any) => `• ${i.name}${i.promo ? ' (Promo)' : ''} × ${i.qty} — ${formatMoney((i.price ?? 0) * (i.qty ?? 0), cur)}`)
-    .join('\n')
   let msg = `🛎️ *New order${merchantName ? ` — ${merchantName}` : ''}*\n\n`
   msg += `*Order No.:* ${order.order_number}\n`
   msg += `*Name:* ${order.customer_name ?? ''}\n`
@@ -33,10 +90,12 @@ export function buildOrderMessage(order: any, merchantName?: string): string {
   // empty label. `delivery_distance_km` is null for every order placed before #101.
   const km = formatKm(order.delivery_distance_km)
   if (km) msg += `*Distance:* ${km}\n`
-  msg += `\n*Items:*\n${lines}\n`
-  if (order.shipping_fee) msg += `*Shipping:* ${formatMoney(order.shipping_fee, cur)}\n`
-  msg += `\n*Total: ${formatMoney(order.total ?? 0, cur)}*`
-  return msg
+  msg += `\n*Items:*\n`
+  // The money, kept whole: it is the last thing dropped, never the first.
+  let tail = ''
+  if (order.shipping_fee) tail += `*Shipping:* ${formatMoney(order.shipping_fee, cur)}\n`
+  tail += `\n*Total: ${formatMoney(order.total ?? 0, cur)}*`
+  return fitToTelegram(msg, itemLines, tail, order.order_number)
 }
 
 export type TelegramSend = (token: string, chatId: string, text: string) => Promise<void>

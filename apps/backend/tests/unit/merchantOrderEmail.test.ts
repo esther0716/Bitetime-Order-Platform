@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { MAX_CART_LINES } from '@bitetime/shared'
 import { buildMerchantOrderEmail } from '../../src/orderEmails.js'
 
 // The shop's own surface, not the customer's. Twin of orderConfirmationEmail.test.ts, and the
@@ -118,5 +119,26 @@ describe('buildMerchantOrderEmail', () => {
 
   it('survives an order row with no items, rather than throwing on the alert', () => {
     expect(() => build({ ...PICKUP_ORDER, items: null })).not.toThrow()
+  })
+
+  // The mail arms have no length guard, and unlike Telegram's 4096-character sendMessage ceiling
+  // (see notify.ts) they do not need one — but that is a fact about the numbers, so pin the
+  // numbers. A full cart is MAX_CART_LINES items, and #145's per-item selections line roughly
+  // doubles each one; even then the message is kilobytes against Resend's megabytes, and no
+  // single line comes near RFC 5322's 998-octet ceiling.
+  it('stays far inside the mail limits for the largest legal cart', () => {
+    const items = Array.from({ length: MAX_CART_LINES }, (_, n) => ({
+      name: `Chocolate chip cookie box ${n + 1} — Flavour: Chocolate chip · Size: Large · Gift box`,
+      qty: 3,
+      price: 12.5,
+    }))
+    const { subject, text, html } = build({ ...DELIVERY_ORDER, items, total: 3758 })
+    // Resend caps a message at 40MB; this is three orders of magnitude under.
+    expect(Buffer.byteLength(subject + text + html, 'utf8')).toBeLessThan(256 * 1024)
+    const longest = (s: string) => Math.max(...s.split('\n').map(l => Buffer.byteLength(l, 'utf8')))
+    expect(longest(text)).toBeLessThan(998)
+    expect(Buffer.byteLength(subject, 'utf8')).toBeLessThan(998)
+    // And nothing is dropped: every item the customer ordered is in the alert.
+    expect(text.split('\n').filter(l => l.startsWith('• ')).length).toBe(MAX_CART_LINES)
   })
 })

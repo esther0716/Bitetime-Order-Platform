@@ -11,6 +11,8 @@ export type AppEnv = {
   Variables: {
     user: AuthedUser
     merchant: Record<string, any>
+    /** The child row `requireOwnsChild` loaded — null on its `mayCreate` path. */
+    child: Record<string, any> | null
   }
 }
 
@@ -90,8 +92,12 @@ type ChildTable = 'products' | 'vouchers' | 'orders'
  * which is a poor place to keep the decision that separates "creates a product" from "cannot
  * create a product". It is a named mode now, read at the route.
  *
- * The loaded row is deliberately NOT stashed: no handler needs it, and an interface nobody asked
- * for is one somebody starts depending on.
+ * The loaded row IS stashed, under `child` — and it is the WHOLE row, not just the `merchant_id`
+ * this guard reads. A handler now needs it: the product upsert's Pro gate asks whether the write
+ * CHANGES the promo, which is a comparison against the stored values (#145). Re-querying for a row
+ * the guard has already fetched would be a second round trip to answer a question the first one
+ * could have. `null` on the `mayCreate` path means "no such row yet", which is a real answer and
+ * not an absence — a handler must be able to tell it from "guard did not run".
  */
 export const requireOwnsChild = (
   table: ChildTable,
@@ -107,7 +113,7 @@ export const requireOwnsChild = (
   if (!merchant) return c.json({ error: 'Lookup failed' }, 500)
   const childId = c.req.param(param)
   if (!childId) return c.json({ error: 'Not found' }, 404)
-  const { data: existing, error } = await admin.from(table).select('merchant_id').eq('id', childId).maybeSingle()
+  const { data: existing, error } = await admin.from(table).select('*').eq('id', childId).maybeSingle()
   // A FAILED QUERY IS NOT "no such row", and the difference is the whole guard. Read as one, a
   // transient database error would send `mayCreate` down the create path against a row this never
   // cleared — and that route's upsert forces `merchant_id` to the caller's shop, which is exactly
@@ -115,9 +121,11 @@ export const requireOwnsChild = (
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   if (!existing) {
     if (!opts.mayCreate) return c.json({ error: 'Not found' }, 404)
+    c.set('child', null)
     return await next()
   }
   if (existing.merchant_id !== merchant.id) return c.json({ error: 'Not found' }, 404)
+  c.set('child', existing)
   await next()
 }
 

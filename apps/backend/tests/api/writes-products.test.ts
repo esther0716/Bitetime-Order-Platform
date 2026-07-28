@@ -186,6 +186,69 @@ describe('PUT /api/merchants/:id/products/:productId', () => {
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 
+  // The gate compares against the STORED row, so an ex-Pro shop — one that dropped to basic with a
+  // promo still set — can keep managing that product. Renaming it resubmits the promo columns
+  // unchanged (the dashboard spreads the whole row), and unchanged is not a request for a Pro
+  // feature. Refusing here, or letting the client omit the columns to get past a presence check,
+  // is how a shop's live sale ends up silently gone behind a success toast (#145).
+  it('lets a basic shop rename a product without losing its promo', async () => {
+    await resetMerchant('prod-expro-rename-shop')
+    const owner = await makeUser('prod-expro-rename@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const id = await seedMerchant({ slug: 'prod-expro-rename-shop', owner_id: userId, plan: 'basic' })
+    const promoEnd = '2030-01-01T15:59:59.999Z'
+    const productId = await seedProduct({
+      merchant_id: id, name: 'Legacy Promo Cookie', price: 12,
+      promo_price: 8, promo_limit: 10, promo_end: promoEnd,
+    })
+
+    const res = await put(`/api/merchants/${id}/products/${productId}`, {
+      name: 'Renamed Cookie', price: 12,
+      promo_price: 8, promo_limit: 10, promo_end: promoEnd,
+    }, token)
+
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('products').select('name, promo_price, promo_limit, promo_end').eq('id', productId).single()
+    expect(data!.name).toBe('Renamed Cookie')
+    expect(Number(data!.promo_price)).toBe(8)
+    expect(data!.promo_limit).toBe(10)
+    expect(Date.parse(data!.promo_end)).toBe(Date.parse(promoEnd))
+
+    await serviceClient().from('products').delete().eq('id', productId)
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  // The other side of the same rule: resubmitting the promo unchanged is fine, MOVING it is not.
+  // A basic shop cannot cut the price, raise the cap or push back the end date on the promo it
+  // still carries — that is the Pro feature, used without Pro.
+  it('still refuses a basic shop that changes an existing promo, and writes nothing', async () => {
+    await resetMerchant('prod-expro-change-shop')
+    const owner = await makeUser('prod-expro-change@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const id = await seedMerchant({ slug: 'prod-expro-change-shop', owner_id: userId, plan: 'basic' })
+    const promoEnd = '2030-01-01T15:59:59.999Z'
+    const productId = await seedProduct({
+      merchant_id: id, name: 'Legacy Promo Cookie', price: 12,
+      promo_price: 8, promo_limit: 10, promo_end: promoEnd,
+    })
+
+    const res = await put(`/api/merchants/${id}/products/${productId}`, {
+      name: 'Legacy Promo Cookie', price: 12,
+      promo_price: 6, promo_limit: 10, promo_end: promoEnd,
+    }, token)
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'requires_pro' })
+
+    const { data } = await serviceClient()
+      .from('products').select('promo_price').eq('id', productId).single()
+    expect(Number(data!.promo_price)).toBe(8)
+
+    await serviceClient().from('products').delete().eq('id', productId)
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
   it('lets a pro shop set a promo', async () => {
     await resetMerchant('prod-pro-promo-shop')
     const owner = await makeUser('prod-pro-promo@example.com', 'password123')
