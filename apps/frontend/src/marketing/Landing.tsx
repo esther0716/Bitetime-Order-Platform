@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import { signOut } from '../store'
@@ -11,6 +11,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '..
 import { REFUNDS_ANCHOR } from '../legal/anchors'
 import { FAQ } from './faq'
 import { FEATURES } from './features'
+import { VERTICALS } from './verticals'
 import { useLandingStructuredData } from './structuredData'
 import { cn } from '../lib/utils'
 import {
@@ -19,6 +20,7 @@ import {
   HeroStagger,
   HeroItem,
   MagneticButton,
+  RotatingWord,
   StorefrontPreview,
 } from './LandingMotion'
 
@@ -57,6 +59,13 @@ export default function Landing() {
   useLandingStructuredData(lang)
   const [menuOpen, setMenuOpen] = useState(false)
   const [billing, setBilling] = useState('monthly') // 'monthly' | 'yearly'
+
+  // The hero's rotating word, resolved to the showing language. Memoised so a new array identity
+  // does not defeat RotatingWord's memo on every Landing re-render (billing toggle, menu open…).
+  const verticalWords = useMemo(
+    () => VERTICALS.map((v) => (lang === 'zh' ? v.zh : v.en)),
+    [lang]
+  )
 
   // Where the signed-in user's portal lives, by role. Customers have no portal.
   const portal = role === 'superadmin'
@@ -187,8 +196,29 @@ export default function Landing() {
             </p>
           </HeroItem>
           <HeroItem>
-            <h1 className="font-heading text-[clamp(2rem,5vw,3.5rem)] font-medium text-ink leading-[1.18] tracking-[-0.01em] mb-5">
-              {t('Sell your food online — your own shop, without the DM chaos.', '把美食搬到线上——你的专属店铺，告别聊天接单的混乱。')}
+            {/* aria-label carries the sentence as one static string: the visible word changes every
+                2.6s, and a screen reader re-announcing the h1 that often is noise. It also
+                overrides descendant content for the accessible name, so nothing inside needs
+                aria-hidden. Keep it in sync with the visible halves below. */}
+            <h1
+              aria-label={t(
+                'Sell your food online — your own shop, without the DM chaos.',
+                '把美食搬到线上——你的专属店铺，告别聊天接单的混乱。'
+              )}
+              className="font-heading text-[clamp(2rem,5vw,3.5rem)] font-medium text-ink leading-[1.18] tracking-[-0.01em] mb-5"
+            >
+              {/* Two blocks, not one flowing sentence: the rotating word's width changes as it
+                  cycles, and confining it to its own line is what keeps that from rewrapping the
+                  static half every 2.6 seconds. Each clause is short enough to hold one line down
+                  to 375px. English needs nothing after the word; Chinese needs its verb phrase. */}
+              <span className="block">
+                {t('Sell your ', '把')}
+                <RotatingWord words={verticalWords} />
+                {t('', '搬到线上——')}
+              </span>
+              <span className="block">
+                {t('online — your own shop, without the DM chaos.', '你的专属店铺，告别聊天接单的混乱。')}
+              </span>
             </h1>
           </HeroItem>
           <HeroItem>

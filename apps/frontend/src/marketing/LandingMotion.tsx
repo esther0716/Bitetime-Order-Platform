@@ -7,6 +7,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence, useMotionValue, useSpring, useReducedMotion } from 'motion/react'
 import { ReceiptText } from 'lucide-react'
+import type { VerticalWord } from './verticals'
 
 // Editorial ease — slightly springier than the app's UI ease, still calm.
 const EASE = [0.16, 1, 0.3, 1] as const
@@ -208,5 +209,72 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
         </div>
       </div>
     </div>
+  )
+})
+
+// ── Rotating vertical word: the hero's "we are not food-only" signal ─────────
+// Only the ACTIVE word is ever in the DOM, and that is a hard constraint, not a preference.
+// scripts/prerender.tsx freezes this markup into dist/index.html for crawlers that do not run JS,
+// so keeping all five words mounted — the obvious way to let the browser size the slot — would
+// hand them `Sell your food bakes art clothes crafts`.
+//
+// That leaves the slot to be sized from the outside, and the two ways to do it are not equal:
+//   · one fixed width for the widest word never moves, but leaves a permanent hole after the short
+//     ones ("food" is 2.06em against "clothes" at 3.34em — ~78px of dead space at the desktop
+//     size), which reads as broken spacing rather than as design;
+//   · animating the width to each word keeps the line tight and slides the text that follows,
+//     at the cost of a width that changes — which is why the hero splits the headline so this word
+//     ends its own line and the static half can never be rewrapped by it.
+// The second is what this does. Widths come from `VerticalWord.em`.
+const WORD_SLACK_EM = 0.06
+
+export const RotatingWord = memo(function RotatingWord({
+  words,
+  intervalMs = 2600,
+}: {
+  words: readonly VerticalWord[]
+  intervalMs?: number
+}) {
+  const reduced = useReducedMotion()
+  const [i, setI] = useState(0)
+
+  useEffect(() => {
+    if (reduced) return
+    const loop = setInterval(() => setI((n) => (n + 1) % words.length), intervalMs)
+    return () => clearInterval(loop)
+  }, [reduced, words.length, intervalMs])
+
+  // Reduced motion gets the first word and no timer at all — not a timer whose animation is
+  // suppressed. It is also what the prerenderer emits, since it never runs effects.
+  if (reduced) return <>{words[0].text}</>
+
+  const word = words[i % words.length]
+
+  return (
+    <motion.span
+      // text-left, against the hero's inherited centring: while the width animates, a centred word
+      // would drift sideways inside its own slot on top of the slot's own resize. Anchoring the
+      // left edge means only the tail of the line moves, which is the movement being animated.
+      className="inline-block whitespace-pre align-baseline text-left"
+      initial={false}
+      animate={{ width: `${word.em + WORD_SLACK_EM}em` }}
+      transition={{ duration: 0.5, ease: EASE }}
+    >
+      {/* mode="wait" keeps exactly one word mounted: it fades the old one out before the new one
+          arrives, so the width animation lands while the slot is empty and nothing is seen to
+          overflow it. */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={word.text}
+          className="inline-block whitespace-pre"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.25, ease: EASE }}
+        >
+          {word.text}
+        </motion.span>
+      </AnimatePresence>
+    </motion.span>
   )
 })
