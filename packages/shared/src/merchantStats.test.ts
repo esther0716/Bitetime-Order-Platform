@@ -15,20 +15,20 @@ describe('computeMerchantStats', () => {
       order({ total: 20 }),
       order({ total: 99, status: 'cancelled' }),
     ]
-    const s = computeMerchantStats(orders, [], [], [], NOW)
+    const s = computeMerchantStats(orders, 0, [], NOW)
     expect(s.totalOrders).toBe(3)
     expect(s.revenue).toBe(50) // cancelled excluded
     expect(s.avgOrder).toBe(25) // 50 / 2 booked
   })
 
   it('avgOrder is 0 with no booked orders', () => {
-    const s = computeMerchantStats([], [], [], [], NOW)
+    const s = computeMerchantStats([], 0, [], NOW)
     expect(s.avgOrder).toBe(0)
     expect(s.revenue).toBe(0)
   })
 
   it('counts customers and redeemed voucher uses', () => {
-    const s = computeMerchantStats([], [], [{ orderCount: 2 }, { orderCount: 1 }], [
+    const s = computeMerchantStats([], 2, [
       { code: 'A', usedBy: ['x', 'y'] },
       { code: 'B', usedBy: [] },
     ], NOW)
@@ -42,19 +42,19 @@ describe('computeMerchantStats', () => {
       order({ total: 10 }), order({ total: 10 }), order({ total: 10 }), // 3 this month (Jun)
       order({ total: 10, created_at: may }),                            // 1 last month (May)
     ]
-    const s = computeMerchantStats(orders, [], [], [], NOW)
+    const s = computeMerchantStats(orders, 0, [], NOW)
     expect(s.ordersDelta).toEqual({ pct: 200, dir: 'up' }) // 3 vs 1
     expect(s.revenueDelta.dir).toBe('up')
   })
 
   it('delta is up=100 when previous month had zero', () => {
-    const s = computeMerchantStats([order({ total: 5 })], [], [], [], NOW)
+    const s = computeMerchantStats([order({ total: 5 })], 0, [], NOW)
     expect(s.ordersDelta).toEqual({ pct: 100, dir: 'up' })
   })
 
   it('builds a daily series of the requested length, bucketing revenue', () => {
     const orders = [order({ total: 40, created_at: new Date('2026-06-15T08:00:00').toISOString() })]
-    const s = computeMerchantStats(orders, [], [], [], NOW, { days: 12 })
+    const s = computeMerchantStats(orders, 0, [], NOW, { days: 12 })
     expect(s.granularity).toBe('day')
     expect(s.series).toHaveLength(12)
     const today = s.series[s.series.length - 1]
@@ -65,20 +65,20 @@ describe('computeMerchantStats', () => {
   })
 
   it('stays daily at 30 days and switches to weekly past it', () => {
-    expect(computeMerchantStats([], [], [], [], NOW, { days: 30 }).granularity).toBe('day')
-    expect(computeMerchantStats([], [], [], [], NOW, { days: 30 }).series).toHaveLength(30)
-    expect(computeMerchantStats([], [], [], [], NOW, { days: 60 }).granularity).toBe('week')
-    expect(computeMerchantStats([], [], [], [], NOW, { days: 60 }).series).toHaveLength(9) // 8 whole weeks + a 4-day tail
-    expect(computeMerchantStats([], [], [], [], NOW, { days: 90 }).series).toHaveLength(13) // 12 whole weeks + a 6-day tail
+    expect(computeMerchantStats([], 0, [], NOW, { days: 30 }).granularity).toBe('day')
+    expect(computeMerchantStats([], 0, [], NOW, { days: 30 }).series).toHaveLength(30)
+    expect(computeMerchantStats([], 0, [], NOW, { days: 60 }).granularity).toBe('week')
+    expect(computeMerchantStats([], 0, [], NOW, { days: 60 }).series).toHaveLength(9) // 8 whole weeks + a 4-day tail
+    expect(computeMerchantStats([], 0, [], NOW, { days: 90 }).series).toHaveLength(13) // 12 whole weeks + a 6-day tail
   })
 
   it('an explicit granularity overrides the default for the range, either way', () => {
-    const daily90 = computeMerchantStats([], [], [], [], NOW, { days: 90, granularity: 'day' })
+    const daily90 = computeMerchantStats([], 0, [], NOW, { days: 90, granularity: 'day' })
     expect(daily90.granularity).toBe('day')
     expect(daily90.series).toHaveLength(90)
     expect(daily90.series[0].range).toBeUndefined()
 
-    const weekly12 = computeMerchantStats([], [], [], [], NOW, { days: 12, granularity: 'week' })
+    const weekly12 = computeMerchantStats([], 0, [], NOW, { days: 12, granularity: 'week' })
     expect(weekly12.granularity).toBe('week')
     expect(weekly12.series).toHaveLength(2) // one whole week + a 5-day tail
     expect(weekly12.series[weekly12.series.length - 1].range).toBe('6/9 – 6/15')
@@ -91,14 +91,14 @@ describe('computeMerchantStats', () => {
       order({ total: 30, created_at: new Date('2026-03-25T09:00:00').toISOString() }),
     ]
     for (const granularity of ['day', 'week'] as const) {
-      const s = computeMerchantStats(orders, [], [], [], NOW, { days: 90, granularity })
+      const s = computeMerchantStats(orders, 0, [], NOW, { days: 90, granularity })
       expect(s.series.reduce((sum, p) => sum + p.revenue, 0)).toBe(60)
       expect(s.series.reduce((sum, p) => sum + p.orders, 0)).toBe(3)
     }
   })
 
   it('weekly buckets are trailing 7-day windows anchored on today, newest one whole', () => {
-    const s = computeMerchantStats([], [], [], [], NOW, { days: 90 })
+    const s = computeMerchantStats([], 0, [], NOW, { days: 90 })
     const newest = s.series[s.series.length - 1]
     expect(newest.range).toBe('6/9 – 6/15') // ends today, seven days wide
     expect(newest.label).toBe('6/9')        // axis shows the window's first day
@@ -112,7 +112,7 @@ describe('computeMerchantStats', () => {
       at('2026-06-15T09:00:00', 15), // last day of the newest week (today)
       at('2026-06-08T09:00:00', 7),  // one day earlier — previous week
       at('2026-03-17T09:00:00', 99), // 90 days back — outside the window
-    ], [], [], [], NOW, { days: 90 })
+    ], 0, [], NOW, { days: 90 })
 
     const newest = s.series[s.series.length - 1]
     expect(newest.revenue).toBe(25)
@@ -126,14 +126,14 @@ describe('computeMerchantStats', () => {
       order({ items: [{ id: 'p1', name: 'Cake', qty: 2, price: 10 }, { id: 'p2', name: 'Tea', qty: 1, price: 5 }] }),
       order({ items: [{ id: 'p1', name: 'Cake', qty: 1, price: 10 }] }),
     ]
-    const s = computeMerchantStats(orders, [], [], [], NOW)
+    const s = computeMerchantStats(orders, 0, [], NOW)
     expect(s.productRevenue[0]).toEqual({ name: 'Cake', value: 30, units: 3 })
     expect(s.productRevenue[1]).toEqual({ name: 'Tea', value: 5, units: 1 })
   })
 
   it('folds products beyond the top 6 into "Other"', () => {
     const items = Array.from({ length: 9 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, qty: 1, price: 9 - i }))
-    const s = computeMerchantStats([order({ items })], [], [], [], NOW)
+    const s = computeMerchantStats([order({ items })], 0, [], NOW)
     expect(s.productRevenue).toHaveLength(7) // 6 + Other
     expect(s.productRevenue[6].name).toBe('Other')
     expect(s.productRevenue[6].value).toBe(3 + 2 + 1) // p6,p7,p8 prices = 3,2,1
@@ -141,7 +141,7 @@ describe('computeMerchantStats', () => {
 
   it('breaks down orders by status with percentages', () => {
     const orders = [order({ status: 'new' }), order({ status: 'new' }), order({ status: 'completed' }), order({ status: 'cancelled' })]
-    const s = computeMerchantStats(orders, [], [], [], NOW)
+    const s = computeMerchantStats(orders, 0, [], NOW)
     expect(s.statusBreakdown[0]).toEqual({ status: 'new', count: 2, pct: 50 })
     expect(s.statusBreakdown.reduce((sum, x) => sum + x.count, 0)).toBe(4)
   })
@@ -152,7 +152,7 @@ describe('computeMerchantStats', () => {
       order({ status: 'completed', total: 10, items: [{ id: 'p1', name: 'Cake', qty: 1, price: 10 }] }),
       order({ status: 'cancelled', total: 99, created_at: old, items: [{ id: 'p2', name: 'Tea', qty: 5, price: 20 }] }),
     ]
-    const s = computeMerchantStats(orders, [], [], [], NOW, { days: 12 })
+    const s = computeMerchantStats(orders, 0, [], NOW, { days: 12 })
     expect(s.productRevenue).toEqual([{ name: 'Cake', value: 10, units: 1 }]) // the old Tea never lands
     expect(s.statusBreakdown).toEqual([{ status: 'completed', count: 1, pct: 100 }])
     // …and the KPI cards above the range pills stay all-time.
@@ -168,11 +168,11 @@ describe('computeMerchantStats', () => {
         items: [{ id: 'p2', name: 'Tea', qty: 1, price: 40 }],
       }),
     ]
-    const short = computeMerchantStats(orders, [], [], [], NOW, { days: 30 })
+    const short = computeMerchantStats(orders, 0, [], NOW, { days: 30 })
     expect(short.productRevenue.map(p => p.name)).toEqual(['Cake'])
     expect(short.statusBreakdown.map(x => x.status)).toEqual(['completed'])
 
-    const long = computeMerchantStats(orders, [], [], [], NOW, { days: 90 })
+    const long = computeMerchantStats(orders, 0, [], NOW, { days: 90 })
     expect(long.productRevenue.map(p => p.name)).toEqual(['Tea', 'Cake'])
     expect(long.statusBreakdown.map(x => x.count)).toEqual([1, 1])
     expect(long.statusBreakdown[0].pct).toBe(50)
@@ -184,7 +184,7 @@ describe('computeMerchantStats', () => {
       order({ status: 'new', created_at: undefined, items: [{ id: 'p2', name: 'Tea', qty: 1, price: 40 }] }),
       order({ status: 'new', created_at: 'not-a-date', items: [{ id: 'p3', name: 'Bun', qty: 1, price: 40 }] }),
     ]
-    const s = computeMerchantStats(orders, [], [], [], NOW, { days: 90 })
+    const s = computeMerchantStats(orders, 0, [], NOW, { days: 90 })
     expect(s.productRevenue).toEqual([{ name: 'Cake', value: 10, units: 1 }])
     expect(s.statusBreakdown).toEqual([{ status: 'completed', count: 1, pct: 100 }])
   })
@@ -200,27 +200,27 @@ describe('computeMerchantStats time zones', () => {
   const LATE = order({ total: 40, created_at: '2026-06-14T17:30:00Z' })
 
   it('buckets an order by the shop’s civil day, not the runtime’s', () => {
-    const kl = computeMerchantStats([LATE], [], [], [], NOW_UTC,
+    const kl = computeMerchantStats([LATE], 0, [], NOW_UTC,
       { days: 3, granularity: 'day', timeZone: 'Asia/Kuala_Lumpur' })
     const today = kl.series[kl.series.length - 1]
     expect(today.start).toBe('2026-06-15')
     expect(today.revenue).toBe(40)
 
-    const utc = computeMerchantStats([LATE], [], [], [], NOW_UTC,
+    const utc = computeMerchantStats([LATE], 0, [], NOW_UTC,
       { days: 3, granularity: 'day', timeZone: 'UTC' })
     expect(utc.series[utc.series.length - 1].revenue).toBe(0)
     expect(utc.series[utc.series.length - 2].revenue).toBe(40)
   })
 
   it('labels every daily bucket with its own civil date, start equal to end', () => {
-    const s = computeMerchantStats([], [], [], [], NOW_UTC,
+    const s = computeMerchantStats([], 0, [], NOW_UTC,
       { days: 3, granularity: 'day', timeZone: 'Asia/Kuala_Lumpur' })
     expect(s.series.map(p => p.start)).toEqual(['2026-06-13', '2026-06-14', '2026-06-15'])
     expect(s.series.every(p => p.start === p.end)).toBe(true)
   })
 
   it('gives a weekly bucket a seven-day span ending on the shop’s today', () => {
-    const s = computeMerchantStats([], [], [], [], NOW_UTC,
+    const s = computeMerchantStats([], 0, [], NOW_UTC,
       { days: 14, granularity: 'week', timeZone: 'Asia/Kuala_Lumpur' })
     const last = s.series[s.series.length - 1]
     expect(last.start).toBe('2026-06-09')
@@ -231,17 +231,17 @@ describe('computeMerchantStats time zones', () => {
   // survive the filter and then find no bucket to sit in.
   it('ranges the product and status panels by the shop’s civil day', () => {
     const edge = order({ total: 5, created_at: '2026-06-12T17:00:00Z', items: [{ id: 'p', name: 'Bun', qty: 1, price: 5 }] })
-    const kl = computeMerchantStats([edge], [], [], [], NOW_UTC,
+    const kl = computeMerchantStats([edge], 0, [], NOW_UTC,
       { days: 3, granularity: 'day', timeZone: 'Asia/Kuala_Lumpur' })
     expect(kl.productRevenue).toEqual([{ name: 'Bun', value: 5, units: 1 }])
 
-    const utc = computeMerchantStats([edge], [], [], [], NOW_UTC,
+    const utc = computeMerchantStats([edge], 0, [], NOW_UTC,
       { days: 3, granularity: 'day', timeZone: 'UTC' })
     expect(utc.productRevenue).toEqual([])
   })
 
   it('falls back to the runtime zone when the window carries none', () => {
-    const s = computeMerchantStats([], [], [], [], NOW_UTC, { days: 3, granularity: 'day' })
+    const s = computeMerchantStats([], 0, [], NOW_UTC, { days: 3, granularity: 'day' })
     expect(s.series).toHaveLength(3)
     expect(s.series[2].start).toBe(s.series[2].end)
   })
@@ -255,19 +255,19 @@ describe('productTop', () => {
   const items = Array.from({ length: 9 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, qty: 2, price: 9 - i }))
 
   it('folds beyond the top 6 by default, as the donut needs', () => {
-    const s = computeMerchantStats([order({ items })], [], [], [], NOW)
+    const s = computeMerchantStats([order({ items })], 0, [], NOW)
     expect(s.productRevenue).toHaveLength(7)
     expect(s.productRevenue[6].name).toBe('Other')
   })
 
   it('returns every product with no Other row when the cap is lifted', () => {
-    const s = computeMerchantStats([order({ items })], [], [], [], NOW, { days: 12, productTop: Infinity })
+    const s = computeMerchantStats([order({ items })], 0, [], NOW, { days: 12, productTop: Infinity })
     expect(s.productRevenue).toHaveLength(9)
     expect(s.productRevenue.some(p => p.name === 'Other')).toBe(false)
   })
 
   it('counts units alongside revenue, and folds units into Other too', () => {
-    const s = computeMerchantStats([order({ items })], [], [], [], NOW)
+    const s = computeMerchantStats([order({ items })], 0, [], NOW)
     expect(s.productRevenue[0]).toEqual({ name: 'P0', value: 18, units: 2 })
     // p6, p7, p8 at prices 3, 2, 1 and two units each.
     expect(s.productRevenue[6]).toEqual({ name: 'Other', value: 2 * (3 + 2 + 1), units: 6 })
@@ -276,7 +276,7 @@ describe('productTop', () => {
   it('sums units across separate orders of the same product', () => {
     const one = order({ items: [{ id: 'a', name: 'Cookie', qty: 2, price: 5 }] })
     const two = order({ items: [{ id: 'a', name: 'Cookie', qty: 3, price: 5 }] })
-    const s = computeMerchantStats([one, two], [], [], [], NOW)
+    const s = computeMerchantStats([one, two], 0, [], NOW)
     expect(s.productRevenue).toEqual([{ name: 'Cookie', value: 25, units: 5 }])
   })
 })
@@ -296,7 +296,7 @@ describe('windowTotals', () => {
 
   it('agrees with the all-time KPI block when the window holds everything', () => {
     const orders = [order({ total: 30 }), order({ total: 20 })]
-    const s = computeMerchantStats(orders, [], [], [], NOW, { days: 90 })
+    const s = computeMerchantStats(orders, 0, [], NOW, { days: 90 })
     const w = windowTotals(ordersInWindow(orders, NOW, 90))
     expect(w).toEqual({ totalOrders: s.totalOrders, revenue: s.revenue, avgOrder: s.avgOrder })
   })

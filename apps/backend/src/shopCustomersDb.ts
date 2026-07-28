@@ -3,8 +3,9 @@
 //
 // SQL GROUPS, TYPESCRIPT DECIDES. The grouping query returns one row per (phone key, status):
 // a handful of rows per customer rather than a shop's whole order table, which is what makes
-// this endpoint immune to the PostgREST row cap that silently truncates
-// `GET /api/merchants/:id/orders` (#144). What it deliberately does NOT do is decide anything —
+// this endpoint immune to the PostgREST row cap. It was the first read here to escape that cap;
+// `ordersDb.ts` took the same route for the dashboard's own aggregates in #144. What it
+// deliberately does NOT do is decide anything —
 // no `status <> 'cancelled'` here, because that rule belongs to `@bitetime/shared` and a copy
 // of it in SQL is how the customer list would come to disagree with the revenue chart.
 //

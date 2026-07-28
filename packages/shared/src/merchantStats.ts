@@ -304,10 +304,22 @@ function statusBreakdown(orders: StatsOrder[]): StatusSlice[] {
     .sort((a, b) => b.count - a.count)
 }
 
+/**
+ * Every figure the dashboard's Overview shows, from one shop's whole order history.
+ *
+ * `orders` must be the shop's COMPLETE history, not a page of it: `totalOrders`, `revenue` and
+ * both deltas are all-time by design (the KPI cards sit above the range pills), so a truncated
+ * list here does not produce a smaller chart — it produces a wrong revenue figure with nothing
+ * on screen saying so. That is #144, and it is why this now runs on the backend against an
+ * uncapped read rather than in a browser holding whatever the row cap let through.
+ *
+ * `customerCount` is a count rather than the customers themselves because nothing here needs
+ * more than how many there are — see `distinctCustomerCount` for the rule that decides who is
+ * one person.
+ */
 export function computeMerchantStats(
   orders: StatsOrder[],
-  _products: unknown[],
-  customers: { orderCount?: number }[],
+  customerCount: number,
   vouchers: StatsVoucher[],
   now: Date = new Date(),
   window: SeriesWindow = { days: 12 },
@@ -337,7 +349,7 @@ export function computeMerchantStats(
   return {
     totalOrders: orders.length,
     revenue,
-    customerCount: customers.length,
+    customerCount,
     avgOrder: booked.length ? revenue / booked.length : 0,
     vouchersRedeemed: vouchers.reduce((s, v) => s + (v.usedBy?.length ?? 0), 0),
     ordersDelta: delta(ordersThis, ordersLast),

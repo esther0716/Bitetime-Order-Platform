@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '../SessionContext'
-import { fetchMerchantOrders } from '../store'
+import { fetchOrderCount } from '../store'
 import { useEnterTransition } from '../motion'
 import { LayoutDashboard, ReceiptText, Cake, Ticket, Users, Settings } from 'lucide-react'
 import DashboardShell, { type NavItem } from '../components/DashboardShell'
@@ -48,13 +48,15 @@ function DashboardInner() {
 
   // Count of pending "new" orders — surfaced as a badge on the Orders nav item.
   // Refetched whenever an order's status changes so the badge stays live.
+  //
+  // Counted by Postgres. This used to fetch every order the shop had ever taken and filter them
+  // here, which made the badge wrong past the row cap (#144) and made the dashboard's heaviest
+  // read run on a poll from every section — to produce one integer.
   const [newOrders, setNewOrders] = useState(0)
   const merchantId = merchant?.id
   const refreshNewOrders = useCallback(() => {
     if (!merchantId) return
-    fetchMerchantOrders(merchantId).then(r => {
-      if (r.ok) setNewOrders(r.data.filter(o => (o.status ?? 'new') === 'new').length)
-    })
+    fetchOrderCount(merchantId, 'new').then(r => { if (r.ok) setNewOrders(r.data) })
   }, [merchantId])
   useEffect(() => { refreshNewOrders() }, [refreshNewOrders])
 

@@ -1,6 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import { voucherFromRow, QUOTE_REFUSALS } from '@bitetime/shared';
-import type { FeedbackDraft, FeedbackStatus, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
+import type { FeedbackDraft, FeedbackStatus, MerchantStats, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
 import { supabase } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
@@ -604,9 +604,81 @@ export async function fetchMyOrdersAtShop(merchantId: string): Promise<Result<Or
   return apiGet<Order[]>(`/api/merchants/${merchantId}/my-orders`, { auth: true })
 }
 
-export async function fetchMerchantOrders(merchantId: string): Promise<Result<any[]>> {
-  if (!merchantId) return { ok: true, data: [] }
-  return apiGet<any[]>(`/api/merchants/${merchantId}/orders`, { auth: true })
+/** 1-based, and always a slice: the whole list is not something this endpoint offers. */
+export interface OrderPage {
+  orders: any[]
+  /** Orders matching the search, before paging — what the pager is a slice of. */
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface OrderListQuery {
+  page?: number
+  pageSize?: number
+  sort?: 'created_at' | 'order_number' | 'fulfil_date' | 'total'
+  dir?: 'asc' | 'desc'
+  search?: string
+}
+
+/**
+ * One page of the merchant's orders, sorted and searched by the BACKEND (#144).
+ *
+ * This used to ask for every order the shop had ever taken and sort, search and page them here.
+ * That silently stopped working at the shop's 1000th order — PostgREST caps a response and says
+ * so only in a header nothing read — so the oldest orders became unreachable and the merchant
+ * had no way to tell. Nothing here can page past what it was sent, which is why the paging moved
+ * to where the rows are.
+ */
+export async function fetchMerchantOrders(
+  merchantId: string,
+  opts: OrderListQuery = {},
+): Promise<Result<OrderPage>> {
+  const empty = { orders: [], total: 0, page: 1, pageSize: 0 }
+  if (!merchantId) return { ok: true, data: empty }
+  const q = new URLSearchParams()
+  if (opts.page) q.set('page', String(opts.page))
+  if (opts.pageSize) q.set('pageSize', String(opts.pageSize))
+  if (opts.sort) q.set('sort', opts.sort)
+  if (opts.dir) q.set('dir', opts.dir)
+  if (opts.search?.trim()) q.set('search', opts.search.trim())
+  const qs = q.toString()
+  return apiGet<OrderPage>(`/api/merchants/${merchantId}/orders${qs ? `?${qs}` : ''}`, { auth: true })
+}
+
+/**
+ * Everything the Overview draws, computed by the backend from the shop's WHOLE history.
+ *
+ * The range and granularity are the panel's own pills, so switching one is a refetch rather than
+ * a recompute — the browser no longer holds the orders to recompute from, which is the point.
+ * A shop past the row cap used to be shown a revenue figure that was simply short, and trusted
+ * it because nothing suggested otherwise (#144).
+ */
+export async function fetchMerchantStats(
+  merchantId: string,
+  window: { days: number; granularity: 'day' | 'week' },
+): Promise<Result<MerchantStats>> {
+  return apiGet<MerchantStats>(
+    `/api/merchants/${merchantId}/stats?days=${window.days}&granularity=${window.granularity}`,
+    { auth: true },
+  )
+}
+
+/**
+ * How many orders this shop has, optionally of one status — counted by Postgres.
+ *
+ * The "new orders" badge used to be `orders.filter(…).length` over the full list, which made the
+ * most expensive read in the dashboard run on a poll from every section, and made the badge
+ * wrong past the row cap besides.
+ */
+export async function fetchOrderCount(
+  merchantId: string,
+  status?: string,
+): Promise<Result<number>> {
+  if (!merchantId) return { ok: true, data: 0 }
+  const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+  const r = await apiGet<{ count: number }>(`/api/merchants/${merchantId}/orders/count${qs}`, { auth: true })
+  return mapOk(r, d => d.count)
 }
 
 /**
@@ -629,9 +701,7 @@ export async function downloadRevenueReport(
 // True once the merchant has ≥1 order — used to lock the currency selector so
 // past orders and dashboard aggregates never silently re-denominate.
 export async function merchantHasOrders(merchantId: string): Promise<Result<boolean>> {
-  if (!merchantId) return { ok: true, data: false }
-  const r = await apiGet<{ count: number }>(`/api/merchants/${merchantId}/orders/count`, { auth: true })
-  return mapOk(r, (d) => d.count > 0)
+  return mapOk(await fetchOrderCount(merchantId), (n) => n > 0)
 }
 
 export async function setOrderStatus(orderId: string, status: string, merchantId: string): Promise<Result<any>> {
@@ -685,8 +755,9 @@ export async function fetchOrderTracking(merchantId: string, orderNumber: string
  * This used to fetch every order and group them here, on the raw `customer_wa` string. That was
  * wrong three ways at once — two spellings of one number were two customers, cancelled orders
  * counted as business, and every order with no number collapsed into one fake row called `—` —
- * and it sat on top of an orders endpoint that truncates at 1000 rows without saying so (#144).
- * All of it now happens in SQL and one pure module; see CONTEXT.md → Shop customer.
+ * and it sat on top of an orders endpoint that truncated at 1000 rows without saying so (fixed
+ * separately in #144). All of it now happens in SQL and one pure module; see CONTEXT.md → Shop
+ * customer.
  *
  * `sort` other than `recent`, and `tag`, are Pro: the backend answers `403 requires_pro`, which
  * `isRequiresPro` turns into an upgrade prompt rather than a bare error.
