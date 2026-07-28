@@ -30,6 +30,8 @@ import {
   shopCustomers, isShopCustomerSort, pickShopCustomerFields, DEFAULT_SHOP_CUSTOMER_SORT,
 } from './shopCustomers.js'
 import { shopCustomerGroups, shopCustomerRecords, upsertShopCustomer } from './shopCustomersDb.js'
+import { statsOrders, distinctCustomerCount } from './ordersDb.js'
+import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
 import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow } from './quotaWindows.js'
@@ -42,7 +44,7 @@ import { processReferralReward } from './referralRewardGrant.js'
 import { trackOrder } from './orderTracking.js'
 import { placeOrder, OrderError } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus } from './feedback.js'
-import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange } from '@bitetime/shared'
+import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
 import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
@@ -204,20 +206,97 @@ app.patch('/api/merchants/:id/slug', requireMerchantOwns, async (c) => {
 })
 
 // ── Owner-scoped reads (tenant enforced by requireMerchantOwns) ────────────────
+
+/**
+ * The merchant's order list, one page at a time (#144).
+ *
+ * This used to be an unbounded `select *`. PostgREST caps a response at `max_rows` and says so
+ * only in a `Content-Range` header nothing read, so a shop past its 1000th order was handed a
+ * partial list that looked complete — its oldest orders simply unreachable, and its revenue
+ * chart short by however much history fell off the end.
+ *
+ * The fix is not a bigger cap. It is that the caller now NAMES the window it wants and is told
+ * what that window is a slice of: `total` is the exact matched count, so a page is a page rather
+ * than a truncation wearing one's clothes. Paging, sorting and searching all happen in Postgres
+ * for the same reason — a browser cannot search rows it was never sent.
+ *
+ * Still on the REST client rather than `ordersDb.ts`: these rows are RENDERED, and they must be
+ * the same shape as the row a status PATCH hands back through the same client. Only the
+ * aggregates, which need the whole history and read four columns of it, go through the driver.
+ */
 app.get('/api/merchants/:id/orders', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
-  const { data, error } = await admin
-    .from('orders').select('*').eq('merchant_id', m.id).order('created_at', { ascending: false })
+  const parsed = parseOrderList(new URL(c.req.url).searchParams)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  const { page, pageSize, sort, dir, search } = parsed.query
+
+  let q = admin
+    .from('orders').select('*', { count: 'exact' }).eq('merchant_id', m.id)
+
+  // The three fields a merchant actually looks someone up by. `searchTerm` has already removed
+  // everything that would change this filter's meaning rather than be searched for.
+  if (search) {
+    q = q.or(
+      `order_number.ilike.%${search}%,customer_name.ilike.%${search}%,customer_wa.ilike.%${search}%`,
+    )
+  }
+
+  const from = (page - 1) * pageSize
+  const { data, error, count } = await q
+    // The tiebreak is not decoration: without a total order, two orders sharing a sort value
+    // come back in whatever order Postgres happens to yield, and page 2 can repeat a row page 1
+    // already showed. `id` is unique, so this makes the paging honest.
+    .order(sort, { ascending: dir === 'asc', nullsFirst: false })
+    .order('id', { ascending: true })
+    .range(from, from + pageSize - 1)
   if (error) return c.json({ error: 'Lookup failed' }, 500)
-  return c.json(data ?? [])
+
+  return c.json({ orders: data ?? [], total: count ?? 0, page, pageSize })
+})
+
+/**
+ * Every figure on the dashboard's Overview, computed HERE (#144).
+ *
+ * The browser used to fetch the shop's entire order table and aggregate it on the client, which
+ * meant the revenue chart was only ever as complete as the row cap allowed — and a merchant has
+ * no way to tell a wrong revenue figure from a right one. The orders now never leave the server:
+ * `statsOrders` reads them uncapped through the driver, and `computeMerchantStats` is the SAME
+ * shared module the XLSX export uses, so "booked excludes cancelled" stays stated once.
+ *
+ * Free, like the Overview it draws. The export beside it is the Pro capability, not the chart.
+ */
+app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
+  const days = Number(c.req.query('days') ?? 12)
+  // Refused rather than clamped, exactly as the export refuses — same list, same reason.
+  if (!isRevenueRange(days)) return c.json({ error: 'bad_range' }, 400)
+  const granularity = c.req.query('granularity') ?? granularityFor(days)
+  if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
+
+  const m = c.get('merchant')
+  // Vouchers are per-shop promotions, a handful of rows — the row cap is not in play, and this
+  // one stays on the REST client alongside the endpoint that serves the same rows to the
+  // Vouchers tab.
+  const [orders, customerCount, vouchers] = await Promise.all([
+    statsOrders(m.id),
+    distinctCustomerCount(m.id),
+    admin.from('vouchers').select('used_by').eq('merchant_id', m.id)
+      .then(r => (r.data ?? []).map(v => ({ usedBy: (v.used_by as unknown[]) ?? [] }))),
+  ])
+
+  // Resolved and validated once, like the export does: an unusable `merchants.timezone` would
+  // otherwise bucket the chart in the server's zone while the merchant reads it in their own.
+  const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
+  return c.json(computeMerchantStats(orders, customerCount, vouchers, new Date(), {
+    days, granularity, timeZone,
+  }))
 })
 
 /**
  * The shop's customers (#143). See CONTEXT.md → Shop customer.
  *
- * Aggregated in SQL and folded in TypeScript, which is what keeps it clear of the row cap that
- * silently truncates the orders endpoint above (#144) — a shop past its 1000th order still gets
- * a complete customer list here.
+ * Aggregated in SQL and folded in TypeScript, which is what keeps it clear of the PostgREST row
+ * cap — a shop past its 1000th order still gets a complete customer list here. This was the
+ * first escape from that cap; the orders endpoint above took its own in #144.
  *
  * The plan gate is CONDITIONAL, so it cannot be `requirePro` middleware: the list itself is free
  * (it shipped to basic shops before Pro existed and withdrawing it would be a regression), while
@@ -284,10 +363,31 @@ app.put('/api/merchants/:id/customers/:phoneKey', requireMerchantOwns, requirePr
   return c.json(await upsertShopCustomer(m.id, key, picked.fields))
 })
 
+/**
+ * How many orders this shop has, optionally of one status.
+ *
+ * `head: true` with an exact count, so the answer is a number Postgres computed and never a
+ * length the caller measured on a list it was handed — which is what the "new orders" badge used
+ * to do, by fetching every order the shop had ever taken and filtering it in the browser. Past
+ * the row cap that badge was simply wrong, and it was also the most expensive read in the
+ * dashboard, running on a poll from every section.
+ */
 app.get('/api/merchants/:id/orders/count', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
-  const { count, error } = await admin
+  const status = c.req.query('status')
+  // Refused, not ignored: a filter we silently drop answers a bigger question than the one asked.
+  if (status !== undefined && !ORDER_STATUSES.includes(status)) {
+    return c.json({ error: 'invalid_status' }, 400)
+  }
+
+  let q = admin
     .from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', m.id)
+  // `status` is nullable and an absent status MEANS 'new' — the storefront writes the column, but
+  // rows predating it do not have one, and the dashboard has always read them as new.
+  if (status === 'new') q = q.or('status.is.null,status.eq.new')
+  else if (status !== undefined) q = q.eq('status', status)
+
+  const { count, error } = await q
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   return c.json({ count: count ?? 0 })
 })
@@ -328,8 +428,9 @@ app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, requirePro, async
   if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
 
   const m = c.get('merchant')
-  const { data, error } = await admin.from('orders').select('*').eq('merchant_id', m.id)
-  if (error) return c.json({ error: 'Lookup failed' }, 500)
+  // Through the driver, uncapped: a spreadsheet of a shop's accounting that quietly stopped at
+  // its 1000th order would be worse than the chart doing it, because it gets filed (#144).
+  const orders = await statsOrders(m.id)
 
   const now = new Date()
   // Resolved ONCE, here, and validated — not left to each helper's own fallback. `zoneClock`
@@ -338,10 +439,11 @@ app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, requirePro, async
   // filename in Kuala Lumpur: the file disagreeing with itself, which is the failure this
   // feature's time-zone work exists to prevent.
   const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
-  const windowed = ordersInWindow(data ?? [], now, days, timeZone)
+  const windowed = ordersInWindow(orders, now, days, timeZone)
   const totals = windowTotals(windowed)
   // `productTop: Infinity` — a spreadsheet lists every product, unlike the six-wedge donut.
-  const stats = computeMerchantStats(windowed, [], [], [], now, {
+  // The customer count is 0 because no sheet shows it; the export's KPI block is `windowTotals`.
+  const stats = computeMerchantStats(windowed, 0, [], now, {
     days, granularity, timeZone, productTop: Infinity,
   })
 

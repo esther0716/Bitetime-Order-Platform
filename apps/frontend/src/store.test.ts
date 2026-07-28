@@ -100,6 +100,7 @@ import {
   upsertMerchantSecret,
   placeOrder,
   fetchMerchantOrders,
+  fetchOrderCount,
   fetchMyOrdersAtShop,
   saveCustomerDetails,
   requestPasswordReset,
@@ -790,23 +791,25 @@ describe('placeOrder', () => {
   })
 })
 
-// ── fetchMerchantOrders (Task 5.2) ────────────────────────────────────────────
+// ── fetchMerchantOrders (Task 5.2; paged since #144) ──────────────────────────
 
 describe('fetchMerchantOrders', () => {
+  const page = { orders: [{ id: 'o2' }, { id: 'o1' }], total: 1200, page: 1, pageSize: 15 }
+
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns { ok:true, data:[] } immediately for falsy merchantId', async () => {
+  it('returns an empty page immediately for falsy merchantId', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchMerchantOrders(null as any)).toEqual({ ok: true, data: [] })
-    expect(await fetchMerchantOrders('')).toEqual({ ok: true, data: [] })
+    const empty = { ok: true, data: { orders: [], total: 0, page: 1, pageSize: 0 } }
+    expect(await fetchMerchantOrders(null as any)).toEqual(empty)
+    expect(await fetchMerchantOrders('')).toEqual(empty)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('GETs /api/merchants/:id/orders with a bearer token and returns the list', async () => {
+  it('GETs /api/merchants/:id/orders with a bearer token and returns the page', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    const rows = [{ id: 'o2', merchant_id: 'm1' }, { id: 'o1', merchant_id: 'm1' }]
-    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => rows })
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => page })
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await fetchMerchantOrders('m1')
@@ -814,13 +817,70 @@ describe('fetchMerchantOrders', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/orders$/)
     expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(result).toEqual({ ok: true, data: rows })
+    // `total` is the shop's whole matched count, not the page's length — it is what tells the
+    // merchant they are looking at a slice, which the old unbounded list never did (#144).
+    expect(result).toEqual({ ok: true, data: page })
+  })
+
+  it('sends the page, size, sort, direction and search it was given', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => page })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchMerchantOrders('m1', { page: 3, pageSize: 15, sort: 'total', dir: 'asc', search: ' ah meng ' })
+
+    const url = new URL(fetchMock.mock.calls[0][0], 'http://x')
+    expect(url.searchParams.get('page')).toBe('3')
+    expect(url.searchParams.get('pageSize')).toBe('15')
+    expect(url.searchParams.get('sort')).toBe('total')
+    expect(url.searchParams.get('dir')).toBe('asc')
+    expect(url.searchParams.get('search')).toBe('ah meng')
+  })
+
+  it('omits a blank search rather than asking for the empty string', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => page })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchMerchantOrders('m1', { search: '   ' })
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/orders$/)
   })
 
   it('returns { ok:false } on a failed request', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
     expect((await fetchMerchantOrders('m1')).ok).toBe(false)
+  })
+})
+
+// ── fetchOrderCount (#144: the badge stops measuring a list it was handed) ─────
+
+describe('fetchOrderCount', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('GETs the count endpoint and unwraps the number', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ count: 1234 }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await fetchOrderCount('m1')).toEqual({ ok: true, data: 1234 })
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/merchants\/m1\/orders\/count$/)
+  })
+
+  it('passes a status through so Postgres does the filtering', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ count: 3 }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await fetchOrderCount('m1', 'new')).toEqual({ ok: true, data: 3 })
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/orders\/count\?status=new$/)
+  })
+
+  it('returns 0 without asking for a falsy merchantId', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await fetchOrderCount('')).toEqual({ ok: true, data: 0 })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

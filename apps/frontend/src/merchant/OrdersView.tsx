@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import type { Lang, Translate } from '../types'
 import { useSession } from '../SessionContext'
-import { fetchMerchantOrders } from '../store'
+import { fetchMerchantOrders, type OrderListQuery } from '../store'
 import { formatMoney } from '../currency'
 import { formatCalendarDate } from '../orderDate'
 import { fmtDateTime } from '../merchantDate'
@@ -100,23 +100,61 @@ const columns: ColumnDef<any>[] = [
   },
 ]
 
+const PAGE_SIZE = 15
+
+/** The sorts the backend offers; anything else is a 400, so the table may not invent one. */
+type OrderSort = NonNullable<OrderListQuery['sort']>
+const SORTABLE: readonly string[] = ['created_at', 'order_number', 'fulfil_date', 'total']
+
+/**
+ * The merchant's orders, PAGED BY THE BACKEND (#144).
+ *
+ * This used to fetch every order the shop had ever taken and page, sort and search them in the
+ * browser. PostgREST caps a response at 1000 rows and reports it only in a header nothing read,
+ * so past a shop's 1000th order the oldest orders were simply unreachable — no error, no empty
+ * state, just a list that ended early and looked complete. Paging cannot fix that from this side:
+ * a table cannot reach rows it was never sent. So the paging, the sort and the search all moved
+ * to the query, and the count comes back with every page so the merchant can see what they are
+ * looking at a slice of.
+ */
 export default function OrdersView(
   { readOnly = false, onOrdersChanged }: { readOnly?: boolean; onOrdersChanged?: () => void } = {},
 ) {
   const { t, lang, merchant } = useSession()
   const [orders, setOrders] = useState<any[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [failed, setFailed] = useState(false)
   const [selected, setSelected] = useState<any | null>(null)
 
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'created_at', desc: true }])
+
   const merchantId = merchant!.id
+  // The table's own sort state is the source; a column it cannot sort on server-side would be a
+  // 400, so it falls back to the default rather than asking for something the backend refuses.
+  const active = sorting[0]
+  const sort = (active && SORTABLE.includes(active.id) ? active.id : 'created_at') as OrderSort
+  const dir = active?.desc === false ? 'asc' : 'desc'
+
   const load = useCallback(() => {
-    fetchMerchantOrders(merchantId).then(r => { if (r.ok) setOrders(r.data) })
-  }, [merchantId])
+    fetchMerchantOrders(merchantId, { page, pageSize: PAGE_SIZE, sort, dir, search }).then(r => {
+      if (!r.ok) { setFailed(true); return }
+      setFailed(false)
+      setOrders(r.data.orders)
+      setTotal(r.data.total)
+    })
+  }, [merchantId, page, sort, dir, search])
 
-  useEffect(() => { load() }, [load])
+  // Debounced so typing a name is one request per pause, not one per keystroke — the same shape
+  // the Customers tab uses for the same reason.
+  useEffect(() => {
+    const id = setTimeout(load, search ? 250 : 0)
+    return () => clearTimeout(id)
+  }, [load, search])
 
-  // The list a merchant is reading must be the list that exists. Replacing `orders` wholesale is
-  // safe for the table's sort and page: the column defs are declared once outside this component
-  // (see the note above them) precisely so a refetch cannot reset them.
+  // The list a merchant is reading must be the list that exists. The poll refetches the page they
+  // are on, so an order arriving does not shuffle them somewhere else in the history.
   usePoll(load)
 
   function patchOrder(updated: any) {
@@ -126,7 +164,20 @@ export default function OrdersView(
     onOrdersChanged?.()
   }
 
+  // Every narrowing returns to page 1: staying on page 4 of a list that now has one page shows
+  // an empty table, which reads as "no orders".
+  const narrow = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPage(1) }
+
   const meta: OrderTableMeta = { t, lang, currency: merchant?.currency }
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  if (failed) {
+    return (
+      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-center text-sm text-rose-muted">
+        {t('Could not load your orders. Try again in a moment.', '无法加载订单，请稍后再试。')}
+      </div>
+    )
+  }
 
   if (orders === null) {
     return (
@@ -143,12 +194,30 @@ export default function OrdersView(
         data={orders}
         meta={meta}
         onRowClick={setSelected}
-        pageSize={15}
+        pageSize={PAGE_SIZE}
         searchPlaceholder={t('Search orders…', '搜索订单…')}
         emptyText={t('No orders yet.', '暂无订单。')}
         prevLabel={t('Previous', '上一页')}
         nextLabel={t('Next', '下一页')}
+        server={{
+          page,
+          pageCount,
+          onPageChange: setPage,
+          sorting,
+          onSortingChange: narrow(setSorting),
+          search,
+          onSearchChange: narrow(setSearch),
+        }}
       />
+
+      {/* The count, stated. A merchant reading fifteen rows should be able to tell fifteen
+          orders from the first fifteen of nine hundred — which the old unbounded list, cut off
+          at a thousand without saying so, gave them no way to do. */}
+      <p className="pt-3 text-[12px] text-text-tertiary">
+        {search.trim()
+          ? t(`${total} matching order${total === 1 ? '' : 's'}`, `${total} 笔匹配订单`)
+          : t(`${total} order${total === 1 ? '' : 's'}`, `${total} 笔订单`)}
+      </p>
 
       <OrderDetailSheet
         order={selected}

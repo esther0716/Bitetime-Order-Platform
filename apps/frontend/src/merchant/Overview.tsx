@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ReceiptText, Wallet, Users, TrendingUp, Download, Lock, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import type { Order, Product, Voucher } from '../types'
 import { useSession } from '../SessionContext'
-import { fetchMerchantOrders, lookupProducts, fetchShopCustomers, fetchMerchantVouchers, downloadRevenueReport } from '../store'
+import { fetchMerchantStats, downloadRevenueReport } from '../store'
 import { SkeletonText } from '../components/Loaders'
 import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from '../components/charts/DashCharts'
-import { computeMerchantStats, granularityFor, REVENUE_RANGES, type Granularity, type RevenueRange } from '@bitetime/shared'
+import { granularityFor, REVENUE_RANGES, type Granularity, type MerchantStats, type RevenueRange } from '@bitetime/shared'
 import { useProAccess, isRequiresPro } from '../plan'
 import { useUpgradeNav } from './UpgradeNav'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -16,13 +15,6 @@ import ShareStorefront from './ShareStorefront'
 
 const STAT_ICON = { size: 15, strokeWidth: 1.75 }
 
-
-type OverviewRows = {
-  orders: Order[]
-  products: Product[]
-  customers: { orderCount?: number }[]
-  vouchers: Voucher[]
-}
 
 function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
   return (
@@ -129,7 +121,8 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
 
 export default function Overview() {
   const { t, merchant } = useSession()
-  const [rows, setRows] = useState<OverviewRows | null>(null)
+  const [stats, setStats] = useState<MerchantStats | null>(null)
+  const [failed, setFailed] = useState(false)
   const [rangeDays, setRangeDays] = useState<RevenueRange>(12)
   // null = follow the default for the range. A merchant who picks a granularity keeps it
   // across range changes: they asked for daily 60 days, so switching to 90 shouldn't
@@ -140,42 +133,47 @@ export default function Overview() {
   // is locked once ≥1 order exists, so totals never mix units.
   const money = (n: number) => formatMoney(n, merchant?.currency)
 
+  // Every figure here is now computed by the backend, over the shop's WHOLE order history — the
+  // browser used to fetch the orders and aggregate them itself, which meant the chart was only
+  // ever as complete as PostgREST's row cap allowed and said nothing when it wasn't (#144).
+  //
+  // So a range or granularity switch is a REFETCH, not a recompute: the orders it would recompute
+  // from are no longer here, and shipping them back just to re-bucket them is the thing this
+  // change exists to stop.
+  //
+  // The shop's own zone still decides which day an order falls on — the backend resolves it from
+  // `merchants.timezone`, so a merchant reading their chart abroad sees their shop's days.
   useEffect(() => {
     const id = merchant?.id
     if (!id) return
     let active = true
-    Promise.all([
-      // All four are on the Result convention (#122); this stats panel only displays, so it
-      // collapses could-not-ask to `[]` at the call site.
-      fetchMerchantOrders(id).then(r => (r.ok ? r.data : [])),
-      lookupProducts(id).then(r => (r.ok ? r.data : [])),
-      // Only the LENGTH is read (the customer-count KPI), and it is now the backend's deduped
-      // count rather than a browser-side grouping on the raw WhatsApp string (#143) — so the
-      // card stops counting one person twice for typing their number two ways.
-      fetchShopCustomers(id).then(r => (r.ok ? r.data.customers.map(c => ({ orderCount: c.bookedOrders })) : [])),
-      fetchMerchantVouchers(id).then(r => (r.ok ? r.data : [])),
-    ]).then(([orders, products, customers, vouchers]) => {
-      if (active) setRows({ orders, products, customers, vouchers })
+    fetchMerchantStats(id, { days: rangeDays, granularity }).then(r => {
+      if (!active) return
+      // A could-not-ask must NOT render as zeroes. Collapsing failure to empty is exactly how a
+      // merchant comes to trust a revenue figure that isn't one, which is the defect behind #144
+      // — the row cap was only how it happened.
+      if (!r.ok) { setFailed(true); return }
+      setFailed(false)
+      setStats(r.data)
     })
     return () => { active = false }
-  }, [merchant?.id])
-
-  // Range and granularity switches recompute from the rows already in hand — no refetch.
-  // The shop's own zone decides which day an order falls on, not the browser's: the Pro export
-  // builds this same series on a UTC server, and a merchant reading their chart abroad should
-  // still see their shop's days.
-  const stats = useMemo(
-    () => rows && computeMerchantStats(
-      rows.orders, rows.products, rows.customers, rows.vouchers, new Date(),
-      { days: rangeDays, granularity, timeZone: merchant?.timezone },
-    ),
-    [rows, rangeDays, granularity, merchant?.timezone],
-  )
+  }, [merchant?.id, rangeDays, granularity])
 
   const statusLabel = (s: string) => ({
     new: t('New', '新订单'), preparing: t('Preparing', '准备中'), ready: t('Ready', '待取'),
     completed: t('Completed', '已完成'), cancelled: t('Cancelled', '已取消'),
   } as Record<string, string>)[s] ?? s
+
+  // Said out loud rather than drawn as an empty chart: a merchant reading zeroes has no way to
+  // tell "no sales" from "we could not ask".
+  if (failed) return (
+    <div className="flex flex-col gap-5">
+      <ShareStorefront />
+      <div className="rounded-xl border-[1.5px] border-rose-border bg-surface-raised px-5 py-6 text-center text-sm text-rose-muted">
+        {t('Could not load your figures. Try again in a moment.', '无法加载数据，请稍后再试。')}
+      </div>
+    </div>
+  )
 
   if (!stats) return (
     <div className="flex flex-col gap-5">

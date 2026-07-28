@@ -72,6 +72,22 @@ The promo's end-of-day is in the timezone of the browser the **merchant** set it
 
 The flow that collects a cart and customer details and commits an order: `collect → priceOrder → placeOrder → notifyOrder`. The multi-tenant **Storefront** (`store/Storefront.tsx`) is the only intake path; the legacy single-tenant order form has been deleted. `notifyOrder` is a single post-commit call that fans out to two recipients — see *Order notifications*. Every way this flow can say no is named — see *Refusal* below.
 
+## Merchant order reads
+
+How the dashboard is allowed to ask for a shop's orders. Three shapes, and which one a caller gets is decided by what it is going to *do* with the answer.
+
+**Nothing may ask for "all the orders".** PostgREST caps every response at `max_rows` (1000, `apps/backend/supabase/config.toml`) and reports the truncation only in a `Content-Range` header. The dashboard's orders endpoint was an unbounded `select *`, so every screen built on it silently stopped seeing a shop's oldest history at its 1000th order — the order list could not reach it, the revenue chart did not count it, and the "new orders" badge measured a list that had already been cut (#144). No error, no empty state, and a merchant making decisions on a revenue figure that was simply short. Production's cap may be a different number; the failure is the same at any number, which is why the rule is about the *shape of the request* and not about the value.
+
+So:
+
+**A page, when rows are rendered.** `GET /api/merchants/:id/orders` takes `page`, `pageSize`, `sort`, `dir` and `search`, and answers `{ orders, total, page, pageSize }`. `total` is the exact matched count, so the caller can tell a page from the whole — a bounded window the caller *named* is not a truncation. Sorting and searching run in Postgres for the same reason the paging does: a browser cannot search rows it was never sent. The sort column is a whitelist and an unknown one is a **400**, never a silent fall back to `created_at` — a list ordered by something other than what was asked is the same defect in a smaller costume. Paging is a **total** order (`sort`, then `id`), or page 2 can repeat a row from page 1. This path stays on the REST client because these rows are rendered and must match the row a status `PATCH` hands back.
+
+**An aggregate, when only a number is wanted.** `GET /api/merchants/:id/stats` computes the whole Overview server-side with `computeMerchantStats` — the same shared module the XLSX export uses, so "booked excludes cancelled" stays stated once. `GET /api/merchants/:id/orders/count` answers with a count Postgres did. Neither ships an order row to the browser; a chart is not a reason to send someone a thousand rows.
+
+**The driver, when an aggregate needs the whole history.** `ordersDb.ts` reads through `db.ts`, which has no row cap, and selects only the four columns the stats module reads. The KPI cards are all-time and the month-over-month deltas need last month as well as this one, so there is no window that could be pushed into SQL without answering a different question. This is the same escape the customer list took in #143 (`shopCustomersDb.ts`) — SQL groups, TypeScript decides. Like everything on `db.ts` it is **RLS-exempt**: `requireMerchantOwns` on the route is what makes the `merchant_id` filter true.
+
+**A could-not-ask is not a zero.** Overview and the order list say so on screen rather than rendering an empty chart or an empty table. Collapsing a failed read to `[]` is how a merchant comes to trust a number that is not one — the row cap was only how it happened.
+
 ## Refusal
 
 A reason the backend would not take an order or price a delivery, named by a **wire code** the customer's browser can act on — as opposed to a bug, which carries no code and is never dressed up as one. The vocabulary is `packages/shared/src/refusal.ts`: the codes, what each one means, and the HTTP status it carries.
