@@ -11,6 +11,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '..
 import { REFUNDS_ANCHOR } from '../legal/anchors'
 import { FAQ } from './faq'
 import { FEATURES } from './features'
+import { useLandingStructuredData } from './structuredData'
 import { cn } from '../lib/utils'
 import {
   GrainOverlay,
@@ -49,8 +50,11 @@ const sectionTitle =
   'font-heading text-2xl font-medium text-ink text-center mb-10'
 
 export default function Landing() {
-  const { t, account, role, loading } = useSession()
+  const { t, lang, account, role, loading } = useSession()
   const { pricing } = usePlatformPricing()
+  // Schema.org markup for this page only, in the language it is currently showing. See
+  // structuredData.ts for why it is not a static block in index.html.
+  useLandingStructuredData(lang)
   const [menuOpen, setMenuOpen] = useState(false)
   const [billing, setBilling] = useState('monthly') // 'monthly' | 'yearly'
 

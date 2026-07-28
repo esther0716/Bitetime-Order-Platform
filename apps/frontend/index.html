@@ -17,9 +17,18 @@
     <!-- Link previews on Instagram / WhatsApp / Facebook.
          og:image must be absolute — most scrapers silently drop relative
          URLs. No og:url: this is a single-HTML SPA (vercel.json rewrites
-         every path to this file), so a hardcoded canonical URL would be
-         wrong on every route except the homepage — notably /s/:slug shop
-         links. Without the tag, scrapers fall back to the fetched URL. -->
+         every path to this file), so a hardcoded URL here would be wrong
+         on every route except the homepage — notably /s/:slug shop
+         links. Without the tag, scrapers fall back to the fetched URL.
+
+         The <link rel="canonical"> that search engines want has the same
+         problem and cannot live here either — it is written per route at
+         runtime instead (src/canonical.ts), which works for Google
+         because it renders the page and would NOT work here, because
+         link-preview scrapers do not run JavaScript. Same reason the
+         Schema.org JSON-LD is injected by the landing route rather than
+         parked in this file: it would otherwise describe every page.
+         See src/marketing/structuredData.ts. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="TinyOrder" />
     <meta property="og:title" content="TinyOrder — Sell your food online" />
