@@ -25,6 +25,11 @@ import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
 import { signUpCustomer, isDuplicateEmailError } from './customerSignup.js'
 import { createSlidingWindow } from './rateLimit.js'
 import { clientIp } from './clientIp.js'
+import { phoneKey } from './phone.js'
+import {
+  shopCustomers, isShopCustomerSort, pickShopCustomerFields, DEFAULT_SHOP_CUSTOMER_SORT,
+} from './shopCustomers.js'
+import { shopCustomerGroups, shopCustomerRecords, upsertShopCustomer } from './shopCustomersDb.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
 import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow } from './quotaWindows.js'
@@ -205,6 +210,55 @@ app.get('/api/merchants/:id/orders', requireMerchantOwns, async (c) => {
     .from('orders').select('*').eq('merchant_id', m.id).order('created_at', { ascending: false })
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   return c.json(data ?? [])
+})
+
+/**
+ * The shop's customers (#143). See CONTEXT.md → Shop customer.
+ *
+ * Aggregated in SQL and folded in TypeScript, which is what keeps it clear of the row cap that
+ * silently truncates the orders endpoint above (#144) — a shop past its 1000th order still gets
+ * a complete customer list here.
+ *
+ * The plan gate is CONDITIONAL, so it cannot be `requirePro` middleware: the list itself is free
+ * (it shipped to basic shops before Pro existed and withdrawing it would be a regression), while
+ * sorting and tag filtering are the Pro capability. Same shape as the product upsert's promo
+ * gate — inside the handler, once we know what the request is actually asking for.
+ */
+app.get('/api/merchants/:id/customers', requireMerchantOwns, async (c) => {
+  const m = c.get('merchant')
+  const q = new URL(c.req.url).searchParams
+
+  const sort = q.get('sort') ?? DEFAULT_SHOP_CUSTOMER_SORT
+  if (!isShopCustomerSort(sort)) return c.json({ error: 'invalid_sort' }, 400)
+  const tag = q.get('tag') ?? undefined
+
+  if ((sort !== DEFAULT_SHOP_CUSTOMER_SORT || tag !== undefined) && !(await hasProAccess(c))) {
+    return c.json({ error: REQUIRES_PRO }, 403)
+  }
+
+  const [groups, records] = await Promise.all([shopCustomerGroups(m.id), shopCustomerRecords(m.id)])
+  return c.json(shopCustomers(groups, records, {
+    now: new Date(),
+    sort,
+    tag,
+    search: q.get('search') ?? undefined,
+    page: Number(q.get('page')) || undefined,
+    pageSize: Number(q.get('pageSize')) || undefined,
+  }))
+})
+
+// Writing is wholly Pro, so the gate is middleware here rather than a branch. `phoneKey` on the
+// path parameter is a SHAPE check, not a lookup: a key with no orders behind it is a harmless
+// row that never joins, but a path segment that is not a key at all is a caller bug.
+app.put('/api/merchants/:id/customers/:phoneKey', requireMerchantOwns, requirePro, async (c) => {
+  const m = c.get('merchant')
+  const key = phoneKey(c.req.param('phoneKey'))
+  if (key === null || key !== c.req.param('phoneKey')) return c.json({ error: 'invalid_phone_key' }, 400)
+
+  const picked = pickShopCustomerFields(await c.req.json().catch(() => ({})))
+  if (!picked.ok) return c.json({ error: 'invalid_body' }, 400)
+
+  return c.json(await upsertShopCustomer(m.id, key, picked.fields))
 })
 
 app.get('/api/merchants/:id/orders/count', requireMerchantOwns, async (c) => {
@@ -1146,6 +1200,12 @@ app.post('/api/orders', async (c) => {
     typeof b.merchantId !== 'string' || !b.merchantId ||
     typeof b.customerName !== 'string' ||
     typeof b.customerWa !== 'string' ||
+    // A number with no digits in it is not a number. The submit gate has always required one
+    // and this door only checked the TYPE, so `customerWa: ''` placed a real order — a rule
+    // the form enforced and the door did not. It matters more since #143: the phone is what
+    // identifies a shop customer, so an order with no usable number belongs to nobody and
+    // shows up only as an unattributed count. Refuse it where it is cheap to refuse.
+    phoneKey(b.customerWa) === null ||
     mode === null ||
     !isCart(b.cart) ||
     quotedTotal === null

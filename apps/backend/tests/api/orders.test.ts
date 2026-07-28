@@ -554,6 +554,43 @@ describe('POST /api/orders', () => {
     expect(order.user_id).toBe(customerId)
   })
 
+  // ── The shop-customer key: stamped here, from the same rule /track matches on ──
+  //
+  // #143. This column is the identity every shop customer is grouped by, so it is stamped at
+  // intake rather than derived on read — see docs/adr/0007. The rule is `phoneKey`'s and must
+  // stay `phoneKey`'s: a second normalisation here is how the customer list and guest order
+  // tracking would come to disagree about who is who.
+
+  it('stamps the customer phone key from the number the order carried', async () => {
+    await post(body(shop, productId, { customerWa: '+60 12-345 6789', fulfilDate: tomorrowInShopZone() }))
+    const [order] = await ordersOf(shop)
+
+    expect(order.customer_phone_key).toBe('23456789')
+  })
+
+  it('stamps two spellings of one number to one key, so they are one customer', async () => {
+    await post(body(shop, productId, { customerWa: '+60 12-345 6789', fulfilDate: tomorrowInShopZone() }))
+    await post(body(shop, productId, { customerWa: '0123456789', fulfilDate: tomorrowInShopZone() }))
+    const keys = (await ordersOf(shop)).map(o => o.customer_phone_key)
+
+    expect(keys).toEqual(['23456789', '23456789'])
+  })
+
+  it('refuses an order whose WhatsApp number is blank — the form requires one and so must the door', async () => {
+    const res = await post(body(shop, productId, { customerWa: '   ', fulfilDate: tomorrowInShopZone() }))
+
+    expect(res.status).toBe(400)
+    expect(await errorOf(res)).toBe('invalid_body')
+    expect(await ordersOf(shop)).toEqual([])
+  })
+
+  it('refuses an order whose WhatsApp number holds no digits at all', async () => {
+    const res = await post(body(shop, productId, { customerWa: 'call me', fulfilDate: tomorrowInShopZone() }))
+
+    expect(res.status).toBe(400)
+    expect(await ordersOf(shop)).toEqual([])
+  })
+
   // ── Vouchers: the claim commits with the order, or not at all ───────────────
   //
   // Every case here signs in. A voucher REQUIRES AN ACCOUNT (#72): the one-per-customer key is

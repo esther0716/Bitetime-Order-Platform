@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeMerchantStats, ordersInWindow, windowTotals, isRevenueRange, REVENUE_RANGES } from './merchantStats.js'
+import { computeMerchantStats, ordersInWindow, windowTotals, isBooked, isRevenueRange, REVENUE_RANGES } from './merchantStats.js'
 import type { StatsOrder } from './merchantStats.js'
 
 const NOW = new Date('2026-06-15T12:00:00')
@@ -299,6 +299,26 @@ describe('windowTotals', () => {
     const s = computeMerchantStats(orders, [], [], [], NOW, { days: 90 })
     const w = windowTotals(ordersInWindow(orders, NOW, 90))
     expect(w).toEqual({ totalOrders: s.totalOrders, revenue: s.revenue, avgOrder: s.avgOrder })
+  })
+})
+
+describe('isBooked', () => {
+  it('books every status except cancelled', () => {
+    for (const status of ['new', 'preparing', 'ready', 'completed']) {
+      expect(isBooked(order({ status }))).toBe(true)
+    }
+    expect(isBooked(order({ status: 'cancelled' }))).toBe(false)
+  })
+
+  it('books an order with no status at all — a fresh order is money in the pipeline', () => {
+    expect(isBooked(order({ status: undefined }))).toBe(true)
+    expect(isBooked(order({ status: null as unknown as string }))).toBe(true)
+  })
+
+  it('is the rule windowTotals already charges by', () => {
+    const orders = [order({ total: 30 }), order({ total: 99, status: 'cancelled' })]
+    const booked = orders.filter(isBooked)
+    expect(windowTotals(orders).revenue).toBe(booked.reduce((s, o) => s + Number(o.total), 0))
   })
 })
 
