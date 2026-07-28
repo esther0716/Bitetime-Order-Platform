@@ -192,7 +192,7 @@ export default function Landing() {
         <HeroStagger>
           <HeroItem>
             <p className="font-heading italic text-[15px] text-rose-muted mb-5">
-              {t('We know what it\'s like to run a kitchen out of your DMs.', '我们懂，用聊天窗口接单有多累。')}
+              {t('We know what it\'s like to run a business out of your DMs.', '我们懂，用聊天窗口接单有多累。')}
             </p>
           </HeroItem>
           <HeroItem>
@@ -241,7 +241,7 @@ export default function Landing() {
           </HeroItem>
           <HeroItem>
             <p className="mt-6 mb-12 text-[13px] text-rose-muted">
-              {t('Made for home kitchens and small food businesses.', '专为家厨与小型食品业者打造。')}
+              {t('Made for home-run and small businesses.', '专为家庭与小型生意打造。')}
             </p>
           </HeroItem>
           <HeroItem>
@@ -261,7 +261,7 @@ export default function Landing() {
             <span className="font-heading text-[28px] font-medium text-clay-border leading-none shrink-0 w-9">01</span>
             <div>
               <strong className="text-oxblood font-semibold">{t('Create your shop', '创建你的店铺')}</strong>
-              <span>{t(' — pick a name, describe what you bake.', '——取个名字，介绍你的产品。')}</span>
+              <span>{t(' — pick a name, describe what you make.', '——取个名字，介绍你的产品。')}</span>
             </div>
           </li>
           <li className="flex items-baseline gap-5 text-[15px] leading-[1.6] text-ink">
@@ -286,12 +286,12 @@ export default function Landing() {
       <section className="px-8 py-16 max-w-[860px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
         <h2 className={sectionTitle}>
-          {t('Built for home kitchens and food businesses', '专为家厨与食品业者打造')}
+          {t('Built for small businesses that sell direct', '专为直接面向顾客的小生意打造')}
         </h2>
         <p className="-mt-6 mb-10 text-[15px] leading-[1.75] text-ink-soft text-center max-w-[620px] mx-auto">
           {t(
-            'TinyOrder is for people who cook: home bakers taking weekend pre-orders, home kitchens running a weekly menu, small food businesses that have outgrown a spreadsheet and a chat group. You do not need a website, a designer or a developer — if you can share a link, you can take orders online.',
-            'TinyOrder 是为下厨的人打造的：接周末预订的家庭烘焙师、每周出菜单的家厨，以及已经用不下去表格和聊天群的小型食品业者。你不需要网站、设计师或工程师——只要会分享链接，就能在线接单。',
+            'TinyOrder is for people who make and sell their own things: home bakers taking weekend pre-orders, makers running a weekly drop, small shops that have outgrown a spreadsheet and a chat group. You do not need a website, a designer or a developer — if you can share a link, you can take orders online.',
+            'TinyOrder 是为自己做、自己卖的人打造的：接周末预订的家庭烘焙师、每周上新的手作卖家，以及已经用不下去表格和聊天群的小店。你不需要网站、设计师或工程师——只要会分享链接，就能在线接单。',
           )}
         </p>
         <dl className="grid [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] gap-x-12 gap-y-10 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-8">
@@ -467,7 +467,7 @@ export default function Landing() {
       <section id="faq" className="border-t border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className="font-heading text-[26px] text-oxblood text-center mb-2 max-[600px]:text-[22px]">
-            {t('Questions from food shop owners, answered', '食品店主常见问题')}
+            {t('Questions from shop owners, answered', '店主常见问题')}
           </h2>
           <p className="text-sm text-rose-muted text-center mb-9 max-w-[460px] mx-auto">
             {t(
@@ -499,7 +499,7 @@ export default function Landing() {
           {t('Every order lost in a chat thread is a sale you\'ll never see.', '每一笔淹没在聊天里的订单，都是流失的生意。')}
         </h2>
         <p className="font-heading italic text-[18px] text-ink mb-6 max-w-[520px] mx-auto">
-          {t('Become a real, professional food business — orders in one place, more time to bake.', '成为真正专业的美食生意——订单集中一处，专注烘焙。')}
+          {t('Become a real, professional business — orders in one place, more time to make.', '成为真正专业的生意——订单集中一处，专注做好产品。')}
         </p>
         <MagneticButton to="/merchant/signup" className={ctaPrimary}>
           {t('Start your shop', '开始建店')}
@@ -511,7 +511,7 @@ export default function Landing() {
       <footer className="mt-auto px-8 py-6 border-t border-clay-border flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-text-tertiary">
         <Wordmark className="h-[18px]" />
         <span className="text-clay-border">·</span>
-        <span>{t('Built for food businesses', '专为食品业者打造')}</span>
+        <span>{t('Built for small businesses', '专为小生意打造')}</span>
         {/* aria-hidden, and not clay-border: that colour fails AA on cream (DESIGN.md), so it is
             a stroke colour rather than a text one. */}
         <span aria-hidden="true">·</span>
