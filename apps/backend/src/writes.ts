@@ -180,6 +180,56 @@ export function pickProductFields(body: any): Record<string, unknown> {
   return out
 }
 
+const PROMO_FIELDS = ['promo_price', 'promo_limit', 'promo_end'] as const
+
+/**
+ * Is one promo column's submitted value the same promo as the stored one?
+ *
+ * The two sides do NOT arrive in the same shape, which is the whole reason this is a function and
+ * not `===`. PostgREST hands back `numeric` as a string (`'8.00'`) and `timestamptz` with a
+ * `+00:00` offset, while the browser sends a JSON number and a `Z` ISO string. A strict compare
+ * would call every one of those a change, which is a 403 on an ordinary rename.
+ *
+ * NOTHING here tests truthiness. `promo_price: 0` is a real promo (a free item), so 0 and null are
+ * different promos in both directions, and so are 0 and a missing cap.
+ *
+ * Unreadable input fails CLOSED — "not a number I can compare" is a CHANGE, never "unchanged".
+ * The alternative would let a junk value slip past the gate to Postgres's own constraints, which
+ * answer with a 500, not with an entitlement decision.
+ */
+function samePromoValue(key: string, submitted: unknown, stored: unknown): boolean {
+  const s = stored ?? null
+  if (submitted === null && s === null) return true
+  if (submitted === null || s === null) return false
+  if (key === 'promo_end') {
+    const a = Date.parse(String(submitted)), b = Date.parse(String(s))
+    return Number.isFinite(a) && Number.isFinite(b) && a === b
+  }
+  const a = Number(submitted), b = Number(s)
+  return Number.isFinite(a) && Number.isFinite(b) && a === b
+}
+
+/**
+ * Does this product upsert CHANGE the promo, versus the row already in the table? (#145)
+ *
+ * This is what the Pro gate on `PUT /api/merchants/:id/products/:productId` asks. It used to ask
+ * whether a promo column was PRESENT, and presence is the wrong question: a shop that dropped from
+ * pro to basic still has promo columns on its rows, so a client resubmitting the whole row — which
+ * the dashboard does — was refused an ordinary name edit. The workaround (omit the columns and
+ * trust the upsert to leave them alone) put the shop's promo one payload mistake away from being
+ * silently cleared, which is the exact "success toast, wrong data" failure the refuse-don't-strip
+ * rule exists to prevent.
+ *
+ * A column ABSENT from `fields` is not a change: `pickProductFields` drops undefined, and the
+ * upsert's ON CONFLICT DO UPDATE only touches columns present in the payload.
+ *
+ * `stored` is null on the create path (`mayCreate`), where any promo at all is new — so a basic
+ * shop still cannot be born with one.
+ */
+export function promoChanged(fields: Record<string, unknown>, stored: Record<string, any> | null): boolean {
+  return PROMO_FIELDS.some(k => fields[k] !== undefined && !samePromoValue(k, fields[k], stored?.[k] ?? null))
+}
+
 // Order patch. EXACT union of the three writers in OrdersView.tsx (via store.ts), verified
 // 2026-07-18:
 //   setOrderStatus (store.ts:662) writes { status } — checked against ORDER_STATUSES

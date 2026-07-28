@@ -149,7 +149,7 @@ export default function ProductsManager() {
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
   // Promos are Pro-only (#110); ordinary product editing is not. This flag locks the promo
-  // fields and keeps them out of every write below — see `stripPromo`.
+  // fields and decides which promo values the writes below carry — see `promoWrite`.
   const pro = useProAccess()
   // Whether the row being edited has a promo whose end date has already passed. Computed once, in
   // openEdit below, rather than read from `Date.now()` during render (React Compiler forbids calling
@@ -202,21 +202,29 @@ export default function ProductsManager() {
   }
 
   /**
-   * Drop the promo columns from a write when the shop is not entitled to them (#110).
+   * The promo columns to send with this write.
    *
-   * Not a normalisation of the merchant's intent — the fields are disabled, so a basic shop
-   * never expresses one. It exists because both writes below spread the WHOLE existing row, and
-   * a row carrying a `promo_price` set while the shop was on Pro would otherwise make an
-   * ordinary name/price edit fail the backend's gate outright.
+   * Pro: the three form fields, as `promoFields` reads them. Not Pro: the STORED row's own values,
+   * sent back verbatim — the promo inputs are disabled, so a basic shop never expresses a change,
+   * and the backend's gate refuses a CHANGE, not a presence (#145). Sending what is already there
+   * is not a change, so an ordinary rename by an ex-Pro shop goes through with its sale intact.
    *
-   * OMITTING the columns is not the same as clearing them: the upsert's ON CONFLICT DO UPDATE
-   * only touches columns present in the payload, so whatever promo the row holds survives
-   * untouched — the shop simply cannot change it until it is Pro again.
+   * `form`'s own promo keys are STRINGS ('' for empty) and must never reach the write: '' is not a
+   * number, so the backend would read it as a change and refuse. That is why this ALWAYS returns
+   * all three columns, to spread AFTER `...form`, rather than deleting them afterwards — an early
+   * `{}` here would let the blank strings through on the add form and 403 a basic shop's new
+   * product.
+   *
+   * Adding without Pro sends three nulls: a new row has no promo, so that is what it already is.
    */
-  function stripPromo(row: any) {
-    if (pro) return row
-    const { promo_price: _p, promo_limit: _l, promo_end: _e, ...rest } = row
-    return rest
+  function promoWrite(stored: any | null) {
+    if (pro) return promoFields(form)
+    if (!stored) return { promo_price: null, promo_limit: null, promo_end: null }
+    return {
+      promo_price: stored.promo_price ?? null,
+      promo_limit: stored.promo_limit ?? null,
+      promo_end: stored.promo_end ?? null,
+    }
   }
 
   /**
@@ -249,21 +257,21 @@ export default function ProductsManager() {
     if (problem) { setMsg(problem); setBusy(false); return }
     const r = editingProduct
       // Spread the original row first so sort / active / etc. survive the upsert.
-      ? await upsertProduct(stripPromo({
-          ...editingProduct, ...form, ...promoFields(form),
+      ? await upsertProduct({
+          ...editingProduct, ...form, ...promoWrite(editingProduct),
           image_urls: images,
           price: Number(form.price) || 0,
           unit_quantity: coerceQuantity(form.unit_quantity),
-        }))
-      : await upsertProduct(stripPromo({
+        })
+      : await upsertProduct({
           ...form,
-          ...promoFields(form),
+          ...promoWrite(null),
           id: draftId,
           image_urls: images,
           price: Number(form.price) || 0,
           unit_quantity: coerceQuantity(form.unit_quantity),
           merchant_id: merchant!.id,
-        }))
+        })
     if (r.ok) {
       setFormOpen(false); setForm(BLANK); setEditingProduct(null); setImages([]); setDraftId(crypto.randomUUID())
       await load()
@@ -293,7 +301,9 @@ export default function ProductsManager() {
   }
 
   async function setProductImages(p: any, image_urls: string[]) {
-    const r = await upsertProduct(stripPromo({ ...p, image_urls }))
+    // No promo handling here: `p` IS the stored row, so its promo columns go back unchanged, which
+    // the backend's change-based gate lets through on any plan (#145).
+    const r = await upsertProduct({ ...p, image_urls })
     if (r.ok) await load()
   }
   async function remove(p: any) {
