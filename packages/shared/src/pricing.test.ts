@@ -6,6 +6,7 @@ import {
   shopMethods, offersMethod, firstOfferedMethod, isDistancePriced,
 } from './pricing.js'
 import type { PricedProduct } from './pricing.js'
+import { cartLineKey } from './options.js'
 import type { CartLine } from './options.js'
 
 const RATES = { WM: 8, EM: 12 }
@@ -19,6 +20,9 @@ const NOW = new Date('2026-06-29T12:00:00')
  */
 const asCart = (c: Record<string, number>): CartLine[] =>
   Object.entries(c).map(([productId, qty]) => ({ productId, qty, selections: [] }))
+
+/** The cart line key a PLAIN line of this product gets — what `PriceLine.key` is stamped with. */
+const keyOf = (productId: string) => cartLineKey({ productId, qty: 0, selections: [] })
 
 function product(id: string, price: number, extra: Partial<PricedProduct> = {}): PricedProduct {
   return { id, name: id, price, ...extra }
@@ -38,8 +42,8 @@ describe('priceOrder', () => {
     expect(r.discount).toBe(0)
     expect(r.total).toBe(25)
     expect(r.lines).toEqual([
-      { id: 'a', name: 'a', qty: 2, unitPrice: 10, lineTotal: 20, promo: false },
-      { id: 'b', name: 'b', qty: 1, unitPrice: 5, lineTotal: 5, promo: false },
+      { id: 'a', name: 'a', qty: 2, unitPrice: 10, lineTotal: 20, promo: false, key: keyOf('a') },
+      { id: 'b', name: 'b', qty: 1, unitPrice: 5, lineTotal: 5, promo: false, key: keyOf('b') },
     ])
   })
 
@@ -113,7 +117,7 @@ describe('promo', () => {
       cart: asCart({ a: 2 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines).toEqual([
-      { id: 'a', name: 'a', qty: 2, unitPrice: 80, lineTotal: 160, promo: true },
+      { id: 'a', name: 'a', qty: 2, unitPrice: 80, lineTotal: 160, promo: true, key: keyOf('a') },
     ])
     expect(bd.subtotal).toBe(160)
   })
@@ -153,8 +157,8 @@ describe('promo', () => {
       cart: asCart({ a: 10 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines).toEqual([
-      { id: 'a', name: 'a', qty: 3, unitPrice: 80, lineTotal: 240, promo: true },
-      { id: 'a', name: 'a', qty: 7, unitPrice: 100, lineTotal: 700, promo: false },
+      { id: 'a', name: 'a', qty: 3, unitPrice: 80, lineTotal: 240, promo: true, key: keyOf('a') },
+      { id: 'a', name: 'a', qty: 7, unitPrice: 100, lineTotal: 700, promo: false, key: keyOf('a') },
     ])
     expect(bd.subtotal).toBe(940)
     expect(promoClaims(bd, [product('a', 100, { promoPrice: 80, promoLimit: 5, promoSold: 2 })])).toEqual({ a: 3 })
@@ -175,7 +179,7 @@ describe('promo', () => {
     // acts on.
     const atCap = priceOrder({ products, cart: asCart({ a: 3 }), mode: 'pickup', rates: RATES, now: NOW })
     expect(atCap.lines).toEqual([
-      { id: 'a', name: 'a', qty: 3, unitPrice: 8, lineTotal: 24, promo: true },
+      { id: 'a', name: 'a', qty: 3, unitPrice: 8, lineTotal: 24, promo: true, key: keyOf('a') },
     ])
     const claimed = atCap.lines.find(l => l.id === 'a' && l.promo)?.qty ?? 0
     expect(claimed).toBe(3)
@@ -186,8 +190,8 @@ describe('promo', () => {
     // headline the card shows for "the next unit" has to be base once claimed === remaining.
     const onePastCap = priceOrder({ products, cart: asCart({ a: 4 }), mode: 'pickup', rates: RATES, now: NOW })
     expect(onePastCap.lines).toEqual([
-      { id: 'a', name: 'a', qty: 3, unitPrice: 8, lineTotal: 24, promo: true },
-      { id: 'a', name: 'a', qty: 1, unitPrice: 13, lineTotal: 13, promo: false },
+      { id: 'a', name: 'a', qty: 3, unitPrice: 8, lineTotal: 24, promo: true, key: keyOf('a') },
+      { id: 'a', name: 'a', qty: 1, unitPrice: 13, lineTotal: 13, promo: false, key: keyOf('a') },
     ])
   })
 
@@ -197,7 +201,7 @@ describe('promo', () => {
       products, cart: asCart({ a: 2 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines).toEqual([
-      { id: 'a', name: 'a', qty: 2, unitPrice: 100, lineTotal: 200, promo: false },
+      { id: 'a', name: 'a', qty: 2, unitPrice: 100, lineTotal: 200, promo: false, key: keyOf('a') },
     ])
     expect(promoClaims(bd, products)).toEqual({})
   })
@@ -230,8 +234,8 @@ describe('promo', () => {
       products, cart: asCart({ 'promo-item': 1, 'normal-item': 2 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines).toEqual([
-      { id: 'promo-item', name: 'promo-item', qty: 1, unitPrice: 80, lineTotal: 80, promo: true },
-      { id: 'normal-item', name: 'normal-item', qty: 2, unitPrice: 30, lineTotal: 60, promo: false },
+      { id: 'promo-item', name: 'promo-item', qty: 1, unitPrice: 80, lineTotal: 80, promo: true, key: keyOf('promo-item') },
+      { id: 'normal-item', name: 'normal-item', qty: 2, unitPrice: 30, lineTotal: 60, promo: false, key: keyOf('normal-item') },
     ])
     expect(bd.subtotal).toBe(140)
     expect(promoClaims(bd, products)).toEqual({ 'promo-item': 1 })
@@ -957,7 +961,10 @@ describe('option deltas', () => {
     })
     expect(bd.lines[0]).toEqual({
       id: 'plain', name: 'plain', qty: 2, unitPrice: 10, lineTotal: 20, promo: false,
+      key: keyOf('plain'),
     })
+    // `selections` stays ABSENT, not `[]` — a plain shop's breakdown is unchanged in substance.
+    expect('selections' in bd.lines[0]).toBe(false)
   })
 })
 
@@ -1025,5 +1032,52 @@ describe('productFromRow — option groups', () => {
   it('fails closed on an unusable value', () => {
     expect(productFromRow(row('not json')).optionGroups).toEqual([])
     expect(productFromRow(row(42)).optionGroups).toEqual([])
+  })
+})
+
+describe('PriceLine carries the cart line it came from', () => {
+  // Without this the cart summary cannot offer a REMOVE control: it renders priced lines, a
+  // promo split turns one cart line into two of them, and nothing maps a row back to the entry
+  // the customer would be removing. Found in review — a customer who picked the wrong milk had
+  // no way to take it out of their cart at all.
+  it('stamps every line with its cart line key', () => {
+    const a = product('a', 10, {
+      optionGroups: [{
+        id: 'milk', name: 'Milk', minSelect: 1, maxSelect: 1, maxPerOption: 1, active: true,
+        options: [
+          { id: 'oat', name: 'Oat', delta: 2, active: true },
+          { id: 'soy', name: 'Soy', delta: 2, active: true },
+        ],
+      }],
+    })
+    const cart = [
+      { productId: 'a', qty: 1, selections: [{ groupId: 'milk', picks: { oat: 1 } }] },
+      { productId: 'a', qty: 1, selections: [{ groupId: 'milk', picks: { soy: 1 } }] },
+    ]
+    const bd = priceOrder({ products: [a], cart, mode: 'pickup', rates: RATES, now: NOW })
+    expect(bd.lines.map(l => l.key)).toEqual([cartLineKey(cart[0]), cartLineKey(cart[1])])
+    // Distinct, so the two rows address different cart entries.
+    expect(bd.lines[0].key).not.toBe(bd.lines[1].key)
+  })
+
+  // The promo split is the case that forces this: BOTH halves belong to the SAME cart line, so a
+  // remove control must act once on that line, not twice on two rows that look independent.
+  it('gives both halves of a promo split the same key', () => {
+    const a = product('a', 100, { promoPrice: 80, promoLimit: 1, promoSold: 0 })
+    const bd = priceOrder({
+      products: [a], cart: asCart({ a: 3 }), mode: 'pickup', rates: RATES, now: NOW,
+    })
+    expect(bd.lines).toHaveLength(2)
+    expect(bd.lines[0].key).toBe(bd.lines[1].key)
+  })
+
+  // An extra line has no cart entry behind it — the same reason `promoClaims` refuses to claim
+  // one — so it must carry no key rather than a misleading one.
+  it('leaves an extra line unkeyed', () => {
+    const bd = priceOrder({
+      products: [product('a', 10)], cart: asCart({ a: 1 }), mode: 'pickup', rates: RATES, now: NOW,
+      extraLines: [{ id: 'gift', name: 'Gift', qty: 1, unitPrice: 0, lineTotal: 0, promo: false }],
+    })
+    expect(bd.lines[1].key).toBeUndefined()
   })
 })

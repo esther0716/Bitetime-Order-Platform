@@ -63,6 +63,16 @@ export interface PriceLine {
    * a plain shop's breakdown is byte-identical to what it was before options existed.
    */
   selections?: PickSnapshot[]
+  /**
+   * The CART LINE this was priced from — `cartLineKey`, not the product id.
+   *
+   * What lets a caller map a priced row back to the entry a customer would remove. It cannot be
+   * the product id: one product occupies several lines once its options differ, and a promo
+   * split turns ONE cart line into TWO priced lines that must remove together. Absent on
+   * `extraLines`, which have no cart entry behind them — the same reason `promoClaims` refuses
+   * to claim one.
+   */
+  key?: string
 }
 
 export interface PriceBreakdown {
@@ -425,7 +435,7 @@ export function priceOrder(input: PriceInput): PriceBreakdown {
     if (promoQty > 0) {
       const unitPrice = round2(promoState(product, now)!.price + delta)
       lines.push({
-        id, name: product.name, qty: promoQty,
+        id, name: product.name, qty: promoQty, key: r.key,
         unitPrice, lineTotal: round2(unitPrice * promoQty), promo: true, ...chosen,
       })
     }
@@ -433,7 +443,7 @@ export function priceOrder(input: PriceInput): PriceBreakdown {
     if (baseQty > 0) {
       const unitPrice = round2(product.price + delta)
       lines.push({
-        id, name: product.name, qty: baseQty,
+        id, name: product.name, qty: baseQty, key: r.key,
         unitPrice, lineTotal: round2(unitPrice * baseQty), promo: false, ...chosen,
       })
     }

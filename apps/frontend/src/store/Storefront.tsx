@@ -12,8 +12,8 @@ import { useDeliveryQuote } from './useDeliveryQuote'
 import { submitGate } from './submitGate'
 import { pruneCart, pruneMessage, nextCart, repairCart, plainQty, cartRefusalMessage } from './cartRules'
 import type { CartTarget } from './cartRules'
-import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, optionGroupsFromRow, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
-import type { FulfilmentMethod, CartLine } from '@bitetime/shared'
+import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, optionGroupsFromRow, cartLineKey, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import type { FulfilmentMethod, CartLine, PickSnapshot } from '@bitetime/shared'
 import { prefillFromProfile, savedDetailsFromOrder, carriesAddress } from '../savedDetails'
 import { fulfilmentLabel, feeLineLabel } from '../fulfilmentLabel'
 import { formatMoney } from '../currency'
@@ -46,6 +46,14 @@ const EMPTY_ADDRESS: AddressParts = { line1: '', postcode: '', city: '', state: 
  * promo split was already straining.
  */
 interface ReceiptLine {
+  /**
+   * The CART LINE this row was priced from. Absent for an extra line, which has no cart entry.
+   * NOT the product id: a promo split renders one cart line as two rows that must remove
+   * together, and one product holds several lines once its options differ.
+   */
+  key?: string
+  /** The options chosen on it, resolved — so the row says what the customer actually ordered. */
+  selections?: PickSnapshot[]
   id: string
   name: string
   qty: number
@@ -410,7 +418,10 @@ export default function Storefront() {
     // here is a second rule, and the customer meets it as a refused checkout (`price_changed`).
     tax,
   })
-  const cartItems: ReceiptLine[] = bd.lines.map(l => ({ id: l.id, name: l.name, qty: l.qty, price: l.unitPrice, promo: l.promo }))
+  const cartItems: ReceiptLine[] = bd.lines.map(l => ({
+    id: l.id, name: l.name, qty: l.qty, price: l.unitPrice, promo: l.promo,
+    key: l.key, selections: l.selections,
+  }))
   const subtotal = bd.subtotal
   const discount = bd.discount
   const total = bd.total
@@ -471,6 +482,28 @@ export default function Storefront() {
     setVoucherInput('')
     setVoucherMsg(null)
   }
+
+  /**
+   * A row's cart line, when it has one.
+   *
+   * `extraLines` (a gift line) have no cart entry behind them and must not offer a remove — the
+   * same reason `promoClaims` refuses to claim one.
+   */
+  const removableKey = (item: ReceiptLine) => item.key
+
+  /** An option's name, in the language being read. Falls back rather than showing nothing. */
+  const optionLabel = (pick: PickSnapshot) =>
+    (lang === 'zh' && pick.optionName_zh) ? pick.optionName_zh : pick.optionName
+
+  /**
+   * Take a whole cart line out, by its derived key.
+   *
+   * Removes the LINE, not one unit: a product with options has an Add button rather than a
+   * stepper, so this is the only exit that line has. A promo split shows it as two rows and both
+   * carry the same key, so removing either takes the entry with it.
+   */
+  const removeLine = (key: string) =>
+    setCart(prev => prev.filter(l => cartLineKey(l) !== key))
 
   /**
    * The only place a cart can grow. What the ceilings are and when they bind is `cartRules.ts`'s
@@ -1378,14 +1411,40 @@ export default function Storefront() {
                     <div key={i} className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
                       {/* min-w-0, not shrink-0 — see the success view's line items (#92). */}
                       <span className="min-w-0 flex items-center gap-1.5 flex-wrap">
-                        {displayName} × {item.qty}
+                        <span className="flex flex-col">
+                          <span>{displayName} × {item.qty}</span>
+                          {/* What they actually chose, under the name. The order snapshots this;
+                              showing it is what lets them notice a wrong pick before paying. */}
+                          {item.selections?.length ? (
+                            <span className="text-[12px] text-text-tertiary">
+                              {item.selections
+                                .map(pick => `${optionLabel(pick)} ×${pick.qty}`)
+                                .join(', ')}
+                            </span>
+                          ) : null}
+                        </span>
                         {item.promo && (
                           <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
                             {t('Promo', '优惠')}
                           </span>
                         )}
                       </span>
-                      <span className="shrink-0 text-right whitespace-nowrap">{formatMoney(item.price * item.qty, currency)}</span>
+                      <span className="shrink-0 flex items-center gap-2">
+                        <span className="text-right whitespace-nowrap">{formatMoney(item.price * item.qty, currency)}</span>
+                        {/* The ONLY way out for a line with options: its card has an Add button
+                            rather than a stepper, because there is no answer to which selection a
+                            bare + would raise. Without this a customer who picked the wrong milk
+                            could not remove it at all. Keyed on the CART LINE — a promo split
+                            renders two rows for one entry, and removing either removes the line. */}
+                        {removableKey(item) && (
+                          <button
+                            type="button"
+                            onClick={() => removeLine(removableKey(item)!)}
+                            aria-label={t(`Remove ${displayName}`, `移除 ${displayName}`)}
+                            className="text-rose-muted hover:text-oxblood cursor-pointer leading-none px-1 pointer-coarse:px-2"
+                          >×</button>
+                        )}
+                      </span>
                     </div>
                   )
                 })}
