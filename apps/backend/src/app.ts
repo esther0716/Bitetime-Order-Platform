@@ -1178,7 +1178,13 @@ app.get('/api/referrals/rewards', requireUser, async (c) => {
 // so a script cannot hammer the write path with malformed bodies for free; a merchant
 // cannot realistically hit twenty submissions an hour by accident, and the form enforces
 // both rules client-side, so a 400 arriving here is already the abnormal case.
-const feedbackWindow = createSlidingWindow({ limit: 20, windowMs: 60 * 60_000, now: () => Date.now() })
+//
+// EXPORTED for tests/api/feedback.test.ts, which fills the bucket by calling `allow()`
+// directly rather than by paying for twenty real HTTP round-trips against Postgres. That
+// loop had no wall-clock headroom and flaked as the DB suite grew (#147); what the test is
+// actually about is that THIS ROUTE consults THIS window under the caller's user id, which
+// one real submission proves as well as twenty. Nothing else may import it.
+export const feedbackWindow = createSlidingWindow({ limit: 20, windowMs: 60 * 60_000, now: () => Date.now() })
 
 app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
   const user = c.get('user')

@@ -7,7 +7,7 @@
 // so requireMerchantOwns and the field-by-field build in validateFeedback are the ONLY
 // things standing between a merchant and another shop's record. See CLAUDE.md → Backend.
 import { describe, it, expect, beforeAll } from 'vitest'
-import { app } from '../../src/app.js'
+import { app, feedbackWindow } from '../../src/app.js'
 import { makeUser, seedMerchant, serviceClient, resetMerchant } from '../rls/helpers.js'
 
 async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
@@ -196,7 +196,14 @@ describe('merchant feedback', () => {
   // (migration 20260715120100_referral_reward_lookup.sql), means the two are behaviorally
   // identical for every reachable request state. If a multi-shop-per-owner model lands,
   // this distinction becomes testable and the test should be extended then.
-  // This issues 22 requests; kept to this one test.
+  //
+  // The bucket is filled by calling `feedbackWindow.allow()` directly, and only the last
+  // three of the twenty-one hits are real requests. Exhausting it over HTTP cost twenty
+  // sequential round-trips against Postgres inside vitest's 5s default, which passed only
+  // as long as the DB suite stayed small and flaked once it did not (#147) — and it
+  // presented as "my unrelated change broke feedback". Counting to twenty and sliding is
+  // proved without a database in tests/unit/rateLimit.test.ts; what needs a request here
+  // is that this ROUTE draws on that window under the caller's user id.
   it('rate-limits feedback submissions per user, not globally', async () => {
     await resetMerchant('feedback-limit-shop')
     await resetMerchant('feedback-limit-second-shop')
@@ -209,12 +216,20 @@ describe('merchant feedback', () => {
     const otherIds = await tokenOf(other)
     const otherShopId = await seedMerchant({ slug: 'feedback-limit-second-shop', owner_id: otherIds.userId })
 
-    // Exhaust the limited user's budget: the window allows 20 per hour.
-    for (let i = 0; i < 20; i++) {
-      const res = await post(`/api/merchants/${limitedShopId}/feedback`,
-        { category: 'other', message: `submission ${i}` }, limitedIds.token)
-      expect(res.status).toBe(201)
+    // Nineteen of the limited user's twenty, spent straight against the limiter. Each must
+    // be allowed — a false here would mean the budget was already partly gone and the 429
+    // below could arrive for the wrong reason.
+    for (let i = 0; i < 19; i++) {
+      expect(feedbackWindow.allow(limitedIds.userId)).toBe(true)
     }
+
+    // The twentieth is a REAL submission, and it must succeed: that is what ties the route
+    // to this window and to this key. Were the route counting under some other key, this
+    // request would be the limited user's first as far as the limiter is concerned — and
+    // the next one would then be allowed too, failing the assertion after it.
+    const lastAllowed = await post(`/api/merchants/${limitedShopId}/feedback`,
+      { category: 'other', message: 'the twentieth submission' }, limitedIds.token)
+    expect(lastAllowed.status).toBe(201)
 
     const blocked = await post(`/api/merchants/${limitedShopId}/feedback`,
       { category: 'other', message: 'one too many' }, limitedIds.token)
