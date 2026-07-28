@@ -229,6 +229,13 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
 const WORD_SLACK_EM = 0.06
 const WORD_INTERVAL_MS = 2600
 
+// The underline that marks the word as the changing part of the sentence. It goes on the WORD, not
+// on the slot, so it tracks the glyphs rather than the animating width — an underline drawn under
+// the slot would visibly stretch and shrink on its own. Sized in em for the same reason the slot
+// is: the h1 runs from 2rem to 3.5rem, and a px rule would be heavy at the small end.
+const WORD_UNDERLINE =
+  'underline decoration-oxblood/60 decoration-[0.055em] underline-offset-[0.14em]'
+
 export const RotatingWord = memo(function RotatingWord({
   words,
 }: {
@@ -244,8 +251,9 @@ export const RotatingWord = memo(function RotatingWord({
   }, [reduced, words.length])
 
   // Reduced motion gets the first word and no timer at all — not a timer whose animation is
-  // suppressed. It is also what the prerenderer emits, since it never runs effects.
-  if (reduced) return <>{words[0].text}</>
+  // suppressed. It still gets the underline: that marks which word is the variable one, which is
+  // information, not decoration.
+  if (reduced) return <span className={WORD_UNDERLINE}>{words[0].text}</span>
 
   const word = words[i % words.length]
 
@@ -265,7 +273,7 @@ export const RotatingWord = memo(function RotatingWord({
       <AnimatePresence mode="wait" initial={false}>
         <motion.span
           key={word.text}
-          className="inline-block whitespace-pre"
+          className={`inline-block whitespace-pre ${WORD_UNDERLINE}`}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
