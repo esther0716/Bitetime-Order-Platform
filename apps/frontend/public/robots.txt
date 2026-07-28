@@ -1,0 +1,14 @@
+# Everything a visitor can reach without signing in is worth crawling — the marketing page, the
+# legal documents, and every shop's storefront under /s/.
+User-agent: *
+Allow: /
+
+# Signed-in surfaces. Not secrets — they are guarded server-side and by RLS — just nothing a
+# search result should ever land on. `$` anchors the dashboard exactly, so /merchant/signup and
+# /merchant/login (both worth indexing) stay crawlable.
+Disallow: /merchant$
+Disallow: /admin
+# Carries a one-time recovery token in its query string.
+Disallow: /reset-password
+
+Sitemap: https://tinyorder.shop/sitemap.xml
