@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildOrderMessage, notifyOrderPlaced, type TelegramSend } from '../../src/notify.js'
+import { MAX_CART_LINES } from '@bitetime/shared'
+import { buildOrderMessage, notifyOrderPlaced, TELEGRAM_MAX_CHARS, type TelegramSend } from '../../src/notify.js'
 
 // Minimal fake of the service-role client: each table returns a preset row.
 function fakeDb(tables: Record<string, any>) {
@@ -100,6 +101,88 @@ describe('buildOrderMessage', () => {
     // it before the street. Two `toContain`s pass just as happily with the unit appended after
     // the state, which is the one placement the comment on `formatAddress` rules out.
     expect(msg).toContain('*Address:* A-3-2, 12 Jalan Test, 50000 Kuala Lumpur, Selangor')
+  })
+})
+
+// Telegram REFUSES an over-long sendMessage rather than truncating it, and notify runs after the
+// order has already committed — so an unguarded overflow is a committed order the merchant never
+// hears about at all. A full cart (MAX_CART_LINES) already sits at the ceiling before the header
+// and totals are counted; #145's per-item selections line doubles the item block.
+describe('buildOrderMessage length cap', () => {
+  const bigCart = (lines: number, name = 'Chocolate chip cookie box') =>
+    Array.from({ length: lines }, (_, n) => ({ name: `${name} ${n + 1}`, qty: 3, price: 12.5 }))
+
+  it('leaves a normal order untouched', () => {
+    // The guard must be invisible on the orders that do fit — no notice, no dropped lines.
+    const msg = buildOrderMessage(ORDER, 'Cookie Corner')
+    expect(msg.length).toBeLessThanOrEqual(TELEGRAM_MAX_CHARS)
+    expect(msg).not.toContain('items shown')
+    expect(msg).toContain('*Total: RM 18.00*')
+  })
+
+  it('keeps a legal-but-huge cart inside the sendMessage ceiling', () => {
+    const msg = buildOrderMessage({ ...ORDER, items: bigCart(MAX_CART_LINES) }, 'Cookie Corner')
+    expect(msg.length).toBeLessThanOrEqual(TELEGRAM_MAX_CHARS)
+  })
+
+  it('still carries the order number and the money when it truncates', () => {
+    // What the merchant acts on: which order this is, and what it is worth. The item block is
+    // the part that gives way, so these survive at the head and the tail.
+    const msg = buildOrderMessage(
+      { ...ORDER, items: bigCart(MAX_CART_LINES), total: 3750 },
+      'Cookie Corner',
+    )
+    expect(msg).toContain('*Order No.:* BT-260629-0051')
+    expect(msg).toContain('*Shipping:* RM 8.00')
+    expect(msg).toContain('*Total: RM 3,750.00*')
+  })
+
+  it('says plainly that it was truncated, with how many items are missing', () => {
+    // Silent truncation reads as a complete order (CONTEXT.md → Merchant order reads): the
+    // merchant has to know there is more, and where to go for it.
+    const msg = buildOrderMessage({ ...ORDER, items: bigCart(MAX_CART_LINES) }, 'Cookie Corner')
+    const m = msg.match(/⚠️ \*(\d+) of (\d+) items shown — open your dashboard for the full order\.\*/)
+    expect(m).not.toBeNull()
+    const [, shown, total] = m!
+    expect(Number(total)).toBe(MAX_CART_LINES)
+    expect(Number(shown)).toBeGreaterThan(0)
+    expect(Number(shown)).toBeLessThan(MAX_CART_LINES)
+    // The count is the truth, not a decoration: exactly that many item lines survived.
+    expect(msg.split('\n').filter(l => l.startsWith('• ')).length).toBe(Number(shown))
+  })
+
+  it('keeps the Markdown parseable — an unclosed * is itself a 400', () => {
+    // The message goes out with parse_mode: 'Markdown'. A cut that lands mid-`*bold*` turns a
+    // length failure into a parse failure and loses the notification just the same.
+    const msg = buildOrderMessage({ ...ORDER, items: bigCart(MAX_CART_LINES) }, 'Cookie Corner')
+    expect((msg.match(/\*/g) ?? []).length % 2).toBe(0)
+  })
+
+  it('survives a head that alone overflows, keeping the order number', () => {
+    // A pathologically long shop name or address leaves nothing to drop. Everything else can go;
+    // the order number cannot, because without it the merchant cannot find the order at all.
+    const msg = buildOrderMessage(
+      { ...ORDER, address: 'x'.repeat(TELEGRAM_MAX_CHARS * 2), items: bigCart(MAX_CART_LINES) },
+      'C'.repeat(TELEGRAM_MAX_CHARS),
+    )
+    expect(msg.length).toBeLessThanOrEqual(TELEGRAM_MAX_CHARS)
+    expect(msg).toContain('BT-260629-0051')
+    expect(msg).toContain('open your dashboard')
+    expect((msg.match(/\*/g) ?? []).length % 2).toBe(0)
+  })
+
+  it('holds when an item block twice the size lands (#145 menu options)', () => {
+    // The selections sub-line #145 adds roughly doubles each item; the guard is on the rendered
+    // length, not on a count, so it absorbs that without a second fix.
+    const withOptions = Array.from({ length: MAX_CART_LINES }, (_, n) => ({
+      name: `Cookie box ${n + 1}\n    Flavour: Chocolate chip · Size: Large · Packaging: Gift box`,
+      qty: 3,
+      price: 12.5,
+    }))
+    const msg = buildOrderMessage({ ...ORDER, items: withOptions }, 'Cookie Corner')
+    expect(msg.length).toBeLessThanOrEqual(TELEGRAM_MAX_CHARS)
+    expect(msg).toContain('*Order No.:* BT-260629-0051')
+    expect(msg).toContain('items shown')
   })
 })
 
