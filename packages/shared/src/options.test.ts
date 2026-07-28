@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   cartLineKey, validateSelections, validateOptionGroups,
+  deactivateGroups, hasRequiredGroup, hasActiveGroup,
   MAX_PICK_QTY, MAX_GROUPS_PER_PRODUCT, MAX_OPTIONS_PER_GROUP,
 } from './options.js'
 import type { CartLine, Option, OptionGroup } from './options.js'
@@ -227,5 +228,40 @@ describe('validateOptionGroups', () => {
     expect(validateOptionGroups([
       group('g', { maxSelect: MAX_PICK_QTY + 1 }),
     ])).toBe('window_too_wide')
+  })
+})
+
+describe('the Pro downgrade (ADR 0010)', () => {
+  it('switches every group off without destroying any of it', () => {
+    const off = deactivateGroups([FLAVOURS, MILK])
+    expect(off.every(g => g.active === false)).toBe(true)
+    // The merchant's own configuration survives verbatim — this is the voucher move
+    // (`active: false`, row intact), not a delete. There is no history to restore from.
+    expect(off[0].minSelect).toBe(6)
+    expect(off[0].options.map(o => o.id)).toEqual(['choc', 'vanilla', 'banana'])
+    expect(off[1].options.find(o => o.id === 'oat')?.delta).toBe(2)
+  })
+
+  it('leaves the input untouched', () => {
+    deactivateGroups([MILK])
+    expect(MILK.active).toBe(true)
+  })
+
+  // A product whose MANDATORY question can no longer be asked is unfulfillable, not merely
+  // degraded: it would sell a six-muffin box with no flavours chosen and leave the merchant
+  // guessing what to pack. Optional groups are just a lost upsell, so the product stays on sale.
+  it('knows which products must come off sale', () => {
+    expect(hasRequiredGroup([FLAVOURS])).toBe(true)
+    expect(hasRequiredGroup([MILK])).toBe(true)
+    expect(hasRequiredGroup([group('extras', { minSelect: 0, maxSelect: 3 })])).toBe(false)
+    expect(hasRequiredGroup([])).toBe(false)
+  })
+
+  // Idempotent, like the voucher update's `.eq('active', true)`: a replayed webhook must not
+  // re-deactivate a product whose merchant has since switched it back on.
+  it('reports nothing to do once every group is already off', () => {
+    expect(hasActiveGroup([FLAVOURS])).toBe(true)
+    expect(hasActiveGroup(deactivateGroups([FLAVOURS, MILK]))).toBe(false)
+    expect(hasActiveGroup([])).toBe(false)
   })
 })

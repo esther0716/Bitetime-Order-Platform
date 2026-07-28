@@ -42,6 +42,7 @@ export type {
 export {
   canonicalJson, cartLineKey, validateSelections, validateOptionGroups,
   snapshotSelections, picksDelta,
+  deactivateGroups, hasRequiredGroup, hasActiveGroup,
   MAX_PICK_QTY, MAX_GROUPS_PER_PRODUCT, MAX_OPTIONS_PER_GROUP,
 } from './options.js'
 export type {

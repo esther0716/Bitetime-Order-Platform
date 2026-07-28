@@ -29,6 +29,17 @@ import type { DistanceDeps, DistanceOutcome } from '../../src/distance.js'
 import { sqlDistanceCache } from '../../src/distanceCache.js'
 import { quoteMerchantWindow, quoteIpWindow } from '../../src/quotaWindows.js'
 import { MAX_CART_QTY, MAX_CART_LINES, todayInZone, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import type { CartLine } from '@bitetime/shared'
+
+/**
+ * The pre-options cart shape, as a list. This suite's assertions predate menu options and are the
+ * record of what intake already promised, so the shape is migrated and nothing else moves.
+ */
+// `unknown` on purpose: several cases here deliberately send junk quantities (1.5, -1, 'abc')
+// to prove the door refuses them, so this helper must not be the thing that types them out.
+const asCart = (c: Record<string, unknown>) =>
+  Object.entries(c).map(([productId, qty]) => ({ productId, qty, selections: [] })) as CartLine[]
+
 
 const SLUGS = ['ord-shop', 'ord-pending', 'ord-suspended', 'ord-distance']
 const DAY = orderDay(new Date())
@@ -40,7 +51,7 @@ function body(merchantId: string, productId: string, extra: Record<string, unkno
     customerName: 'Ah Meng',
     customerWa: '60123456789',
     mode: 'pickup',
-    cart: { [productId]: 2 },
+    cart: asCart({ [productId]: 2 }),
     quotedTotal: 26,
     ...extra,
   }
@@ -362,7 +373,7 @@ describe('POST /api/orders', () => {
             customerWa: '60123456789',
             mode: 'express',
             address: { line1: '12 Jalan Test', postcode: '50000', city: 'Kuala Lumpur', state: 'Selangor' },
-            cart: { [suspendedDistanceProductId]: 2 },
+            cart: asCart({ [suspendedDistanceProductId]: 2 }),
             quotedTotal: 57.2,
             voucherCode: null,
             fulfilDate: todayInZone(DEFAULT_TIMEZONE, new Date()),
@@ -424,7 +435,7 @@ describe('POST /api/orders', () => {
 
     for (const [name, qty] of cases) {
       it(`rejects ${name}`, async () => {
-        const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: { [productId]: qty } }))
+        const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: asCart({ [productId]: qty }) }))
 
         expect(res.status).toBe(400)
         expect(await errorOf(res)).toBe('invalid_body')
@@ -436,7 +447,7 @@ describe('POST /api/orders', () => {
     // the same astronomical total it asked for, so the two agree and the order commits. The cap
     // is the only thing standing in front of it.
     it('rejects an absurd quantity', async () => {
-      const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: { [productId]: 1e21 }, quotedTotal: 13e21 }))
+      const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: asCart({ [productId]: 1e21 }), quotedTotal: 13e21 }))
 
       expect(res.status).toBe(400)
       expect(await errorOf(res)).toBe('invalid_body')
@@ -449,7 +460,7 @@ describe('POST /api/orders', () => {
     // module exists to prevent.
     it('rejects a quantity past the per-line cap', async () => {
       const qty = MAX_CART_QTY + 1
-      const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: { [productId]: qty }, quotedTotal: 13 * qty }))
+      const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: asCart({ [productId]: qty }), quotedTotal: 13 * qty }))
 
       expect(res.status).toBe(400)
       expect(await errorOf(res)).toBe('invalid_body')
@@ -459,7 +470,7 @@ describe('POST /api/orders', () => {
     it('accepts a quantity exactly at the cap', async () => {
       const res = await post(body(shop, productId, {
         fulfilDate: tomorrowInShopZone(),
-        cart: { [productId]: MAX_CART_QTY },
+        cart: asCart({ [productId]: MAX_CART_QTY }),
         quotedTotal: 13 * MAX_CART_QTY,
       }))
 
@@ -482,7 +493,7 @@ describe('POST /api/orders', () => {
     })
 
     it('rejects an empty cart', async () => {
-      const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: {} }))
+      const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: asCart({}) }))
 
       expect(res.status).toBe(400)
       expect(await errorOf(res)).toBe('invalid_body')
@@ -908,7 +919,7 @@ describe('POST /api/orders', () => {
     })
 
     it('refuses a cart id that is not a product id, as a refusal and not a 500', async () => {
-      const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: { 'not-a-uuid': 1 } }))
+      const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone(), cart: asCart({ 'not-a-uuid': 1 }) }))
       expect(res.status).toBe(409)
       expect(await errorOf(res)).toBe('product_unavailable')
     })
@@ -924,7 +935,7 @@ describe('POST /api/orders', () => {
     it('refuses an uppercase-uuid cart key instead of silently pricing the order at zero', async () => {
       const res = await post(body(shop, productId, {
         fulfilDate: tomorrowInShopZone(),
-        cart: { [productId.toUpperCase()]: 2 },
+        cart: asCart({ [productId.toUpperCase()]: 2 }),
         quotedTotal: 0,
       }))
 
@@ -1019,7 +1030,7 @@ describe('POST /api/orders', () => {
     it('commits at the promo price and moves the counter', async () => {
       const promoProductId = await seedPromoProduct(shop, { price: 10, promoPrice: 8 })
 
-      const res = await post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: { [promoProductId]: 2 }, quotedTotal: 16 }))
+      const res = await post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: asCart({ [promoProductId]: 2 }), quotedTotal: 16 }))
 
       expect(res.status).toBe(200)
       const [order] = await ordersOf(shop)
@@ -1037,7 +1048,7 @@ describe('POST /api/orders', () => {
 
       const res = await post(body(shop, promoProductId, {
         fulfilDate: tomorrowInShopZone(),
-        cart: { [promoProductId]: 5 },
+        cart: asCart({ [promoProductId]: 5 }),
         quotedTotal: 3 * 8 + 2 * 10,
       }))
 
@@ -1063,7 +1074,7 @@ describe('POST /api/orders', () => {
 
       const res = await post(body(shop, promoProductId, {
         fulfilDate: tomorrowInShopZone(),
-        cart: { [promoProductId]: 3, [normalProductId]: 1 },
+        cart: asCart({ [promoProductId]: 3, [normalProductId]: 1 }),
         quotedTotal: 3 * 8 + 5,
       }))
 
@@ -1085,7 +1096,7 @@ describe('POST /api/orders', () => {
     // counter). Kept for the same reason the voucher test is kept: real Postgres, real locks.
     it('two checkouts race the last promo unit and exactly one wins', async () => {
       const promoProductId = await seedPromoProduct(shop, { price: 10, promoPrice: 8, promoLimit: 1, promoSold: 0 })
-      const one = () => post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: { [promoProductId]: 1 }, quotedTotal: 8 }))
+      const one = () => post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: asCart({ [promoProductId]: 1 }), quotedTotal: 8 }))
 
       const [a, b] = await Promise.all([one(), one()])
       const statuses = [a.status, b.status].sort()
@@ -1136,7 +1147,7 @@ describe('POST /api/orders', () => {
         await new Promise(resolve => setTimeout(resolve, 100))
 
         // The intake quotes the promo price for a unit that is already spoken for.
-        const resPromise = post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: { [promoProductId]: 1 }, quotedTotal: 8 }))
+        const resPromise = post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: asCart({ [promoProductId]: 1 }), quotedTotal: 8 }))
 
         // Let the intake's select actually reach (and block on, if the lock is real) the row
         // before releasing the holder.
@@ -1157,11 +1168,11 @@ describe('POST /api/orders', () => {
       const past = new Date(Date.now() - 24 * 60 * 60_000).toISOString()
       const promoProductId = await seedPromoProduct(shop, { price: 10, promoPrice: 8, promoEnd: past })
 
-      const stale = await post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: { [promoProductId]: 1 }, quotedTotal: 8 }))
+      const stale = await post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: asCart({ [promoProductId]: 1 }), quotedTotal: 8 }))
       expect(stale.status).toBe(409)
       expect(await errorOf(stale)).toBe('price_changed')
 
-      const fresh = await post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: { [promoProductId]: 1 }, quotedTotal: 10 }))
+      const fresh = await post(body(shop, promoProductId, { fulfilDate: tomorrowInShopZone(), cart: asCart({ [promoProductId]: 1 }), quotedTotal: 10 }))
       expect(fresh.status).toBe(200)
       expect((await productOf(promoProductId))!.promo_sold).toBe(0)
     })
@@ -1410,7 +1421,7 @@ describe('POST /api/orders', () => {
       customerWa: '60123456789',
       mode: 'express',
       address: { line1: '12 Jalan Test', unit: 'A-3-2', postcode: '50000', city: 'Kuala Lumpur', state: 'Selangor', place_id: NEAR },
-      cart: { [distanceProductId]: 2 },
+      cart: asCart({ [distanceProductId]: 2 }),
       // 2 x 13 = 26 subtotal, plus 6.00 + 1.00 x 25.2 = 31.20 shipping.
       quotedTotal: 57.2,
       fulfilDate: todayInZone(DEFAULT_TIMEZONE, new Date()),
@@ -1537,7 +1548,7 @@ describe('POST /api/orders', () => {
         customerWa: '60123456789',
         mode: 'express',
         address: { line1: '12 Jalan Test', postcode: '50000', city: 'Kuala Lumpur', state: 'Selangor' },
-        cart: { [distanceProductId]: 2 },
+        cart: asCart({ [distanceProductId]: 2 }),
         quotedTotal: 57.2,
         voucherCode: null,
         fulfilDate: todayInZone(DEFAULT_TIMEZONE, new Date()),
@@ -1680,7 +1691,7 @@ describe('POST /api/orders', () => {
         customerWa: '60123456789',
         mode: 'express',
         address: { line1: '12 Jalan Test', postcode: '50000', city: 'Kuala Lumpur', state: 'Selangor' },
-        cart: { [productId]: 2 },
+        cart: asCart({ [productId]: 2 }),
         quotedTotal: 57.2,
         voucherCode: null,
         fulfilDate: todayInZone(DEFAULT_TIMEZONE, new Date()),
@@ -1848,7 +1859,7 @@ describe('POST /api/orders', () => {
         customerWa: '60123456789',
         mode: 'express',
         address: { line1: '12 Jalan Test', postcode: '50000', city: 'Kuala Lumpur', state: 'Selangor' },
-        cart: { [productId]: 2 },
+        cart: asCart({ [productId]: 2 }),
         quotedTotal: 57.2,
         voucherCode: null,
         fulfilDate: todayInZone(DEFAULT_TIMEZONE, new Date()),

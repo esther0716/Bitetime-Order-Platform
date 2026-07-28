@@ -1,3 +1,4 @@
+import { optionGroupsFromRow, deactivateGroups, hasActiveGroup, hasRequiredGroup } from '@bitetime/shared'
 import type Stripe from 'stripe'
 import { admin } from './supabase.js'
 import { env } from './env.js'
@@ -128,6 +129,43 @@ export async function revokeProArtifacts(merchantId: string) {
     .not('promo_price', 'is', null)
     .or(`promo_end.is.null,promo_end.gt.${at}`)
   if (promoErr) throw promoErr
+
+  await revokeOptionGroups(merchantId)
+}
+
+/**
+ * Switch a shop's menu options off, and take the products that cannot be sold without them off
+ * sale with it (#145, ADR 0010).
+ *
+ * The same shape as the two revocations above and for the same reason: NOTHING is destroyed. The
+ * groups keep their windows, their options and their deltas, and `validateSelections` already
+ * ignores an inactive group — so the storefront and the order transaction never ask what tier
+ * this shop is on. ADR 0008 put the groups in a jsonb column, so a delete here would be
+ * unrecoverable: a shop that stopped paying would not be downgraded, it would be dismantled.
+ *
+ * A product carrying a REQUIRED group also goes inactive. With its question switched off it would
+ * otherwise sell a six-muffin box with no flavours chosen, leaving the merchant guessing what to
+ * pack — unfulfillable rather than degraded. A product whose groups are all optional keeps
+ * selling and simply loses the upsell.
+ *
+ * Idempotent by filtering on there still being an ACTIVE group, exactly as the voucher update
+ * filters `active = true`: a replayed webhook must not switch off a product the merchant has
+ * since switched back on. Not symmetric either — re-subscribing resurrects nothing.
+ */
+async function revokeOptionGroups(merchantId: string) {
+  const { data, error } = await admin
+    .from('products').select('id, active, option_groups').eq('merchant_id', merchantId)
+  if (error) throw error
+
+  for (const row of data ?? []) {
+    const groups = optionGroupsFromRow(row.option_groups)
+    if (!hasActiveGroup(groups)) continue
+    const patch: Record<string, unknown> = { option_groups: deactivateGroups(groups) }
+    // Read from the groups as they stand NOW, before they are switched off.
+    if (hasRequiredGroup(groups)) patch.active = false
+    const { error: err } = await admin.from('products').update(patch).eq('id', row.id)
+    if (err) throw err
+  }
 }
 
 // Flip the merchant's activation status (service role bypasses RLS).

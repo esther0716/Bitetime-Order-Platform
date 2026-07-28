@@ -19,6 +19,14 @@ import { app, notifyDeps } from '../../src/app.js'
 import { makeUser, resetMerchant, seedMerchant, seedProduct, serviceClient } from '../rls/helpers.js'
 import { todayInZone, DEFAULT_TIMEZONE } from '@bitetime/shared'
 
+/**
+ * The pre-options cart shape, as a list. This suite's assertions predate menu options and are the
+ * record of what intake already promised, so the shape is migrated and nothing else moves.
+ */
+const asCart = (c: Record<string, number>) =>
+  Object.entries(c).map(([productId, qty]) => ({ productId, qty, selections: [] }))
+
+
 const SLUG = 'notify-shop'
 const CUSTOMER_EMAIL = 'notify-customer@test.dev'
 const OWNER_EMAIL = 'notify-owner@test.dev'
@@ -39,7 +47,7 @@ function orderBody(merchantId: string, productId: string, extra: Record<string, 
     customerName: 'Ah Meng',
     customerWa: '60123456789',
     mode: 'pickup',
-    cart: { [productId]: 2 },
+    cart: asCart({ [productId]: 2 }),
     quotedTotal: 26,
     fulfilDate: tomorrowInShopZone(),
     ...extra,
