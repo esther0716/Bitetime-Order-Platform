@@ -9,6 +9,13 @@
       "autoPort": false
     },
     {
+      "name": "bitetime-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@bitetime/frontend", "preview"],
+      "port": 4173,
+      "autoPort": false
+    },
+    {
       "name": "bitetime-backend",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@bitetime/backend", "dev"],

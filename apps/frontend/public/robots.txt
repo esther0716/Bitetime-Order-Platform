@@ -10,5 +10,7 @@ Disallow: /merchant$
 Disallow: /admin
 # Carries a one-time recovery token in its query string.
 Disallow: /reset-password
+# The empty SPA shell every route is rewritten to. A real URL, but it has no content of its own.
+Disallow: /app.html
 
 Sitemap: https://tinyorder.shop/sitemap.xml

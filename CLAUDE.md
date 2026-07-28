@@ -136,6 +136,12 @@ No i18n library. Every string is passed as `t(englishString, chineseString)` whe
 
 Deployed via Vercel; set the project **Root Directory** to `apps/frontend`. `pnpm deploy` runs the frontend `vite build`. Vite `base` is `/`.
 
+The build emits **two HTML files, and which one serves a route matters**. `vite build` produces the usual empty SPA shell, then `scripts/prerender.tsx` (an SSR build, run by the same `build` script) renders the landing route to static markup and writes it over `dist/index.html`, keeping the untouched shell as `dist/app.html`. `vercel.json` rewrites everything to **`/app.html`**, not `index.html` — Vercel checks the filesystem before rewrites, so `/` is served by the prerendered `index.html` and never reaches the rule. Point that rewrite back at `index.html` and every storefront starts life with the marketing page's markup inside it.
+
+The prerender exists because most LLM crawlers do not execute JavaScript; Google does, so this is a GEO fix, not a ranking one. It runs offline — `renderToStaticMarkup` never fires effects, so no provider reaches Supabase or the billing backend — and it throws if `<div id="root"></div>` is missing from the built HTML rather than silently shipping a blank page.
+
+Head tags follow the same split. Anything true of **every** route is static in `index.html` (the og: tags, the Organization/WebSite identity JSON-LD). Anything true of **one** route is written at runtime by that route — the canonical URL (`src/canonical.ts`) and the landing FAQ JSON-LD (`src/marketing/structuredData.ts`, which adopts the prerendered block rather than appending a second). `og:url` stays absent either way: link-preview scrapers do not run JavaScript, so a runtime one would be invisible to them.
+
 ## Agent skills
 
 ### Issue tracker

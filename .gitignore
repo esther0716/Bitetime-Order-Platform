@@ -1,5 +1,7 @@
 node_modules
 dist
+# Compiled prerender entry — build output, same as dist (see apps/frontend/scripts/prerender.tsx)
+dist-ssr
 .DS_Store
 .env
 .env.local

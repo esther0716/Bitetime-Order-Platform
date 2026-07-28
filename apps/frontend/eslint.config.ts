@@ -35,4 +35,11 @@ export default tseslint.config(
     files: ['tests/**/*.{ts,tsx}', '**/*.test.{ts,tsx}'],
     languageOptions: { globals: { ...globals.node } },
   },
+  // Build tooling. `scripts/` runs in Node at build time (the landing-page prerender), so it reads
+  // the filesystem and writes to the console — neither of which exists in the browser config above.
+  {
+    files: ['scripts/**/*.{ts,tsx}'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  { ignores: ['dist', 'dist-ssr'] },
 )
