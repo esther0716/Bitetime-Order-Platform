@@ -2,23 +2,94 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍪</text></svg>" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#7A1028" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <title>Bitetime &amp; Co.</title>
-    <meta name="description" content="Handmade cookies, baked fresh to order. Gift the Story, Keep the Feeling. Order online — delivery & self-pickup across Malaysia." />
-    <!-- Link previews on Instagram / WhatsApp / Facebook -->
+    <title>TinyOrder — Start Your Own Food Shop, Orders in One Place</title>
+    <meta name="description" content="Start your own food shop online and keep every order in one place. TinyOrder helps home kitchens and food businesses take orders from customers. Free 7 days." />
+    <!-- Link previews on Instagram / WhatsApp / Facebook.
+         og:image must be absolute — most scrapers silently drop relative
+         URLs. No og:url: this is a single-HTML SPA (vercel.json rewrites
+         every path to this file), so a hardcoded URL here would be wrong
+         on every route except the homepage — notably /s/:slug shop
+         links. Without the tag, scrapers fall back to the fetched URL.
+
+         The <link rel="canonical"> that search engines want has the same
+         problem and cannot live here either — it is written per route at
+         runtime instead (src/canonical.ts), which works for Google
+         because it renders the page and would NOT work here, because
+         link-preview scrapers do not run JavaScript. Same reason the
+         Schema.org JSON-LD is injected by the landing route rather than
+         parked in this file: it would otherwise describe every page.
+         See src/marketing/structuredData.ts. -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Bitetime &amp; Co." />
-    <meta property="og:title" content="Bitetime &amp; Co. — Handmade Cookies 🍪" />
-    <meta property="og:description" content="Baked fresh to order. Gift the Story, Keep the Feeling. Order online — delivery & self-pickup across Malaysia." />
-    <meta property="og:image" content="https://bitetime-order-platform.vercel.app/og-cover.jpg" />
+    <meta property="og:site_name" content="TinyOrder" />
+    <meta property="og:title" content="TinyOrder — Sell your food online" />
+    <meta property="og:description" content="One branded storefront link for home kitchens and small food businesses — so every order lands in one place and you look the part." />
+    <meta property="og:image" content="https://tinyorder.shop/og-cover.jpg" />
+    <!-- Declared dimensions let a scraper reserve the card's space before the
+         image itself has finished downloading. -->
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:alt" content="A printed receipt reading: Sell your food online — without the DM chaos. One storefront link, every order in one place, bilingual. Total: 7 days free." />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Bitetime &amp; Co. — Handmade Cookies 🍪" />
-    <meta name="twitter:description" content="Baked fresh to order. Order online — delivery & self-pickup across Malaysia." />
-    <meta name="twitter:image" content="https://bitetime-order-platform.vercel.app/og-cover.jpg" />
+    <meta name="twitter:title" content="TinyOrder — Sell your food online" />
+    <meta name="twitter:description" content="One branded storefront link for home kitchens and small food businesses — every order in one place." />
+    <meta name="twitter:image" content="https://tinyorder.shop/og-cover.jpg" />
+    <meta name="twitter:image:alt" content="A printed receipt reading: Sell your food online — without the DM chaos. One storefront link, every order in one place, bilingual. Total: 7 days free." />
+    <!-- WHO THIS SITE IS. Static, and deliberately so: the rest of the app's structured data is
+         injected by the route that owns it (src/marketing/structuredData.ts), but a crawler that
+         does not execute JavaScript — which is most of the LLM ones — sees none of that, and
+         "who publishes this" is the one question they must be able to answer without running the
+         app. It is also the one block that stays TRUE ON EVERY ROUTE, which is what makes it safe
+         in a file that vercel.json serves for every path.
+
+         The host is hardcoded because a static asset cannot read one; it must match SITE_URL in
+         src/site.ts, the og:image tags above and public/sitemap.xml. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://tinyorder.shop/#organization",
+            "name": "TinyOrder",
+            "url": "https://tinyorder.shop/",
+            "description": "An online ordering page for home kitchens and small food businesses: one branded storefront link, a menu you control, delivery fees by region or distance, and every order in one place.",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://tinyorder.shop/android-chrome-512x512.png",
+              "width": 512,
+              "height": 512
+            }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://tinyorder.shop/#website",
+            "url": "https://tinyorder.shop/",
+            "name": "TinyOrder",
+            "publisher": { "@id": "https://tinyorder.shop/#organization" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://tinyorder.shop/#app",
+            "name": "TinyOrder",
+            "url": "https://tinyorder.shop/",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Web",
+            "publisher": { "@id": "https://tinyorder.shop/#organization" }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

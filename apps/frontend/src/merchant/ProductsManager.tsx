@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { MoreHorizontal } from 'lucide-react'
+import { Lock, MoreHorizontal, Package } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
-import { fetchProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl } from '../store'
+import { lookupProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl } from '../store'
+import { coerceQuantity, formatUnit } from '../productUnit'
 import { formatMoney, currencyDef } from '../currency'
+import { promoEndFromDate, promoEndToDate } from '../promoEnd'
 import { SkeletonText } from '../components/Loaders'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -16,7 +18,10 @@ import {
 } from '../components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { DataTable, SortableHeader } from '../components/ui/data-table'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../components/ui/empty'
 import ImagePicker from './ProductImages'
+import { ProBadge, UpgradeLink } from './ProLock'
+import { useProAccess, isRequiresPro } from '../plan'
 
 // Canonical unit options (value stored as-is; label is bilingual).
 const UNITS: { value: string; en: string; zh: string }[] = [
@@ -33,7 +38,10 @@ const UNITS: { value: string; en: string; zh: string }[] = [
   { value: 'g', en: 'g', zh: '克' },
 ]
 
-const BLANK = { name: '', name_zh: '', descr: '', price: '', unit: 'pcs', active: true }
+const BLANK = {
+  name: '', name_zh: '', descr: '', price: '', unit: 'pcs', unit_quantity: 1, active: true,
+  promo_price: '', promo_limit: '', promo_end: '',
+}
 
 // Handlers + language + currency ride on table.options.meta so the column defs stay
 // stable (defined once) and never reset sorting when a row action refetches.
@@ -87,7 +95,7 @@ const columns: ColumnDef<any>[] = [
     cell: ({ row, table }) => {
       const { currency } = table.options.meta as ProductTableMeta
       const p = row.original
-      return <span className="text-[13px] text-rose-muted whitespace-nowrap">{formatMoney(p.price, currency)} / {p.unit}</span>
+      return <span className="text-[13px] text-rose-muted whitespace-nowrap">{formatMoney(p.price, currency)} / {formatUnit(p.unit_quantity, p.unit)}</span>
     },
   },
   {
@@ -130,6 +138,7 @@ export default function ProductsManager() {
   const [rows, setRows] = useState<any[] | null>(null)
   const [form, setForm] = useState<any>(BLANK)
   const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
   // editingProduct = the row being edited (null → add mode).
   const [editingProduct, setEditingProduct] = useState<any | null>(null)
   const [formOpen, setFormOpen] = useState(false)
@@ -139,52 +148,157 @@ export default function ProductsManager() {
   const [images, setImages] = useState<string[]>([])
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
+  // Promos are Pro-only (#110); ordinary product editing is not. This flag locks the promo
+  // fields and keeps them out of every write below — see `stripPromo`.
+  const pro = useProAccess()
+  // Whether the row being edited has a promo whose end date has already passed. Computed once, in
+  // openEdit below, rather than read from `Date.now()` during render (React Compiler forbids calling
+  // an impure function while rendering — the result would also go stale without a re-render to
+  // recompute it anyway). Display-only, so the device clock is an acceptable stand-in for the
+  // server's here — unlike the storefront's price quote (#68), this never becomes an order, so a
+  // merchant's laptop clock being a few minutes off only makes the hint a few minutes early or late,
+  // never a wrong price. `promo_end` is an absolute instant already (see promoEnd.ts).
+  const [promoEnded, setPromoEnded] = useState(false)
 
-  async function load() { setRows(await fetchProducts(merchant!.id)) }
-  useEffect(() => { fetchProducts(merchant!.id).then(setRows) }, [merchant!.id])
+  async function load() { const r = await lookupProducts(merchant!.id); setRows(r.ok ? r.data : []) }
+  useEffect(() => { lookupProducts(merchant!.id).then(r => setRows(r.ok ? r.data : [])) }, [merchant!.id])
 
   function openAdd() {
     setEditingProduct(null)
     setForm(BLANK)
-    setImages([]); setDraftId(crypto.randomUUID())
+    setImages([]); setDraftId(crypto.randomUUID()); setMsg(''); setPromoEnded(false)
     setFormOpen(true)
   }
   function openEdit(p: any) {
     setEditingProduct(p)
+    setMsg('')
     setForm({
       name: p.name ?? '', name_zh: p.name_zh ?? '', descr: p.descr ?? '',
-      price: String(p.price ?? ''), unit: p.unit ?? 'pc', active: p.active,
+      price: String(p.price ?? ''), unit: p.unit ?? 'pc', unit_quantity: p.unit_quantity ?? 1, active: p.active,
+      promo_price: p.promo_price === null || p.promo_price === undefined ? '' : String(p.promo_price),
+      promo_limit: p.promo_limit === null || p.promo_limit === undefined ? '' : String(p.promo_limit),
+      promo_end: promoEndToDate(p.promo_end),
     })
     setImages(p.image_urls ?? [])
+    setPromoEnded(!!p.promo_end && new Date(p.promo_end).getTime() < Date.now())
     setFormOpen(true)
   }
 
+  /**
+   * The promo columns, from the three form fields. An empty field is NULL — no promo / no cap / no
+   * end date — and `promo_price: 0` is a real promo (a free item), so this tests for '' and never
+   * for falsiness.
+   *
+   * `promo_sold` is deliberately absent: the browser cannot write it (a DB trigger pins it), and it
+   * is the backend's counter. The whole-row spread below still carries it back unchanged; the
+   * trigger is what makes that harmless.
+   */
+  function promoFields(f: any) {
+    return {
+      promo_price: f.promo_price === '' ? null : Number(f.promo_price),
+      promo_limit: f.promo_limit === '' ? null : Number(f.promo_limit),
+      promo_end: promoEndFromDate(f.promo_end),
+    }
+  }
+
+  /**
+   * Drop the promo columns from a write when the shop is not entitled to them (#110).
+   *
+   * Not a normalisation of the merchant's intent — the fields are disabled, so a basic shop
+   * never expresses one. It exists because both writes below spread the WHOLE existing row, and
+   * a row carrying a `promo_price` set while the shop was on Pro would otherwise make an
+   * ordinary name/price edit fail the backend's gate outright.
+   *
+   * OMITTING the columns is not the same as clearing them: the upsert's ON CONFLICT DO UPDATE
+   * only touches columns present in the payload, so whatever promo the row holds survives
+   * untouched — the shop simply cannot change it until it is Pro again.
+   */
+  function stripPromo(row: any) {
+    if (pro) return row
+    const { promo_price: _p, promo_limit: _l, promo_end: _e, ...rest } = row
+    return rest
+  }
+
+  /**
+   * Returns a message to show, or null. The DB has the same checks — this is the one with words.
+   *
+   * The `promo_limit` check runs first and unconditionally (not gated on `promo_price !== ''`): the
+   * `min="1" step="1"` on the input is a convenience, not the enforcement, so a limit of 0 must be
+   * refused here even for a product with no promo price set at all — otherwise it reaches Postgres's
+   * `products_promo_limit_positive` constraint as a raw error.
+   */
+  function promoProblem(f: any): string | null {
+    if (f.promo_limit !== '' && (!Number.isInteger(Number(f.promo_limit)) || Number(f.promo_limit) < 1)) {
+      return t('The promo limit must be a whole number of at least 1.', '优惠数量上限必须是不小于 1 的整数。')
+    }
+    if (f.promo_price === '') return null
+    const promo = Number(f.promo_price)
+    const price = Number(f.price) || 0
+    if (!Number.isFinite(promo) || promo < 0) {
+      return t('The promo price must be a number, and not negative.', '优惠价必须是非负数字。')
+    }
+    if (promo >= price) {
+      return t('The promo price must be below the normal price.', '优惠价必须低于原价。')
+    }
+    return null
+  }
+
   async function save(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault(); setBusy(true)
-    try {
-      if (editingProduct) {
-        // Spread the original row first so sort / active / etc. survive the upsert.
-        await upsertProduct({ ...editingProduct, ...form, image_urls: images, price: Number(form.price) || 0 })
-      } else {
-        await upsertProduct({
+    e.preventDefault(); setBusy(true); setMsg('')
+    const problem = promoProblem(form)
+    if (problem) { setMsg(problem); setBusy(false); return }
+    const r = editingProduct
+      // Spread the original row first so sort / active / etc. survive the upsert.
+      ? await upsertProduct(stripPromo({
+          ...editingProduct, ...form, ...promoFields(form),
+          image_urls: images,
+          price: Number(form.price) || 0,
+          unit_quantity: coerceQuantity(form.unit_quantity),
+        }))
+      : await upsertProduct(stripPromo({
           ...form,
+          ...promoFields(form),
           id: draftId,
           image_urls: images,
           price: Number(form.price) || 0,
+          unit_quantity: coerceQuantity(form.unit_quantity),
           merchant_id: merchant!.id,
-        })
-      }
+        }))
+    if (r.ok) {
       setFormOpen(false); setForm(BLANK); setEditingProduct(null); setImages([]); setDraftId(crypto.randomUUID())
       await load()
       toast.success(t('Product saved', '产品已保存'))
-    } finally { setBusy(false) }
+    } else {
+      const err = r.error
+      // `promoProblem` above already catches a promo left above a base price the merchant just
+      // lowered in THIS save — it reads `f.price`, which is the price being saved, so `8 >= 7` is
+      // refused with words before this ever runs. This branch is a backstop for a DIFFERENT writer:
+      // the dashboard form is not the only thing that can touch a `products` row (a script, an
+      // admin tool, a direct SQL edit), and `products_promo_below_price` is what stops one of those
+      // leaving a promo priced above the item. Postgres's raw constraint string is not something to
+      // show a merchant if that ever collides with a live promo here.
+      // The promo fields are locked for a basic shop, so this is the fallback for a `plan` that
+      // moved under a long-open tab — an upgrade prompt, not the bare error code (#110).
+      if (isRequiresPro(err)) {
+        setMsg(t('Putting an item on sale is a Pro feature. Upgrade to Pro to set a promo price.',
+          '限时优惠是 Pro 功能。升级到 Pro 即可设置优惠价。'))
+      } else if (err.message.includes('products_promo_below_price')) {
+        setMsg(t('The promo price is no longer below the normal price. Lower or clear the promo price first.',
+          '优惠价已不低于原价。请先降低或清除优惠价。'))
+      } else {
+        setMsg(err.message || t('Something went wrong.', '出错了。'))
+      }
+    }
+    setBusy(false)
   }
 
   async function setProductImages(p: any, image_urls: string[]) {
-    await upsertProduct({ ...p, image_urls }); await load()
+    const r = await upsertProduct(stripPromo({ ...p, image_urls }))
+    if (r.ok) await load()
   }
   async function remove(p: any) {
-    await deleteProduct(p.id)
+    const r = await deleteProduct(p.id, merchant!.id)
+    if (!r.ok) { toast.error(r.error.message || t('Could not delete product', '无法删除产品')); return }
     if (p.image_urls?.length) { try { await deleteProductImages(p.image_urls) } catch { /* best-effort */ } }
     await load(); toast.success(t('Product deleted', '产品已删除'))
   }
@@ -207,20 +321,39 @@ export default function ProductsManager() {
         <h3 className="font-heading text-[15px] font-medium text-oxblood flex items-center gap-2">
           {t('Your products', '您的产品')}
         </h3>
-        <Button type="button" size="none" className="rounded-pill py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
+        <Button data-tour="add-product" type="button" size="none" className="rounded-pill py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
           {t('+ Add product', '+ 添加产品')}
         </Button>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={rows}
-        meta={meta}
-        searchPlaceholder={t('Search products…', '搜索产品…')}
-        emptyText={t('No products yet — tap “Add product” to create your first.', '还没有产品 — 点击“添加产品”创建第一个。')}
-        prevLabel={t('Previous', '上一页')}
-        nextLabel={t('Next', '下一页')}
-      />
+      {rows.length === 0 ? (
+        <Empty className="border-[1.5px] border-dashed border-clay-border bg-cream/50">
+          <EmptyHeader>
+            <EmptyMedia variant="icon" className="bg-oxblood-tint text-oxblood">
+              <Package />
+            </EmptyMedia>
+            <EmptyTitle className="text-oxblood">{t('No products yet', '还没有产品')}</EmptyTitle>
+            <EmptyDescription className="text-rose-muted">
+              {t('Add your first product to start taking orders in your storefront.', '添加第一个产品，开始在店面接收订单。')}
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button type="button" size="none" className="rounded-pill py-[6px] px-[14px] text-[13px]" onClick={openAdd}>
+              {t('+ Add product', '+ 添加产品')}
+            </Button>
+          </EmptyContent>
+        </Empty>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={rows}
+          meta={meta}
+          searchPlaceholder={t('Search products…', '搜索产品…')}
+          emptyText={t('No products match your search.', '没有匹配的产品。')}
+          prevLabel={t('Previous', '上一页')}
+          nextLabel={t('Next', '下一页')}
+        />
+      )}
 
       {/* Add / edit product details. disablePointerDismissal: the unit Select
           portals its menu to <body>, so an item click would otherwise read as an
@@ -230,6 +363,11 @@ export default function ProductsManager() {
           <DialogHeader>
             <DialogTitle>{editingProduct ? t('Edit product', '编辑产品') : t('Add a product', '添加产品')}</DialogTitle>
           </DialogHeader>
+          {msg && (
+            <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+              {msg}
+            </div>
+          )}
           <form onSubmit={save}>
             <div className="flex flex-col gap-2">
               <div className="flex flex-col gap-[6px]">
@@ -278,22 +416,131 @@ export default function ProductsManager() {
               </div>
               <div className="flex flex-col gap-[6px]">
                 <Label htmlFor="pm-5">{t('Unit', '单位')}</Label>
-                <Select value={form.unit} onValueChange={v => setForm({ ...form, unit: v })}>
-                  <SelectTrigger id="pm-5" className="w-full bg-cream border-clay-border text-[13px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  {/* z-modal-popover (400) floats above the dialog popup (z-modal). */}
-                  <SelectContent className="z-modal-popover">
-                    {/* Keep a legacy value (e.g. old "pc") selectable so existing rows survive. */}
-                    {form.unit && !UNITS.some(u => u.value === form.unit) && (
-                      <SelectItem value={form.unit}>{form.unit}</SelectItem>
-                    )}
-                    {UNITS.map(u => (
-                      <SelectItem key={u.value} value={u.value}>{t(u.en, u.zh)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Input
+                    id="pm-qty"
+                    variant="compact"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    className="w-24"
+                    value={form.unit_quantity}
+                    onChange={e => setForm({ ...form, unit_quantity: e.target.value })}
+                    aria-label={t('Unit quantity', '单位数量')}
+                    placeholder="1"
+                  />
+                  <Select value={form.unit} onValueChange={v => setForm({ ...form, unit: v })}>
+                    <SelectTrigger id="pm-5" className="flex-1 bg-cream border-clay-border text-[13px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    {/* z-modal-popover (400) floats above the dialog popup (z-modal). */}
+                    <SelectContent className="z-modal-popover">
+                      {/* Keep a legacy value (e.g. old "pc") selectable so existing rows survive. */}
+                      {form.unit && !UNITS.some(u => u.value === form.unit) && (
+                        <SelectItem value={form.unit}>{form.unit}</SelectItem>
+                      )}
+                      {UNITS.map(u => (
+                        <SelectItem key={u.value} value={u.value}>{t(u.en, u.zh)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+              {/* Promo pricing is Pro-only (#110). The fields stay on screen for a basic shop —
+                  visibly disabled behind a Pro marker — because the rest of this form is the
+                  ordinary product editing every shop keeps. `display: contents` leaves a Pro
+                  shop's layout exactly as it was; only the locked state adds a wrapper. */}
+              <div className={pro ? 'contents' : 'flex flex-col gap-2 rounded-xl border-[1.5px] border-dashed border-clay-border p-3'}>
+                {!pro && (
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="flex items-center gap-2 text-[13px] font-medium text-oxblood">
+                      <Lock size={14} strokeWidth={1.75} aria-hidden />
+                      {t('Put this item on sale', '为此商品设置优惠')}
+                      <ProBadge />
+                    </span>
+                    <UpgradeLink className="px-3 py-[6px] text-[12px]" />
+                  </div>
+                )}
+                <div className="flex flex-col gap-[6px]">
+                  <Label htmlFor="pm-promo-price">{t('Promo price', '优惠价')}</Label>
+                  <Input
+                    id="pm-promo-price"
+                    variant="compact"
+                    type="number"
+                    step="0.01"
+                    disabled={!pro}
+                    value={form.promo_price}
+                    onChange={e => setForm({ ...form, promo_price: e.target.value })}
+                    placeholder="0.00"
+                  />
+                  <span className="text-[12px] text-text-tertiary">{t('Leave empty for no promo.', '留空表示无优惠。')}</span>
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <Label htmlFor="pm-promo-limit">{t('Promo limit', '优惠数量上限')}</Label>
+                  <Input
+                    id="pm-promo-limit"
+                    variant="compact"
+                    type="number"
+                    step="1"
+                    min="1"
+                    disabled={!pro}
+                    value={form.promo_limit}
+                    onChange={e => setForm({ ...form, promo_limit: e.target.value })}
+                    placeholder={t('No limit', '不限')}
+                  />
+                  <span className="text-[12px] text-text-tertiary">
+                    {t('How many units sell at this price. Leave empty for no limit.', '以此价格出售的数量。留空表示不限。')}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <Label htmlFor="pm-promo-end">{t('Promo ends', '优惠结束日期')}</Label>
+                  <Input
+                    id="pm-promo-end"
+                    variant="compact"
+                    type="date"
+                    disabled={!pro}
+                    value={form.promo_end}
+                    onChange={e => setForm({ ...form, promo_end: e.target.value })}
+                  />
+                  <span className="text-[12px] text-text-tertiary">
+                    {t('The promo runs to the end of this day. Leave empty for no end date.', '优惠持续到当天结束。留空表示无结束日期。')}
+                  </span>
+                </div>
+              </div>
+              {editingProduct && editingProduct.promo_price !== null && editingProduct.promo_price !== undefined && (() => {
+                // M-1: `promo_sold` can outlive a LOWERED `promo_limit` — sell 8 against a cap of
+                // 10, then drop the cap to 3, and the row is `promo_sold: 8, promo_limit: 3`.
+                // Money is unaffected (`remaining = max(0, 3-8) = 0`, so the promo just ends), but
+                // the raw numbers read as "8 of 3 sold", which looks broken. Clamp the DISPLAY to
+                // the cap and say the promo is finished — the DB row itself is untouched.
+                const sold = editingProduct.promo_sold ?? 0
+                const limit = editingProduct.promo_limit
+                const capReached = limit != null && sold >= limit
+                const shownSold = limit != null ? Math.min(sold, limit) : sold
+                return (
+                  <p className="text-[12px] text-rose-muted">
+                    {limit
+                      ? t(`${shownSold} of ${limit} sold at the promo price.`,
+                          `已以优惠价售出 ${shownSold} / ${limit} 件。`)
+                      : t(`${sold} sold at the promo price.`,
+                          `已以优惠价售出 ${sold} 件。`)}
+                    {' '}
+                    {t('Changing the promo price starts the count again.', '更改优惠价将重新计数。')}
+                    {capReached && (
+                      <>
+                        {' '}
+                        {t('This promo is finished — the cap has been reached.', '此优惠已结束——已达上限。')}
+                      </>
+                    )}
+                    {promoEnded && (
+                      <>
+                        {' '}
+                        {t('This promo has ended.', '此优惠已结束。')}
+                      </>
+                    )}
+                  </p>
+                )
+              })()}
               <div className="flex flex-col gap-[6px]">
                 <Label>{t('Photos (optional)', '图片（可选）')}</Label>
                 <ImagePicker

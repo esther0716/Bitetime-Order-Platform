@@ -1,0 +1,25 @@
+-- One new-order email per order to the SHOP OWNER, enforced by an atomic conditional stamp.
+--
+-- The third recipient of the post-commit fan-out (POST /api/notify/order), beside the merchant's
+-- Telegram and the customer's confirmation email. It exists because Telegram is a Pro entitlement:
+-- a basic shop had no notification at all, and learned about an order only by refreshing the
+-- dashboard. This arm is the one the fan-out sends on EVERY plan.
+--
+-- The stamp is not merely tidiness, it is what keeps the endpoint safe. `/api/notify/order` is
+-- anonymous, and order numbers are a guessable per-shop daily counter. ADR 0003 accepted that on
+-- the reasoning that the worst an enumerator achieves is triggering the one legitimate CUSTOMER
+-- email slightly early. That argument does not carry to a recipient who is not the customer:
+-- without this column, a guessed order number is an unbounded mail flood aimed at a merchant's
+-- inbox. The send path claims the row with
+--   update orders set merchant_emailed_at = now() where id = $1 and merchant_emailed_at is null returning id
+-- and only the caller that flips NULL→now() sends.
+--
+-- Deliberately a SEPARATE column from confirmation_emailed_at rather than one shared "notified"
+-- stamp: the two recipients are independent best-effort sends, and one of them failing or being
+-- skipped (a guest order has no customer to email) must not mark the other as done.
+--
+-- No grant change: the browser holds no INSERT or UPDATE on `orders` (see
+-- 20260718130000_revoke_all_browser_grants.sql), so the column is unreachable from the client
+-- path by construction. NULL means "not yet emailed", which is also every pre-migration order.
+alter table public.orders
+  add column if not exists merchant_emailed_at timestamptz;

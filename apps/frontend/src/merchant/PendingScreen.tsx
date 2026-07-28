@@ -3,6 +3,7 @@ import { useSession } from '../SessionContext'
 import { startCheckout } from '../store'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import Wordmark from '../components/Wordmark'
 
 export default function PendingScreen() {
   const { t, merchant } = useSession()
@@ -16,11 +17,10 @@ export default function PendingScreen() {
 
   async function completePayment() {
     setBusy(true); setErr('')
-    try {
-      const url = await startCheckout({ plan: merchant!.plan as string, billing: merchant!.billing_cycle || 'monthly', region: merchant!.billing_region })
-      window.location.assign(url)
-    } catch (e: any) {
-      setErr(e.message || t('Could not start checkout', '无法开始结账'))
+    const r = await startCheckout({ plan: merchant!.plan as string, billing: merchant!.billing_cycle || 'monthly' })
+    if (r.ok) window.location.assign(r.data)
+    else {
+      setErr(r.error.message || t('Could not start checkout', '无法开始结账'))
       setBusy(false)
     }
   }
@@ -28,7 +28,7 @@ export default function PendingScreen() {
   return (
     <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
       <div className="text-center mb-10">
-        <h1 className="font-heading text-[26px] font-medium text-oxblood tracking-[0.3px]">BiteTime</h1>
+        <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
       <Card className="rounded-pill px-8 pt-8 pb-7 gap-0">

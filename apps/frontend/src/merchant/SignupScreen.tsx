@@ -10,18 +10,20 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import Wordmark from '../components/Wordmark'
 
 const PLANS = ['basic', 'pro']
 const CYCLES = ['monthly', 'yearly']
 
 export default function SignupScreen() {
-  const { t, refreshMerchant } = useSession()
+  const { t, lang, refreshMerchant } = useSession()
   const { pricing } = usePlatformPricing()
   const [params] = useSearchParams()
 
   const plan = PLANS.includes(params.get('plan') as string) ? (params.get('plan') as string) : 'basic'
   const billing = CYCLES.includes(params.get('billing') as string) ? (params.get('billing') as string) : 'monthly'
   const canceled = params.get('canceled') === '1'
+  const ref = params.get('ref') ?? undefined
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -53,18 +55,21 @@ export default function SignupScreen() {
                  '账号已创建。请查收邮件确认，然后登录以完成店铺设置。'))
         setBusy(false); return
       }
-      await createMerchant({ name, plan, billing, region: pricing.region })
+      const created = await createMerchant({ name, plan, billing, referredByCode: ref })
+      if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
       await refreshMerchant()
       if (plan === 'basic') {
         // Cardless trial: no Checkout. The shop waits for platform approval,
         // which is what starts the 7-day trial subscription.
-        window.location.assign('/merchant')
+        // `replace`, not `assign`: the shop now exists, so Back must not return to a signup form
+        // that would try to create it a second time.
+        window.location.replace('/merchant')
         return
       }
       // Pro pays upfront: hand off to Stripe Checkout; webhook activates the shop.
-      // Bill the region shown on this page so displayed price equals charged price.
-      const url = await startCheckout({ plan, billing, region: pricing.region })
-      window.location.assign(url)
+      const checkout = await startCheckout({ plan, billing })
+      if (!checkout.ok) { setMsg(checkout.error.message || t('Could not start checkout', '无法开始结账')); setBusy(false); return }
+      window.location.assign(checkout.data)
     } catch (err: any) {
       setMsg(err.message || t('Something went wrong.', '出错了。'))
       setBusy(false)
@@ -74,7 +79,7 @@ export default function SignupScreen() {
   return (
     <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
       <div className="text-center mb-10">
-        <h1 className="font-heading text-[26px] font-medium text-oxblood tracking-[0.3px]">BiteTime</h1>
+        <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
       <Card className="rounded-pill px-8 pt-8 pb-7 gap-0">
@@ -85,6 +90,9 @@ export default function SignupScreen() {
         <div className="flex items-baseline flex-wrap gap-2 px-[13px] py-[10px] mb-[14px] bg-oxblood-tint border border-rose-border rounded-md">
           <span className="font-semibold text-oxblood text-[14px]">{planName} · {cycleName}</span>
           <span className="font-heading text-ink text-[15px]">{formatMoney(perMoAmount, pricing.currency)}{t('/mo', '/月')}</span>
+          {pricing.estimate && perMoAmount > 0 && (
+            <span className="text-rose-muted text-[13px]">≈ {formatMoney(perMoAmount * pricing.estimate.rate, pricing.estimate.currency)}{t('/mo', '/月')}</span>
+          )}
           {plan === 'basic' && (
             <Badge variant="default" className="ml-auto py-[2px] tracking-[0.03em]">
               {t('7-day free trial — no card required', '7 天免费试用，无需信用卡')}
@@ -129,6 +137,30 @@ export default function SignupScreen() {
                 ? t('Start free trial', '开始免费试用')
                 : t('Continue to payment', '前往付款')}
           </Button>
+          {/* Sits under the button, not above it: the merchant reads it at the moment the act
+              happens. The screen said nothing about terms before, so nothing recorded that a
+              merchant had agreed to anything at all. */}
+          {/* One translation unit with the links interpolated into it, NOT a sentence assembled
+              from translated fragments: ' and ' and '.' as their own units bake English word
+              order and spacing into strings a translator cannot reorder, and Chinese wants
+              neither the spaces nor the full stop. */}
+          <p className="text-[14px] leading-[1.6] text-text-tertiary text-center mt-3">
+            {(() => {
+              const terms = (
+                <Link key="terms" to="/terms" className="text-oxblood underline underline-offset-2">
+                  {t('Terms of Service', '服务条款')}
+                </Link>
+              )
+              const privacy = (
+                <Link key="privacy" to="/privacy" className="text-oxblood underline underline-offset-2">
+                  {t('Privacy Policy', '隐私政策')}
+                </Link>
+              )
+              return lang === 'zh'
+                ? <>创建店铺即表示你同意我们的{terms}与{privacy}。</>
+                : <>By creating a shop you agree to our {terms} and {privacy}.</>
+            })()}
+          </p>
         </form>
         <p className="text-[13px] text-rose-muted text-center mt-4">
           <Link to="/merchant/login" className="text-oxblood cursor-pointer underline">{t('Already have a shop? Log in', '已有店铺？登录')}</Link>

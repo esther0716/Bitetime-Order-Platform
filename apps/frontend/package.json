@@ -5,16 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && vite build --ssr scripts/prerender.tsx --outDir dist-ssr && node dist-ssr/prerender.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
-    "@emailjs/browser": "^4.4.1",
+    "@bitetime/shared": "workspace:*",
     "@fontsource-variable/geist": "^5.2.9",
     "@radix-ui/react-select": "^2.3.1",
     "@supabase/supabase-js": "^2.107.0",
@@ -39,7 +40,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.0",
     "@tailwindcss/vite": "^4.3.2",
+    "@types/node": "^26.0.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -48,6 +51,8 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "jiti": "^2.7.0",
+    "malaysia-postcodes": "^3.0.0",
+    "playwright-core": "^1.61.1",
     "tailwindcss": "^4.3.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.0",

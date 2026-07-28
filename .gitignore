@@ -1,5 +1,7 @@
 node_modules
 dist
+# Compiled prerender entry — build output, same as dist (see apps/frontend/scripts/prerender.tsx)
+dist-ssr
 .DS_Store
 .env
 .env.local
@@ -10,3 +12,11 @@ dist
 # Supabase CLI local state
 apps/backend/supabase/.branches
 apps/backend/supabase/.temp
+
+# Wayfinder research notes: may carry live infra posture — keep out of the public repo
+docs/research/
+
+# Playwright e2e output
+apps/frontend/test-results
+apps/frontend/playwright-report
+apps/frontend/blob-report

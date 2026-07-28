@@ -1,17 +1,25 @@
-import { motion, AnimatePresence } from 'motion/react'
+import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '../SessionContext'
-import { usePageVariants } from '../motion'
+import { fetchOrderCount } from '../store'
+import { useEnterTransition } from '../motion'
 import { LayoutDashboard, ReceiptText, Cake, Ticket, Users, Settings } from 'lucide-react'
 import DashboardShell, { type NavItem } from '../components/DashboardShell'
 import BillingBanner from './BillingBanner'
+import DeactivatedVouchers from './DeactivatedVouchers'
 import Overview from './Overview'
+import OnboardingChecklist from './OnboardingChecklist'
 import ProductsManager from './ProductsManager'
 import VouchersManager from './VouchersManager'
 import ShopSettings from './ShopSettings'
 import OrdersView from './OrdersView'
 import CustomersView from './CustomersView'
+import FeedbackFab from './FeedbackFab'
 import { NavGuardProvider, useNavGuard } from './NavGuard'
+import { UpgradeNavProvider } from './UpgradeNav'
 import { useDashboardSection } from '../useDashboardSection'
+import { usePoll } from '../usePoll'
+import { useProAccess } from '../plan'
+import { ProLock } from './ProLock'
 
 const ICON = { size: 18, strokeWidth: 1.75 }
 const SECTIONS = [
@@ -34,18 +42,57 @@ export default function Dashboard() {
 function DashboardInner() {
   const { t, merchant, role } = useSession()
   const { guard } = useNavGuard()
+  const pro = useProAccess()
   const [section, setSection] = useDashboardSection(SECTIONS.map(s => s.key), 'overview')
-  const variants = usePageVariants()
+  const enter = useEnterTransition()
 
-  const nav: NavItem[] = SECTIONS.map(s => ({ key: s.key, label: t(s.en, s.zh), icon: s.icon }))
+  // Count of pending "new" orders — surfaced as a badge on the Orders nav item.
+  // Refetched whenever an order's status changes so the badge stays live.
+  //
+  // Counted by Postgres. This used to fetch every order the shop had ever taken and filter them
+  // here, which made the badge wrong past the row cap (#144) and made the dashboard's heaviest
+  // read run on a poll from every section — to produce one integer.
+  const [newOrders, setNewOrders] = useState(0)
+  const merchantId = merchant?.id
+  const refreshNewOrders = useCallback(() => {
+    if (!merchantId) return
+    fetchOrderCount(merchantId, 'new').then(r => { if (r.ok) setNewOrders(r.data) })
+  }, [merchantId])
+  useEffect(() => { refreshNewOrders() }, [refreshNewOrders])
+
+  // …and on its own besides, so an order arriving while the merchant is editing their menu still
+  // shows up on the Orders nav item. It lives HERE rather than in OrdersView so the badge stays
+  // live in every section, which is the whole point of a badge.
+  usePoll(refreshNewOrders, { enabled: !!merchantId })
+
+  const nav: NavItem[] = SECTIONS.map(s => ({
+    key: s.key,
+    label: t(s.en, s.zh),
+    icon: s.icon,
+    badge: s.key === 'orders' ? newOrders : undefined,
+    // The lock must be legible from the sidebar, not only after clicking (#110).
+    tag: s.key === 'vouchers' && !pro ? 'Pro' : undefined,
+  }))
 
   // Route sidebar section switches through the unsaved-changes guard so a dirty
   // Settings tab cannot be silently discarded by navigating away.
-  const selectSection = (key: string) => guard(() => setSection(key))
+  const selectSection = useCallback((key: string) => guard(() => setSection(key)), [guard, setSection])
+
+  // Same guard, but aimed at a sub-tab (#112). Writing the hash is the whole request now that
+  // ShopSettings reads its tab from the router — it used to need a remount key here, because the
+  // hash was written outside the router and a mounted ShopSettings could not see the change.
+  //
+  // Inside `guard`, so a cancelled confirm neither navigates nor discards the merchant's edits.
+  const goToSettingsTab = useCallback(
+    (sub: string) => guard(() => setSection('settings', sub)),
+    [guard, setSection],
+  )
 
   return (
+    // Pro locks anywhere below can ask for Settings → Subscription (#112); handing them the
+    // GUARDED switch is what stops an upgrade CTA discarding a half-typed Shipping form.
+    <UpgradeNavProvider navigate={goToSettingsTab}>
     <DashboardShell
-      logo="BiteTime"
       title={merchant!.name}
       role={role === 'superadmin' ? t('Viewing as shop', '以店铺身份查看') : t('Merchant', '商家')}
       nav={nav}
@@ -54,16 +101,33 @@ function DashboardInner() {
       backTo={role === 'superadmin' ? { href: '/admin/merchants', label: t('Back to admin', '返回管理') } : undefined}
     >
       <BillingBanner />
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div key={section} variants={variants} initial="initial" animate="animate" exit="exit">
-          {section === 'overview'  && <Overview />}
-          {section === 'orders'    && <OrdersView />}
-          {section === 'products'  && <ProductsManager />}
-          {section === 'vouchers'  && <VouchersManager />}
-          {section === 'customers' && <CustomersView />}
-          {section === 'settings'  && <ShopSettings />}
-        </motion.div>
-      </AnimatePresence>
+      <OnboardingChecklist section={section} onNavigate={selectSection} />
+      <div key={section} {...enter}>
+        {section === 'overview'  && <Overview />}
+        {section === 'orders'    && <OrdersView onOrdersChanged={refreshNewOrders} />}
+        {section === 'products'  && <ProductsManager />}
+        {/* Vouchers are Pro-only (#110). The nav entry stays — a basic shop must see the
+            feature it is not paying for, not wonder where it went — but the section itself
+            is the upgrade prompt. The backend refuses the writes either way. */}
+        {section === 'vouchers'  && (pro
+          ? <VouchersManager />
+          : <>
+              <ProLock
+                what={t('Vouchers', '优惠券')}
+                why={t('Run promotions with discount codes your customers enter at checkout. Available on the Pro plan.',
+                  '使用折扣码开展促销，顾客可在结账时输入。Pro 方案专享。')}
+              />
+              {/* A shop that USED to be Pro has codes in customers' hands that no longer redeem.
+                  The lock alone would hide exactly the thing it needs to explain, and the
+                  merchant would hear about it from a complaint instead. Renders nothing for a
+                  shop that was never Pro. */}
+              <DeactivatedVouchers />
+            </>)}
+        {section === 'customers' && <CustomersView />}
+        {section === 'settings'  && <ShopSettings />}
+      </div>
+      <FeedbackFab />
     </DashboardShell>
+    </UpgradeNavProvider>
   )
 }

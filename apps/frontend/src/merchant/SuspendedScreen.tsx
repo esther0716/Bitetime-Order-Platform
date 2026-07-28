@@ -15,15 +15,13 @@ export default function SuspendedScreen() {
 
   async function reactivate() {
     setBusy(true); setErr('')
-    try {
-      const url = await startCheckout({
-        plan: merchant?.plan || 'basic',
-        billing: merchant?.billing_cycle || 'monthly',
-        region: merchant?.billing_region,
-      })
-      window.location.assign(url)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : t('Could not start checkout', '无法开始结账'))
+    const r = await startCheckout({
+      plan: merchant?.plan || 'basic',
+      billing: merchant?.billing_cycle || 'monthly',
+    })
+    if (r.ok) window.location.assign(r.data)
+    else {
+      setErr(r.error.message || t('Could not start checkout', '无法开始结账'))
       setBusy(false)
     }
   }

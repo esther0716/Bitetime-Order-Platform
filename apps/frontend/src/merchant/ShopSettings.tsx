@@ -1,17 +1,28 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, merchantHasOrders } from '../store'
+import { shopRates, shopTax, shopDistance, shopMethods } from '@bitetime/shared'
 import { CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../currency'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { Textarea } from '../components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
+import { Badge } from '../components/ui/badge'
 import { useNavGuard } from './NavGuard'
 import { isDirty, type SettingsFields } from './settingsDirty'
+import { useSaved } from './useSaved'
+import ReferralTab from './ReferralTab'
+import FulfilmentTab from './FulfilmentTab'
+import { ProLock } from './ProLock'
+import SubscriptionTab from './SubscriptionTab'
+import { useDashboardSubsection } from '../useDashboardSection'
+import { useProAccess, isRequiresPro } from '../plan'
+import AddressAutocomplete from '../store/AddressAutocomplete'
 
-type TabKey = 'shipping' | 'payment' | 'notifications'
+type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'notifications' | 'subscription' | 'referral'
 
 // Tabbed Shop Settings (issue #19). A container renders a horizontal tab bar and
 // the active tab's form; each tab is its own form with its own Save. Only the
@@ -19,9 +30,34 @@ type TabKey = 'shipping' | 'payment' | 'notifications'
 // container tracks a single `dirty` flag and registers it with the NavGuard.
 export default function ShopSettings() {
   const { t } = useSession()
+  const pro = useProAccess()
   const { guard, registerBlocker } = useNavGuard()
-  const [tab, setTab] = useState<TabKey>('shipping')
-  const [dirty, setDirty] = useState(false)
+  // WHICH tab is dirty, not merely whether one is. Only the active tab can be, so `dirty` falls
+  // out of the comparison — and a tab switch clears it by construction rather than by an effect
+  // that has to remember to. It used to be a bare boolean reset by ShopSettings being remounted;
+  // now the hash is router-owned nothing remounts, and a stale `true` would block the next
+  // navigation and warn on reload about edits that no longer exist.
+  const [dirtyTab, setDirtyTab] = useState<TabKey | null>(null)
+
+  const TABS: { key: TabKey; label: string; tag?: string }[] = [
+    { key: 'shipping', label: t('Shipping', '运费') },
+    { key: 'fulfilment', label: t('Fulfilment', '取货') },
+    { key: 'payment', label: t('Payment', '付款') },
+    // Marked from the tab bar, not only once opened — a basic shop should see that alerts are
+    // a paid feature before it goes looking for the form (#110).
+    { key: 'notifications', label: t('Notifications', '通知'), tag: pro ? undefined : 'Pro' },
+    { key: 'subscription', label: t('Subscription', '订阅') },
+    { key: 'referral', label: t('Referral', '推荐') },
+  ]
+
+  // The sub-tab lives in the URL hash (`#settings/payment`), so it survives a refresh and a Pro
+  // CTA can link straight at Subscription (#112). Keys come from TABS so a new tab is declared
+  // once, not in a parallel list that can drift.
+  const [tab, setTab] = useDashboardSubsection('settings', TABS.map(x => x.key), 'shipping')
+
+  const dirty = dirtyTab === tab
+  // Handed to every tab as `onDirtyChange`, so a tab reports only about itself.
+  const setDirty = useCallback((next: boolean) => setDirtyTab(next ? tab : null), [tab])
 
   // Register this section's dirty state so the Dashboard sidebar can guard against it.
   useEffect(() => {
@@ -44,40 +80,73 @@ export default function ShopSettings() {
     guard(() => { setDirty(false); setTab(next) })
   }
 
-  const TABS: { key: TabKey; label: string }[] = [
-    { key: 'shipping', label: t('Shipping', '运费') },
-    { key: 'payment', label: t('Payment', '付款') },
-    { key: 'notifications', label: t('Notifications', '通知') },
-  ]
 
   return (
     <div className="w-full">
       <Tabs value={tab} onValueChange={(v) => changeTab(v as TabKey)} className="mb-6">
-        <TabsList>
-          {TABS.map(({ key, label }) => (
-            <TabsTrigger key={key} value={key}>{label}</TabsTrigger>
+        {/* Mobile: 4 nowrap tabs exceed the narrow column, so scroll horizontally
+            with natural widths instead of clipping the last tab off-screen. */}
+        <TabsList className="max-sm:justify-start max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden">
+          {TABS.map(({ key, label, tag }) => (
+            <TabsTrigger key={key} value={key} className="group/tab max-sm:flex-none">
+              {label}
+              {/* The active trigger fills with oxblood, so the outline badge's `text-ink` would
+                  sit near-invisible on it — invert to cream while the tab is selected. */}
+              {tag && (
+                <Badge
+                  variant="outline"
+                  className="ml-2 uppercase tracking-[0.08em] group-data-active/tab:border-cream/40 group-data-active/tab:text-cream"
+                >
+                  {tag}
+                </Badge>
+              )}
+            </TabsTrigger>
           ))}
         </TabsList>
       </Tabs>
 
       {tab === 'shipping' && <ShippingTab onDirtyChange={setDirty} />}
+      {tab === 'fulfilment' && <FulfilmentTab onDirtyChange={setDirty} />}
       {tab === 'payment' && <PaymentTab onDirtyChange={setDirty} />}
-      {tab === 'notifications' && <NotificationsTab onDirtyChange={setDirty} />}
+      {/* Telegram alerts are Pro-only (#110). The tab stays — the feature must be visible to
+          be sold — but a basic shop gets the upgrade prompt in place of the form. The refusal
+          that actually matters is the backend's `403 requires_pro` on PUT …/secret. */}
+      {tab === 'notifications' && (pro
+        ? <NotificationsTab onDirtyChange={setDirty} />
+        : <ProLock
+            what={t('Order notifications', '订单通知')}
+            why={t('Get a Telegram message the moment an order comes in, so you never have to watch the dashboard. Available on the Pro plan.',
+              '订单一进来就收到 Telegram 消息，无需盯着后台。Pro 方案专享。')}
+          />)}
+      {tab === 'subscription' && <SubscriptionTab />}
+      {tab === 'referral' && <ReferralTab />}
     </div>
   )
 }
 
 interface TabProps { onDirtyChange: (dirty: boolean) => void }
 
-const CARD = 'bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border'
+const CARD = 'bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
 const HEADING = 'font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2'
 
-// Reports dirty state up whenever `saved` vs `fields` diverge. Returns a stable helper set.
-function useTabDirty(saved: SettingsFields, fields: SettingsFields, onDirtyChange: (d: boolean) => void) {
-  const dirty = isDirty(saved, fields)
-  useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
-  return dirty
+// `SettingsFields`' index signature is `string | boolean | undefined`, wide enough to cover
+// every tab in this file, but a key with no EXPLICIT declaration there resolves to that whole
+// union — too wide for `Input`/`AddressAutocomplete`'s strictly-`string` `value` props. This
+// local intersection narrows just the distance-policy keys this tab owns to `string` (matching
+// every other numeric field this form already carries as text), without widening the shared
+// type every other tab in this file also uses.
+type ShippingFields = SettingsFields & {
+  baseFee?: string
+  ratePerKm?: string
+  maxKm?: string
+  originPlaceId?: string
+  originAddress?: string
+  originLat?: string
+  originLng?: string
 }
+
+// `eq` for `useSaved` on this file's flat-map tabs: the negation of the shared `isDirty`.
+const settingsEq = (a: SettingsFields, b: SettingsFields) => !isDirty(a, b)
 
 function SaveRow({ busy, label }: { busy: boolean; label: { idle: string; busy: string } }) {
   return (
@@ -89,39 +158,341 @@ function SaveRow({ busy, label }: { busy: boolean; label: { idle: string; busy: 
 
 function ShippingTab({ onDirtyChange }: TabProps) {
   const { t, merchant, refreshMerchant } = useSession()
-  const [saved, setSaved] = useState<SettingsFields>(() => ({
-    currency: merchant!.currency ?? DEFAULT_CURRENCY,
-    wm: String(merchant!.shipping?.WM ?? 8),
-    em: String(merchant!.shipping?.EM ?? 18),
-  }))
-  const [fields, setFields] = useState<SettingsFields>(saved)
+  const [initial] = useState<ShippingFields>(() => {
+    // shopRates/shopDistance/shopMethods, not local fallbacks: this form shows the merchant what
+    // a row with a missing key CHARGES/OFFERS, and that is decided by these functions on both
+    // sides of the wire — a third fallback rule here would show a price nobody bills.
+    const rates = shopRates(merchant!.shipping)
+    const distance = shopDistance(merchant!)
+    const methods = shopMethods(merchant!)
+    return {
+      wm: String(rates.WM),
+      em: String(rates.EM),
+      pickupAddress: merchant!.pickup_address ?? '',
+      pickupEnabled: methods.pickup,
+      deliveryEnabled: methods.delivery,
+      expressEnabled: methods.express,
+      baseFee: String(distance.base),
+      ratePerKm: String(distance.ratePerKm),
+      maxKm: distance.maxKm === null ? '' : String(distance.maxKm),
+      originPlaceId: merchant!.origin_place_id ?? '',
+      originAddress: merchant!.origin_address ?? '',
+      originLat: merchant!.origin_lat != null ? String(merchant!.origin_lat) : '',
+      originLng: merchant!.origin_lng != null ? String(merchant!.origin_lng) : '',
+    }
+  })
+  const [fields, setFields] = useState<ShippingFields>(initial)
   const [busy, setBusy] = useState(false)
-  // Currency locks after the first order so past orders/aggregates never
-  // re-denominate. Assume locked until the check clears, so it can't flip open.
-  const [currencyLocked, setCurrencyLocked] = useState(true)
-  useTabDirty(saved, fields, onDirtyChange)
+  const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
 
-  useEffect(() => {
-    let active = true
-    merchantHasOrders(merchant!.id).then(has => { if (active) setCurrencyLocked(has) })
-    return () => { active = false }
-  }, [merchant!.id])
+  // Rate-input labels show the shop's saved currency symbol. Currency is edited on the Payment
+  // tab now, so this reads the persisted value, not a live field. (Currency locks after the
+  // first order anyway, so this is stable in practice.)
+  const symbol = currencyDef(merchant!.currency ?? DEFAULT_CURRENCY).symbol
 
-  // Live symbol drives the shipping-rate input labels.
-  const symbol = currencyDef(fields.currency).symbol
+  // The one method still on, if exactly one is — the checkbox that must not be untickable.
+  const enabledMethods = (['pickup', 'delivery', 'express'] as const)
+    .filter(m => fields[`${m}Enabled` as const])
+  const onlyMethod = enabledMethods.length === 1 ? enabledMethods[0] : null
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true)
     try {
-      await updateMerchantConfig(merchant!.id, {
+      // A typed origin never confirmed against the map has no place id. Refuse rather than drop it
+      // silently under a success toast — the origin is the routing origin AND the cache key.
+      if ((fields.originAddress ?? '').trim() !== '' && !fields.originPlaceId) {
+        toast.error(t(
+          'Pick your delivery origin from the suggestions — a typed address on its own cannot be saved.',
+          '请从建议列表中选择配送起点 — 仅输入文字无法保存。'
+        ))
+        setBusy(false)
+        return
+      }
+
+      // Express requires an origin to route from. Backend CHECK is the backstop; this names the
+      // rule in the merchant's language while they still see the form.
+      if (fields.expressEnabled && !fields.originPlaceId) {
+        toast.error(t(
+          'Set your delivery origin before switching on express delivery.',
+          '请先设置配送起点，才能开启快速配送。'
+        ))
+        setBusy(false)
+        return
+      }
+
+      // Blank maxKm = "deliver anywhere with a road"; 0 = "deliver nowhere". Trimmed so this
+      // agrees with the blank test the save makes below.
+      if ((fields.maxKm ?? '').trim() !== '' && Number(fields.maxKm) <= 0) {
+        toast.error(t(
+          'Maximum distance must be greater than zero, or leave blank to deliver anywhere.',
+          '最远配送距离必须大于零，或留空表示只要有路就送。'
+        ))
+        setBusy(false)
+        return
+      }
+
+      // shopRates writes what it reads on both sides of the wire: a BLANK EM falls back to WM
+      // (not free EM shipping); a typed 0 is an honest zero.
+      const shipping = shopRates({ WM: fields.wm, EM: fields.em })
+      const saved = await updateMerchantConfig(merchant!.id, {
+        shipping,
+        // Saving the Shipping tab completes the onboarding "set pickup / delivery"
+        // step (#102). Idempotent — already true after the first save.
+        onboarding_shipping_set: true,
+        pickup_address: (fields.pickupAddress ?? '').trim() || null,
+        // A disabled method keeps its configuration so switching it back does not mean retyping it.
+        pickup_enabled: fields.pickupEnabled,
+        delivery_enabled: fields.deliveryEnabled,
+        express_enabled: fields.expressEnabled,
+        delivery_base_fee: Number(fields.baseFee) || 0,
+        delivery_rate_per_km: Number(fields.ratePerKm) || 0,
+        // BLANK maximum is "anywhere with a road" — null, not 0.
+        delivery_max_km: (fields.maxKm ?? '').trim() === '' ? null : Number(fields.maxKm),
+        origin_place_id: fields.originPlaceId || null,
+        // An unmatched string is not an origin: store coords/address only when place_id is confirmed.
+        origin_lat: fields.originPlaceId && (fields.originLat ?? '').trim() !== '' ? Number(fields.originLat) : null,
+        origin_lng: fields.originPlaceId && (fields.originLng ?? '').trim() !== '' ? Number(fields.originLng) : null,
+        origin_address: fields.originPlaceId ? (fields.originAddress || null) : null,
+      })
+      if (!saved.ok) { toast.error(saved.error.message || t('Save failed', '保存失败')); return }
+      await refreshMerchant()
+      // Show back what was actually SAVED, read through the one function that also reads it on
+      // reload, not the raw strings that were typed.
+      const distance = shopDistance({
+        express_enabled: fields.expressEnabled,
+        delivery_base_fee: Number(fields.baseFee) || 0,
+        delivery_rate_per_km: Number(fields.ratePerKm) || 0,
+        delivery_max_km: (fields.maxKm ?? '').trim() === '' ? null : Number(fields.maxKm),
+        origin_place_id: fields.originPlaceId || null,
+      })
+      const applied = {
+        ...fields,
+        wm: String(shipping.WM),
+        em: String(shipping.EM),
+        baseFee: String(distance.base),
+        ratePerKm: String(distance.ratePerKm),
+        maxKm: distance.maxKm === null ? '' : String(distance.maxKm),
+        originPlaceId: merchant!.origin_place_id ?? '',
+        originAddress: merchant!.origin_address ?? '',
+        originLat: merchant!.origin_lat != null ? String(merchant!.origin_lat) : '',
+        originLng: merchant!.origin_lng != null ? String(merchant!.origin_lng) : '',
+      }
+      setFields(applied)
+      commit(applied)
+      toast.success(t('Settings saved', '设置已保存'))
+    } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <form onSubmit={save}>
+      <div className={CARD} data-tour="set-shipping">
+        <h3 className={HEADING}>{t('What customers can choose', '顾客可选的方式')}</h3>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-start gap-2 text-[14px] text-ink">
+            <input type="checkbox" className="mt-1"
+              checked={fields.pickupEnabled}
+              disabled={onlyMethod === 'pickup'}
+              onChange={e => setFields(f => ({ ...f, pickupEnabled: e.target.checked }))} />
+            <span>{t('Pickup — customers collect from you.', '自取 — 顾客自行前来领取。')}</span>
+          </label>
+          <label className="flex items-start gap-2 text-[14px] text-ink">
+            <input type="checkbox" className="mt-1"
+              checked={fields.deliveryEnabled}
+              disabled={onlyMethod === 'delivery'}
+              onChange={e => setFields(f => ({ ...f, deliveryEnabled: e.target.checked }))} />
+            <span>
+              {t('Delivery — one flat rate for West Malaysia, one for East Malaysia.',
+                 '送货 — 西马一个统一运费，东马一个。')}
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-[14px] text-ink">
+            <input type="checkbox" className="mt-1"
+              checked={fields.expressEnabled}
+              disabled={onlyMethod === 'express'}
+              onChange={e => setFields(f => ({ ...f, expressEnabled: e.target.checked }))} />
+            <span>
+              {t('Express delivery — a base fee plus a rate for every kilometre your rider drives.',
+                 '快速配送 — 基本运费加上每公里费率。')}
+            </span>
+          </label>
+          {fields.expressEnabled && !fields.originPlaceId && (
+            <p className="text-[12px] text-oxblood leading-[1.5]">
+              {t('Express delivery needs a delivery origin. Pick one below to save.',
+                 '快速配送需要一个配送起点，请在下方选择后保存。')}
+            </p>
+          )}
+          <p className="text-[12px] text-rose-muted leading-[1.5]">
+            {t('You must offer at least one. A method you switch off keeps its settings.',
+               '至少须提供一种。关闭的方式会保留其设置。')}
+          </p>
+        </div>
+      </div>
+
+      <div className={CARD}>
+        <h3 className={HEADING}>{t('Pickup address', '自取地址')}</h3>
+        <div className="flex flex-col gap-[6px]">
+          <Label htmlFor="shop-pickup">{t('Shown to customers who choose pickup', '选择自取的顾客可见')}</Label>
+          <Textarea id="shop-pickup" value={fields.pickupAddress}
+            onChange={e => setFields(f => ({ ...f, pickupAddress: e.target.value }))}
+            rows={3} placeholder={t('e.g. 12 Jalan Example, 50000 Kuala Lumpur', '例如：吉隆坡某某路12号')}
+            className="resize-y min-h-[72px] max-w-[420px]" />
+        </div>
+      </div>
+
+      <div className={CARD}>
+        <h3 className={HEADING}>{t('Delivery origin', '配送起点')}</h3>
+        <AddressAutocomplete
+          id="shop-origin"
+          t={t}
+          label={t('Where your rider starts from', '骑手出发的地址')}
+          value={fields.originAddress ?? ''}
+          placeholder={t('Start typing your shop address…', '输入店铺地址…')}
+          onTextChange={text => setFields(f => (
+            // Typing invalidates any prior pick: a place id must never survive its own text
+            // changing. It does NOT untick expressEnabled — the checkbox goes disabled the moment
+            // the origin id is gone, and the backend/DB CHECK refuse a save of express with no origin.
+            { ...f, originAddress: text, originPlaceId: '', originLat: '', originLng: '' }
+          ))}
+          onPick={d => setFields(f => ({
+            ...f,
+            originPlaceId: d.placeId,
+            originAddress: d.formatted,
+            originLat: String(d.lat),
+            originLng: String(d.lng),
+          }))}
+        />
+        {fields.originPlaceId && (
+          <p className="text-[12px] text-rose-muted mt-2 leading-[1.5]">
+            {t('Routes are measured from: ', '距离从此地址起算：')}<strong>{fields.originAddress}</strong>
+          </p>
+        )}
+        <p className="text-[12px] text-rose-muted mt-2 leading-[1.5]">
+          {t('This is separate from your pickup address above, which is free text and is only shown to pickup customers.',
+             '此地址与上方的自取地址不同 — 自取地址是纯文字，仅显示给自取顾客。')}
+        </p>
+      </div>
+
+      {/* Both rate cards can be on screen at once — a shop may post parcels at a flat rate AND run
+          a rider by the kilometre. Each names the method whose fee it sets. */}
+      {fields.deliveryEnabled && (
+        <div className={CARD}>
+          <h3 className={HEADING}>{t('Delivery rates', '送货费')}</h3>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="shop-wm">{t(`West Malaysia (${symbol})`, `西马运费 (${symbol})`)}</Label>
+              <Input id="shop-wm" type="number" step="0.01" value={fields.wm}
+                onChange={e => setFields(f => ({ ...f, wm: e.target.value }))} variant="compact" />
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="shop-em">{t(`East Malaysia (${symbol})`, `东马运费 (${symbol})`)}</Label>
+              <Input id="shop-em" type="number" step="0.01" value={fields.em}
+                onChange={e => setFields(f => ({ ...f, em: e.target.value }))} variant="compact" />
+              <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+                {t('Blank East Malaysia charges the same as West Malaysia. Enter 0 for free East Malaysia delivery.',
+                   '东马留空则按西马运费收取。填 0 表示东马免运费。')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fields.expressEnabled && (
+        <div className={CARD}>
+          <h3 className={HEADING}>{t('Express delivery rates', '快速配送费率')}</h3>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="shop-base-fee">{t(`Base fee (${symbol})`, `基本运费 (${symbol})`)}</Label>
+              <Input id="shop-base-fee" type="number" step="0.01" min="0" value={fields.baseFee}
+                onChange={e => setFields(f => ({ ...f, baseFee: e.target.value }))} variant="compact" />
+              <p className="text-[12px] text-rose-muted leading-[1.5]">
+                {t('Charged on every delivery, before distance. Enter 0 to charge purely per kilometre.',
+                   '每单固定收取，与距离无关。填 0 则纯按公里收费。')}
+              </p>
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="shop-rate-km">{t(`Per kilometre (${symbol})`, `每公里 (${symbol})`)}</Label>
+              <Input id="shop-rate-km" type="number" step="0.01" min="0" value={fields.ratePerKm}
+                onChange={e => setFields(f => ({ ...f, ratePerKm: e.target.value }))} variant="compact" />
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="shop-max-km">{t('Maximum distance (km)', '最远配送距离 (公里)')}</Label>
+              <Input id="shop-max-km" type="number" step="0.1" min="0.1" value={fields.maxKm}
+                onChange={e => setFields(f => ({ ...f, maxKm: e.target.value }))} variant="compact" />
+              <p className="text-[12px] text-rose-muted leading-[1.5]">
+                {t('Leave blank to deliver anywhere with a road. Customers past this distance are told you do not deliver to them.',
+                   '留空表示只要有路就送。超过此距离的顾客会被告知不在配送范围。')}
+              </p>
+            </div>
+            <p className="text-[12px] text-rose-muted leading-[1.5]">
+              {t(`Example: ${symbol}${fields.baseFee || 0} + ${symbol}${fields.ratePerKm || 0}/km means a 10 km delivery costs ${symbol}${(Number(fields.baseFee || 0) + Number(fields.ratePerKm || 0) * 10).toFixed(2)}.`,
+                 `例如：${symbol}${fields.baseFee || 0} + ${symbol}${fields.ratePerKm || 0}/公里，10 公里配送为 ${symbol}${(Number(fields.baseFee || 0) + Number(fields.ratePerKm || 0) * 10).toFixed(2)}。`)}
+            </p>
+          </div>
+        </div>
+      )}
+      <SaveRow busy={busy} label={{ idle: t('Save', '保存'), busy: t('Saving…', '保存中…') }} />
+    </form>
+  )
+}
+
+function PaymentTab({ onDirtyChange }: TabProps) {
+  const { t, merchant, refreshMerchant } = useSession()
+  const [initial] = useState<SettingsFields>(() => {
+    // shopTax, not a local `?? 0`: this form shows the merchant what their shop CHARGES, and the
+    // charge is decided by that one function on both sides of the wire.
+    const tax = shopTax(merchant!)
+    return {
+      currency: merchant!.currency ?? DEFAULT_CURRENCY,
+      taxEnabled: tax.enabled,
+      taxRate: tax.rate ? String(tax.rate) : '',
+      bank: merchant!.payment_bank ?? '',
+      note: merchant!.payment_note ?? '',
+    }
+  })
+  const [fields, setFields] = useState<SettingsFields>(initial)
+  const [busy, setBusy] = useState(false)
+  // Currency locks after the first order so past orders/aggregates never
+  // re-denominate. Assume locked until the check clears, so it can't flip open.
+  const [currencyLocked, setCurrencyLocked] = useState(true)
+  const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
+
+  useEffect(() => {
+    let active = true
+    // Fail CLOSED: a could-not-ask keeps the currency selector locked, so a dropped packet can
+    // never open the door to re-denominating a shop that may already have orders.
+    merchantHasOrders(merchant!.id).then(r => { if (active) setCurrencyLocked(r.ok ? r.data : true) })
+    return () => { active = false }
+  }, [merchant!.id])
+
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true)
+    try {
+      const saved = await updateMerchantConfig(merchant!.id, {
         // Guard against a stale locked value slipping through: only persist the
         // currency when it is still editable.
         ...(currencyLocked ? {} : { currency: fields.currency }),
-        shipping: { WM: Number(fields.wm) || 0, EM: Number(fields.em) || 0 },
+        payment_bank: fields.bank,
+        payment_note: fields.note,
+        // A blank rate box is 0, and 0 is "no tax" — the same collapse `shopTax` makes when it
+        // reads the row back. The checkbox is stored as typed.
+        tax_enabled: fields.taxEnabled,
+        tax_rate: Number(fields.taxRate) || 0,
       })
+      if (!saved.ok) { toast.error(saved.error.message || t('Save failed', '保存失败')); return }
       await refreshMerchant()
-      setSaved(fields)
-      toast.success(t('Shipping saved', '运费已保存'))
+      // Tax goes through shopTax so a ticked-but-blank rate (`{tax_enabled: true, tax_rate: 0}`)
+      // reads back as OFF — carrying `fields.taxEnabled` verbatim would show CHECKED here and
+      // UNCHECKED after a refresh.
+      const tax = shopTax({ tax_enabled: fields.taxEnabled, tax_rate: Number(fields.taxRate) || 0 })
+      const applied = {
+        ...fields,
+        taxEnabled: tax.enabled,
+        taxRate: tax.rate ? String(tax.rate) : '',
+      }
+      setFields(applied)
+      commit(applied)
+      toast.success(t('Payment saved', '付款已保存'))
     } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
     finally { setBusy(false) }
   }
@@ -138,7 +509,9 @@ function ShippingTab({ onDirtyChange }: TabProps) {
             disabled={currencyLocked}
           >
             <SelectTrigger id="shop-currency" className="w-full max-w-[280px]" aria-label={t('Base currency', '基础货币')}>
-              <SelectValue />
+              <span className="truncate">
+                {currencyDef(fields.currency).code} — {currencyDef(fields.currency).symbol}
+              </span>
             </SelectTrigger>
             <SelectContent>
               {CURRENCY_CODES.map(code => (
@@ -158,48 +531,32 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         </div>
       </div>
       <div className={CARD}>
-        <h3 className={HEADING}>{t('Shipping rates', '运费')}</h3>
+        <h3 className={HEADING}>{t('Tax', '税')}</h3>
         <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-[14px] text-ink">
+            <input
+              type="checkbox"
+              checked={fields.taxEnabled}
+              onChange={e => setFields(f => ({ ...f, taxEnabled: e.target.checked }))}
+            />
+            {t('Charge tax on orders', '订单收取税费')}
+          </label>
           <div className="flex flex-col gap-[6px]">
-            <Label htmlFor="shop-wm">{t(`West Malaysia (${symbol})`, `西马运费 (${symbol})`)}</Label>
-            <Input id="shop-wm" type="number" step="0.01" value={fields.wm}
-              onChange={e => setFields(f => ({ ...f, wm: e.target.value }))} variant="compact" />
-          </div>
-          <div className="flex flex-col gap-[6px]">
-            <Label htmlFor="shop-em">{t(`East Malaysia (${symbol})`, `东马运费 (${symbol})`)}</Label>
-            <Input id="shop-em" type="number" step="0.01" value={fields.em}
-              onChange={e => setFields(f => ({ ...f, em: e.target.value }))} variant="compact" />
+            <Label htmlFor="shop-tax-rate">{t('Tax rate (%)', '税率 (%)')}</Label>
+            <Input
+              id="shop-tax-rate" type="number" step="0.01" min="0" max="100"
+              value={fields.taxRate}
+              disabled={!fields.taxEnabled}
+              onChange={e => setFields(f => ({ ...f, taxRate: e.target.value }))}
+              variant="compact"
+            />
+            <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+              {t('Added on top of your item prices, after any voucher discount. Delivery fees are not taxed. Leave blank, or enter 0, to turn tax off.',
+                 '在商品价格之上加收，扣除优惠券后计算。运费不征税。留空或填 0 即可关闭税费。')}
+            </p>
           </div>
         </div>
       </div>
-      <SaveRow busy={busy} label={{ idle: t('Save shipping', '保存运费'), busy: t('Saving…', '保存中…') }} />
-    </form>
-  )
-}
-
-function PaymentTab({ onDirtyChange }: TabProps) {
-  const { t, merchant, refreshMerchant } = useSession()
-  const [saved, setSaved] = useState<SettingsFields>(() => ({
-    bank: merchant!.payment_bank ?? '',
-    note: merchant!.payment_note ?? '',
-  }))
-  const [fields, setFields] = useState<SettingsFields>(saved)
-  const [busy, setBusy] = useState(false)
-  useTabDirty(saved, fields, onDirtyChange)
-
-  async function save(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault(); setBusy(true)
-    try {
-      await updateMerchantConfig(merchant!.id, { payment_bank: fields.bank, payment_note: fields.note })
-      await refreshMerchant()
-      setSaved(fields)
-      toast.success(t('Payment saved', '付款已保存'))
-    } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
-    finally { setBusy(false) }
-  }
-
-  return (
-    <form onSubmit={save}>
       <div className={CARD}>
         <h3 className={HEADING}>{t('Payment', '付款')}</h3>
         <div className="flex flex-col gap-2">
@@ -220,32 +577,43 @@ function PaymentTab({ onDirtyChange }: TabProps) {
   )
 }
 
+// Only ever rendered for a Pro shop — the gate is in ShopSettings above, alongside every other
+// tab's mount, rather than hidden in a wrapper here.
 function NotificationsTab({ onDirtyChange }: TabProps) {
   const { t, merchant } = useSession()
-  const [saved, setSaved] = useState<SettingsFields>({ tgToken: '', tgChat: '' })
-  const [fields, setFields] = useState<SettingsFields>({ tgToken: '', tgChat: '' })
+  const initial: SettingsFields = { tgToken: '', tgChat: '' }
+  const [fields, setFields] = useState<SettingsFields>(initial)
   const [busy, setBusy] = useState(false)
   const loaded = useRef(false)
-  useTabDirty(saved, fields, onDirtyChange)
+  const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
 
   useEffect(() => {
-    fetchMerchantSecret(merchant!.id).then((s: any) => {
+    fetchMerchantSecret(merchant!.id).then((r) => {
+      const s = r.ok ? r.data : null
       const v = { tgToken: s?.tg_token ?? '', tgChat: s?.tg_chat_id ?? '' }
-      setSaved(v)
+      commit(v)
       // Only overwrite in-flight edits if the user hasn't started typing yet.
       if (!loaded.current) setFields(v)
       loaded.current = true
     })
-  }, [merchant!.id])
+    // `commit` is a stable useState setter; listed only to satisfy exhaustive-deps.
+  }, [merchant!.id, commit])
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true)
-    try {
-      await upsertMerchantSecret(merchant!.id, { tg_token: fields.tgToken, tg_chat_id: fields.tgChat })
-      setSaved(fields)
+    const r = await upsertMerchantSecret(merchant!.id, { tg_token: fields.tgToken, tg_chat_id: fields.tgChat })
+    if (r.ok) {
+      commit(fields)
       toast.success(t('Notifications saved', '通知已保存'))
-    } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
-    finally { setBusy(false) }
+    } else {
+      // The form only renders for a Pro shop, so this is the fallback for a `plan` that moved
+      // under a long-open tab — an upgrade prompt, not the raw `requires_pro` code (#110).
+      toast.error(isRequiresPro(r.error)
+        ? t('Order notifications are a Pro feature. Upgrade to Pro to turn them on.',
+            '订单通知是 Pro 功能。升级到 Pro 即可开启。')
+        : r.error.message || t('Save failed', '保存失败'))
+    }
+    setBusy(false)
   }
 
   return (

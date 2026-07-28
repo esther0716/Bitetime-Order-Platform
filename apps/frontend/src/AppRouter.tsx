@@ -1,12 +1,15 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
-import { AnimatePresence } from 'motion/react'
+import type { ReactNode } from 'react'
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { PageTransition } from './motion'
 import { SessionProvider, useSession } from './SessionContext'
 import { Toaster } from './components/ui/sonner'
+import { TooltipProvider } from './components/ui/tooltip'
 import { MerchantProvider, useMerchant } from './MerchantContext'
 import RequireRole from './RequireRole'
+import { useCanonical } from './canonical'
 import { Spinner } from './components/Loaders'
+import Wordmark from './components/Wordmark'
 
 // Route-level code splitting: each surface ships its own chunk, so a storefront
 // customer never downloads merchant/admin/signup code (signup pulls in the heavy
@@ -17,6 +20,11 @@ const SignupScreen = lazy(() => import('./merchant/SignupScreen'))
 const LoginScreen = lazy(() => import('./merchant/LoginScreen'))
 const MerchantHome = lazy(() => import('./merchant/MerchantHome'))
 const Storefront = lazy(() => import('./store/Storefront'))
+const TrackOrder = lazy(() => import('./store/TrackOrder'))
+const OrderHistory = lazy(() => import('./store/OrderHistory'))
+const ResetPasswordPage = lazy(() => import('./ResetPasswordPage'))
+const TermsPage = lazy(() => import('./legal/TermsPage'))
+const PrivacyPage = lazy(() => import('./legal/PrivacyPage'))
 
 function RouteFallback() {
   return (
@@ -39,7 +47,7 @@ function StorefrontShell() {
   if (notFound) return (
     <div className="form-wrap text-center pt-8 pb-12">
       <div className="text-center mb-10">
-        <h1 className="font-heading text-[26px] font-medium text-oxblood tracking-[0.3px]">BiteTime</h1>
+        <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">Shop not found</p>
       </div>
       <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-left">
@@ -55,7 +63,7 @@ function StorefrontShell() {
   if (merchant.status !== 'active') return (
     <div className="form-wrap text-center pt-8 pb-12">
       <div className="text-center mb-10">
-        <h1 className="font-heading text-[26px] font-medium text-oxblood tracking-[0.3px]">BiteTime</h1>
+        <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{merchant.name}</p>
       </div>
       <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-left">
@@ -66,13 +74,44 @@ function StorefrontShell() {
     </div>
   )
 
-  return <Storefront />
+  return (
+    <Routes>
+      <Route index element={<Storefront />} />
+      <Route path="track" element={<TrackOrder />} />
+      {/* A destination, not a dialog: deep-linkable and shareable. Signed out it renders the
+          auth panel in place — deliberately NOT behind RequireRole, which bounces to the
+          merchant login: wrong framing, wrong bundle, wrong destination for a customer. */}
+      <Route path="orders" element={<OrderHistory />} />
+    </Routes>
+  )
+}
+
+// A merchant who is already signed in has no business on the login screen, and Back is exactly how
+// they get there. Renders the form while the session is still resolving — `role` reads 'customer'
+// until the shop lookup lands — so a signed-out visitor never waits behind a spinner; on a
+// client-side Back the session is already resolved above this tree, so the bounce is immediate.
+//
+// Login only, NOT signup: the signup flow signs the merchant in halfway through and then hands a
+// Pro shop off to Stripe Checkout. A bounce there would hijack the redirect and strand a shop that
+// has never paid.
+//
+// Superadmins are left alone: /merchant is not their dashboard (MerchantHome sends them to /admin),
+// so sending them there is a round trip through a screen that only redirects again.
+function RedirectSignedInMerchant({ children }: { children: ReactNode }) {
+  const { role } = useSession()
+  if (role === 'merchant') return <Navigate to="/merchant" replace />
+  return children
 }
 
 export default function AppRouter() {
   return (
     <SessionProvider>
-      <AnimatedRoutes />
+      {/* One provider for every tooltip in the app, so they share a delay instead of each
+          usage inventing one. `delay={200}` is long enough that a pointer crossing the
+          dashboard on its way somewhere else does not trail popups behind it. */}
+      <TooltipProvider delay={200}>
+        <AnimatedRoutes />
+      </TooltipProvider>
       <Toaster position="bottom-center" />
     </SessionProvider>
   )
@@ -80,22 +119,35 @@ export default function AppRouter() {
 
 function AnimatedRoutes() {
   const location = useLocation()
+  // Written per route, not in index.html: one HTML file serves every path, so a static tag would
+  // declare every storefront to be the homepage. See canonical.ts.
+  useCanonical()
   return (
     <Suspense fallback={<RouteFallback />}>
-      <AnimatePresence mode="wait" initial={false}>
-        <PageTransition key={location.pathname}>
-          <Routes location={location}>
-            <Route path="/" element={<Landing />} />
-            <Route path="/s/:slug/*" element={<MerchantProvider><StorefrontShell /></MerchantProvider>} />
-            <Route path="/merchant/signup" element={<SignupScreen />} />
-            <Route path="/merchant/login" element={<LoginScreen />} />
-            <Route path="/merchant" element={<RequireRole role="merchant"><MerchantHome /></RequireRole>} />
-            <Route path="/merchant/:slug" element={<RequireRole role="superadmin"><MerchantHome /></RequireRole>} />
-            <Route path="/admin/merchants" element={<RequireRole role="superadmin"><AdminHome /></RequireRole>} />
-            <Route path="/admin" element={<RequireRole role="superadmin"><AdminHome /></RequireRole>} />
-          </Routes>
-        </PageTransition>
-      </AnimatePresence>
+      {/* Keyed on the path so each route fades in, and NOT wrapped in AnimatePresence: an
+          exit-gated swap never completes in a backgrounded tab, which froze the app on
+          whatever route it was showing. See the rule at the top of motion.tsx. */}
+      <PageTransition key={location.pathname}>
+        <Routes location={location}>
+          <Route path="/" element={<Landing />} />
+          {/* Top-level on purpose, NOT nested under /s/:slug: the storefront shell's status gate
+              would swallow it, and a suspended shop must never lock a customer out of their own
+              account. Role-blind — `?shop=` decides where they land afterwards. */}
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          {/* Top-level for the same reason, and it matters for the same kind of person: a
+              customer of a SUSPENDED shop must still be able to read the notice describing data
+              we already hold about them. A shop's status can never gate that. */}
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/s/:slug/*" element={<MerchantProvider><StorefrontShell /></MerchantProvider>} />
+          <Route path="/merchant/signup" element={<SignupScreen />} />
+          <Route path="/merchant/login" element={<RedirectSignedInMerchant><LoginScreen /></RedirectSignedInMerchant>} />
+          <Route path="/merchant" element={<RequireRole role="merchant"><MerchantHome /></RequireRole>} />
+          <Route path="/merchant/:slug" element={<RequireRole role="superadmin"><MerchantHome /></RequireRole>} />
+          <Route path="/admin/merchants" element={<RequireRole role="superadmin"><AdminHome /></RequireRole>} />
+          <Route path="/admin" element={<RequireRole role="superadmin"><AdminHome /></RequireRole>} />
+        </Routes>
+      </PageTransition>
     </Suspense>
   )
 }

@@ -16,6 +16,28 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
+/**
+ * Hand this in and `data` is understood to be ONE PAGE that the server already sorted and
+ * searched — the table stops slicing, sorting and filtering, and forwards every such gesture
+ * back to the owner instead.
+ *
+ * It exists because a table cannot page through rows it was never sent. The merchant's order
+ * list used to be handed a shop's whole history and page it here, which quietly stopped being
+ * the whole history at the shop's 1000th order (#144). Client paging is still the right answer
+ * for the small, bounded lists elsewhere in the dashboard; this is the escape hatch for the ones
+ * that grow without limit.
+ */
+export interface ServerTable {
+  /** 1-based, to match the pager the merchant reads. */
+  page: number
+  pageCount: number
+  onPageChange: (page: number) => void
+  sorting: SortingState
+  onSortingChange: (sorting: SortingState) => void
+  search: string
+  onSearchChange: (search: string) => void
+}
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
@@ -27,6 +49,10 @@ interface DataTableProps<TData, TValue> {
   pageSize?: number
   /** Forwarded to TanStack as table.options.meta — cells read handlers/state from it. */
   meta?: unknown
+  /** When set, clicking a row calls this with the row's original data. */
+  onRowClick?: (row: TData) => void
+  /** When set, `data` is one server-side page — see ServerTable. */
+  server?: ServerTable
 }
 
 // Generic TanStack-backed table: global search, sortable columns, client pagination.
@@ -41,9 +67,14 @@ export function DataTable<TData, TValue>({
   nextLabel = 'Next',
   pageSize = 10,
   meta,
+  onRowClick,
+  server,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = React.useState('')
+
+  const sortingState = server ? server.sorting : sorting
+  const searchState = server ? server.search : globalFilter
 
   const table = useReactTable({
     data,
@@ -52,12 +83,35 @@ export function DataTable<TData, TValue>({
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
-    state: { sorting, globalFilter },
+    // The `manual*` flags are what make the row models above no-ops in server mode: the rows
+    // handed in are already the answer, and re-sorting or re-slicing them here would reorder a
+    // page against the ordering the rest of the pages were cut from.
+    manualPagination: !!server,
+    manualSorting: !!server,
+    manualFiltering: !!server,
+    pageCount: server?.pageCount,
+    onSortingChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(sortingState) : updater
+      if (server) server.onSortingChange(next)
+      else setSorting(next)
+    },
+    onGlobalFilterChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(searchState) : updater
+      if (server) server.onSearchChange(next as string)
+      else setGlobalFilter(next as string)
+    },
+    state: { sorting: sortingState, globalFilter: searchState },
     initialState: { pagination: { pageSize } },
     meta: meta as Record<string, unknown> | undefined,
   })
+
+  const pageCount = server ? server.pageCount : table.getPageCount()
+  const pageIndex = server ? server.page - 1 : table.getState().pagination.pageIndex
+  const goToPage = (i: number) => (server ? server.onPageChange(i + 1) : table.setPageIndex(i))
+  // The box drives `searchState`, not the local state directly — in server mode the local one is
+  // read by nothing, so binding to it would give the merchant a search box that types and filters
+  // nothing at all.
+  const setSearch = (v: string) => (server ? server.onSearchChange(v) : setGlobalFilter(v))
 
   return (
     <div>
@@ -65,8 +119,8 @@ export function DataTable<TData, TValue>({
         <div className="pb-4">
           <Input
             placeholder={searchPlaceholder}
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
+            value={searchState}
+            onChange={(e) => setSearch(e.target.value)}
             className="max-w-xs"
           />
         </div>
@@ -88,7 +142,16 @@ export function DataTable<TData, TValue>({
         <TableBody>
           {table.getRowModel().rows.length ? (
             table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+              <TableRow
+                key={row.id}
+                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                onKeyDown={onRowClick ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(row.original) }
+                } : undefined}
+                role={onRowClick ? 'button' : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                className={onRowClick ? 'cursor-pointer' : undefined}
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id} className="p-3">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -108,21 +171,29 @@ export function DataTable<TData, TValue>({
           )}
         </TableBody>
       </Table>
-      {table.getPageCount() > 1 && (
+      {pageCount > 1 && (
         <div className="flex items-center justify-end gap-2 pt-4">
           <Button
             variant="outline"
             size="none"
             className="py-[4px] px-3 rounded-pill text-[12px] bg-surface-raised hover:bg-oxblood-tint hover:text-oxblood hover:border-oxblood"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
+            onClick={() => goToPage(pageIndex - 1)}
+            disabled={pageIndex <= 0}
           >{prevLabel}</Button>
+          {/* Only in server mode: a merchant paging through a list too long to hold needs to
+              know where in it they are. The client-paged tables elsewhere show the whole list
+              on one screen's worth of pages and never needed it. */}
+          {server && (
+            <span className="text-[12px] text-text-tertiary tabular-nums">
+              {pageIndex + 1} / {pageCount}
+            </span>
+          )}
           <Button
             variant="outline"
             size="none"
             className="py-[4px] px-3 rounded-pill text-[12px] bg-surface-raised hover:bg-oxblood-tint hover:text-oxblood hover:border-oxblood"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            onClick={() => goToPage(pageIndex + 1)}
+            disabled={pageIndex >= pageCount - 1}
           >{nextLabel}</Button>
         </div>
       )}

@@ -1,11 +1,18 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import { signOut } from '../store'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
 import LanguageSelect from '../components/LanguageSelect'
+import Wordmark from '../components/Wordmark'
 import { Button } from '../components/ui/button'
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion'
+import { REFUNDS_ANCHOR } from '../legal/anchors'
+import { FAQ } from './faq'
+import { FEATURES } from './features'
+import { VERTICALS } from './verticals'
+import { useLandingStructuredData } from './structuredData'
 import { cn } from '../lib/utils'
 import {
   GrainOverlay,
@@ -13,12 +20,13 @@ import {
   HeroStagger,
   HeroItem,
   MagneticButton,
+  RotatingWord,
   StorefrontPreview,
 } from './LandingMotion'
 
 // Transitional (low-commitment) CTA target: a real storefront a hesitant
 // merchant can preview before signing up. Swap the slug to change the demo shop.
-const SAMPLE_SHOP_SLUG = 'bitetime'
+const SAMPLE_SHOP_SLUG = 'bitetime-co'
 
 // ── CTA class strings (reused across hero, pricing cards, footer) ─────────
 const ctaPrimary =
@@ -44,10 +52,20 @@ const sectionTitle =
   'font-heading text-2xl font-medium text-ink text-center mb-10'
 
 export default function Landing() {
-  const { t, account, role, loading } = useSession()
+  const { t, lang, account, role, loading } = useSession()
   const { pricing } = usePlatformPricing()
+  // Schema.org markup for this page only, in the language it is currently showing. See
+  // structuredData.ts for why it is not a static block in index.html.
+  useLandingStructuredData(lang)
   const [menuOpen, setMenuOpen] = useState(false)
   const [billing, setBilling] = useState('monthly') // 'monthly' | 'yearly'
+
+  // The hero's rotating word, resolved to the showing language. Memoised so a new array identity
+  // does not defeat RotatingWord's memo on every Landing re-render (billing toggle, menu open…).
+  const verticalWords = useMemo(
+    () => VERTICALS.map((v) => (lang === 'zh' ? v.zh : v.en)),
+    [lang]
+  )
 
   // Where the signed-in user's portal lives, by role. Customers have no portal.
   const portal = role === 'superadmin'
@@ -62,29 +80,39 @@ export default function Landing() {
     {
       id: 'basic',
       name: t('Basic', '基础版'),
-      blurb: t('For getting started.', '适合刚起步的你。'),
+      blurb: t(
+        'Get your orders out of the chat group.',
+        '把订单从聊天群组里解放出来。',
+      ),
       features: [
-        t('1 shop', '1 间店铺'),
-        t('Product catalog', '产品目录'),
-        t('Order management', '订单管理'),
+        t('Your own order page, ready to share', '专属订单页面，随时分享'),
+        t('Full control of your products — add, edit, or remove items anytime', '产品完全自主管理——随时增加、修改、删除商品'),
+        t('Custom delivery fees by region', '配送费可依地区自定义'),
+        t('Orders auto-calculated', '订单自动算总价'),
       ],
       cta: t('Start your shop', '开始建店'),
+      // The trial is Basic-only: signing up Basic is cardless and the 7 days start at
+      // approval. Pro goes straight to Checkout and is charged on day one, so the two
+      // tiers cannot share one risk-reversal line without the Pro card lying.
+      note: t('Free for 7 days · no card', '免费试用 7 天 · 无需信用卡'),
       to: '/merchant/signup',
       highlight: false,
     },
     {
       id: 'pro',
       name: 'Pro',
-      blurb: t('For growing shops.', '为成长中的店铺打造。'),
+      blurb: t(
+        'The moment your orders start piling up, you need to know first.',
+        '订单开始堆积的那一刻，你要第一个知道。',
+      ),
+      inherits: t('Everything in Basic, plus', '包含 Basic 所有功能，再加'),
       features: [
-        t('Everything in Basic', '包含基础版所有功能'),
-        t('Telegram + email alerts', 'Telegram + 邮件通知'),
-        t('Vouchers & promotions', '优惠券与促销'),
-        t('Custom shop link', '自定义店铺链接'),
-        t('Multiple shops', '多间店铺'),
-        t('Priority support', '优先客服支持'),
+        t('Instant Telegram alerts the second an order comes in', '订单一进来，Telegram 即时通知你'),
+        t('Bring customers back with built-in vouchers', '内建优惠券，让客人主动回购'),
+        t('Priority support — your questions jump the queue', '优先支持——你的问题优先处理'),
       ],
       cta: t('Start your shop', '开始建店'),
+      note: t('Start free on Basic · upgrade anytime', '先免费试用基础版 · 随时升级'),
       to: '/merchant/signup',
       highlight: true,
       badge: t('Most popular', '最受欢迎'),
@@ -98,9 +126,7 @@ export default function Landing() {
 
       {/* ── Nav bar ── */}
       <nav className="flex items-center justify-between px-8 py-5 border-b border-clay-border max-[600px]:px-5 max-[600px]:py-4">
-        <span className="font-heading text-[22px] font-medium text-oxblood tracking-[0.3px]">
-          BiteTime
-        </span>
+        <Wordmark className="h-7 max-[600px]:h-6" />
         <div className="flex items-center gap-5">
           <a href="#pricing" className={navLink}>
             {t('Pricing', '价格')}
@@ -166,19 +192,44 @@ export default function Landing() {
         <HeroStagger>
           <HeroItem>
             <p className="font-heading italic text-[15px] text-rose-muted mb-5">
-              {t('We know what it\'s like to run a kitchen out of your DMs.', '我们懂，用聊天窗口接单有多累。')}
+              {t('We know what it\'s like to run a business out of your DMs.', '我们懂，用聊天窗口接单有多累。')}
             </p>
           </HeroItem>
           <HeroItem>
-            <h1 className="font-heading text-[clamp(2rem,5vw,3.5rem)] font-medium text-ink leading-[1.18] tracking-[-0.01em] mb-5">
-              {t('Sell your food online — without the DM chaos.', '把美食搬到线上——告别聊天接单的混乱。')}
+            {/* aria-label carries the sentence as one static string: the visible word changes every
+                2.6s, and a screen reader re-announcing the h1 that often is noise. It also
+                overrides descendant content for the accessible name, so nothing inside needs
+                aria-hidden. Keep it in sync with the visible halves below. */}
+            <h1
+              aria-label={t(
+                'Sell your food online — your own shop, without the DM chaos.',
+                '把美食搬到线上——你的专属店铺，告别聊天接单的混乱。'
+              )}
+              className="font-heading text-[clamp(2rem,5vw,3.5rem)] font-medium text-ink leading-[1.18] tracking-[-0.01em] mb-5"
+            >
+              {/* Two blocks, not one flowing sentence: the rotating word's width changes as it
+                  cycles, and confining it to its own line is what keeps that from rewrapping the
+                  static half every 2.6 seconds. Each clause is short enough to hold one line down
+                  to 375px. English needs nothing after the word; Chinese needs its verb phrase. */}
+              <span className="block">
+                {t('Sell your ', '把')}
+                <RotatingWord words={verticalWords} />
+                {t('', '搬到线上——')}
+              </span>
+              <span className="block">
+                {/* The English half opens with a space that renders as nothing — a block start
+                    collapses it — but survives into the markup, so a crawler concatenating the two
+                    blocks reads "Sell your food online", not "foodonline". Chinese needs no space
+                    and must not get one. */}
+                {t(' online — your own shop, without the DM chaos.', '你的专属店铺，告别聊天接单的混乱。')}
+              </span>
             </h1>
           </HeroItem>
           <HeroItem>
             <p className="text-base leading-[1.7] text-ink-soft max-w-[560px] mx-auto mb-9">
               {t(
-                'Orders get lost across chats and screenshots. BiteTime gives you one branded storefront link — so every order lands in one place and you look the part.',
-                '订单散落在各种聊天和截图里。BiteTime 给你一个专属店面链接——所有订单集中一处，让你更专业。'
+                'Orders get lost across chats and screenshots. TinyOrder gives you one branded storefront link — so every order lands in one place and you look the part.',
+                '订单散落在各种聊天和截图里。TinyOrder 给你一个专属店面链接——所有订单集中一处，让你更专业。'
               )}
             </p>
           </HeroItem>
@@ -194,7 +245,7 @@ export default function Landing() {
           </HeroItem>
           <HeroItem>
             <p className="mt-6 mb-12 text-[13px] text-rose-muted">
-              {t('Made for Malaysian home kitchens and small food businesses.', '专为马来西亚家厨与小型食品业者打造。')}
+              {t('Made for home-run and small businesses.', '专为家庭与小型生意打造。')}
             </p>
           </HeroItem>
           <HeroItem>
@@ -207,14 +258,14 @@ export default function Landing() {
       <section className="bg-surface-raised border-y border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
         <h2 className={sectionTitle}>
-          {t('Three steps to your first order', '三步收到第一笔订单')}
+          {t('Three steps to start your shop and take your first order', '三步开店，收到第一笔订单')}
         </h2>
         <ol className="list-none max-w-[620px] mx-auto flex flex-col gap-6 p-0 m-0">
           <li className="flex items-baseline gap-5 text-[15px] leading-[1.6] text-ink">
             <span className="font-heading text-[28px] font-medium text-clay-border leading-none shrink-0 w-9">01</span>
             <div>
               <strong className="text-oxblood font-semibold">{t('Create your shop', '创建你的店铺')}</strong>
-              <span>{t(' — pick a name, describe what you bake.', '——取个名字，介绍你的产品。')}</span>
+              <span>{t(' — pick a name, describe what you make.', '——取个名字，介绍你的产品。')}</span>
             </div>
           </li>
           <li className="flex items-baseline gap-5 text-[15px] leading-[1.6] text-ink">
@@ -238,20 +289,52 @@ export default function Landing() {
       {/* ── Value props ── */}
       <section className="px-8 py-16 max-w-[860px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
+        <h2 className={sectionTitle}>
+          {t('Built for small businesses that sell direct', '专为直接面向顾客的小生意打造')}
+        </h2>
+        <p className="-mt-6 mb-10 text-[15px] leading-[1.75] text-ink-soft text-center max-w-[620px] mx-auto">
+          {t(
+            'TinyOrder is for people who make and sell their own things: home bakers taking weekend pre-orders, makers running a weekly drop, small shops that have outgrown a spreadsheet and a chat group. You do not need a website, a designer or a developer — if you can share a link, you can take orders online.',
+            'TinyOrder 是为自己做、自己卖的人打造的：接周末预订的家庭烘焙师、每周上新的手作卖家，以及已经用不下去表格和聊天群的小店。你不需要网站、设计师或工程师——只要会分享链接，就能在线接单。',
+          )}
+        </p>
         <dl className="grid [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] gap-x-12 gap-y-10 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-8">
           <div>
-            <dt className="font-heading text-base font-medium text-ink mb-2">{t('Your own storefront link', '专属店面链接')}</dt>
-            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Share a clean, branded URL — no marketplace fees, no listing competition.', '干净的品牌网址，无平台抽成，无竞争对手。')}</dd>
+            <dt className="font-heading text-[19px] font-semibold text-oxblood leading-[1.3] mb-2.5">{t('Keep what you earn', '赚的钱，都是你的')}</dt>
+            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Your own link, your own customers — no marketplace cut, nobody undercutting you next to your listing.', '专属链接，专属顾客——没有平台抽成，也没有人在你旁边抢单。')}</dd>
           </div>
           <div>
-            <dt className="font-heading text-base font-medium text-ink mb-2">{t('Simple order management', '简洁订单管理')}</dt>
-            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('See every order at a glance. Update statuses and send tracking numbers with one tap.', '一目了然查看所有订单，一键更新状态与物流号。')}</dd>
+            <dt className="font-heading text-[19px] font-semibold text-oxblood leading-[1.3] mb-2.5">{t('Nothing slips through', '一单都不会漏')}</dt>
+            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Every order in one list. Mark it done or send a tracking number in one tap — no scrolling back through chats.', '所有订单集中一处。一键标记完成或发送物流号，不必再翻聊天记录。')}</dd>
           </div>
           <div>
-            <dt className="font-heading text-base font-medium text-ink mb-2">{t('Bilingual, out of the box', '中英双语，开箱即用')}</dt>
-            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Your storefront speaks both English and Chinese — perfect for Malaysian food businesses.', '店面自动支持中英文，专为马来西亚小食企业设计。')}</dd>
+            <dt className="font-heading text-[19px] font-semibold text-oxblood leading-[1.3] mb-2.5">{t('Your customers read it in their own language', '顾客用自己的语言下单')}</dt>
+            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Your shop shows up in English or Chinese, whichever your customer prefers. You only write it once.', '店铺自动以中文或英文呈现，顾客看得懂，你只需写一次。')}</dd>
           </div>
         </dl>
+        </Reveal>
+      </section>
+
+      {/* ── What you get ── */}
+      {/* Copy lives in features.ts as data, for the same reasons the FAQ does — and under the same
+          rule: every line has to be true of the product as shipped. */}
+      <section className="border-t border-clay-border px-8 py-16 max-w-[900px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className={sectionTitle}>
+            {t('Everything you need to take orders online', '在线接单所需的一切')}
+          </h2>
+          <div className="grid [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))] gap-x-12 gap-y-9 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-7">
+            {FEATURES.map(f => (
+              <div key={f.id}>
+                <h3 className="font-heading text-[17px] font-semibold text-oxblood leading-[1.35] mb-2">
+                  {t(f.title.en, f.title.zh)}
+                </h3>
+                <p className="text-sm leading-[1.7] text-ink-soft m-0">
+                  {t(f.body.en, f.body.zh)}
+                </p>
+              </div>
+            ))}
+          </div>
         </Reveal>
       </section>
 
@@ -259,10 +342,10 @@ export default function Landing() {
       <section id="pricing" className="px-8 py-16 max-w-[1000px] mx-auto w-full text-center border-t border-clay-border">
         <Reveal>
         <h2 className={sectionTitle}>
-          {t('Simple, honest pricing', '简单透明的价格')}
+          {t('Simple, honest pricing — start free', '简单透明的价格——免费开始')}
         </h2>
         <p className="-mt-7 mb-8 text-[15px] leading-[1.6] text-ink-soft">
-          {t('Start with a 7-day free trial — no card required. Upgrade when your shop grows.', '7 天免费试用开始，无需信用卡，店铺成长后再升级。')}
+          {t('Start free on Basic — 7 days, no card required. Move to Pro whenever your shop is ready.', '基础版 7 天免费试用，无需信用卡。店铺准备好了随时升级 Pro。')}
         </p>
         </Reveal>
 
@@ -308,6 +391,7 @@ export default function Landing() {
 
         {/* Pricing cards */}
         <Reveal>
+        {/* Cards stretch to a shared height; cardCta* pins each CTA to the bottom edge */}
         <div className="grid [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))] gap-6 mt-10 text-left">
           {tiers.map(tier => {
             const tierPrices = pricing.prices[tier.id as 'basic' | 'pro']
@@ -332,12 +416,23 @@ export default function Landing() {
                   <span className="font-heading text-[34px] font-semibold text-oxblood leading-none">{formatMoney(amount, pricing.currency)}</span>
                   <span className="text-sm text-rose-muted">{t('/mo', '/月')}</span>
                 </div>
+                {pricing.estimate && amount > 0 && (
+                  <p className="text-xs text-rose-muted mt-1 mb-0">
+                    ≈ {formatMoney(amount * pricing.estimate.rate, pricing.estimate.currency)}{t('/mo', '/月')}
+                  </p>
+                )}
                 <p className="min-h-[1.1em] text-xs text-rose-muted mt-[0.35rem] mb-0">
                   {billing === 'yearly' && amount > 0
                     ? t('billed yearly', '按年付费')
                     : ' '}
                 </p>
                 <p className="text-sm leading-[1.6] text-ink-soft mt-3 mb-5">{tier.blurb}</p>
+                {/* Inherited-tier label — a heading for the list, not a feature, so no ✓ */}
+                {tier.inherits && (
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-rose-muted mt-0 mb-3">
+                    {tier.inherits}
+                  </p>
+                )}
                 <ul className="list-none m-0 mb-7 p-0 flex flex-col gap-[0.6rem]">
                   {tier.features.map((f, i) => (
                     <li
@@ -349,41 +444,103 @@ export default function Landing() {
                   ))}
                 </ul>
                 <Link
-                  to={`${tier.to}?plan=${tier.id}&billing=${billing}&region=${pricing.region}`}
+                  to={`${tier.to}?plan=${tier.id}&billing=${billing}`}
                   className={tier.highlight ? cardCtaPrimary : cardCtaGhost}
                 >
                   {tier.cta}
                 </Link>
+                {/* Risk reversal sits at the click, not at the foot of the section — and it is
+                    per-tier, because only Basic has a trial to reverse the risk with */}
+                <p className="mt-2.5 mb-0 text-center text-xs text-rose-muted">
+                  {tier.note}
+                </p>
               </div>
             )
           })}
         </div>
         <p className="mt-8 text-[13px] text-rose-muted">
-          {t('7-day free trial · No card required · Cancel anytime.', '7 天免费试用 · 无需信用卡 · 随时取消。')}
+          {t('Cancel anytime — no contracts, no lock-in.', '随时取消——无合约，不绑定。')}
         </p>
+        </Reveal>
+      </section>
+
+      {/* ── FAQ ── */}
+      {/* After pricing and before the closing CTA: a reader who has just seen a price is
+          exactly the reader with objections. Answers live in faq.ts as data — every one of
+          them has to be true of the product as shipped, since these are pre-purchase promises. */}
+      <section id="faq" className="border-t border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className="font-heading text-[26px] text-oxblood text-center mb-2 max-[600px]:text-[22px]">
+            {t('Questions from shop owners, answered', '店主常见问题')}
+          </h2>
+          <p className="text-sm text-rose-muted text-center mb-9 max-w-[460px] mx-auto">
+            {t(
+              'The things shop owners ask us before they sign up.',
+              '店主在注册前最常问我们的问题。',
+            )}
+          </p>
+          <Accordion className="max-w-[640px] mx-auto">
+            {FAQ.map(entry => (
+              <AccordionItem key={entry.id} value={entry.id} className="border-clay-border">
+                <AccordionTrigger className="font-heading text-[15px] text-ink text-left py-4">
+                  {t(entry.q.en, entry.q.zh)}
+                </AccordionTrigger>
+                <AccordionContent className="text-[14px] leading-[1.7] text-rose-muted pb-4">
+                  {t(entry.a.en, entry.a.zh)}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
         </Reveal>
       </section>
 
       {/* ── Footer CTA ── */}
       <section className="border-t border-clay-border px-8 py-16 text-center bg-oxblood-tint max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
-        <p className="text-sm leading-[1.6] text-rose-muted mb-3">
+        {/* The section's thesis line, so it is the section's heading — a closing CTA with no
+            heading is a hole in the outline, not a style choice. Styling is unchanged. */}
+        <h2 className="text-sm leading-[1.6] font-sans font-normal text-rose-muted mb-3">
           {t('Every order lost in a chat thread is a sale you\'ll never see.', '每一笔淹没在聊天里的订单，都是流失的生意。')}
-        </p>
+        </h2>
         <p className="font-heading italic text-[18px] text-ink mb-6 max-w-[520px] mx-auto">
-          {t('Become a real, professional food business — orders in one place, more time to bake.', '成为真正专业的美食生意——订单集中一处，专注烘焙。')}
+          {t('Become a real, professional business — orders in one place, more time to make.', '成为真正专业的生意——订单集中一处，专注做好产品。')}
         </p>
         <MagneticButton to="/merchant/signup" className={ctaPrimary}>
-          {t('Start your free trial', '开始免费试用')}
+          {t('Start your shop', '开始建店')}
         </MagneticButton>
         </Reveal>
       </section>
 
       {/* ── Footer ── */}
-      <footer className="mt-auto px-8 py-6 border-t border-clay-border flex items-center justify-center gap-3 text-[13px] text-text-tertiary">
-        <span className="font-heading text-oxblood font-medium">BiteTime</span>
+      <footer className="mt-auto px-8 py-6 border-t border-clay-border flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-text-tertiary">
+        <Wordmark className="h-[18px]" />
         <span className="text-clay-border">·</span>
-        <span>{t('Built for Malaysian food businesses', '专为马来西亚食品业者打造')}</span>
+        <span>{t('Built for small businesses', '专为小生意打造')}</span>
+        {/* aria-hidden, and not clay-border: that colour fails AA on cream (DESIGN.md), so it is
+            a stroke colour rather than a text one. */}
+        <span aria-hidden="true">·</span>
+        <Link to="/terms" className="hover:text-oxblood underline underline-offset-4">
+          {t('Terms', '服务条款')}
+        </Link>
+        {/* Straight to the anchor: a refund policy has to be findable without reading the whole
+            document — Stripe expects that of a business taking subscription payments. */}
+        <Link to={`/terms#${REFUNDS_ANCHOR}`} className="hover:text-oxblood underline underline-offset-4">
+          {t('Refunds', '退款政策')}
+        </Link>
+        <Link to="/privacy" className="hover:text-oxblood underline underline-offset-4">
+          {t('Privacy', '隐私政策')}
+        </Link>
+        {/* Maker's credit, not a policy link — separated by a dot so it doesn't read as one more
+            legal page, and carrying ?ref=tinyorder so Praxor can attribute the visit. */}
+        <span aria-hidden="true">·</span>
+        <a
+          href="https://www.praxor.dev?ref=tinyorder"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-oxblood underline underline-offset-4"
+        >
+          {t('Built by Praxor', '由 Praxor 打造')}
+        </a>
       </footer>
     </div>
   )

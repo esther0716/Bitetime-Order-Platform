@@ -7,6 +7,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence, useMotionValue, useSpring, useReducedMotion } from 'motion/react'
 import { ReceiptText } from 'lucide-react'
+import type { VerticalWord } from './verticals'
 
 // Editorial ease — slightly springier than the app's UI ease, still calm.
 const EASE = [0.16, 1, 0.3, 1] as const
@@ -152,8 +153,8 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
   }, [reduced])
 
   const products = [
-    { name: t('Pandan Kaya Cake', '班兰咖椰蛋糕'), price: 'RM 38' },
-    { name: t('Kuih Lapis · box of 10', '娘惹千层糕 · 10 件装'), price: 'RM 18' },
+    { name: t('Pandan Kaya Cake', '班兰咖椰蛋糕'), price: '$ 38' },
+    { name: t('Kuih Lapis · box of 10', '娘惹千层糕 · 10 件装'), price: '$ 18' },
   ]
 
   return (
@@ -208,5 +209,87 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
         </div>
       </div>
     </div>
+  )
+})
+
+// ── Rotating vertical word: the hero's "we are not food-only" signal ─────────
+// Only the ACTIVE word is ever in the DOM, and that is a hard constraint, not a preference.
+// scripts/prerender.tsx freezes this markup into dist/index.html for crawlers that do not run JS,
+// so keeping all five words mounted — the obvious way to let the browser size the slot — would
+// hand them `Sell your food bakes art clothes crafts`.
+//
+// That leaves the slot to be sized from the outside, and the two ways to do it are not equal:
+//   · one fixed width for the widest word never moves, but leaves a permanent hole after the short
+//     ones ("food" is 2.06em against "clothes" at 3.34em — ~78px of dead space at the desktop
+//     size), which reads as broken spacing rather than as design;
+//   · animating the width to each word keeps the line tight and slides the text that follows,
+//     at the cost of a width that changes — which is why the hero splits the headline so this word
+//     ends its own line and the static half can never be rewrapped by it.
+// The second is what this does. Widths come from `VerticalWord.em`.
+const WORD_SLACK_EM = 0.06
+const WORD_INTERVAL_MS = 2600
+
+// The rule that marks this word as the changing part of the sentence. It belongs to the SLOT, not
+// to the word: the slot outlives the swap, so the rule stays put while the word above it leaves and
+// the next arrives, and it widens with the slot — a blank the words drop into, rather than an
+// underline that blinks out for a quarter-second between them.
+//
+// Painted as an ::after rather than a border-bottom, which would add its own height to the line box
+// and push the rest of the headline down by 3px. Everything is in em: the h1 runs from 2rem to
+// 3.5rem, and a px rule reads heavy at the small end. The 0.145em offset puts the rule 0.14em under
+// the baseline — where the browser's own underline sits, measured against the h1's font.
+const WORD_RULE =
+  'relative after:content-[\'\'] after:pointer-events-none after:absolute after:inset-x-0 ' +
+  'after:bottom-[0.145em] after:h-[0.055em] after:bg-oxblood/60'
+
+export const RotatingWord = memo(function RotatingWord({
+  words,
+}: {
+  words: readonly VerticalWord[]
+}) {
+  const reduced = useReducedMotion()
+  const [i, setI] = useState(0)
+
+  useEffect(() => {
+    if (reduced) return
+    const loop = setInterval(() => setI((n) => (n + 1) % words.length), WORD_INTERVAL_MS)
+    return () => clearInterval(loop)
+  }, [reduced, words.length])
+
+  // Reduced motion gets the first word and no timer at all — not a timer whose animation is
+  // suppressed. It keeps the rule, sized to the one word it will ever show: the rule says which
+  // word varies, and for this reader it is the only cue that anything does.
+  if (reduced) {
+    return <span className={`inline-block whitespace-pre ${WORD_RULE}`}>{words[0].text}</span>
+  }
+
+  const word = words[i % words.length]
+
+  return (
+    <motion.span
+      // text-left, against the hero's inherited centring: while the width animates, a centred word
+      // would drift sideways inside its own slot on top of the slot's own resize. Anchoring the
+      // left edge means only the tail of the line moves, which is the movement being animated.
+      className={`inline-block whitespace-pre align-baseline text-left ${WORD_RULE}`}
+      initial={false}
+      animate={{ width: `${word.em + WORD_SLACK_EM}em` }}
+      transition={{ duration: 0.5, ease: EASE }}
+    >
+      {/* mode="wait" keeps exactly one word mounted: it fades the old one out before the new one
+          arrives, so the width animation lands while the slot is empty and nothing is seen to
+          overflow it. */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={word.text}
+          className="inline-block whitespace-pre"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.25, ease: EASE }}
+        >
+          {word.text}
+        </motion.span>
+      </AnimatePresence>
+    </motion.span>
   )
 })

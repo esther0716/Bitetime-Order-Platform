@@ -1,0 +1,159 @@
+# What must be true before a change lands on main.
+#
+# Nothing ran on a pull request before this file existed: every check in the repo — 778
+# unit tests, 284 tests against real Postgres, lint, typecheck, both builds — was a thing
+# a human remembered to run. The suites this most matters for are the DB-backed ones,
+# because they are also the ones least likely to be run by hand: they need a local
+# Supabase up, so the cost of running them is exactly the cost of NOT running them going
+# unnoticed, and what they prove is that an order cannot be spoofed onto a stranger's
+# account (`tests/rls`) and that a failed voucher claim really rolls the order back
+# (`tests/api`). Those are security properties, and a security property nobody checks is
+# a security property you no longer have.
+#
+# NO SECRETS ARE USED, and that is deliberate rather than incidental. The DB job stands up
+# its own Supabase and reads that stack's keys back out of it; the Stripe keys the app
+# fails fast without are stubbed by `vitest.db.config.ts`, and the Google Maps key is
+# forced empty there so a distance test can never become a billable network call. So this
+# workflow is safe to run on a pull request from a fork, and a leaked log leaks nothing.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A second push supersedes the first. Without this, a branch pushed three times in a
+# minute occupies three runners proving things about two commits nobody will merge.
+# `main` is excluded from cancellation — a run against a merged commit is the record of
+# whether that commit was good, and cancelling it loses the answer.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: lint, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      # `!cancelled()` on each: the four are INDEPENDENT questions, and a lint error must
+      # not hide a type error behind it. Without this, a run tells you the first thing
+      # that is wrong and you fix-push-wait to discover the second. The job still fails if
+      # any of them does — this changes what you learn per run, not what passes.
+      - run: pnpm lint
+        if: ${{ !cancelled() }}
+
+      - run: pnpm typecheck
+        if: ${{ !cancelled() }}
+
+      # Unit tests only — the workspaces' own `test` scripts. Everything needing a
+      # database is the other job.
+      - run: pnpm test
+        if: ${{ !cancelled() }}
+
+      # Both bundles. The backend's is the one worth building here: it lists its runtime
+      # dependencies as explicit `--external:` flags (it cannot say `--packages=external`,
+      # because `@bitetime/shared` ships TypeScript source), so a new dependency added
+      # without its flag is a silent difference between the dev server and the deployed
+      # bundle. Building it on every change is what makes that loud.
+      - run: pnpm build
+        if: ${{ !cancelled() }}
+
+  db-tests:
+    name: RLS and API tests against real Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      # Pinned, not `latest`. An unpinned CLI turns someone else's release into a red
+      # build on a pull request that changed nothing — bump it here, deliberately, and
+      # find out on that commit instead.
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.107.0
+
+      # `supabase start` applies everything in supabase/migrations to a fresh database, so
+      # the schema under test is the migrations as committed — which is also a check that
+      # they apply cleanly from nothing, something an incrementally-migrated local
+      # database can never tell you.
+      #
+      # The exclusions are services no suite touches. Analytics (logflare + vector) is the
+      # expensive one and buys nothing here; studio is a UI; storage, imgproxy, realtime
+      # and the functions runtime have no callers in `tests/`. Inbucket stays: GoTrue is
+      # configured to send through it, and a mail sink that is not there turns a signup
+      # into an error rather than a delivery.
+      - name: Start a local Supabase
+        working-directory: apps/backend
+        run: supabase start -x studio,imgproxy,edge-runtime,functions,analytics,vector,realtime,storage
+
+      # Reads the stack's URL, keys and DATABASE_URL from `supabase status` itself. It
+      # fails loudly when it cannot find them — these suites never skip, because a suite
+      # that skips reports success while asserting nothing.
+      - run: pnpm --filter @bitetime/backend test:db
+
+      # A failure here is either the tests or the stack, and those look identical from the
+      # test output alone. Postgres, GoTrue and PostgREST are the three that matter.
+      - name: Supabase logs
+        if: failure()
+        working-directory: apps/backend
+        run: |
+          supabase status || true
+          for service in db auth rest; do
+            echo "::group::supabase_${service}"
+            docker logs "supabase_${service}_bitetime-app" 2>&1 | tail -100 || true
+            echo "::endgroup::"
+          done
+
+  e2e:
+    name: guest order through a real browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      # Same pin as db-tests, same reason: an unpinned CLI turns someone else's release
+      # into a red build on a pull request that changed nothing.
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.107.0
+
+      # The e2e harness shells out to `supabase status` for this stack's URL and keys, so
+      # the CLI has to be on PATH and the stack has to be up before the suite starts. Same
+      # exclusions as db-tests — the seeded product carries no images, so storage has no
+      # caller here either.
+      - name: Start a local Supabase
+        working-directory: apps/backend
+        run: supabase start -x studio,imgproxy,edge-runtime,functions,analytics,vector,realtime,storage
+
+      # `--with-deps` installs the system libraries the browser needs; without it Chromium
+      # launches on a developer machine and fails on a bare runner.
+      - name: Install Chromium
+        working-directory: apps/frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Playwright starts both servers itself (backend on 8788, the production frontend
+      # bundle previewed on 4174) and tears them down after. NO SECRETS: the Supabase keys
+      # come out of the running stack, the Stripe keys are stubs, and GOOGLE_MAPS_API_KEY is
+      # forced empty so a distance lookup can never become a billable call.
+      - run: pnpm --filter @bitetime/frontend test:e2e
+
+      # A browser failure is nearly unreadable from the console alone. The trace is a
+      # frame-by-frame replay of the run — open it with `playwright show-trace`.
+      - name: Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/frontend/playwright-report
+            apps/frontend/test-results
+          retention-days: 7

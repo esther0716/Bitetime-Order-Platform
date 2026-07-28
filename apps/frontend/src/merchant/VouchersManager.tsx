@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
+import { Ticket } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
 import { fetchMerchantVouchers, createMerchantVoucher, deleteMerchantVoucher } from '../store'
 import { formatMoney, currencyDef } from '../currency'
+import { isRequiresPro } from '../plan'
 import { SkeletonText } from '../components/Loaders'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '../components/ui/empty'
 import type { Voucher } from '../types'
 
 const BLANK = { code: '', kind: 'percent', amount: '', maxUses: '' }
@@ -44,29 +48,50 @@ export default function VouchersManager() {
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
 
-  async function load() { setRows(await fetchMerchantVouchers(merchant!.id)) }
-  useEffect(() => { fetchMerchantVouchers(merchant!.id).then(setRows) }, [merchant!.id])
+  // Parity with the old `[]`-on-failure behaviour: a dashboard list that could not load shows
+  // empty rather than a stuck spinner. The load-bearing could-not-ask handling lives on the
+  // customer path (Storefront), not here.
+  async function load() {
+    const r = await fetchMerchantVouchers(merchant!.id)
+    setRows(r.ok ? r.data : [])
+  }
+  useEffect(() => { fetchMerchantVouchers(merchant!.id).then(r => setRows(r.ok ? r.data : [])) }, [merchant!.id])
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true)
-    try {
-      await createMerchantVoucher({
-        merchantId: merchant!.id,
-        code: form.code,
-        kind: form.kind,
-        amount: Number(form.amount) || 0,
-        maxUses: form.maxUses === '' ? null : Number(form.maxUses),
-      })
+    const r = await createMerchantVoucher({
+      merchantId: merchant!.id,
+      code: form.code,
+      kind: form.kind,
+      amount: Number(form.amount) || 0,
+      maxUses: form.maxUses === '' ? null : Number(form.maxUses),
+    })
+    setBusy(false)
+    if (r.ok) {
       setForm(BLANK); await load()
       toast.success(t('Voucher created', '优惠券已创建'))
-    } catch {
-      toast.error(t('Could not create voucher — is the code already used?', '无法创建优惠券 — 优惠码是否已存在？'))
-    } finally { setBusy(false) }
+    } else {
+      // The whole section is replaced by an upgrade prompt for a basic shop, so this is the
+      // fallback for a `plan` that changed under a long-open tab (#110).
+      toast.error(isRequiresPro(r.error)
+        ? t('Vouchers are a Pro feature. Upgrade to Pro to create one.', '优惠券是 Pro 功能。升级到 Pro 即可创建。')
+        : t('Could not create voucher — is the code already used?', '无法创建优惠券 — 优惠码是否已存在？'))
+    }
   }
 
   async function remove(id: string) {
-    await deleteMerchantVoucher(id); await load()
-    toast.success(t('Voucher deleted', '优惠券已删除'))
+    const r = await deleteMerchantVoucher(id, merchant!.id)
+    if (r.ok) {
+      await load()
+      toast.success(t('Voucher deleted', '优惠券已删除'))
+    } else {
+      // Delete is gated too (#110) — the backend refuses the whole voucher mutation surface,
+      // not just create. Without this the refusal would pass silently and the row would simply
+      // stay put with nothing said.
+      toast.error(isRequiresPro(r.error)
+        ? t('Vouchers are a Pro feature. Upgrade to Pro to manage them.', '优惠券是 Pro 功能。升级到 Pro 即可管理。')
+        : t('Could not delete voucher', '无法删除优惠券'))
+    }
   }
 
   function valueLabel(v: Voucher) {
@@ -93,7 +118,17 @@ export default function VouchersManager() {
           {t('Your vouchers', '您的优惠券')}
         </h3>
         {rows.length === 0 ? (
-          <p className="text-[13px] text-text-tertiary italic">{t('No vouchers yet — create your first below.', '还没有优惠券 — 在下方创建。')}</p>
+          <Empty className="border-[1.5px] border-dashed border-clay-border bg-cream/50">
+            <EmptyHeader>
+              <EmptyMedia variant="icon" className="bg-oxblood-tint text-oxblood">
+                <Ticket />
+              </EmptyMedia>
+              <EmptyTitle className="text-oxblood">{t('No vouchers yet', '还没有优惠券')}</EmptyTitle>
+              <EmptyDescription className="text-rose-muted">
+                {t('Create your first voucher below to offer discounts at checkout.', '在下方创建第一张优惠券，为结账提供折扣。')}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="flex flex-col gap-2">
             {rows.map((v: Voucher) => (
@@ -102,7 +137,18 @@ export default function VouchersManager() {
                 className="flex items-center gap-3 px-[14px] py-[10px] bg-cream border-[1.5px] border-clay-border rounded-lg transition-colors max-[480px]:flex-wrap"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="text-[14px] font-medium text-ink">{v.code}</div>
+                  <div className="text-[14px] font-medium text-ink flex items-center gap-2 flex-wrap">
+                    {v.code}
+                    {/* A voucher a shop's customers already hold, which no longer redeems
+                        because the shop stepped down from Pro. Shown rather than hidden: the
+                        merchant needs to know the codes they have handed out are dead, and a
+                        silently missing row reads as a bug in the dashboard. */}
+                    {(v as any).active === false && (
+                      <Badge variant="outline" className="uppercase tracking-[0.08em]">
+                        {t('Inactive', '已停用')}
+                      </Badge>
+                    )}
+                  </div>
                   <div className="text-[12px] text-rose-muted mt-0.5">{valueLabel(v)} · {usesLabel(v)}</div>
                 </div>
                 <div className="flex gap-[6px] shrink-0 max-[480px]:w-full max-[480px]:justify-end">
