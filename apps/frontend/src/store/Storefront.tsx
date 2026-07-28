@@ -1033,20 +1033,15 @@ export default function Storefront() {
                   aria-pressed={mode === m}
                   onClick={() => setMode(m)}
                 >
-                  {/* The fee is stated BEFORE the customer types an address — what they are
-                      committing to is the rate, not a number they have yet to see. The express
-                      formula is gated on `distance.usable`, not on the bare flag: `shopDistance`
-                      defaults base/ratePerKm to 0 for the UNUSABLE case specifically so nothing
-                      downstream mistakes them for a chosen rate, and rendering "RM 0.00 + RM
-                      0.00/km" here would be exactly that mistake (#101 review, Finding 3). */}
+                  {/* Delivery's flat fee is stated up front because it is the whole fee. Express
+                      names no rate: `base` and `ratePerKm` are the merchant's pricing policy, not
+                      the customer's business — the customer sees the quoted fee once an address
+                      makes one computable. */}
                   {m === 'pickup'
                     ? fulfilmentLabel('pickup', t)
                     : m === 'delivery'
                       ? <>{fulfilmentLabel('delivery', t)} (+{formatMoney(baseDeliveryFee, currency)})</>
-                      : distance.usable
-                        ? t(`Express delivery — ${formatMoney(distance.base, currency)} + ${formatMoney(distance.ratePerKm, currency)}/km`,
-                             `快速配送 — ${formatMoney(distance.base, currency)} + ${formatMoney(distance.ratePerKm, currency)}/公里`)
-                        : fulfilmentLabel('express', t)}
+                      : fulfilmentLabel('express', t)}
                 </button>
               ))}
             </div>
