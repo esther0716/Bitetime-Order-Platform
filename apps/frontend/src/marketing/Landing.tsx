@@ -24,7 +24,7 @@ import {
 
 // Transitional (low-commitment) CTA target: a real storefront a hesitant
 // merchant can preview before signing up. Swap the slug to change the demo shop.
-const SAMPLE_SHOP_SLUG = 'bitetime'
+const SAMPLE_SHOP_SLUG = 'bitetime-co'
 
 // ── CTA class strings (reused across hero, pricing cards, footer) ─────────
 const ctaPrimary =
