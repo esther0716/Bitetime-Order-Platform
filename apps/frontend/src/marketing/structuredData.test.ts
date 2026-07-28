@@ -1,57 +1,74 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { landingStructuredData } from './structuredData'
+import { SITE_URL } from '../site'
 import { FAQ } from './faq'
 
-// Structured data fails silently: bad markup is not a crash, it is a page Google quietly stops
-// trusting. These assert the two things that would actually break it — that every URL is absolute,
-// and that the FAQ markup says what the accordion on the page says, in the language it says it in.
-
-type Graph = { '@context': string; '@graph': Array<Record<string, any>> }
-
-const node = (data: object, type: string) =>
-  (data as Graph)['@graph'].find(n => n['@type'] === type)!
+// Structured data fails silently: bad markup is not a crash, it is a page a search engine quietly
+// stops trusting. These assert the things that would actually break it — that the FAQ markup says
+// what the accordion says, in the language it says it in, and that it hangs off the identity the
+// static block in index.html declares rather than inventing a second one.
 
 describe('landingStructuredData', () => {
-  it('publishes the organisation, the site, the app and the FAQ', () => {
-    const types = (landingStructuredData('https://tinyorder.shop', 'en') as Graph)['@graph'].map(
-      n => n['@type'],
-    )
-    expect(types).toEqual(['Organization', 'WebSite', 'SoftwareApplication', 'FAQPage'])
+  it('is a FAQPage — identity lives in index.html, not here', () => {
+    const data = landingStructuredData('en') as Record<string, any>
+    expect(data['@type']).toBe('FAQPage')
+    expect(JSON.stringify(data)).not.toContain('"Organization"')
   })
 
-  it('makes every url and @id absolute on the host that served the page', () => {
-    const data = landingStructuredData('https://preview-123.vercel.app', 'en') as Graph
-    const urls = data['@graph'].flatMap(n =>
-      [n['@id'], n.url, n.logo?.url].filter(Boolean as unknown as (v: unknown) => v is string),
-    )
-    expect(urls.length).toBeGreaterThan(0)
-    for (const url of urls) expect(url).toMatch(/^https:\/\/preview-123\.vercel\.app\//)
-  })
-
-  it('does not double the slash when the origin carries one', () => {
-    const org = node(landingStructuredData('https://tinyorder.shop/', 'en'), 'Organization')
-    expect(org.url).toBe('https://tinyorder.shop/')
-    expect(org['@id']).toBe('https://tinyorder.shop/#organization')
+  it('hangs off the identity nodes index.html declares', () => {
+    const data = landingStructuredData('en') as Record<string, any>
+    expect(data.publisher['@id']).toBe(`${SITE_URL}/#organization`)
+    expect(data.isPartOf['@id']).toBe(`${SITE_URL}/#website`)
   })
 
   it('carries every FAQ entry, in the same order the page renders them', () => {
-    const faq = node(landingStructuredData('https://tinyorder.shop', 'en'), 'FAQPage')
-    expect(faq.mainEntity).toHaveLength(FAQ.length)
-    expect(faq.mainEntity.map((q: any) => q.name)).toEqual(FAQ.map(e => e.q.en))
-    expect(faq.mainEntity[0].acceptedAnswer.text).toBe(FAQ[0].a.en)
+    const data = landingStructuredData('en') as Record<string, any>
+    expect(data.mainEntity).toHaveLength(FAQ.length)
+    expect(data.mainEntity.map((q: any) => q.name)).toEqual(FAQ.map(e => e.q.en))
+    expect(data.mainEntity[0].acceptedAnswer.text).toBe(FAQ[0].a.en)
   })
 
   it('marks up the Chinese page in Chinese — markup that disagrees with the page is worse than none', () => {
-    const data = landingStructuredData('https://tinyorder.shop', 'zh')
-    const faq = node(data, 'FAQPage')
-    expect(faq.inLanguage).toBe('zh')
-    expect(faq.mainEntity.map((q: any) => q.name)).toEqual(FAQ.map(e => e.q.zh))
-    expect(node(data, 'WebSite').inLanguage).toBe('zh')
+    const data = landingStructuredData('zh') as Record<string, any>
+    expect(data.inLanguage).toBe('zh')
+    expect(data.mainEntity.map((q: any) => q.name)).toEqual(FAQ.map(e => e.q.zh))
   })
 
   it('states no price — the plan prices are resolved per region at runtime', () => {
-    const json = JSON.stringify(landingStructuredData('https://tinyorder.shop', 'en'))
+    const json = JSON.stringify(landingStructuredData('en'))
     expect(json).not.toContain('"offers"')
     expect(json).not.toContain('"price"')
+  })
+})
+
+// The identity block is hand-written JSON inside an HTML file, where nothing type-checks it and a
+// trailing comma is a silent parse failure — the exact failure the audit that asked for it would
+// report as "no Organization schema" all over again.
+describe('the identity block in index.html', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
+  const block = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)
+
+  it('exists and is valid JSON', () => {
+    expect(block, 'no ld+json block in index.html').not.toBeNull()
+    expect(() => JSON.parse(block![1])).not.toThrow()
+  })
+
+  it('declares an Organization the FAQ can point at', () => {
+    const graph = JSON.parse(block![1])['@graph'] as Array<Record<string, any>>
+    const org = graph.find(n => n['@type'] === 'Organization')
+    expect(org, 'no Organization node').toBeDefined()
+    expect(org!['@id']).toBe(`${SITE_URL}/#organization`)
+    expect(org!.name).toBe('TinyOrder')
+    expect(org!.logo.url).toMatch(/^https:\/\//)
+  })
+
+  it('uses the same host as SITE_URL everywhere, so the graph joins up', () => {
+    const ids = JSON.stringify(JSON.parse(block![1])).match(/https?:\/\/[^"]+/g) ?? []
+    expect(ids.length).toBeGreaterThan(0)
+    for (const url of ids) {
+      if (url.startsWith('https://schema.org')) continue
+      expect(url, `${url} is not on SITE_URL`).toMatch(SITE_URL)
+    }
   })
 })
