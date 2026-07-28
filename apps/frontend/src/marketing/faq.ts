@@ -78,8 +78,8 @@ export const FAQ: FaqEntry[] = [
       zh: 'Pro 版多了什么？',
     },
     a: {
-      en: 'Instant Telegram alerts, discount vouchers, promotional pricing on individual items, and priority support. Everything else — your order page, your full menu, delivery fees, order emails — is on Basic.',
-      zh: 'Telegram 即时通知、优惠券、单品促销价，以及优先支持。其余功能——订单页面、完整菜单、配送费、订单电邮——基础版都有。',
+      en: 'Instant Telegram alerts, discount vouchers, promotional pricing on individual items, and priority support. Everything else — your order page, your full product list, delivery fees, order emails — is on Basic.',
+      zh: 'Telegram 即时通知、优惠券、单品促销价，以及优先支持。其余功能——订单页面、完整产品列表、配送费、订单电邮——基础版都有。',
     },
   },
   {
@@ -100,8 +100,8 @@ export const FAQ: FaqEntry[] = [
       zh: '支持中文吗？',
     },
     a: {
-      en: 'Fully. Your dashboard and your customers\' order page both switch between English and Chinese, and you can give every menu item a name and description in both. Your customers pick whichever they prefer.',
-      zh: '完全支持。仪表板和顾客的订单页面都可在中英文之间切换，每道菜品也能同时设定中英文名称与说明。顾客自行选择惯用语言。',
+      en: 'Fully. Your dashboard and your customers\' order page both switch between English and Chinese, and you can give every product a name and description in both. Your customers pick whichever they prefer.',
+      zh: '完全支持。仪表板和顾客的订单页面都可在中英文之间切换，每件产品也能同时设定中英文名称与说明。顾客自行选择惯用语言。',
     },
   },
   {
@@ -111,8 +111,8 @@ export const FAQ: FaqEntry[] = [
       zh: '多快可以开始接单？',
     },
     a: {
-      en: 'Sign up, add your menu, and we review your shop before it goes live — this is what keeps the platform clean for everyone on it. Once approved, your order page is open and your free trial starts.',
-      zh: '注册、添加菜单，我们会先审核你的店铺再让它上线——这是为了维持平台对所有商家的品质。审核通过后，订单页面即开放，免费试用同时开始。',
+      en: 'Sign up, add your products, and we review your shop before it goes live — this is what keeps the platform clean for everyone on it. Once approved, your order page is open and your free trial starts.',
+      zh: '注册、添加产品，我们会先审核你的店铺再让它上线——这是为了维持平台对所有商家的品质。审核通过后，订单页面即开放，免费试用同时开始。',
     },
   },
 ]
