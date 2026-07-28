@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickMerchantConfig } from '../../src/writes.js'
+import { pickMerchantConfig, promoChanged } from '../../src/writes.js'
 
 describe('pickMerchantConfig — fulfilment', () => {
   it('accepts a config bag and a real timezone', () => {
@@ -105,5 +105,67 @@ describe('pickMerchantConfig — onboarding flags (#102)', () => {
       .toEqual({ ok: false, error: expect.any(String) })
     expect(pickMerchantConfig({ onboarding_dismissed: 1 }))
       .toEqual({ ok: false, error: expect.any(String) })
+  })
+})
+
+// The Pro gate on the product upsert asks "did the promo CHANGE?", not "is a promo field
+// present?" (#145). Presence is the wrong question: a shop that dropped from pro to basic still
+// has promo columns on its rows, so any client that resubmits the whole row — which the dashboard
+// does — would be refused an ordinary rename, or have to omit the columns and hope the upsert
+// leaves them alone. This is the comparison that replaces it.
+describe('promoChanged', () => {
+  it('is false when no promo column is submitted at all', () => {
+    expect(promoChanged({ name: 'Cookie' }, { promo_price: 8, promo_limit: 10, promo_end: null })).toBe(false)
+  })
+
+  it('is false when the submitted promo equals the stored one', () => {
+    expect(promoChanged(
+      { promo_price: 8, promo_limit: 10, promo_end: '2030-01-01T15:59:59.999Z' },
+      { promo_price: 8, promo_limit: 10, promo_end: '2030-01-01T15:59:59.999Z' },
+    )).toBe(false)
+  })
+
+  it('sees through numeric column formatting (PostgREST returns numeric as a string)', () => {
+    expect(promoChanged({ promo_price: 8 }, { promo_price: '8.00' })).toBe(false)
+  })
+
+  it('compares promo_end as an instant, not as a string', () => {
+    expect(promoChanged(
+      { promo_end: '2030-01-01T15:59:59.999Z' },
+      { promo_end: '2030-01-01T15:59:59.999+00:00' },
+    )).toBe(false)
+  })
+
+  it('is true when the price, the cap or the end date moves', () => {
+    expect(promoChanged({ promo_price: 7 }, { promo_price: 8 })).toBe(true)
+    expect(promoChanged({ promo_limit: 99 }, { promo_limit: 10 })).toBe(true)
+    expect(promoChanged({ promo_end: '2031-01-01T00:00:00.000Z' }, { promo_end: '2030-01-01T00:00:00.000Z' })).toBe(true)
+  })
+
+  // promo_price 0 is a real promo — a free item. Testing for truthiness anywhere in this
+  // comparison reads a stored 0 as "no promo" and lets a basic shop set one for free.
+  it('treats 0 as a promo, on both sides', () => {
+    expect(promoChanged({ promo_price: 0 }, { promo_price: 0 })).toBe(false)
+    expect(promoChanged({ promo_price: 0 }, { promo_price: null })).toBe(true)
+    expect(promoChanged({ promo_price: null }, { promo_price: 0 })).toBe(true)
+    expect(promoChanged({ promo_limit: 0 }, { promo_limit: null })).toBe(true)
+  })
+
+  it('reads a missing row (the create case) as no stored promo', () => {
+    expect(promoChanged({ name: 'New Cookie' }, null)).toBe(false)
+    expect(promoChanged({ promo_price: null }, null)).toBe(false)
+    expect(promoChanged({ promo_price: 8 }, null)).toBe(true)
+  })
+
+  // Clearing a promo is a change like any other. A basic shop cannot do it — the promo it can no
+  // longer edit simply stays put until the shop is Pro again.
+  it('is true when a stored promo is cleared', () => {
+    expect(promoChanged({ promo_price: null }, { promo_price: 8 })).toBe(true)
+  })
+
+  // Fail CLOSED: a value neither side can read as a number or an instant is not "unchanged".
+  it('is true for an unparseable submitted value', () => {
+    expect(promoChanged({ promo_price: 'free' }, { promo_price: 8 })).toBe(true)
+    expect(promoChanged({ promo_end: 'someday' }, { promo_end: '2030-01-01T00:00:00.000Z' })).toBe(true)
   })
 })

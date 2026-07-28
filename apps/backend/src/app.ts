@@ -47,7 +47,7 @@ import { insertFeedback, listFeedback, updateFeedbackStatus } from './feedback.j
 import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
-import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
+import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
 
@@ -613,21 +613,30 @@ app.get('/api/merchants/:id/products', async (c) => {
 // the product and checking merchant_id === :id before upserting is what closes that hole
 // (Global Constraint 2), mirroring the DELETE handler below.
 // Product promos are Pro-only, but this endpoint is NOT — basic shops legitimately edit their
-// menu through it, so it cannot carry `requirePro` as a whole (#110). The gate is inside, and
-// keys off the body: a non-null promo column from a non-Pro shop is REFUSED, never silently
-// stripped — a saved product whose sale price vanished without a word is exactly the "success
-// toast, wrong data" failure pickMerchantConfig refuses elsewhere. An explicit null is "no
-// promo" (what the frontend sends to clear one) and passes.
-// ALL THREE promo columns are checked, not just `promo_price`: a shop that dropped to basic
-// still has its old promo row, and a body carrying only `promo_limit`/`promo_end` would
-// otherwise let it raise the cap or push back the end date on a live sale for free.
+// menu through it, so it cannot carry `requirePro` as a whole (#110). The gate is inside, and it
+// asks whether the write CHANGES the promo, comparing the body against the row `requireOwnsChild`
+// already loaded (#145). A change from a non-Pro shop is REFUSED, never silently stripped — a
+// saved product whose sale price vanished without a word is exactly the "success toast, wrong
+// data" failure pickMerchantConfig refuses elsewhere.
+//
+// CHANGE, not presence, and the difference is a bug this used to have. Presence (`fields[k] !=
+// null`) refuses a body that merely CARRIES the promo it already has — so a shop that dropped from
+// pro to basic could not rename its own product, because the dashboard resubmits the whole row.
+// The workaround was for the client to omit the columns, which leaves a shop's live sale one
+// payload mistake away from being cleared behind a success toast: precisely what the rule above
+// exists to stop. Comparing against the stored row lets the unchanged resubmit through and still
+// refuses every real edit, on all three columns — a body moving only `promo_limit`/`promo_end`
+// would otherwise raise the cap or push back the end date on a live sale for free.
+//
+// Clearing a promo is a change like any other, so a basic shop cannot do that either: the promo it
+// may no longer edit stays put until the shop is Pro again. See promoChanged in writes.ts, and
+// note that `promo_price: 0` is a real promo (a free item) — it is compared for null, never for
+// truthiness. #145 gives `option_groups` the same shape on this endpoint.
 app.put('/api/merchants/:id/products/:productId', requireMerchantOwns, requireOwnsChild('products', 'productId', { mayCreate: true }), async (c) => {
   const id = c.req.param('id')
   const productId = c.req.param('productId')
   const fields = pickProductFields(await c.req.json().catch(() => ({})))
-  const asksForPromo = (['promo_price', 'promo_limit', 'promo_end'] as const)
-    .some(k => fields[k] != null)
-  if (asksForPromo && !(await hasProAccess(c))) {
+  if (promoChanged(fields, c.get('child')) && !(await hasProAccess(c))) {
     return c.json({ error: REQUIRES_PRO }, 403)
   }
   const row = { ...fields, id: productId, merchant_id: id }

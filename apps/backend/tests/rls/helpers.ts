@@ -146,6 +146,12 @@ export async function seedProduct(fields: {
   name?: string
   price: number
   active?: boolean
+  // The promo columns are optional and OMITTED when not passed, rather than defaulted to null:
+  // a test that says nothing about a promo wants the column's own default, and the gate under
+  // test (#145) reads a stored null as "no promo".
+  promo_price?: number
+  promo_limit?: number
+  promo_end?: string
 }) {
   const { data, error } = await serviceClient()
     .from('products')
@@ -154,6 +160,9 @@ export async function seedProduct(fields: {
       name: fields.name ?? 'Matcha Cookie',
       price: fields.price,
       active: fields.active ?? true,
+      ...(fields.promo_price !== undefined ? { promo_price: fields.promo_price } : {}),
+      ...(fields.promo_limit !== undefined ? { promo_limit: fields.promo_limit } : {}),
+      ...(fields.promo_end !== undefined ? { promo_end: fields.promo_end } : {}),
     })
     .select('id')
     .single()
