@@ -187,6 +187,11 @@ export interface ShopCustomer {
 
 export interface ShopCustomerPage {
   customers: ShopCustomer[]
+  /**
+   * Every tag this shop has ever written, once each — what the drawer suggests from (#150).
+   * Neither filtered nor paged: it is the vocabulary the tag filter chooses from.
+   */
+  shopTags: string[]
   /** Matching customers before paging — what the list is a slice of. */
   total: number
   /**

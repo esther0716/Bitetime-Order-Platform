@@ -43,6 +43,7 @@ interface CustomerRow {
 }
 interface CustomerPage {
   customers: CustomerRow[]
+  shopTags: string[]
   total: number
   unattributedOrders: number
 }
@@ -263,6 +264,36 @@ describe('shop customers', () => {
     const page = await pageOf(await get(`/api/merchants/${proId}/customers?tag=wholesale`, proToken))
     expect(page.customers.map(c => c.phoneKey)).toEqual(['23456789'])
     expect(page.total).toBe(1)
+  })
+
+  // The tag vocabulary the drawer suggests from (#150). The fold itself — ordering, duplicates,
+  // what the filter does not narrow — is proven in tests/unit/shopCustomers.test.ts. What needs
+  // real Postgres is that it is scoped to ONE shop: `shopCustomerRecords` goes through db.ts,
+  // which is RLS-exempt, so the `merchant_id` in that query is the only thing separating two
+  // shops' vocabularies.
+  it('offers back every tag the shop has written', async () => {
+    await seedOrder(proId, { customer_phone_key: '23456789', customer_wa: '60123456789' })
+    await seedOrder(proId, { customer_phone_key: '98765432', customer_wa: '60198765432' })
+    await put(`/api/merchants/${proId}/customers/23456789`, { tags: ['vip'] }, proToken)
+    await put(`/api/merchants/${proId}/customers/98765432`, { tags: ['office', 'vip'] }, proToken)
+
+    expect((await pageOf(await get(`/api/merchants/${proId}/customers`, proToken))).shopTags)
+      .toEqual(['office', 'vip'])
+  })
+
+  it("never offers another shop's tags", async () => {
+    await seedOrder(proId, {})
+    await seedOrder(basicId, {})
+    await put(`/api/merchants/${proId}/customers/23456789`, { tags: ['pro-only'] }, proToken)
+    // Written straight in: a basic shop cannot reach the PUT, and this test is about the read.
+    const { error } = await svc().from('shop_customers')
+      .insert({ merchant_id: basicId, phone_key: '23456789', tags: ['basic-only'] })
+    if (error) throw new Error(error.message)
+
+    expect((await pageOf(await get(`/api/merchants/${proId}/customers`, proToken))).shopTags)
+      .toEqual(['pro-only'])
+    expect((await pageOf(await get(`/api/merchants/${basicId}/customers`, aToken))).shopTags)
+      .toEqual(['basic-only'])
   })
 
   it('keeps one shop’s note invisible to another shop', async () => {

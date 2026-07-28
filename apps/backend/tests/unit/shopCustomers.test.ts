@@ -326,3 +326,80 @@ describe('shopCustomers — paging', () => {
   })
 })
 
+
+// ── the shop's tag vocabulary (#150) ─────────────────────────────────────────
+//
+// What the tag suggestions in the drawer are drawn from. Every rule worth arguing about is
+// here: what the list contains, in what order, and what it deliberately does NOT respond to.
+
+describe('shopCustomers — the shop’s tag vocabulary', () => {
+  const rec = (phoneKey: string, tags: string[]): ShopCustomerRecord => ({ phoneKey, note: null, tags })
+
+  it('is empty for a shop that has never written a tag', () => {
+    expect(page([group({})]).shopTags).toEqual([])
+  })
+
+  it('is empty when a row exists but carries no tags', () => {
+    expect(page([group({})], [rec('23456789', [])]).shopTags).toEqual([])
+  })
+
+  it('collects every tag the shop has used, across customers', () => {
+    const r = page(
+      [group({ phoneKey: '23456789' }), group({ phoneKey: '87654321' })],
+      [rec('23456789', ['office']), rec('87654321', ['wholesale'])],
+    )
+    expect(r.shopTags).toEqual(['office', 'wholesale'])
+  })
+
+  it('lists a tag once however many customers carry it', () => {
+    const r = page(
+      [group({ phoneKey: '23456789' }), group({ phoneKey: '87654321' })],
+      [rec('23456789', ['vip']), rec('87654321', ['vip'])],
+    )
+    expect(r.shopTags).toEqual(['vip'])
+  })
+
+  it('sorts case-insensitively, so two spellings of one tag land side by side', () => {
+    const r = page([group({})], [rec('23456789', ['zebra', 'VIP', 'apple', 'vip'])])
+    expect(r.shopTags).toEqual(['apple', 'VIP', 'vip', 'zebra'])
+  })
+
+  it('keeps each spelling as the merchant typed it — this list offers, it does not normalise', () => {
+    const r = page([group({})], [rec('23456789', ['V.I.P.', 'VIP'])])
+    expect(r.shopTags).toEqual(['V.I.P.', 'VIP'])
+  })
+
+  it('is not narrowed by a tag filter — the vocabulary is what the filter chooses from', () => {
+    const r = shopCustomers(
+      [group({ phoneKey: '23456789' }), group({ phoneKey: '87654321' })],
+      [rec('23456789', ['vip']), rec('87654321', ['office'])],
+      { now: NOW, tag: 'vip' },
+    )
+    expect(r.customers).toHaveLength(1)
+    expect(r.shopTags).toEqual(['office', 'vip'])
+  })
+
+  it('is not narrowed by a search', () => {
+    const r = shopCustomers(
+      [group({ phoneKey: '23456789', latestName: 'Ali' }), group({ phoneKey: '87654321', latestName: 'Bee' })],
+      [rec('23456789', ['vip']), rec('87654321', ['office'])],
+      { now: NOW, search: 'Ali' },
+    )
+    expect(r.customers).toHaveLength(1)
+    expect(r.shopTags).toEqual(['office', 'vip'])
+  })
+
+  it('is not narrowed by paging — page 2 offers the same tags as page 1', () => {
+    const groups = [group({ phoneKey: '23456789' }), group({ phoneKey: '87654321' })]
+    const records = [rec('23456789', ['vip']), rec('87654321', ['office'])]
+    const opts = { now: NOW, sort: 'orders' as const, pageSize: 1 }
+    expect(shopCustomers(groups, records, { ...opts, page: 1 }).shopTags).toEqual(['office', 'vip'])
+    expect(shopCustomers(groups, records, { ...opts, page: 2 }).shopTags).toEqual(['office', 'vip'])
+  })
+
+  it('keeps a tag written against a customer who has since stopped appearing in the orders', () => {
+    const r = shopCustomers([group({})], [rec('nobody00', ['catering'])], { now: NOW })
+    expect(r.customers).toHaveLength(1)
+    expect(r.shopTags).toEqual(['catering'])
+  })
+})

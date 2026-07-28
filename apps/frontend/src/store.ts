@@ -766,7 +766,7 @@ export async function fetchShopCustomers(
   merchantId: string,
   opts: { sort?: ShopCustomerSort; tag?: string; search?: string; page?: number; pageSize?: number } = {},
 ): Promise<Result<ShopCustomerPage>> {
-  if (!merchantId) return { ok: true, data: { customers: [], total: 0, unattributedOrders: 0 } }
+  if (!merchantId) return { ok: true, data: { customers: [], shopTags: [], total: 0, unattributedOrders: 0 } }
   const q = new URLSearchParams()
   if (opts.sort) q.set('sort', opts.sort)
   if (opts.tag) q.set('tag', opts.tag)
@@ -774,7 +774,16 @@ export async function fetchShopCustomers(
   if (opts.page) q.set('page', String(opts.page))
   if (opts.pageSize) q.set('pageSize', String(opts.pageSize))
   const qs = q.toString()
-  return apiGet<ShopCustomerPage>(`/api/merchants/${merchantId}/customers${qs ? `?${qs}` : ''}`, { auth: true })
+  const r = await apiGet<ShopCustomerPage>(`/api/merchants/${merchantId}/customers${qs ? `?${qs}` : ''}`, { auth: true })
+
+  // `shopTags` is made true HERE rather than trusted from the wire, because the two halves of
+  // this app deploy independently — the frontend to Vercel, the backend to Railway — so a
+  // browser running this code can be talking to a backend that has never heard of the field
+  // (#150). `ShopCustomerPage` promises callers an array; this is the one place that can keep
+  // that promise. Without it the drawer throws on `undefined.filter` and takes the whole notes
+  // panel down to avoid drawing one row of chips.
+  if (!r.ok) return r
+  return { ok: true, data: { ...r.data, shopTags: r.data.shopTags ?? [] } }
 }
 
 /** One customer's orders, newest-first — what the drawer opens. Cancelled orders included. */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { UserCheck, X } from 'lucide-react'
+import { Plus, UserCheck, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Order, ShopCustomer, ShopCustomerSort } from '../types'
 import { useSession } from '../SessionContext'
@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import OrderDetailSheet from './OrderDetailSheet'
 import { ProBadge, UpgradeLink } from './ProLock'
+import { mergeShopTags, tagSuggestions } from './tagSuggestions'
 import WaLink from './WaLink'
 
 // Self-contained panel — pixel-match of .admin-panel
@@ -51,6 +52,7 @@ export default function CustomersView() {
   const merchantId = merchant!.id
 
   const [customers, setCustomers] = useState<ShopCustomer[] | null>(null)
+  const [shopTags, setShopTags] = useState<string[]>([])
   const [total, setTotal] = useState(0)
   const [unattributed, setUnattributed] = useState(0)
   const [failed, setFailed] = useState(false)
@@ -73,6 +75,7 @@ export default function CustomersView() {
     if (!r.ok) { setFailed(true); return }
     setFailed(false)
     setCustomers(r.data.customers)
+    setShopTags(r.data.shopTags)
     setTotal(r.data.total)
     setUnattributed(r.data.unattributedOrders)
   }, [merchantId, sort, tag, search, page])
@@ -88,10 +91,15 @@ export default function CustomersView() {
   // reads as "no results".
   const narrow = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPage(1) }
 
-  /** A saved note or tag has to land in the open drawer AND in the row behind it. */
+  /**
+   * A saved note or tag has to land in the open drawer AND in the row behind it — and, since
+   * #150, in the shop's tag vocabulary: a tag typed here is offered to the next customer whose
+   * drawer the merchant opens, without a reload they have no reason to perform.
+   */
   function applyWrite(phoneKey: string, fields: { note: string | null; tags: string[] }) {
     setCustomers(prev => prev?.map(c => (c.phoneKey === phoneKey ? { ...c, ...fields } : c)) ?? prev)
     setSelected(cur => (cur && cur.phoneKey === phoneKey ? { ...cur, ...fields } : cur))
+    setShopTags(prev => mergeShopTags(prev, fields.tags))
   }
 
   if (customers === null && !failed) {
@@ -200,6 +208,7 @@ export default function CustomersView() {
         customer={selected}
         merchantId={merchantId}
         isPro={isPro}
+        shopTags={shopTags}
         onClose={() => setSelected(null)}
         onWritten={applyWrite}
         onTagClicked={next => { setSelected(null); narrow(setTag)(next) }}
@@ -298,11 +307,12 @@ function ListFooter({
  * is the mistake this whole change removes.
  */
 function CustomerDrawer({
-  customer, merchantId, isPro, onClose, onWritten, onTagClicked,
+  customer, merchantId, isPro, shopTags, onClose, onWritten, onTagClicked,
 }: {
   customer: ShopCustomer | null
   merchantId: string
   isPro: boolean
+  shopTags: string[]
   onClose: () => void
   onWritten: (phoneKey: string, fields: { note: string | null; tags: string[] }) => void
   onTagClicked: (tag: string) => void
@@ -318,6 +328,7 @@ function CustomerDrawer({
             customer={customer}
             merchantId={merchantId}
             isPro={isPro}
+            shopTags={shopTags}
             onWritten={onWritten}
             onTagClicked={onTagClicked}
           />
@@ -328,11 +339,12 @@ function CustomerDrawer({
 }
 
 function DrawerContents({
-  customer, merchantId, isPro, onWritten, onTagClicked,
+  customer, merchantId, isPro, shopTags, onWritten, onTagClicked,
 }: {
   customer: ShopCustomer
   merchantId: string
   isPro: boolean
+  shopTags: string[]
   onWritten: (phoneKey: string, fields: { note: string | null; tags: string[] }) => void
   onTagClicked: (tag: string) => void
 }) {
@@ -381,6 +393,7 @@ function DrawerContents({
                 customer={customer}
                 merchantId={merchantId}
                 isPro={isPro}
+                shopTags={shopTags}
                 onWritten={onWritten}
                 onTagClicked={onTagClicked}
               />
@@ -426,11 +439,12 @@ function DrawerContents({
  * which is what makes it worth writing candidly — so the panel says so.
  */
 function NotesPanel({
-  customer, merchantId, isPro, onWritten, onTagClicked,
+  customer, merchantId, isPro, shopTags, onWritten, onTagClicked,
 }: {
   customer: ShopCustomer
   merchantId: string
   isPro: boolean
+  shopTags: string[]
   onWritten: (phoneKey: string, fields: { note: string | null; tags: string[] }) => void
   onTagClicked: (tag: string) => void
 }) {
@@ -450,6 +464,13 @@ function NotesPanel({
     onWritten(customer.phoneKey, { note: r.data.note, tags: r.data.tags })
   }
 
+  /** One way in for both routes — typing a tag and clicking a suggestion are the same act. */
+  function addTag(next: string) {
+    setTagDraft('')
+    if (!next || customer.tags.includes(next)) return
+    save({ note: customer.note, tags: [...customer.tags, next] })
+  }
+
   if (!isPro) {
     return (
       <div className="mx-4 my-4 rounded-lg border border-rose-border bg-surface-sunken px-3 py-3 text-center">
@@ -467,6 +488,10 @@ function NotesPanel({
       </div>
     )
   }
+
+  // Computed below the gate, not above it: a basic shop renders none of this, and filtering a
+  // vocabulary nobody is going to see is work done for an audience that does not exist.
+  const suggestions = tagSuggestions(shopTags, customer.tags, tagDraft)
 
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
@@ -495,14 +520,29 @@ function NotesPanel({
           onKeyDown={e => {
             if (e.key !== 'Enter') return
             e.preventDefault()
-            const next = tagDraft.trim()
-            if (!next || customer.tags.includes(next)) { setTagDraft(''); return }
-            save({ note: customer.note, tags: [...customer.tags, next] })
-            setTagDraft('')
+            addTag(tagDraft.trim())
           }}
           placeholder={t('Add a tag, press Enter…', '添加标签，按回车…')}
           className="bg-cream border-clay-border text-[13px]"
         />
+
+        {suggestions.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-text-tertiary">{t('Used before', '曾用标签')}</span>
+            {suggestions.map(s => (
+              <button
+                key={s}
+                type="button"
+                disabled={busy}
+                onClick={() => addTag(s)}
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-clay-border bg-cream px-2.5 py-0.5 text-[12px] text-text-secondary hover:border-rose-border hover:bg-oxblood-tint hover:text-oxblood transition-colors disabled:opacity-50"
+              >
+                <Plus size={10} />
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div>

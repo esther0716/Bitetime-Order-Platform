@@ -60,6 +60,14 @@ export interface ShopCustomer {
 
 export interface ShopCustomerPage {
   customers: ShopCustomer[]
+  /**
+   * Every tag this shop has written, once each — what the drawer offers back so the merchant
+   * does not have to remember which spelling they used (#150).
+   *
+   * NOT filtered and NOT paged, unlike `customers`: it is the vocabulary the filter chooses
+   * from, so narrowing to one tag must not narrow the list of tags to that one tag.
+   */
+  shopTags: string[]
   /** Distinct customers, before any paging. */
   total: number
   /**
@@ -236,9 +244,35 @@ export function shopCustomers(
     // `unattributedOrders` is not filtered — no search narrows away an order that could never
     // have been shown in the first place.
     customers: paginate(matched, opts.page, opts.pageSize),
+    // Folded from `records`, NOT from `customers`: the same reason as above, plus records is
+    // already the whole shop's rows in memory, so the vocabulary costs no second query.
+    shopTags: shopTags(records),
     total: matched.length,
     unattributedOrders,
   }
+}
+
+/**
+ * Every tag this shop has used, once each, in an order a merchant can scan.
+ *
+ * **Offers, never normalises.** `vip` and `VIP` both survive as the merchant typed them — a tag
+ * is the merchant's own label for their own customers, and quietly rewriting the case would
+ * merge two tags they may have meant to keep apart, with no way back (#150; same instinct as
+ * the cart key in CONTEXT.md → Order pricing). What the sort does instead is put the two
+ * spellings side by side, so the merchant sees the collision and picks one themselves.
+ *
+ * Case-insensitive, then raw as the tiebreak, for the same reason the customer comparator
+ * tiebreaks on `phoneKey`: a total order, so the row of suggestions does not reshuffle between
+ * two renders that happen to enumerate the rows differently.
+ *
+ * A tag on a row whose customer no longer appears in the orders is kept. It is still a word the
+ * merchant chose, and dropping it would quietly retire a tag from the vocabulary at the moment
+ * its last holder stopped being listed.
+ */
+function shopTags(records: ShopCustomerRecord[]): string[] {
+  return [...new Set(records.flatMap(r => r.tags))].sort(
+    (a, b) => a.toLowerCase().localeCompare(b.toLowerCase()) || (a < b ? -1 : a > b ? 1 : 0),
+  )
 }
 
 const digitsOf = (s: string | null) => (s ?? '').replace(/\D/g, '')

@@ -1156,7 +1156,7 @@ describe('setOrderTracking', () => {
 describe('fetchShopCustomers', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  const page = { customers: [], total: 0, unattributedOrders: 0 }
+  const page = { customers: [], shopTags: [], total: 0, unattributedOrders: 0 }
 
   function stubFetch() {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => page })
