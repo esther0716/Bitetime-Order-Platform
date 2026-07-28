@@ -153,11 +153,30 @@ export async function revokeProArtifacts(merchantId: string) {
  * since switched back on. Not symmetric either — re-subscribing resurrects nothing.
  */
 async function revokeOptionGroups(merchantId: string) {
-  const { data, error } = await admin
-    .from('products').select('id, active, option_groups').eq('merchant_id', merchantId)
-  if (error) throw error
+  // PAGED, because "give me all of this shop's products" is the request shape CONTEXT.md ->
+  // *Merchant order reads* rules out: PostgREST caps a response at `max_rows` and reports the
+  // truncation only in a header, so an unbounded read here would silently skip a large menu's
+  // tail — leaving those products selling questions the shop no longer pays for, with nothing
+  // to show it happened. The rule is about the shape of the request, not about the number.
+  for (let from = 0; ; from += REVOKE_PAGE) {
+    const { data, error } = await admin
+      .from('products').select('id, active, option_groups')
+      .eq('merchant_id', merchantId)
+      .order('id')
+      .range(from, from + REVOKE_PAGE - 1)
+    if (error) throw error
+    const rows = data ?? []
+    if (rows.length === 0) return
+    await revokePage(rows)
+    if (rows.length < REVOKE_PAGE) return
+  }
+}
 
-  for (const row of data ?? []) {
+/** One page of products, at a size comfortably under any `max_rows` this could meet. */
+const REVOKE_PAGE = 200
+
+async function revokePage(rows: { id: string; active: boolean; option_groups: unknown }[]) {
+  for (const row of rows) {
     const groups = optionGroupsFromRow(row.option_groups)
     if (!hasActiveGroup(groups)) continue
     const patch: Record<string, unknown> = { option_groups: deactivateGroups(groups) }

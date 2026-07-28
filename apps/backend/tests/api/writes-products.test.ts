@@ -4,7 +4,7 @@
 // about whether :productId actually belongs to that shop. An owner of shop A nesting shop B's
 // product under :id = A must be refused, not silently allowed to touch (or delete) a stranger's
 // row. See CLAUDE.md → Backend, Global Constraint 2.
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { app } from '../../src/app.js'
 import { makeUser, seedMerchant, seedProduct, serviceClient, resetMerchant } from '../rls/helpers.js'
 
@@ -372,5 +372,127 @@ describe('DELETE /api/merchants/:id/products/:productId', () => {
 
     await serviceClient().from('products').delete().eq('id', productId)
     await serviceClient().from('merchants').delete().eq('id', id)
+  })
+})
+
+// Menu options ride the same shared endpoint as promos and are gated the same way (#145,
+// ADR 0010). The gate asks whether the groups CHANGED, never whether the column is present —
+// a shop that dropped to basic still has groups on its rows and the dashboard resubmits the
+// whole row, so presence would refuse an ordinary rename.
+describe('PUT /api/merchants/:id/products/:productId — option groups', () => {
+  const MILK = [{
+    id: 'milk', name: 'Milk', minSelect: 1, maxSelect: 1, maxPerOption: 1, active: true,
+    options: [
+      { id: 'regular', name: 'Regular', delta: 0, active: true },
+      { id: 'oat', name: 'Oat', delta: 2, active: true },
+    ],
+  }]
+
+  // TWO shops, made once — one per tier, which is what these tests actually distinguish.
+  // `merchants_owner_id_key` makes a shop's owner unique (one owner, one shop), so a shop per
+  // test is an auth account per test; and `makeUser` lists every user before creating one, so
+  // each account a suite adds permanently widens that race for the suites vitest runs beside it.
+  let basic: { id: string; token: string }
+  let pro: { id: string; token: string }
+
+  async function makeShop(slug: string, email: string, plan: 'basic' | 'pro') {
+    await resetMerchant(slug)
+    const owner = await makeUser(email, 'password123')
+    const { token, userId } = await tokenOf(owner)
+    return { id: await seedMerchant({ slug, owner_id: userId, plan }), token }
+  }
+
+  beforeAll(async () => {
+    basic = await makeShop('opt-basic-shop', 'opt-basic@example.com', 'basic')
+    pro = await makeShop('opt-pro-shop', 'opt-pro@example.com', 'pro')
+  })
+
+  afterAll(async () => {
+    await resetMerchant('opt-basic-shop')
+    await resetMerchant('opt-pro-shop')
+  })
+
+  /** Seeded past the gate, exactly as a shop that WAS Pro would have it. */
+  async function seedWithGroups(merchantId: string, productId: string) {
+    await serviceClient().from('products')
+      .insert({ id: productId, merchant_id: merchantId, name: 'Latte', price: 10, option_groups: MILK })
+  }
+
+  it('403 requires_pro when a basic shop adds option groups, and writes nothing', async () => {
+    const productId = crypto.randomUUID()
+    const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
+      name: 'Latte', price: 10, option_groups: MILK,
+    }, basic.token)
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'requires_pro' })
+    const { data } = await serviceClient().from('products').select('id').eq('id', productId).maybeSingle()
+    expect(data).toBeNull()
+  })
+
+  // The rename case, and the whole reason the gate compares rather than sniffs.
+  it('lets a basic shop rename a product while resubmitting its unchanged groups', async () => {
+    const productId = crypto.randomUUID()
+    await seedWithGroups(basic.id, productId)
+
+    const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
+      name: 'Flat White', price: 10, option_groups: MILK,
+    }, basic.token)
+
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('products').select('name, option_groups').eq('id', productId).single()
+    expect(data!.name).toBe('Flat White')
+    expect(data!.option_groups).toEqual(MILK)
+  })
+
+  // Clearing is a change like any other: a Pro feature must not be removable by the act of
+  // ceasing to pay for it.
+  it('403 requires_pro when a basic shop tries to CLEAR its groups', async () => {
+    const productId = crypto.randomUUID()
+    await seedWithGroups(basic.id, productId)
+
+    const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
+      name: 'Latte', price: 10, option_groups: [],
+    }, basic.token)
+
+    expect(res.status).toBe(403)
+    const { data } = await serviceClient()
+      .from('products').select('option_groups').eq('id', productId).single()
+    expect(data!.option_groups).toEqual(MILK)
+  })
+
+  // ADR 0008 traded every check constraint for the atomic save and appointed
+  // `validateOptionGroups` as the sole replacement. It must ANSWER, not throw, on a body
+  // nothing has checked.
+  it('400s a Pro shop’s impossible or malformed groups instead of storing them', async () => {
+    const productId = crypto.randomUUID()
+
+    const impossible = await put(`/api/merchants/${pro.id}/products/${productId}`, {
+      name: 'Box', price: 30, option_groups: [{ ...MILK[0], minSelect: 9, maxSelect: 2 }],
+    }, pro.token)
+    expect(impossible.status).toBe(400)
+    expect(await impossible.json()).toEqual({ error: 'impossible_window' })
+
+    const malformed = await put(`/api/merchants/${pro.id}/products/${productId}`, {
+      name: 'Box', price: 30, option_groups: [{}],
+    }, pro.token)
+    expect(malformed.status).toBe(400)
+    expect(await malformed.json()).toEqual({ error: 'malformed_group' })
+
+    const { data } = await serviceClient().from('products').select('id').eq('id', productId).maybeSingle()
+    expect(data).toBeNull()
+  })
+
+  it('lets a Pro shop save a legal set of groups', async () => {
+    const productId = crypto.randomUUID()
+    const res = await put(`/api/merchants/${pro.id}/products/${productId}`, {
+      name: 'Latte', price: 10, option_groups: MILK,
+    }, pro.token)
+
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('products').select('option_groups').eq('id', productId).single()
+    expect(data!.option_groups).toEqual(MILK)
   })
 })

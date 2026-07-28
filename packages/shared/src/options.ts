@@ -317,3 +317,28 @@ export function hasRequiredGroup(groups: OptionGroup[]): boolean {
 export function hasActiveGroup(groups: OptionGroup[]): boolean {
   return groups.some(g => g.active)
 }
+
+/**
+ * Could a customer still give a legal answer to these questions?
+ *
+ * What decides whether an `option_unavailable` refusal REPAIRS the line — reopen the picker and
+ * let them choose again — or falls back to dropping it. The fallback has to exist, because a
+ * picker with nothing valid to pick is the same dead end in nicer manners; but dropping a
+ * customer's drink because one milk ran out, when three remain, is the wrong recovery.
+ *
+ * Only REQUIRED groups can make a product unanswerable. An optional group losing every option
+ * costs an upsell, not the product. A switched-off group is not a question at all, which is what
+ * keeps the Pro downgrade from turning products unanswerable rather than merely unasked.
+ *
+ * Capacity is `active options x maxPerOption` (uncapped means one option can fill the group), so
+ * a six-muffin box down to a single flavour capped at one each cannot be answered.
+ */
+export function canBeAnswered(groups: OptionGroup[]): boolean {
+  return groups.every(g => {
+    if (!g.active || g.minSelect <= 0) return true
+    const live = g.options.filter(o => o.active).length
+    if (live === 0) return false
+    const capacity = g.maxPerOption === null ? Infinity : live * g.maxPerOption
+    return capacity >= g.minSelect
+  })
+}

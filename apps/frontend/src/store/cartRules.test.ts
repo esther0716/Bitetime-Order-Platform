@@ -181,30 +181,36 @@ describe('repairCart', () => {
   // The `option_unavailable` recovery. `pruneCart` cannot do this: the PRODUCT is still on sale,
   // so nothing is dropped, and without repair the dead pick survives every refresh and every
   // retry is refused identically — the loop the refusal vocabulary exists to prevent.
-  it('drops a line whose chosen option was switched off', () => {
+  // The stale answer always goes. What differs is whether the customer is offered the product
+  // again — here Regular is still on the menu, so losing the coffee entirely would be wrong.
+  it('takes out a line whose chosen option was switched off, leaving valid ones', () => {
     const withoutOat = milk([{ id: 'oat', name: 'Oat', delta: 2, active: false }])
     const r = repairCart([line('a', 1, oat), line('a', 1, [{ groupId: 'milk', picks: { regular: 1 } }])],
       [item('a', true, [withoutOat])])
     expect(r.cart).toEqual([line('a', 1, [{ groupId: 'milk', picks: { regular: 1 } }])])
-    expect(r.removed).toBe(1)
+    expect(r.reask).toEqual(['a'])
+    expect(r.removed).toBe(0)
   })
 
-  it('drops a line whose chosen option was deleted outright', () => {
+  it('takes out a line whose chosen option was deleted outright', () => {
     const r = repairCart([line('a', 1, soy)], [item('a', true, [milk()])])
     expect(r.cart).toEqual([])
-    expect(r.removed).toBe(1)
+    expect(r.reask).toEqual(['a'])
   })
 
-  it('drops a line the merchant made impossible by widening the question', () => {
+  it('takes out a line the merchant made impossible by widening the question', () => {
     const stricter: OptionGroup = { ...milk(), minSelect: 2, maxSelect: 2, maxPerOption: 2 }
     const r = repairCart([line('a', 1, oat)], [item('a', true, [stricter])])
-    expect(r.removed).toBe(1)
+    expect(r.cart).toEqual([])
+    // Two milks, cap of two each — the wider question can still be answered.
+    expect(r.reask).toEqual(['a'])
   })
 
   it('leaves a cart the menu still answers', () => {
     const cart = [line('a', 1, oat)]
     const r = repairCart(cart, [item('a', true, [milk()])])
     expect(r.removed).toBe(0)
+    expect(r.reask).toEqual([])
     expect(r.cart).toBe(cart)
   })
 
@@ -213,6 +219,33 @@ describe('repairCart', () => {
   it('leaves a plain product alone', () => {
     const cart = [line('a', 3)]
     expect(repairCart(cart, [item('a')]).cart).toBe(cart)
+  })
+
+  // Spec: the recovery REPAIRS the line by reopening the picker, and falls back to dropping it
+  // only when the whole group is dead. Dropping a customer's coffee because one milk ran out —
+  // when Regular is still there — is the wrong answer to a menu that merely moved.
+  it('asks again for a product that can still be answered', () => {
+    const r = repairCart([line('a', 1, soy)], [item('a', true, [milk()])])
+    expect(r.cart).toEqual([])   // the stale answer goes either way
+    expect(r.reask).toEqual(['a'])
+    expect(r.removed).toBe(0)
+  })
+
+  // The terminating case. Every milk withdrawn: there is nothing to reopen the picker FOR.
+  it('drops, and does not re-ask, when nothing can be picked', () => {
+    const dead = { ...milk([]), options: [{ id: 'regular', name: 'Regular', delta: 0, active: false }] }
+    const r = repairCart([line('a', 1, oat)], [item('a', true, [dead])])
+    expect(r.cart).toEqual([])
+    expect(r.reask).toEqual([])
+    expect(r.removed).toBe(1)
+  })
+
+  it('re-asks each product once, however many of its lines broke', () => {
+    const r = repairCart(
+      [line('a', 1, soy), line('a', 1, [{ groupId: 'milk', picks: { almond: 1 } }])],
+      [item('a', true, [milk()])],
+    )
+    expect(r.reask).toEqual(['a'])
   })
 })
 

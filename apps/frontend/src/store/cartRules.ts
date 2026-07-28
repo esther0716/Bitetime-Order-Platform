@@ -1,5 +1,5 @@
 import {
-  MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES, cartLineKey, validateSelections,
+  MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES, cartLineKey, validateSelections, canBeAnswered,
 } from '@bitetime/shared'
 import type { CartLine, OptionGroup } from '@bitetime/shared'
 import type { Translate } from '../types'
@@ -176,34 +176,55 @@ export function nextCart(cart: Cart, target: CartTarget, delta: number): CartCha
 export interface RepairResult {
   /** The cart with every line the menu can no longer answer removed. Same object when none went. */
   readonly cart: Cart
-  /** How many LINES were dropped. */
+  /** How many lines were dropped with NO way to offer them again. */
   readonly removed: number
+  /**
+   * Products whose line broke but which can still be answered — the customer should be shown the
+   * picker again rather than simply losing the item. Distinct, in cart order: a customer whose
+   * two Lattes both broke lost "Latte" once.
+   */
+  readonly reask: readonly string[]
 }
 
 /**
- * Drop the lines whose ANSWERS the refreshed menu no longer accepts.
+ * Drop the lines whose ANSWERS the refreshed menu no longer accepts, and say which of them the
+ * customer can be asked again.
  *
  * The `option_unavailable` recovery, and the half `pruneCart` cannot do: there, the product left
  * the menu and the line went with it. Here the product is still on sale and only an option died
- * — switched off, deleted, or made impossible by a merchant widening the question — so a prune
+ * — switched off, deleted, or made impossible by a merchant moving the window — so a prune
  * removes nothing, the dead pick survives the refresh, and every retry is refused identically.
- * That is exactly the permanent refusal loop the refusal vocabulary exists to prevent.
+ * That is the permanent refusal loop the refusal vocabulary exists to prevent.
  *
- * Dropping the line is the TERMINATING case. Reopening the picker is nicer and belongs in the UI,
- * but something must always end the loop, and a customer left in a picker with nothing valid to
- * pick is the same trap in a friendlier costume.
+ * The stale answer goes either way; what differs is what happens next. If the product can still
+ * be answered (`canBeAnswered`), it lands in `reask` and the caller reopens the picker — losing a
+ * coffee because one milk ran out, while three remain, is the wrong recovery. If it cannot, the
+ * line is simply DROPPED, and that is the terminating case: a picker with nothing valid to pick
+ * is the same dead end wearing nicer manners.
  *
  * Runs AFTER the menu is adopted — against a stale menu it would keep the option just withdrawn.
  */
 export function repairCart(cart: Cart, fresh: readonly MenuItem[]): RepairResult {
-  const kept = cart.filter(l => {
+  const broken = cart.filter(l => {
     const groups = fresh.find(p => p.id === l.productId)?.optionGroups ?? []
-    // A product that asks nothing cannot hold a broken answer — most shops are this shop.
-    if (groups.length === 0 && l.selections.length === 0) return true
-    return validateSelections(groups, l.selections) === null
+    if (groups.length === 0 && l.selections.length === 0) return false
+    return validateSelections(groups, l.selections) !== null
   })
-  if (kept.length === cart.length) return { cart, removed: 0 }
-  return { cart: kept, removed: cart.length - kept.length }
+  if (broken.length === 0) return { cart, removed: 0, reask: [] }
+
+  const answerable = (productId: string) =>
+    canBeAnswered(fresh.find(p => p.id === productId)?.optionGroups ?? [])
+
+  const reask = [...new Set(broken.map(l => l.productId))].filter(answerable)
+  return {
+    cart: cart.filter(l => !broken.includes(l)),
+    removed: broken.filter(l => !answerable(l.productId)).length,
+    reask,
+  }
+}
+
+export function plainQty(cart: Cart, productId: string): number {
+  return cart.find(l => l.productId === productId && l.selections.length === 0)?.qty ?? 0
 }
 
 /** What a refused quantity change tells the customer. Empty for a no-op, which says nothing. */
@@ -221,15 +242,4 @@ export function cartRefusalMessage(refusal: CartRefusal | 'noop', t: Translate):
     case 'noop':
       return ''
   }
-}
-
-/**
- * How many of a product the customer holds on its PLAIN line — the one carrying no selections.
- *
- * What the ±1 stepper on a product card reads and writes. A product that asks questions has no
- * plain line and no stepper: there is no answer to which selection a bare `+` would raise, which
- * is why those cards get an Add button and a picker instead.
- */
-export function plainQty(cart: Cart, productId: string): number {
-  return cart.find(l => l.productId === productId && l.selections.length === 0)?.qty ?? 0
 }

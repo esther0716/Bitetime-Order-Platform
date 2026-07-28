@@ -152,6 +152,9 @@ export async function seedProduct(fields: {
   promo_price?: number
   promo_limit?: number
   promo_end?: string
+  // Omitted when not passed, for the same reason the promo columns are: the column's own
+  // default (`'[]'`) is what a product that asks nothing should have.
+  option_groups?: unknown
 }) {
   const { data, error } = await serviceClient()
     .from('products')
@@ -163,6 +166,7 @@ export async function seedProduct(fields: {
       ...(fields.promo_price !== undefined ? { promo_price: fields.promo_price } : {}),
       ...(fields.promo_limit !== undefined ? { promo_limit: fields.promo_limit } : {}),
       ...(fields.promo_end !== undefined ? { promo_end: fields.promo_end } : {}),
+      ...(fields.option_groups !== undefined ? { option_groups: fields.option_groups } : {}),
     })
     .select('id')
     .single()

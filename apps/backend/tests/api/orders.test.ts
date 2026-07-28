@@ -1941,3 +1941,143 @@ describe('GET /api/time', () => {
     expect(Number.isFinite(Date.parse(body.now))).toBe(true)
   })
 })
+
+// Menu options at the door (#145). The body says WHICH options; whether those are still legal
+// options is never its to assert, and the answers are checked against the shop's own groups
+// inside the lock. The split between the two refusals is about what a CORRECT client could
+// produce: a menu that moved under a customer is recoverable and gets `option_unavailable`,
+// whose plan repairs the line; something no correct client sends is `invalid_body`, which offers
+// nothing to do. Getting that backwards costs a real checkout.
+describe('POST /api/orders — menu options', () => {
+  const MILK = [{
+    id: 'milk', name: 'Milk', minSelect: 1, maxSelect: 1, maxPerOption: 1, active: true,
+    options: [
+      { id: 'regular', name: 'Regular', delta: 0, active: true },
+      { id: 'oat', name: 'Oat milk', delta: 2, active: true },
+    ],
+  }]
+  const pick = (optionId: string) => [{ groupId: 'milk', picks: { [optionId]: 1 } }]
+
+  // ONE shop for every test here, made once, with a PRODUCT per test.
+  //
+  // `merchants_owner_id_key` makes a shop's owner unique — one owner, one shop — so a shop per
+  // test is also an auth account per test. `makeUser` lists every user and then creates, which
+  // is not atomic, so each account a suite adds permanently widens that race for the 29 suites
+  // vitest runs concurrently. What varies between these tests is the product's GROUPS, not the
+  // shop, so a shop each would be five accounts bought for nothing.
+  let optShop: string
+  beforeAll(async () => {
+    await resetMerchant('opt-order-shop')
+    const owner = await makeUser('opt-order-shop@example.com', 'password123')
+    const { data } = await owner.auth.getSession()
+    optShop = await seedMerchant({
+      slug: 'opt-order-shop', order_prefix: 'OP', owner_id: data.session!.user.id,
+    })
+  })
+
+  afterAll(async () => { await resetMerchant('opt-order-shop') })
+
+  /** A Latte on the shared shop, asking whatever this test needs it to ask. */
+  async function latte(groups: unknown = MILK) {
+    return seedProduct({
+      merchant_id: optShop, name: 'Latte', price: 10, option_groups: groups,
+    })
+  }
+
+  it('charges the option delta and snapshots what was chosen', async () => {
+    const productId = await latte()
+    const merchantId = optShop
+    const res = await post(body(merchantId, productId, {
+      cart: [{ productId, qty: 2, selections: pick('oat') }],
+      quotedTotal: 24,   // (10 + 2) x 2 — the delta is per unit
+      fulfilDate: tomorrowInShopZone(),
+    }))
+
+    expect(res.status).toBe(200)
+    const [order] = await ordersOf(merchantId)
+    expect(order.total).toBe(24)
+    // The delta CHARGED is stored, so a merchant editing "oat +2" tomorrow cannot rewrite this.
+    expect(order.items[0].price).toBe(12)
+    expect(order.items[0].selections).toEqual([
+      { groupId: 'milk', groupName: 'Milk', optionId: 'oat', optionName: 'Oat milk', qty: 1, delta: 2 },
+    ])
+  })
+
+  // The 3pm case. The customer quoted while oat was on sale; the merchant switched it off before
+  // they pressed the button.
+  it('refuses option_unavailable when a chosen option was switched off', async () => {
+    const withoutOat = [{
+      ...MILK[0],
+      options: [MILK[0].options[0], { ...MILK[0].options[1], active: false }],
+    }]
+    const productId = await latte(withoutOat)
+    const merchantId = optShop
+    const before = (await ordersOf(merchantId)).length
+
+    const res = await post(body(merchantId, productId, {
+      cart: [{ productId, qty: 1, selections: pick('oat') }],
+      quotedTotal: 12,
+      fulfilDate: tomorrowInShopZone(),
+    }))
+
+    expect(res.status).toBe(409)
+    expect(await errorOf(res)).toBe('option_unavailable')
+    // COUNT, not emptiness: these tests share one shop, and an earlier one places a real order
+    // on it. What this asserts is that the REFUSAL wrote nothing, which is the actual claim.
+    expect((await ordersOf(merchantId)).length).toBe(before)
+  })
+
+  // Same code, different cause: the option is gone from the group entirely. Both are a menu that
+  // moved, and both are recoverable, so both must carry the refusal that REPAIRS.
+  it('refuses option_unavailable for an option the group no longer offers', async () => {
+    const productId = await latte()
+    const merchantId = optShop
+    const res = await post(body(merchantId, productId, {
+      cart: [{ productId, qty: 1, selections: pick('almond') }],
+      quotedTotal: 10,
+      fulfilDate: tomorrowInShopZone(),
+    }))
+    expect(await errorOf(res)).toBe('option_unavailable')
+  })
+
+  // A required question left unanswered is the same class — a merchant can raise `minSelect`
+  // under a customer — so it recovers rather than dead-ending.
+  it('refuses option_unavailable when a required group is unanswered', async () => {
+    const productId = await latte()
+    const merchantId = optShop
+    const res = await post(body(merchantId, productId, {
+      cart: [{ productId, qty: 1, selections: [] }],
+      quotedTotal: 10,
+      fulfilDate: tomorrowInShopZone(),
+    }))
+    expect(await errorOf(res)).toBe('option_unavailable')
+  })
+
+  // No correct client sends two answers to one question, and it is not recoverable by re-picking
+  // — so it is a malformed body, refused at the door like the cart caps.
+  it('refuses invalid_body for two answers to one group', async () => {
+    const productId = await latte()
+    const merchantId = optShop
+    const res = await post(body(merchantId, productId, {
+      cart: [{ productId, qty: 1, selections: [...pick('oat'), ...pick('regular')] }],
+      quotedTotal: 12,
+      fulfilDate: tomorrowInShopZone(),
+    }))
+    expect(res.status).toBe(400)
+    expect(await errorOf(res)).toBe('invalid_body')
+  })
+
+  // The door, not the transaction: a null selection used to reach `validateSelections` and throw
+  // on `s.groupId`, answering a crafted body with a 500.
+  it('refuses a malformed selection at the door, never as a 500', async () => {
+    const productId = await latte()
+    const merchantId = optShop
+    const res = await post(body(merchantId, productId, {
+      cart: [{ productId, qty: 1, selections: [null] }],
+      quotedTotal: 10,
+      fulfilDate: tomorrowInShopZone(),
+    }))
+    expect(res.status).toBe(400)
+    expect(await errorOf(res)).toBe('invalid_body')
+  })
+})

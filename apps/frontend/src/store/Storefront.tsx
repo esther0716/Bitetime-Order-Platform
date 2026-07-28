@@ -620,25 +620,38 @@ export default function Storefront() {
       } else if (action === 'clear_date') {
         setFulfilDate(null)
       } else if (action === 'repair_selections') {
-        // AFTER `refresh_sources`, which is why the plan returns an ordered list and this loop
+        // AFTER `refresh_sources`, which is why the plan returns an ORDERED list and this loop
         // walks it rather than choosing for itself: against the stale menu this would keep the
         // very option that was just withdrawn, and the retry would be refused identically.
-        //
-        // Dropping the line is the TERMINATING case, and something must always terminate — a
-        // customer left in a picker with nothing valid to pick is the same trap with nicer
-        // manners. Reopening the picker is the kinder half and belongs to the sheet, not here.
-        setCart(prev => {
-          const repaired = repairCart(prev, latestProducts.current.map(p => ({
-            id: p.id, active: p.active, optionGroups: optionGroupsFromRow(p.option_groups),
-          })))
-          if (repaired.removed > 0) {
-            toast(t(
-              'An option you chose is no longer available, so that item was removed.',
-              '你选择的选项已不可用，该商品已移除。',
-            ))
-          }
-          return repaired.cart
-        })
+        const menu = latestProducts.current.map(p => ({
+          id: p.id, active: p.active, optionGroups: optionGroupsFromRow(p.option_groups),
+        }))
+        // Decided from `cart`, WRITTEN against `prev` — the same split `adoptProducts` makes,
+        // and for the same reason: the decision needs a value to reason about, while the write
+        // must survive a tap that landed between this render and it. `repairCart` is pure, so an
+        // updater React chooses to run twice still lands the same cart.
+        const repaired = repairCart(cart, menu)
+        setCart(prev => repairCart(prev, menu).cart)
+
+        // REPAIR first, drop second. Losing a coffee because one milk ran out, while three
+        // remain, is the wrong answer to a menu that merely moved — so a product that can still
+        // be answered reopens its picker. Dropping is the TERMINATING case, and something must
+        // terminate: a picker with nothing valid to pick is the same dead end in nicer manners.
+        const askAgain = repaired.reask
+          .map(id => latestProducts.current.find(p => p.id === id))
+          .find(Boolean)
+        if (askAgain) {
+          setPicking(askAgain)
+          toast(t(
+            'An option you chose is no longer available — please choose again.',
+            '你选择的选项已不可用，请重新选择。',
+          ))
+        } else if (repaired.removed > 0) {
+          toast(t(
+            'An option you chose is no longer available, so that item was removed.',
+            '你选择的选项已不可用，该商品已移除。',
+          ))
+        }
       }
     }
   }

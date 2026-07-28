@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   cartLineKey, validateSelections, validateOptionGroups,
-  deactivateGroups, hasRequiredGroup, hasActiveGroup,
+  deactivateGroups, hasRequiredGroup, hasActiveGroup, canBeAnswered,
   MAX_PICK_QTY, MAX_GROUPS_PER_PRODUCT, MAX_OPTIONS_PER_GROUP,
 } from './options.js'
 import type { CartLine, Option, OptionGroup } from './options.js'
@@ -307,5 +307,50 @@ describe('validateSelections — malformed input', () => {
       expect(() => validateSelections([MILK], bad as never)).not.toThrow()
       expect(validateSelections([MILK], bad as never)).not.toBeNull()
     }
+  })
+})
+
+describe('canBeAnswered', () => {
+  // The split that decides whether `option_unavailable` REPAIRS (reopen the picker) or falls
+  // back to dropping the line. Dropping is the terminating case, not the whole recovery — but
+  // reopening a picker with nothing valid to pick is the same trap with nicer manners.
+  it('is true while every required group can still be satisfied', () => {
+    expect(canBeAnswered([FLAVOURS])).toBe(true)
+    expect(canBeAnswered([MILK])).toBe(true)
+    expect(canBeAnswered([])).toBe(true)
+  })
+
+  it('is false when a required group has no options left to pick', () => {
+    const dead = group('milk', {
+      minSelect: 1, maxSelect: 1, maxPerOption: 1,
+      options: [option('oat', { active: false }), option('soy', { active: false })],
+    })
+    expect(canBeAnswered([dead])).toBe(false)
+  })
+
+  // The muffin box with two flavours withdrawn: one flavour, capped at one each, cannot fill six.
+  it('is false when what is left cannot reach minSelect', () => {
+    const thin = group('flavours', {
+      minSelect: 6, maxSelect: 6, maxPerOption: 1,
+      options: [option('choc'), option('vanilla', { active: false })],
+    })
+    expect(canBeAnswered([thin])).toBe(false)
+    // Uncapped per option, one flavour CAN fill six.
+    expect(canBeAnswered([{ ...thin, maxPerOption: null }])).toBe(true)
+  })
+
+  // An OPTIONAL group losing every option costs an upsell, not the product.
+  it('ignores a group nothing is required from', () => {
+    const extras = group('extras', {
+      minSelect: 0, maxSelect: 3, maxPerOption: 1,
+      options: [option('a', { active: false })],
+    })
+    expect(canBeAnswered([extras])).toBe(true)
+  })
+
+  // A switched-off group is not a question — the Pro downgrade must not make a product
+  // unanswerable, it makes it unasked.
+  it('ignores a switched-off group', () => {
+    expect(canBeAnswered([{ ...FLAVOURS, active: false, options: [] }])).toBe(true)
   })
 })

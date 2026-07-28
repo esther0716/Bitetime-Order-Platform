@@ -103,6 +103,16 @@ export default function OptionGroupsEditor({
                 onChange={e => patchGroup(gi, { name: e.target.value })}
               />
             </div>
+            <div className="flex-1 min-w-[140px]">
+              {/* Optional, like `products.name_zh`. The ORDER snapshots both languages, so what
+                  is typed here is what a Chinese-reading customer sees on their receipt. */}
+              <Label className="text-[12px]">{t('Question (中文)', '问题（中文）')}</Label>
+              <Input
+                value={group.name_zh ?? ''}
+                placeholder={t('optional', '选填')}
+                onChange={e => patchGroup(gi, { name_zh: e.target.value || null })}
+              />
+            </div>
             <div className="w-[92px]">
               <Label className="text-[12px]">{t('Choose at least', '最少选')}</Label>
               <Input
@@ -138,10 +148,16 @@ export default function OptionGroupsEditor({
             {group.options.map((option, oi) => (
               <div key={option.id} className="flex items-center gap-2">
                 <Input
-                  className="flex-1"
+                  className="flex-1 min-w-[90px]"
                   value={option.name}
                   placeholder={t('Choice name', '选项名称')}
                   onChange={e => patchOption(gi, oi, { name: e.target.value })}
+                />
+                <Input
+                  className="flex-1 min-w-[80px]"
+                  value={option.name_zh ?? ''}
+                  placeholder={t('中文（选填）', '中文（选填）')}
+                  onChange={e => patchOption(gi, oi, { name_zh: e.target.value || null })}
                 />
                 <div className="flex items-center gap-1">
                   <span className="text-[12px] text-text-tertiary">+{currency ?? ''}</span>
@@ -151,6 +167,17 @@ export default function OptionGroupsEditor({
                     onChange={e => patchOption(gi, oi, { delta: Number(e.target.value) || 0 })}
                   />
                 </div>
+                {/* THE 3PM CONTROL, and the reason `option_unavailable` exists at all: a shop
+                    that runs out of oat milk switches it off rather than deleting it, keeping the
+                    price and the name for tomorrow. Without this the only way an option ever went
+                    inactive was a Pro downgrade. */}
+                <Button
+                  type="button" variant={option.active ? 'soft' : 'outline'} size="sm"
+                  onClick={() => patchOption(gi, oi, { active: !option.active })}
+                  aria-pressed={!option.active}
+                  aria-label={t(`Mark ${option.name || 'choice'} unavailable`, `将 ${option.name || '选项'} 设为不可选`)}
+                  title={t('Sold out today', '今日售罄')}
+                >{option.active ? t('Available', '可选') : t('Sold out', '售罄')}</Button>
                 <Button
                   type="button" variant="ghost" size="sm"
                   onClick={() => patchGroup(gi, { options: group.options.filter((_, n) => n !== oi) })}
@@ -176,6 +203,11 @@ export default function OptionGroupsEditor({
                 disabled={gi === value.length - 1}
                 aria-label={t('Move down', '下移')}
               >↓</Button>
+              <Button
+                type="button" variant={group.active ? 'ghost' : 'outline'} size="sm"
+                onClick={() => patchGroup(gi, { active: !group.active })}
+                aria-pressed={!group.active}
+              >{group.active ? t('Switch off', '停用') : t('Switched off', '已停用')}</Button>
               <Button
                 type="button" variant="ghost" size="sm"
                 onClick={() => onChange(value.filter((_, n) => n !== gi))}
