@@ -229,12 +229,18 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
 const WORD_SLACK_EM = 0.06
 const WORD_INTERVAL_MS = 2600
 
-// The underline that marks the word as the changing part of the sentence. It goes on the WORD, not
-// on the slot, so it tracks the glyphs rather than the animating width — an underline drawn under
-// the slot would visibly stretch and shrink on its own. Sized in em for the same reason the slot
-// is: the h1 runs from 2rem to 3.5rem, and a px rule would be heavy at the small end.
-const WORD_UNDERLINE =
-  'underline decoration-oxblood/60 decoration-[0.055em] underline-offset-[0.14em]'
+// The rule that marks this word as the changing part of the sentence. It belongs to the SLOT, not
+// to the word: the slot outlives the swap, so the rule stays put while the word above it leaves and
+// the next arrives, and it widens with the slot — a blank the words drop into, rather than an
+// underline that blinks out for a quarter-second between them.
+//
+// Painted as an ::after rather than a border-bottom, which would add its own height to the line box
+// and push the rest of the headline down by 3px. Everything is in em: the h1 runs from 2rem to
+// 3.5rem, and a px rule reads heavy at the small end. The 0.145em offset puts the rule 0.14em under
+// the baseline — where the browser's own underline sits, measured against the h1's font.
+const WORD_RULE =
+  'relative after:content-[\'\'] after:pointer-events-none after:absolute after:inset-x-0 ' +
+  'after:bottom-[0.145em] after:h-[0.055em] after:bg-oxblood/60'
 
 export const RotatingWord = memo(function RotatingWord({
   words,
@@ -251,9 +257,11 @@ export const RotatingWord = memo(function RotatingWord({
   }, [reduced, words.length])
 
   // Reduced motion gets the first word and no timer at all — not a timer whose animation is
-  // suppressed. It still gets the underline: that marks which word is the variable one, which is
-  // information, not decoration.
-  if (reduced) return <span className={WORD_UNDERLINE}>{words[0].text}</span>
+  // suppressed. It keeps the rule, sized to the one word it will ever show: the rule says which
+  // word varies, and for this reader it is the only cue that anything does.
+  if (reduced) {
+    return <span className={`inline-block whitespace-pre ${WORD_RULE}`}>{words[0].text}</span>
+  }
 
   const word = words[i % words.length]
 
@@ -262,7 +270,7 @@ export const RotatingWord = memo(function RotatingWord({
       // text-left, against the hero's inherited centring: while the width animates, a centred word
       // would drift sideways inside its own slot on top of the slot's own resize. Anchoring the
       // left edge means only the tail of the line moves, which is the movement being animated.
-      className="inline-block whitespace-pre align-baseline text-left"
+      className={`inline-block whitespace-pre align-baseline text-left ${WORD_RULE}`}
       initial={false}
       animate={{ width: `${word.em + WORD_SLACK_EM}em` }}
       transition={{ duration: 0.5, ease: EASE }}
@@ -273,7 +281,7 @@ export const RotatingWord = memo(function RotatingWord({
       <AnimatePresence mode="wait" initial={false}>
         <motion.span
           key={word.text}
-          className={`inline-block whitespace-pre ${WORD_UNDERLINE}`}
+          className="inline-block whitespace-pre"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
