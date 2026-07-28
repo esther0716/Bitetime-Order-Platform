@@ -1,0 +1,83 @@
+// The landing page's "what you actually get" section, as data — same reasoning as faq.ts: a copy
+// change never touches layout, and a test can see that every entry is really translated.
+//
+// MERCHANT-FACING, and every line must be TRUE OF THE PRODUCT AS SHIPPED. This section exists
+// partly to give the page the volume of real text a thin marketing page lacks, and padding it with
+// things the software does not do would be the expensive kind of SEO: a prospect signs up for the
+// sentence, not the feature list. Where a fact here changes, this file changes with it.
+
+export interface FeatureEntry {
+  /** Stable key for the list. */
+  id: string
+  title: { en: string; zh: string }
+  body: { en: string; zh: string }
+}
+
+export const FEATURES: FeatureEntry[] = [
+  {
+    id: 'menu',
+    title: {
+      en: 'A shop page you control yourself',
+      zh: '完全由你掌控的店铺页面',
+    },
+    body: {
+      en: 'Add each dish with photos, a price and the unit you actually sell in — per box, per kilo, per tray — plus a name and description in English, Chinese or both. Change a price, reorder the menu or add tomorrow\'s special yourself, in seconds, without waiting on anyone.',
+      zh: '每道菜都可上传照片、设定价格，并选择你真正的销售单位——每盒、每公斤、每盘——再加上中英文名称与说明。改价格、调整菜单顺序、加上明天的特餐，几秒钟自己就能完成，不必等任何人。',
+    },
+  },
+  {
+    id: 'delivery',
+    title: {
+      en: 'Delivery fees that match how you deliver',
+      zh: '贴合你配送方式的运费',
+    },
+    body: {
+      en: 'Charge one flat fee, a different fee by region, or a fee that follows the real road distance from your kitchen — a base fee plus a rate per kilometre, worked out from the address the customer picks at checkout. Offer pickup, delivery or both.',
+      zh: '可收取统一运费、按地区分级的运费，或依据从你厨房出发的实际路程计费——基本费加每公里费率，按顾客结账时选定的地址计算。自取、配送，或两者兼有，由你决定。',
+    },
+  },
+  {
+    id: 'orders',
+    title: {
+      en: 'Orders arrive numbered and complete',
+      zh: '订单送达时已编号且资料齐全',
+    },
+    body: {
+      en: 'Every order gets its own number and lands in one list with the customer\'s name and WhatsApp number, what they ordered, the date they want it and the total. Mark it preparing, ready or done as you work. Customers can look up their own order by its number, so nobody has to message you to ask where it is.',
+      zh: '每笔订单都有专属编号，集中显示在同一份列表中，包含顾客姓名与 WhatsApp 号码、订购内容、指定日期和总额。处理过程中可标记为准备中、可取货或已完成。顾客也能凭编号自行查询订单，不必再私讯问你进度。',
+    },
+  },
+  {
+    id: 'alerts',
+    title: {
+      en: 'You know the second an order comes in',
+      zh: '订单一进来你立刻知道',
+    },
+    body: {
+      en: 'An email reaches you on every plan the moment an order lands, and your dashboard updates itself while it is open. On Pro, an instant Telegram alert buzzes your phone — and everyone else in your shop\'s group at the same time.',
+      zh: '所有方案都会在订单进来的当下发送电邮通知，仪表板开着时也会自动更新。Pro 版另加 Telegram 即时通知，会震动你的手机，并同时通知店里群组的所有人。',
+    },
+  },
+  {
+    id: 'regulars',
+    title: {
+      en: 'Your regulars, where you can see them',
+      zh: '看得见的熟客',
+    },
+    body: {
+      en: 'Your shop builds its own customer list as orders come in: who orders from you, how often, what they have spent and how long it has been since the last time. On Pro you can bring them back with discount vouchers and promotional prices on individual items.',
+      zh: '随着订单累积，店铺会自动建立专属顾客名单：谁在下单、下单频率、累计消费金额，以及距离上次下单多久。Pro 版还能用优惠券和单品促销价，把他们带回来。',
+    },
+  },
+  {
+    id: 'money',
+    title: {
+      en: 'The money is yours',
+      zh: '钱是你的',
+    },
+    body: {
+      en: 'No commission, ever. Customers pay you directly, into your own account, and TinyOrder charges one flat subscription whether you take five orders this month or five hundred. Prices show in your shop\'s own currency, with tax added at your rate if you charge it.',
+      zh: '永不抽成。顾客直接付款到你自己的账户，而 TinyOrder 只收固定订阅费——这个月接五单或五百单，费用都一样。价格以店铺自选货币显示；如果你需要收税，也会按你设定的税率计算。',
+    },
+  },
+]

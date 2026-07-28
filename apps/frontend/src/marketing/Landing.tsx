@@ -10,6 +10,7 @@ import { Button } from '../components/ui/button'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion'
 import { REFUNDS_ANCHOR } from '../legal/anchors'
 import { FAQ } from './faq'
+import { FEATURES } from './features'
 import { cn } from '../lib/utils'
 import {
   GrainOverlay,
@@ -253,6 +254,12 @@ export default function Landing() {
         <h2 className={sectionTitle}>
           {t('Built for home kitchens and food businesses', '专为家厨与食品业者打造')}
         </h2>
+        <p className="-mt-6 mb-10 text-[15px] leading-[1.75] text-ink-soft text-center max-w-[620px] mx-auto">
+          {t(
+            'TinyOrder is for people who cook: home bakers taking weekend pre-orders, home kitchens running a weekly menu, small food businesses that have outgrown a spreadsheet and a chat group. You do not need a website, a designer or a developer — if you can share a link, you can take orders online.',
+            'TinyOrder 是为下厨的人打造的：接周末预订的家庭烘焙师、每周出菜单的家厨，以及已经用不下去表格和聊天群的小型食品业者。你不需要网站、设计师或工程师——只要会分享链接，就能在线接单。',
+          )}
+        </p>
         <dl className="grid [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] gap-x-12 gap-y-10 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-8">
           <div>
             <dt className="font-heading text-[19px] font-semibold text-oxblood leading-[1.3] mb-2.5">{t('Keep what you earn', '赚的钱，都是你的')}</dt>
@@ -267,6 +274,29 @@ export default function Landing() {
             <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Your shop shows up in English or Chinese, whichever your customer prefers. You only write it once.', '店铺自动以中文或英文呈现，顾客看得懂，你只需写一次。')}</dd>
           </div>
         </dl>
+        </Reveal>
+      </section>
+
+      {/* ── What you get ── */}
+      {/* Copy lives in features.ts as data, for the same reasons the FAQ does — and under the same
+          rule: every line has to be true of the product as shipped. */}
+      <section className="border-t border-clay-border px-8 py-16 max-w-[900px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className={sectionTitle}>
+            {t('Everything you need to take orders online', '在线接单所需的一切')}
+          </h2>
+          <div className="grid [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))] gap-x-12 gap-y-9 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-7">
+            {FEATURES.map(f => (
+              <div key={f.id}>
+                <h3 className="font-heading text-[17px] font-semibold text-oxblood leading-[1.35] mb-2">
+                  {t(f.title.en, f.title.zh)}
+                </h3>
+                <p className="text-sm leading-[1.7] text-ink-soft m-0">
+                  {t(f.body.en, f.body.zh)}
+                </p>
+              </div>
+            ))}
+          </div>
         </Reveal>
       </section>
 
