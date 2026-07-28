@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isCart, MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES } from './cart.js'
+import { isCart, MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES, MAX_SELECTIONS_PER_LINE } from './cart.js'
 import type { CartLine } from './options.js'
 
 const ID = '11111111-1111-1111-1111-111111111111'
@@ -92,5 +92,39 @@ describe('isCart', () => {
       expect(isCart(entries(MAX_CART_ENTRIES))).toBe(true)
       expect(isCart(entries(MAX_CART_ENTRIES + 1))).toBe(false)
     })
+  })
+})
+
+// Found in review. `Array.isArray(selections)` is not a shape check: a null entry sails through
+// here and then throws inside `validateSelections` — in `placeOrder`'s transaction, on the order
+// path, as a 500. This module's own comment names that failure: "a bad request dressed up as a
+// server fault. Reject it at the door instead."
+describe('isCart — the shape of a selection', () => {
+  const line = (selections: unknown) => [{ productId: ID, qty: 1, selections }]
+
+  it('rejects a selection that is not an object with a group and picks', () => {
+    for (const bad of [[null], [undefined], ['milk'], [42], [[]], [{ picks: {} }], [{ groupId: 'm' }]]) {
+      expect(isCart(line(bad))).toBe(false)
+    }
+  })
+
+  it('rejects picks that are not a plain object of numbers', () => {
+    expect(isCart(line([{ groupId: 'm', picks: null }]))).toBe(false)
+    expect(isCart(line([{ groupId: 'm', picks: [] }]))).toBe(false)
+    expect(isCart(line([{ groupId: 'm', picks: { oat: 'two' } }]))).toBe(false)
+  })
+
+  it('accepts a well-formed selection', () => {
+    expect(isCart(line([{ groupId: 'milk', picks: { oat: 1 } }]))).toBe(true)
+    expect(isCart(line([]))).toBe(true)
+  })
+
+  // The cap the spec asked for and the door did not have: `maxSelect` is merchant-typed, so a
+  // merchant's own config is an input to how big a request body may be.
+  it('caps how many selections one line may carry', () => {
+    const many = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ groupId: `g${i}`, picks: { o: 1 } }))
+    expect(isCart(line(many(MAX_SELECTIONS_PER_LINE)))).toBe(true)
+    expect(isCart(line(many(MAX_SELECTIONS_PER_LINE + 1)))).toBe(false)
   })
 })

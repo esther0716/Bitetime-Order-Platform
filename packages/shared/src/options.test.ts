@@ -265,3 +265,47 @@ describe('the Pro downgrade (ADR 0010)', () => {
     expect(hasActiveGroup([])).toBe(false)
   })
 })
+
+// Found in review. ADR 0008 traded away every check constraint and made this function the sole
+// replacement, so it is handed whatever a request body contained — and `[{}]` threw on
+// `g.options.length`, answering a bad request with a 500 from inside the write endpoint.
+describe('validateOptionGroups — malformed input', () => {
+  it('refuses a value that is not a group, instead of throwing', () => {
+    for (const bad of [[null], [undefined], ['milk'], [42], [[]], [{}]]) {
+      expect(() => validateOptionGroups(bad as never)).not.toThrow()
+      expect(validateOptionGroups(bad as never)).toBe('malformed_group')
+    }
+  })
+
+  it('refuses a group whose numbers are not numbers', () => {
+    expect(validateOptionGroups([{ ...MILK, minSelect: 'one' as never }])).toBe('malformed_group')
+    expect(validateOptionGroups([{ ...MILK, id: '' }])).toBe('malformed_group')
+  })
+
+  it('refuses an option that is not an option', () => {
+    expect(validateOptionGroups([{ ...MILK, options: [null as never] }])).toBe('malformed_option')
+    expect(validateOptionGroups([{ ...MILK, options: [{ id: 'a', name: 'A', delta: 'free' as never, active: true }] }]))
+      .toBe('malformed_option')
+  })
+
+  // Two choices a customer cannot tell apart are two choices the merchant cannot pack against,
+  // and the order snapshot records the NAME — so an unnamed or repeated one is unreadable later.
+  it('refuses blank and repeated names', () => {
+    expect(validateOptionGroups([{ ...MILK, name: '  ' }])).toBe('blank_name')
+    expect(validateOptionGroups([{
+      ...MILK, options: [
+        { id: 'a', name: 'Oat', delta: 0, active: true },
+        { id: 'b', name: 'Oat', delta: 0, active: true },
+      ],
+    }])).toBe('duplicate_option_name')
+  })
+})
+
+describe('validateSelections — malformed input', () => {
+  it('refuses junk instead of throwing', () => {
+    for (const bad of [[null], [undefined], ['milk'], [42], [{ groupId: 'milk' }]]) {
+      expect(() => validateSelections([MILK], bad as never)).not.toThrow()
+      expect(validateSelections([MILK], bad as never)).not.toBeNull()
+    }
+  })
+})

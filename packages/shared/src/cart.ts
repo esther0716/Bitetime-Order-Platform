@@ -34,8 +34,36 @@ export const MAX_CART_LINES = 100
  */
 export const MAX_CART_ENTRIES = 200
 
+/**
+ * The most selections one line may carry — one per group it answers.
+ *
+ * The merchant's own config is an input to the size of a request body (`maxSelect` and the group
+ * count are theirs to type), so the door needs its own ceiling rather than trusting whatever
+ * arrives. Comfortably above `MAX_GROUPS_PER_PRODUCT`, which is the honest maximum.
+ */
+export const MAX_SELECTIONS_PER_LINE = 20
+
 const isPositiveWhole = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= MAX_CART_QTY
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
+
+/**
+ * A selection, checked as a SHAPE and not merely as "something in an array".
+ *
+ * `Array.isArray(selections)` was not enough, and the gap was the exact failure this module's
+ * header warns about: a `null` entry passed the door, reached `validateSelections` inside
+ * `placeOrder`'s TRANSACTION, and threw on `s.groupId` — a crafted body answered with a 500,
+ * a bad request dressed up as a server fault. The picks are checked here too, because a
+ * non-numeric quantity coerces to NaN and prices a line at nothing.
+ */
+function isSelection(v: unknown): boolean {
+  if (!isPlainObject(v)) return false
+  if (typeof v.groupId !== 'string' || v.groupId === '') return false
+  if (!isPlainObject(v.picks)) return false
+  return Object.values(v.picks).every(n => typeof n === 'number' && Number.isFinite(n))
+}
 
 /**
  * A cart is a LIST of lines, each a product id, a positive whole quantity and its selections.
@@ -56,6 +84,8 @@ export function isCart(v: unknown): v is CartLine[] {
     if (typeof productId !== 'string' || productId === '') return false
     if (!isPositiveWhole(qty)) return false
     if (!Array.isArray(selections)) return false
+    if (selections.length > MAX_SELECTIONS_PER_LINE) return false
+    if (!selections.every(isSelection)) return false
 
     const sum = (perProduct.get(productId) ?? 0) + qty
     if (sum > MAX_CART_QTY) return false

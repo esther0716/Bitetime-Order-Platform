@@ -214,6 +214,13 @@ function configMessage(code: string, t: (en: string, zh: string) => string): str
       return t('Two entries share an id — remove one and add it again.', '存在重复项，请删除后重新添加。')
     case 'too_many_groups':
       return t(`At most ${MAX_GROUPS_PER_PRODUCT} questions per item.`, `每件商品最多 ${MAX_GROUPS_PER_PRODUCT} 个问题。`)
+    case 'duplicate_option_name':
+      return t('Two choices share a name — a customer cannot tell them apart.', '两个选项名称相同，顾客无法区分。')
+    case 'blank_name':
+      return t('Every question and choice needs a name.', '每个问题和选项都需要名称。')
+    case 'malformed_group':
+    case 'malformed_option':
+      return t('Something in these options is incomplete.', '选项设置不完整。')
     case 'too_many_options':
       return t(`At most ${MAX_OPTIONS_PER_GROUP} choices per question.`, `每个问题最多 ${MAX_OPTIONS_PER_GROUP} 个选项。`)
     default:

@@ -123,8 +123,14 @@ export function validateSelections(
 
   // IDS FIRST, and the order is load-bearing: a stale answer naming a group this product no
   // longer asks would otherwise be reported as `too_few` against a group it was never about.
+  if (!Array.isArray(selections)) return 'unknown_group'
+
   const answered = new Set<string>()
   for (const s of selections) {
+    // Shape first, for the reason `validateOptionGroups` checks it: this runs on data the browser
+    // built and on data a request body carried, and `null.groupId` is a 500 rather than a refusal.
+    if (!s || typeof s !== 'object' || typeof s.groupId !== 'string') return 'unknown_group'
+    if (!s.picks || typeof s.picks !== 'object' || Array.isArray(s.picks)) return 'invalid_pick'
     // TWO answers to one question is not a bigger answer, it is an unanswerable one — and
     // silently so: every per-group count below reads the FIRST match, so a second answer would
     // walk straight past `maxPerOption`.
@@ -162,8 +168,9 @@ export const MAX_OPTIONS_PER_GROUP = 50
 /** Why a merchant's own configuration is not legal configuration. */
 export type GroupConfigError =
   | 'impossible_window' | 'window_too_wide' | 'negative_delta' | 'empty_group'
-  | 'duplicate_group_id' | 'duplicate_option_id'
+  | 'duplicate_group_id' | 'duplicate_option_id' | 'duplicate_option_name'
   | 'too_many_groups' | 'too_many_options'
+  | 'malformed_group' | 'malformed_option' | 'blank_name'
 
 /**
  * Is this a legal set of questions? `null` when it is.
@@ -177,10 +184,22 @@ export type GroupConfigError =
  * send, so a merchant's config is now an input to the size of a request body.
  */
 export function validateOptionGroups(groups: OptionGroup[]): GroupConfigError | null {
+  // SHAPE FIRST, and unconditionally. This is handed whatever a request body contained, so every
+  // read below is on a value nothing has checked — `[{}]` threw on `g.options.length` and turned
+  // a bad request into a 500 from inside the write endpoint.
+  if (!Array.isArray(groups)) return 'malformed_group'
   if (groups.length > MAX_GROUPS_PER_PRODUCT) return 'too_many_groups'
 
   const groupIds = new Set<string>()
   for (const g of groups) {
+    if (!isObject(g)) return 'malformed_group'
+    if (!isId(g.id) || !isCount(g.minSelect)) return 'malformed_group'
+    if (!isNullableCount(g.maxSelect) || !isNullableCount(g.maxPerOption)) return 'malformed_group'
+    if (typeof g.active !== 'boolean' || !Array.isArray(g.options)) return 'malformed_group'
+    if (typeof g.name !== 'string') return 'malformed_group'
+    // The order snapshot records the NAME, so a blank one is a line nobody can read back.
+    if (g.name.trim() === '') return 'blank_name'
+
     if (groupIds.has(g.id)) return 'duplicate_group_id'
     groupIds.add(g.id)
 
@@ -190,14 +209,34 @@ export function validateOptionGroups(groups: OptionGroup[]): GroupConfigError | 
     if (g.maxSelect !== null && g.minSelect > g.maxSelect) return 'impossible_window'
 
     const optionIds = new Set<string>()
+    const optionNames = new Set<string>()
     for (const o of g.options) {
+      if (!isObject(o)) return 'malformed_option'
+      if (!isId(o.id) || typeof o.name !== 'string' || typeof o.active !== 'boolean') {
+        return 'malformed_option'
+      }
+      if (typeof o.delta !== 'number' || !Number.isFinite(o.delta)) return 'malformed_option'
+      if (o.name.trim() === '') return 'blank_name'
+
       if (optionIds.has(o.id)) return 'duplicate_option_id'
       optionIds.add(o.id)
+      // Two choices a customer cannot tell apart are two the merchant cannot pack against.
+      const name = o.name.trim().toLowerCase()
+      if (optionNames.has(name)) return 'duplicate_option_name'
+      optionNames.add(name)
+
       if (o.delta < 0) return 'negative_delta'
     }
   }
   return null
 }
+
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
+const isId = (v: unknown): v is string => typeof v === 'string' && v !== ''
+const isCount = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 0
+const isNullableCount = (v: unknown): v is number | null => v === null || isCount(v)
 
 /**
  * One option, as the ORDER records it: names and the delta that was actually charged.
