@@ -70,7 +70,7 @@ The promo's end-of-day is in the timezone of the browser the **merchant** set it
 
 ## Order intake
 
-The flow that collects a cart and customer details and commits an order: `collect → priceOrder → placeOrder → notifyOrder`. The multi-tenant **Storefront** (`store/Storefront.tsx`) is the only intake path; the legacy single-tenant order form has been deleted. `notifyOrder` is a single post-commit call that fans out to two recipients — see *Order notifications*. Every way this flow can say no is named — see *Refusal* below.
+The flow that collects a cart and customer details and commits an order: `collect → priceOrder → placeOrder → notifyOrder`. The multi-tenant **Storefront** (`store/Storefront.tsx`) is the only intake path; the legacy single-tenant order form has been deleted. `notifyOrder` is a single post-commit call that fans out to three recipients — see *Order notifications*. Every way this flow can say no is named — see *Refusal* below.
 
 ## Merchant order reads
 
@@ -134,13 +134,11 @@ Two things share the name.
 
 ## Shop customer
 
-*(Decided, not yet built — the model is settled and the build is #143. Everything below describes the agreed meaning of the term; the dashboard's current Customers tab predates it and obeys none of it.)*
-
 One shop's record of one person who orders from it. **Not a `Customer`** — that word means a platform *account* (the auth user plus the global `profiles` row, the thing `role === 'customer'` means), and the two are different sets: most shop customers have no account, one account is many shop customers, and there is **no path from one to the other** — a guest order carries `user_id = null` forever, by design.
 
 **Identity is `(merchant_id, phoneKey(customer_wa))`** — the last-eight-digits rule `phone.ts` already defines for guest order tracking, reused rather than re-derived. The account is an **attribute** (has-an-account), never the key. The reasoning, and the rejected alternatives, are [ADR 0007](docs/adr/0007-shop-customers-are-keyed-by-phone.md); the short version is that guest checkout is first-class and permanent, so an account-keyed list would show a merchant a fraction of their own trade. Consequences accepted knowingly: one human with two numbers is **two** shop customers, and two different numbers sharing their last eight digits are **one**.
 
-**An order whose phone yields no key is not a shop customer** — not an empty-string bucket, not a name fallback. It is excluded and *counted*, so the customer list and the order list never disagree with nothing on screen to explain why. `phone.ts` already refuses to key on `''` and says why; a `customer_name` fallback assembles one person out of unrelated strangers, which is exactly what today's `—` row does.
+**An order whose phone yields no key is not a shop customer** — not an empty-string bucket, not a name fallback. It is excluded and *counted*, so the customer list and the order list never disagree with nothing on screen to explain why. `phone.ts` already refuses to key on `''` and says why; a `customer_name` fallback assembles one person out of unrelated strangers, which is exactly what the pre-#143 `—` row did. That count is surfaced as `unattributedOrders`.
 
 **Behaviour is derived, opinions are stored.** `orders` remains the sole record of what happened — a shop customer's counts and totals are aggregated from it, never copied, so there is no counter that can drift (the rule that already governs `promo_sold` and `orders.user_id`). The only stored half is what the merchant *writes*: a private note and free-form tags, in a row created lazily on first write. Shop-private: the diner never sees them, and neither does another shop.
 
@@ -311,11 +309,12 @@ period** — nothing here implements that: the schedule lives in Stripe, and
 because the reconciliation reads the price *currently* on the subscription, a
 pending change simply does not register until it applies.
 
-**A shop that drops to basic keeps its Pro artifacts running.** Vouchers stay
-redeemable, the Telegram token keeps sending, promos keep discounting — the hot
-paths are plan-blind by the design above, and nothing revokes the data. This is a
-**known leak, accepted knowingly**: pre-launch the exploitable population is zero,
-and the honest fix (deactivating vouchers, clearing the secret, dropping promo
-prices at the transition) needs a `vouchers.active` column the table does not
-have. It is its own issue. The one thing that must **not** happen is a plan check
-inside the priced order transaction.
+This section once closed by recording the opposite — that a shop dropping to
+basic kept its Pro artifacts running, as a known leak whose honest fix needed a
+`vouchers.active` column the table did not have. The column landed
+(`20260724120000_plan_downgrade_and_cancel.sql`) and `revokeProArtifacts` is
+that fix; the leak is closed. What survived the fix is the *reason* it was ever
+tolerated, which is still the binding rule: the cutoff is shaped as **data the
+hot paths already read** — a column filter on a row the order transaction was
+loading anyway — precisely so that closing it needed no plan check inside the
+priced order transaction. That remains the thing that must not happen.
