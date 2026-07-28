@@ -3,6 +3,7 @@
 // Credentials come from env vars, which vitest.db.config.ts fills in from the
 // running local stack when they are not already set.
 import { createClient } from '@supabase/supabase-js'
+import postgres from 'postgres'
 
 /**
  * Missing credentials are a hard failure, never a skip. This suite is the only
@@ -182,13 +183,11 @@ export async function makeUser(email: string, password: string) {
   const svc = serviceClient()
   // Delete any existing user with this email first (idempotent re-runs).
   //
-  // PAGINATED, and it has to be: listUsers() returns the FIRST PAGE ONLY (50 accounts by
-  // default). A developer database accumulates users across suite runs and seed scripts, and
-  // once it passed fifty this lookup silently stopped finding anyone — so the delete was
-  // skipped, createUser failed on the duplicate (its error is not read), and the sign-in below
-  // ran against whatever password the OLD account was made with. The symptom is a null session
-  // several lines later in whichever test happened to reuse an email, which reads as a broken
-  // test rather than a broken helper.
+  // The lookup is a single indexed query against `auth.users` — see `findUserByEmail`. It used
+  // to page through the whole admin user list, which was correct but cost a walk of every
+  // account on every call; the comment that lived here recorded an earlier bug where the walk
+  // was not paginated at all and silently stopped finding anyone past the first page. Neither
+  // failure is reachable now: there is no page to run out of.
   // A prior account is REUSED when it cannot be deleted, rather than the delete being assumed
   // to have worked. orders.user_id and merchants.owner_id are ON DELETE NO ACTION, so an
   // account that has placed an order or owns a shop CANNOT be removed — the delete 500s, the
@@ -196,7 +195,7 @@ export async function makeUser(email: string, password: string) {
   // old account was made with. On a developer database that has been ordered through, that made
   // any suite reusing such an email fail with a null session far from the real cause. Resetting
   // the password to the one the caller asked for gets the same signed-in client either way.
-  const prior = await findUserByEmail(svc, email)
+  const prior = await findUserByEmail(email)
   if (prior) {
     const { error } = await svc.auth.admin.deleteUser(prior)
     if (error) {
@@ -215,18 +214,44 @@ export async function makeUser(email: string, password: string) {
   return client
 }
 
-/** The id of the account with this email, walking every page. Null when there is none. */
-async function findUserByEmail(
-  svc: ReturnType<typeof serviceClient>,
-  email: string,
-): Promise<string | null> {
-  const perPage = 200
-  for (let page = 1; ; page++) {
-    const { data, error } = await svc.auth.admin.listUsers({ page, perPage })
-    if (error) throw new Error(`listing users: ${error.message}`)
-    const users = data?.users ?? []
-    const hit = users.find((u) => u.email === email)
-    if (hit) return hit.id
-    if (users.length < perPage) return null
+/**
+ * The id of the account with this email, straight from `auth.users`. Null when there is none.
+ *
+ * SQL, and not `listUsers`, and that is not a micro-optimisation. The admin list endpoint cannot
+ * filter by email in this SDK, so finding one account meant walking EVERY page of the auth table
+ * on every call — and `makeUser` is called several times per suite across the 29 suites vitest
+ * runs concurrently. On a developer database of a couple of hundred accounts that is hundreds of
+ * admin requests per run, each one a fresh GoTrue -> Postgres connection, and the failure mode
+ * when the host runs out of ephemeral ports is `listing users: {}` on a hundred unrelated tests
+ * — an error that names nothing about its cause. Here it is one indexed round trip on a
+ * connection this module already holds, and the count of accounts stops mattering at all.
+ *
+ * `auth.users` is not reachable through PostgREST (it is not in the exposed schemas), so this
+ * goes through the same direct driver the backend uses for transactions.
+ */
+async function findUserByEmail(email: string): Promise<string | null> {
+  const rows = await authDb()<{ id: string }[]>`
+    select id from auth.users where email = ${email} limit 1
+  `
+  return rows[0]?.id ?? null
+}
+
+/**
+ * The direct connection this module uses to read `auth.users`.
+ *
+ * Lazy, so a suite that never makes a user never opens one. `max: 1` with a short
+ * `idle_timeout` keeps it from holding the pool open — postgres.js will not let the process
+ * exit while a connection is idle, and a vitest run that hangs is a worse failure than a slow
+ * one.
+ */
+let authSql: ReturnType<typeof postgres> | null = null
+function authDb() {
+  if (!authSql) {
+    authSql = postgres(required('DATABASE_URL'), {
+      max: 1,
+      idle_timeout: 1,
+      onnotice: () => {},
+    })
   }
+  return authSql
 }
