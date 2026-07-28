@@ -247,6 +247,29 @@ app.get('/api/merchants/:id/customers', requireMerchantOwns, async (c) => {
   }))
 })
 
+/**
+ * One customer's orders, for the drawer. Free, like the list it opens from.
+ *
+ * A separate call rather than orders nested in the list above: the list is a table of hundreds
+ * and the drawer opens for exactly one of them. Nesting would ship every customer's full order
+ * history to draw a table that shows none of it — the row-cap mistake in a new costume.
+ *
+ * Cancelled orders are included. The badge is right there on each row, and a history that
+ * silently omitted them would contradict the drawer's own header count.
+ */
+app.get('/api/merchants/:id/customers/:phoneKey/orders', requireMerchantOwns, async (c) => {
+  const m = c.get('merchant')
+  const key = phoneKey(c.req.param('phoneKey'))
+  if (key === null || key !== c.req.param('phoneKey')) return c.json({ error: 'invalid_phone_key' }, 400)
+
+  const { data, error } = await admin
+    .from('orders').select('*')
+    .eq('merchant_id', m.id).eq('customer_phone_key', key)
+    .order('created_at', { ascending: false }).limit(ORDER_HISTORY_LIMIT)
+  if (error) return c.json({ error: 'Lookup failed' }, 500)
+  return c.json(data ?? [])
+})
+
 // Writing is wholly Pro, so the gate is middleware here rather than a branch. `phoneKey` on the
 // path parameter is a SHAPE check, not a lookup: a key with no orders behind it is a harmless
 // row that never joins, but a path segment that is not a key at all is a caller bug.

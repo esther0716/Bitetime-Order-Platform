@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { Order, Product, Voucher } from '../types'
 import { useSession } from '../SessionContext'
-import { fetchMerchantOrders, lookupProducts, fetchMerchantCustomers, fetchMerchantVouchers, downloadRevenueReport } from '../store'
+import { fetchMerchantOrders, lookupProducts, fetchShopCustomers, fetchMerchantVouchers, downloadRevenueReport } from '../store'
 import { SkeletonText } from '../components/Loaders'
 import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from '../components/charts/DashCharts'
 import { computeMerchantStats, granularityFor, REVENUE_RANGES, type Granularity, type RevenueRange } from '@bitetime/shared'
@@ -149,7 +149,10 @@ export default function Overview() {
       // collapses could-not-ask to `[]` at the call site.
       fetchMerchantOrders(id).then(r => (r.ok ? r.data : [])),
       lookupProducts(id).then(r => (r.ok ? r.data : [])),
-      fetchMerchantCustomers(id).then(r => (r.ok ? r.data : [])),
+      // Only the LENGTH is read (the customer-count KPI), and it is now the backend's deduped
+      // count rather than a browser-side grouping on the raw WhatsApp string (#143) — so the
+      // card stops counting one person twice for typing their number two ways.
+      fetchShopCustomers(id).then(r => (r.ok ? r.data.customers.map(c => ({ orderCount: c.bookedOrders })) : [])),
       fetchMerchantVouchers(id).then(r => (r.ok ? r.data : [])),
     ]).then(([orders, products, customers, vouchers]) => {
       if (active) setRows({ orders, products, customers, vouchers })

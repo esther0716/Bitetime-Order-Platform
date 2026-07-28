@@ -307,8 +307,12 @@ describe('shop customers', () => {
 
   // ── The row cap this endpoint exists to escape ─────────────────────────────
 
+  // Deliberately just OVER the cap rather than comfortably past it. This suite runs alongside
+  // 26 others against one Postgres, and every extra row here is latency the whole run pays —
+  // enough of it and a neighbouring timing-sensitive test (feedback's 20-round-trip rate-limit
+  // case) starts blowing its own timeout. 1010 proves the same thing 1200 did.
   it('counts every order behind a customer past the PostgREST row cap', async () => {
-    const rows = Array.from({ length: 1200 }, (_, i) => ({
+    const rows = Array.from({ length: 1010 }, (_, i) => ({
       merchant_id: proId,
       customer_name: 'Bulk',
       customer_wa: '60123456789',
@@ -318,14 +322,55 @@ describe('shop customers', () => {
       status: 'completed',
       order_number: `BULK-${i}`,
     }))
-    for (let i = 0; i < rows.length; i += 400) {
-      const { error } = await svc().from('orders').insert(rows.slice(i, i + 400))
+    for (let i = 0; i < rows.length; i += 505) {
+      const { error } = await svc().from('orders').insert(rows.slice(i, i + 505))
       if (error) throw new Error(error.message)
     }
 
     const page = await pageOf(await get(`/api/merchants/${proId}/customers`, proToken))
-    expect(page.customers[0]?.bookedOrders).toBe(1200)
-    expect(page.customers[0]?.lifetimeSpend).toBe(1200)
+    expect(page.customers[0]?.bookedOrders).toBe(1010)
+    expect(page.customers[0]?.lifetimeSpend).toBe(1010)
+  })
+
+  // ── One customer's orders, for the drawer ──────────────────────────────────
+  //
+  // A separate endpoint rather than orders nested in the list: the list is a table of hundreds
+  // and the drawer opens for one of them, so shipping every customer's full order history to
+  // draw a table that shows none of it is the row-cap mistake again in a new costume.
+
+  it('returns one customer’s orders, newest first', async () => {
+    await seedOrder(proId, { order_number: 'OLD', created_at: '2026-05-01T00:00:00Z' })
+    await seedOrder(proId, { order_number: 'NEW', created_at: '2026-07-01T00:00:00Z' })
+    await seedOrder(proId, { customer_phone_key: '98765432', customer_wa: '60198765432', order_number: 'OTHER' })
+
+    const res = await get(`/api/merchants/${proId}/customers/23456789/orders`, proToken)
+    const orders = (await res.json()) as { order_number: string }[]
+
+    expect(orders.map(o => o.order_number)).toEqual(['NEW', 'OLD'])
+  })
+
+  it('includes a cancelled order, so the list never contradicts the badge', async () => {
+    await seedOrder(proId, { order_number: 'CANCELLED', status: 'cancelled' })
+
+    const res = await get(`/api/merchants/${proId}/customers/23456789/orders`, proToken)
+    expect((await res.json()) as unknown[]).toHaveLength(1)
+  })
+
+  it('is free — the drawer ships with the free list', async () => {
+    await seedOrder(basicId, {})
+    expect((await get(`/api/merchants/${basicId}/customers/23456789/orders`, aToken)).status).toBe(200)
+  })
+
+  it("forbids reading another shop's customer orders", async () => {
+    expect((await get(`/api/merchants/${basicId}/customers/23456789/orders`, bToken)).status).toBe(403)
+  })
+
+  it('returns nothing for a phone key that never ordered here', async () => {
+    await seedOrder(proId, {})
+    const res = await get(`/api/merchants/${proId}/customers/00000000/orders`, proToken)
+
+    expect(res.status).toBe(200)
+    expect((await res.json()) as unknown[]).toEqual([])
   })
 
   // ── Paging ─────────────────────────────────────────────────────────────────
