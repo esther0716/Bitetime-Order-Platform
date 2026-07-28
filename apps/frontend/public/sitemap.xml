@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The platform's own pages. Hand-maintained, and short on purpose: these are the only URLs that
+  exist without a database behind them.
+
+  Storefronts (/s/<slug>) are deliberately ABSENT. There is one per merchant, they appear and are
+  suspended without a deploy, and this file is a static asset baked at build time — so any list of
+  them here would be stale the first time a shop signs up. Listing them needs a generator that
+  reads the active shops at build (or a served /sitemap.xml), which is a separate change with its
+  own failure mode: a build that cannot reach the database must not silently ship an empty sitemap.
+  Until then they are reachable and crawlable, just not enumerated here — robots.txt allows /s/.
+
+  Absolute URLs are required by the sitemap protocol, so the production host is hardcoded. It must
+  match the host in the og:image tags in index.html.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://tinyorder.shop/</loc>
+    <lastmod>2026-07-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://tinyorder.shop/merchant/signup</loc>
+    <lastmod>2026-07-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tinyorder.shop/merchant/login</loc>
+    <lastmod>2026-07-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://tinyorder.shop/terms</loc>
+    <lastmod>2026-07-28</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://tinyorder.shop/privacy</loc>
+    <lastmod>2026-07-28</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>

@@ -10,6 +10,8 @@ import { Button } from '../components/ui/button'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion'
 import { REFUNDS_ANCHOR } from '../legal/anchors'
 import { FAQ } from './faq'
+import { FEATURES } from './features'
+import { useLandingStructuredData } from './structuredData'
 import { cn } from '../lib/utils'
 import {
   GrainOverlay,
@@ -48,8 +50,11 @@ const sectionTitle =
   'font-heading text-2xl font-medium text-ink text-center mb-10'
 
 export default function Landing() {
-  const { t, account, role, loading } = useSession()
+  const { t, lang, account, role, loading } = useSession()
   const { pricing } = usePlatformPricing()
+  // Schema.org markup for this page only, in the language it is currently showing. See
+  // structuredData.ts for why it is not a static block in index.html.
+  useLandingStructuredData(lang)
   const [menuOpen, setMenuOpen] = useState(false)
   const [billing, setBilling] = useState('monthly') // 'monthly' | 'yearly'
 
@@ -183,7 +188,7 @@ export default function Landing() {
           </HeroItem>
           <HeroItem>
             <h1 className="font-heading text-[clamp(2rem,5vw,3.5rem)] font-medium text-ink leading-[1.18] tracking-[-0.01em] mb-5">
-              {t('Sell your food online — without the DM chaos.', '把美食搬到线上——告别聊天接单的混乱。')}
+              {t('Sell your food online — your own shop, without the DM chaos.', '把美食搬到线上——你的专属店铺，告别聊天接单的混乱。')}
             </h1>
           </HeroItem>
           <HeroItem>
@@ -219,7 +224,7 @@ export default function Landing() {
       <section className="bg-surface-raised border-y border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
         <h2 className={sectionTitle}>
-          {t('Three steps to your first order', '三步收到第一笔订单')}
+          {t('Three steps to start your shop and take your first order', '三步开店，收到第一笔订单')}
         </h2>
         <ol className="list-none max-w-[620px] mx-auto flex flex-col gap-6 p-0 m-0">
           <li className="flex items-baseline gap-5 text-[15px] leading-[1.6] text-ink">
@@ -250,6 +255,15 @@ export default function Landing() {
       {/* ── Value props ── */}
       <section className="px-8 py-16 max-w-[860px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
+        <h2 className={sectionTitle}>
+          {t('Built for home kitchens and food businesses', '专为家厨与食品业者打造')}
+        </h2>
+        <p className="-mt-6 mb-10 text-[15px] leading-[1.75] text-ink-soft text-center max-w-[620px] mx-auto">
+          {t(
+            'TinyOrder is for people who cook: home bakers taking weekend pre-orders, home kitchens running a weekly menu, small food businesses that have outgrown a spreadsheet and a chat group. You do not need a website, a designer or a developer — if you can share a link, you can take orders online.',
+            'TinyOrder 是为下厨的人打造的：接周末预订的家庭烘焙师、每周出菜单的家厨，以及已经用不下去表格和聊天群的小型食品业者。你不需要网站、设计师或工程师——只要会分享链接，就能在线接单。',
+          )}
+        </p>
         <dl className="grid [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] gap-x-12 gap-y-10 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-8">
           <div>
             <dt className="font-heading text-[19px] font-semibold text-oxblood leading-[1.3] mb-2.5">{t('Keep what you earn', '赚的钱，都是你的')}</dt>
@@ -267,11 +281,34 @@ export default function Landing() {
         </Reveal>
       </section>
 
+      {/* ── What you get ── */}
+      {/* Copy lives in features.ts as data, for the same reasons the FAQ does — and under the same
+          rule: every line has to be true of the product as shipped. */}
+      <section className="border-t border-clay-border px-8 py-16 max-w-[900px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className={sectionTitle}>
+            {t('Everything you need to take orders online', '在线接单所需的一切')}
+          </h2>
+          <div className="grid [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))] gap-x-12 gap-y-9 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-7">
+            {FEATURES.map(f => (
+              <div key={f.id}>
+                <h3 className="font-heading text-[17px] font-semibold text-oxblood leading-[1.35] mb-2">
+                  {t(f.title.en, f.title.zh)}
+                </h3>
+                <p className="text-sm leading-[1.7] text-ink-soft m-0">
+                  {t(f.body.en, f.body.zh)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Reveal>
+      </section>
+
       {/* ── Pricing ── */}
       <section id="pricing" className="px-8 py-16 max-w-[1000px] mx-auto w-full text-center border-t border-clay-border">
         <Reveal>
         <h2 className={sectionTitle}>
-          {t('Simple, honest pricing', '简单透明的价格')}
+          {t('Simple, honest pricing — start free', '简单透明的价格——免费开始')}
         </h2>
         <p className="-mt-7 mb-8 text-[15px] leading-[1.6] text-ink-soft">
           {t('Start free on Basic — 7 days, no card required. Move to Pro whenever your shop is ready.', '基础版 7 天免费试用，无需信用卡。店铺准备好了随时升级 Pro。')}
@@ -400,7 +437,7 @@ export default function Landing() {
       <section id="faq" className="border-t border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className="font-heading text-[26px] text-oxblood text-center mb-2 max-[600px]:text-[22px]">
-            {t('Questions, answered', '常见问题')}
+            {t('Questions from food shop owners, answered', '食品店主常见问题')}
           </h2>
           <p className="text-sm text-rose-muted text-center mb-9 max-w-[460px] mx-auto">
             {t(
@@ -426,9 +463,11 @@ export default function Landing() {
       {/* ── Footer CTA ── */}
       <section className="border-t border-clay-border px-8 py-16 text-center bg-oxblood-tint max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
-        <p className="text-sm leading-[1.6] text-rose-muted mb-3">
+        {/* The section's thesis line, so it is the section's heading — a closing CTA with no
+            heading is a hole in the outline, not a style choice. Styling is unchanged. */}
+        <h2 className="text-sm leading-[1.6] font-sans font-normal text-rose-muted mb-3">
           {t('Every order lost in a chat thread is a sale you\'ll never see.', '每一笔淹没在聊天里的订单，都是流失的生意。')}
-        </p>
+        </h2>
         <p className="font-heading italic text-[18px] text-ink mb-6 max-w-[520px] mx-auto">
           {t('Become a real, professional food business — orders in one place, more time to bake.', '成为真正专业的美食生意——订单集中一处，专注烘焙。')}
         </p>

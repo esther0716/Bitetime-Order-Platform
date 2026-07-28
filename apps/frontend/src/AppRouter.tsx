@@ -7,6 +7,7 @@ import { Toaster } from './components/ui/sonner'
 import { TooltipProvider } from './components/ui/tooltip'
 import { MerchantProvider, useMerchant } from './MerchantContext'
 import RequireRole from './RequireRole'
+import { useCanonical } from './canonical'
 import { Spinner } from './components/Loaders'
 import Wordmark from './components/Wordmark'
 
@@ -118,6 +119,9 @@ export default function AppRouter() {
 
 function AnimatedRoutes() {
   const location = useLocation()
+  // Written per route, not in index.html: one HTML file serves every path, so a static tag would
+  // declare every storefront to be the homepage. See canonical.ts.
+  useCanonical()
   return (
     <Suspense fallback={<RouteFallback />}>
       {/* Keyed on the path so each route fades in, and NOT wrapped in AnimatePresence: an
