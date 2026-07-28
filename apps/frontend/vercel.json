@@ -1,12 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "$comment": [
-    "Every route that is not a file on disk gets app.html — the EMPTY SPA shell.",
-    "It is not index.html any more: index.html is the prerendered landing page (scripts/prerender.tsx),",
-    "and pointing this at it would serve the marketing page's markup as the initial content of every",
-    "storefront. Vercel checks the filesystem before rewrites, so `/` is served by index.html directly",
-    "and never reaches this rule — which is what makes the split work."
-  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/app.html" }
   ]
