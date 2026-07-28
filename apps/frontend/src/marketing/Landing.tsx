@@ -86,7 +86,7 @@ export default function Landing() {
       ),
       features: [
         t('Your own order page, ready to share', '专属订单页面，随时分享'),
-        t('Full menu control — add, edit, or remove items anytime', '菜单完全自主管理——随时增加、修改、删除商品'),
+        t('Full control of your products — add, edit, or remove items anytime', '产品完全自主管理——随时增加、修改、删除商品'),
         t('Custom delivery fees by region', '配送费可依地区自定义'),
         t('Orders auto-calculated', '订单自动算总价'),
       ],
@@ -217,7 +217,11 @@ export default function Landing() {
                 {t('', '搬到线上——')}
               </span>
               <span className="block">
-                {t('online — your own shop, without the DM chaos.', '你的专属店铺，告别聊天接单的混乱。')}
+                {/* The English half opens with a space that renders as nothing — a block start
+                    collapses it — but survives into the markup, so a crawler concatenating the two
+                    blocks reads "Sell your food online", not "foodonline". Chinese needs no space
+                    and must not get one. */}
+                {t(' online — your own shop, without the DM chaos.', '你的专属店铺，告别聊天接单的混乱。')}
               </span>
             </h1>
           </HeroItem>

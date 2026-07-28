@@ -70,33 +70,51 @@ only file that uses `useReducedMotion`.
 - Markup: `<span className="inline-grid" style={{ minWidth: `${slotEm}em` }}>` wrapping
   `AnimatePresence mode="wait"`. `mode="wait"` means exactly one child exists at any moment, so no
   absolute positioning and no stacking are needed.
-- Transition: fade + 6px rise, 0.25s out then 0.25s in, using the existing `EASE` constant. This
+- Transition: fade + 6px rise, 0.25s out then 0.25s in, using the existing `EASE` constant. The
+  slot's width animates over the whole 0.5s, so it lands while the slot is empty between the two
+  fades. This
   matches `HeroItem` deliberately — the page's motion vocabulary is restrained, and a louder
   treatment (slot-machine roll, typewriter) would compete with the `StorefrontPreview` order ping
   animating directly below the hero.
 
 ### Sizing: no layout shift
 
-`slotEm` is a hand-tuned constant per language — roughly **4.2em** for English (widest word:
-"clothes") and **3.2em** for Chinese (widest: 手工艺). Exact values are set by eye during
-run-and-verify.
+> **Revised during implementation.** This section originally specified one fixed slot sized to the
+> widest word. Built and measured in the browser, that left **~78px of dead space** after "food" on
+> desktop (2.06em of word in a 3.34em slot) — it reads as broken spacing, not as design. What ships
+> is the width-animated slot described below. The rest of the spec is unchanged.
 
-`em` is the right unit because the H1 font-size is `clamp(2rem,5vw,3.5rem)`: an `em` slot scales
-with it, so one constant per language holds at every breakpoint. The slot is sized to the widest
-word, so the headline **never reflows and never shifts** as the word cycles.
+The slot animates its width to each word. Widths are **measured constants** stored beside the words
+(`VerticalWord.em`), not DOM measurements: the hero is prerendered, and `renderToStaticMarkup`
+performs no layout pass, so there is nothing to measure at that point. They are recorded in `em`
+because the H1 font-size is `clamp(2rem,5vw,3.5rem)` — one number per word then holds at every
+breakpoint.
+
+A changing width can push a trailing word onto the next line, which was the original reason to
+reject it. The headline therefore **splits into two blocks**: the rotating word ends its own line,
+and the static half below it is a separate block that a width change cannot reach. Each clause is
+short enough to hold one line down to 375px, so the line count never changes either. Verified for
+all five words at 375px and desktop, in both languages: line 1 stays one line and line 2's top
+never moves.
+
+The word is left-aligned inside its slot, against the hero's inherited centring — a centred word
+would drift sideways inside the slot while the slot itself resized.
 
 Rejected alternative: stacking all five words in one grid cell and letting the browser size the
-slot. It removes the hand-tuning but puts all five words in the DOM — which means the prerendered
-`dist/index.html` H1 reads `Sell your food bakes art clothes crafts online` to every crawler that
-does not execute JavaScript. That is precisely the audience the prerender exists to serve.
-
-Also rejected: animating the slot width to each word. Tighter kerning, but a width change mid-
-sentence can push a trailing word onto the next line, so the headline reflows every 2.6s.
+slot. It removes the measured constants but puts all five words in the DOM — which means the
+prerendered `dist/index.html` H1 reads `Sell your food bakes art clothes crafts online` to every
+crawler that does not execute JavaScript. That is precisely the audience the prerender exists to
+serve.
 
 ### Accessibility and crawlers
 
 Because only the active word is ever in the DOM, the prerendered markup keeps today's exact H1 text:
 `Sell your food online — your own shop, without the DM chaos.` **Zero SEO delta on the headline.**
+
+Splitting the headline into two blocks puts a tag boundary where a space used to be, so the second
+block's English half **opens with a space**. It renders as nothing — a block start collapses leading
+whitespace — but it survives into the markup, and without it a crawler concatenating the blocks
+reads `Sell your foodonline`. The Chinese half needs no space and must not be given one.
 
 The `<h1>` carries an `aria-label` with that full static sentence. `aria-label` overrides descendant
 content for the accessible name, so screen readers get one clean sentence instead of a word churning

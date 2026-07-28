@@ -227,22 +227,21 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
 //     ends its own line and the static half can never be rewrapped by it.
 // The second is what this does. Widths come from `VerticalWord.em`.
 const WORD_SLACK_EM = 0.06
+const WORD_INTERVAL_MS = 2600
 
 export const RotatingWord = memo(function RotatingWord({
   words,
-  intervalMs = 2600,
 }: {
   words: readonly VerticalWord[]
-  intervalMs?: number
 }) {
   const reduced = useReducedMotion()
   const [i, setI] = useState(0)
 
   useEffect(() => {
     if (reduced) return
-    const loop = setInterval(() => setI((n) => (n + 1) % words.length), intervalMs)
+    const loop = setInterval(() => setI((n) => (n + 1) % words.length), WORD_INTERVAL_MS)
     return () => clearInterval(loop)
-  }, [reduced, words.length, intervalMs])
+  }, [reduced, words.length])
 
   // Reduced motion gets the first word and no timer at all — not a timer whose animation is
   // suppressed. It is also what the prerenderer emits, since it never runs effects.

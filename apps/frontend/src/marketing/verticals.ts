@@ -28,7 +28,10 @@ export interface VerticalWord {
 }
 
 export interface VerticalEntry {
-  /** Stable key for the rotation, and for the prerender pin in verticals.test.ts. */
+  /**
+   * Names the vertical for the tests — the uniqueness check and the `food`-first prerender pin.
+   * The rotation itself keys on the word, so this is a test anchor, not a React key.
+   */
   id: string
   en: VerticalWord
   zh: VerticalWord
