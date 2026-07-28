@@ -159,17 +159,45 @@ export interface Order {
   [key: string]: any
 }
 
-// A shop's customers, aggregated from its orders (`fetchMerchantCustomers`).
-// Keyed by WhatsApp number, falling back to name — `key` is that grouping key.
-// `orders` are this customer's orders at this shop, newest-first.
-export interface MerchantCustomer {
-  key: string
-  name?: string
-  wa?: string
-  orderCount: number
-  lastOrder: string
-  orders: Order[]
+// One shop's record of one person who orders from it (#143). See CONTEXT.md → Shop customer.
+//
+// Identified by `phoneKey` — the last-eight-digits rule guest order tracking owns — scoped to
+// one merchant, guests included. Aggregated by the backend, never in the browser: the old
+// client-side grouping keyed on the raw WhatsApp string, so two spellings of one number were
+// two people, and it was built on an orders fetch that truncates at 1000 rows (#144).
+//
+// `bookedOrders` and the money EXCLUDE cancelled orders; `lastOrderAt` does not. The name is
+// deliberately not `orderCount` — the dashboard's KPI card counts orders RECEIVED, and two
+// numbers on one screen must not wear one word for two meanings.
+export interface ShopCustomer {
+  phoneKey: string
+  name: string | null
+  wa: string | null
+  bookedOrders: number
+  lifetimeSpend: number
+  avgOrder: number
+  firstOrderAt: string
+  lastOrderAt: string
+  daysSinceLastOrder: number
+  hasAccount: boolean
+  /** What this merchant wrote. Shop-private, and blank for most customers. */
+  note: string | null
+  tags: string[]
 }
+
+export interface ShopCustomerPage {
+  customers: ShopCustomer[]
+  /** Matching customers before paging — what the list is a slice of. */
+  total: number
+  /**
+   * Orders no customer could be made from, because they carried no usable number. Stated under
+   * the table so the customer count never silently disagrees with the order count.
+   */
+  unattributedOrders: number
+}
+
+/** The orderings the list offers. Everything but `recent` is Pro. */
+export type ShopCustomerSort = 'recent' | 'spend' | 'orders'
 
 export interface Voucher {
   code: string

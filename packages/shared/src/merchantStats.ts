@@ -107,10 +107,16 @@ export const isRevenueRange = (n: unknown): n is RevenueRange =>
 // This is the default only; the merchant can override it either way.
 export const granularityFor = (days: number): Granularity => (days > 30 ? 'week' : 'day')
 
-// "Booked" revenue counts every order that wasn't cancelled (pending orders are
-// still money in the pipeline) — matches the storefront's own total field.
-const counts = (o: StatsOrder) => (o.status ?? 'new') !== 'cancelled'
-const orderTotal = (o: StatsOrder) => (counts(o) ? Number(o.total) || 0 : 0)
+/**
+ * "Booked" revenue counts every order that wasn't cancelled (pending orders are
+ * still money in the pipeline) — matches the storefront's own total field.
+ *
+ * Exported because the shop-customer aggregation charges by the same rule, and a second
+ * copy of it — in TypeScript or, worse, in SQL — is how the customer list ends up
+ * disagreeing with the revenue chart about what a shop actually took.
+ */
+export const isBooked = (o: StatsOrder) => (o.status ?? 'new') !== 'cancelled'
+const orderTotal = (o: StatsOrder) => (isBooked(o) ? Number(o.total) || 0 : 0)
 
 function delta(cur: number, prev: number): Delta {
   if (prev === 0) return { pct: cur > 0 ? 100 : 0, dir: cur > 0 ? 'up' : 'flat' }
@@ -241,7 +247,7 @@ function revenueSeries(
 function productRevenue(orders: StatsOrder[], top: number): Slice[] {
   const by = new Map<string, { value: number; units: number }>()
   for (const o of orders) {
-    if (!counts(o)) continue
+    if (!isBooked(o)) continue
     for (const it of o.items ?? []) {
       const name = it.name || it.id || '—'
       const qty = Number(it.qty) || 0
@@ -277,7 +283,7 @@ export interface WindowTotals {
  * reimplemented on the backend so "revenue excludes cancelled orders" is stated once.
  */
 export function windowTotals(orders: StatsOrder[]): WindowTotals {
-  const booked = orders.filter(counts)
+  const booked = orders.filter(isBooked)
   const revenue = orders.reduce((s, o) => s + orderTotal(o), 0)
   return {
     totalOrders: orders.length,
@@ -314,7 +320,7 @@ export function computeMerchantStats(
   // ranged, so a shop with older history read all-time figures beside a "last 12 days" chart
   // with nothing on screen saying so. The KPI cards above the pills stay all-time on purpose.
   const windowed = filterByWindow(orders, today, days, dayOf)
-  const booked = orders.filter(counts)
+  const booked = orders.filter(isBooked)
   const revenue = orders.reduce((s, o) => s + orderTotal(o), 0)
   const thisKey = monthOf(today)
 

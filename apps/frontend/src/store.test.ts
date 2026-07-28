@@ -107,7 +107,7 @@ import {
   setOrderStatus,
   setOrderNote,
   setOrderTracking,
-  fetchMerchantCustomers,
+  fetchShopCustomers,
   voucherFromRow,
   fetchMerchantVouchers,
   createMerchantVoucher,
@@ -1084,75 +1084,70 @@ describe('setOrderTracking', () => {
   })
 })
 
-// ── fetchMerchantCustomers (Task 5.2) ─────────────────────────────────────────
+// ── fetchShopCustomers ────────────────────────────────────────────────────────
+//
+// The grouping this used to do in the browser is gone (#143): it keyed on the raw
+// customer_wa string, fell back to the customer NAME, and counted cancelled orders — the
+// tests that lived here asserted all three. The rules now live in the backend's pure
+// shopCustomers module and are tested there, exhaustively, without a database.
+//
+// What is left for this seam is the only thing it still decides: which request to send.
 
-describe('fetchMerchantCustomers', () => {
-  // fetchMerchantCustomers derives its grouping entirely from fetchMerchantOrders, so the mock
-  // here feeds the /api/merchants/:id/orders response — not a supabase order chain.
+describe('fetchShopCustomers', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('groups orders by customer_wa with correct orderCount and lastOrder', async () => {
+  const page = { customers: [], total: 0, unattributedOrders: 0 }
+
+  function stubFetch() {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => page })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('asks for the plain list when given no options', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    const orders = [
-      { id: 'o1', customer_name: 'Alice', customer_wa: '601', created_at: '2025-01-01' },
-      { id: 'o2', customer_name: 'Bob',   customer_wa: '602', created_at: '2025-01-02' },
-      { id: 'o3', customer_name: 'Alice', customer_wa: '601', created_at: '2025-01-03' },
-    ]
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => orders }))
+    const fetchMock = stubFetch()
 
-    const res = await fetchMerchantCustomers('m1')
-    if (!res.ok) throw new Error('expected ok')
-    const result = res.data
+    await fetchShopCustomers('m1')
 
-    expect(result).toHaveLength(2)
-    const alice = result.find(c => c.wa === '601')!
-    const bob   = result.find(c => c.wa === '602')!
-    expect(alice.orderCount).toBe(2)
-    expect(alice.lastOrder).toBe('2025-01-03')
-    expect(bob.orderCount).toBe(1)
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/merchants\/m1\/customers$/)
   })
 
-  it('returns empty array when merchant has no orders', async () => {
+  it('carries sort, tag, search and paging as query params', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => [] }))
-    expect(await fetchMerchantCustomers('m1')).toEqual({ ok: true, data: [] })
+    const fetchMock = stubFetch()
+
+    await fetchShopCustomers('m1', { sort: 'spend', tag: 'vip', search: 'ali', page: 2, pageSize: 25 })
+
+    const url = new URL(fetchMock.mock.calls[0][0] as string, 'http://x')
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      sort: 'spend', tag: 'vip', search: 'ali', page: '2', pageSize: '25',
+    })
   })
 
-  it('falls back to customer_name as key when customer_wa is missing', async () => {
+  it('drops a blank search rather than asking the server to match nothing', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    const orders = [
-      { id: 'o1', customer_name: 'Charlie', customer_wa: null, created_at: '2025-01-01' },
-      { id: 'o2', customer_name: 'Charlie', customer_wa: null, created_at: '2025-01-02' },
-    ]
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => orders }))
+    const fetchMock = stubFetch()
 
-    const res = await fetchMerchantCustomers('m1')
-    if (!res.ok) throw new Error('expected ok')
-    const result = res.data
+    await fetchShopCustomers('m1', { search: '   ' })
 
-    expect(result).toHaveLength(1)
-    expect(result[0].orderCount).toBe(2)
-    expect(result[0].name).toBe('Charlie')
+    expect(fetchMock.mock.calls[0][0]).not.toContain('search=')
   })
 
-  it('keeps each customer\'s orders newest-first and a stable key', async () => {
+  it('answers an empty page without asking, when there is no shop to ask about', async () => {
+    const fetchMock = stubFetch()
+
+    expect(await fetchShopCustomers('')).toEqual({ ok: true, data: page })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed request rather than an empty shop', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    const orders = [
-      { id: 'o1', customer_name: 'Alice', customer_wa: '601', created_at: '2025-01-01' },
-      { id: 'o3', customer_name: 'Alice', customer_wa: '601', created_at: '2025-01-03' },
-      { id: 'o2', customer_name: 'Bob',   customer_wa: '602', created_at: '2025-01-02' },
-    ]
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => orders }))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
+      ok: false, status: 500, json: async () => ({ error: 'Lookup failed' }),
+    }))
 
-    const res = await fetchMerchantCustomers('m1')
-    if (!res.ok) throw new Error('expected ok')
-    const result = res.data
-
-    const alice = result.find(c => c.wa === '601')!
-    expect(alice.key).toBe('601')
-    expect(alice.orders.map((o: any) => o.id)).toEqual(['o3', 'o1']) // newest-first
-    const bob = result.find(c => c.wa === '602')!
-    expect(bob.orders.map((o: any) => o.id)).toEqual(['o2'])
+    expect((await fetchShopCustomers('m1')).ok).toBe(false)
   })
 })
 

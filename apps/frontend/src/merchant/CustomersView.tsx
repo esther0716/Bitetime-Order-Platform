@@ -1,14 +1,22 @@
-import { useEffect, useState } from 'react'
-import type { MerchantCustomer, Order } from '../types'
+import { useCallback, useEffect, useState } from 'react'
+import { UserCheck, X } from 'lucide-react'
+import { toast } from 'sonner'
+import type { Order, ShopCustomer, ShopCustomerSort } from '../types'
 import { useSession } from '../SessionContext'
-import { fetchMerchantCustomers } from '../store'
+import { fetchShopCustomers, fetchShopCustomerOrders, saveShopCustomer } from '../store'
+import { useProAccess } from '../plan'
 import { SkeletonText } from '../components/Loaders'
 import { formatMoney } from '../currency'
 import { fmtDate } from '../merchantDate'
 import { StatusBadge } from '../orderStatus'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import OrderDetailSheet from './OrderDetailSheet'
+import { ProBadge, UpgradeLink } from './ProLock'
 import WaLink from './WaLink'
 
 // Self-contained panel — pixel-match of .admin-panel
@@ -23,140 +31,385 @@ const TD = 'px-[14px] py-[12px] border-b border-surface-warm-alt text-ink align-
 // Count cell — pixel-match of .mm-customers-count overrides
 const TD_COUNT = 'px-[14px] py-[12px] border-b border-surface-warm-alt text-oxblood font-semibold text-center align-middle group-hover:bg-oxblood-tint'
 
+const PAGE_SIZE = 50
+
+/**
+ * A shop's customers (#143). See CONTEXT.md → Shop customer.
+ *
+ * Everything on screen is computed by the backend — this used to fetch every order and group
+ * them here on the raw WhatsApp string, which made two spellings of one number two people and
+ * silently sat on a 1000-row truncation (#144). The browser now asks a question and draws the
+ * answer.
+ *
+ * The list is FREE. Sorting, the tag filter and writing a note or tags are Pro, and they are
+ * shown-but-locked rather than hidden: hiding them reads as a missing feature and leaves
+ * nothing to sell against.
+ */
 export default function CustomersView() {
   const { t, merchant } = useSession()
-  const [customers, setCustomers] = useState<MerchantCustomer[] | null>(null)
-  const [query, setQuery] = useState('')
-  const [selectedCustomer, setSelectedCustomer] = useState<MerchantCustomer | null>(null)
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const isPro = useProAccess()
+  const merchantId = merchant!.id
 
+  const [customers, setCustomers] = useState<ShopCustomer[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [unattributed, setUnattributed] = useState(0)
+  const [failed, setFailed] = useState(false)
+
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<ShopCustomerSort>('recent')
+  const [tag, setTag] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+
+  const [selected, setSelected] = useState<ShopCustomer | null>(null)
+
+  const load = useCallback(async () => {
+    const r = await fetchShopCustomers(merchantId, {
+      sort,
+      tag: tag ?? undefined,
+      search,
+      page,
+      pageSize: PAGE_SIZE,
+    })
+    if (!r.ok) { setFailed(true); return }
+    setFailed(false)
+    setCustomers(r.data.customers)
+    setTotal(r.data.total)
+    setUnattributed(r.data.unattributedOrders)
+  }, [merchantId, sort, tag, search, page])
+
+  // Debounced so typing a name is one request per pause, not one per keystroke.
   useEffect(() => {
-    fetchMerchantCustomers(merchant!.id).then(r => { if (r.ok) setCustomers(r.data) })
-  }, [merchant!.id])
+    const id = setTimeout(load, search ? 250 : 0)
+    return () => clearTimeout(id)
+  }, [load, search])
 
-  // A status/note/tracking save inside the stacked order detail must reflect in the
-  // drawer's list AND the master aggregate, so re-opening shows the new value.
-  function handleOrderUpdated(updated: Order) {
-    const patch = (o: Order) => (o.id === updated.id ? updated : o)
-    setCustomers(prev => prev?.map(c => ({ ...c, orders: c.orders.map(patch) })) ?? prev)
-    setSelectedCustomer(cur => (cur ? { ...cur, orders: cur.orders.map(patch) } : cur))
-    setSelectedOrder(cur => (cur && cur.id === updated.id ? updated : cur))
+  // Every narrowing returns to page 1, and it happens in the handlers rather than in an effect
+  // watching them: staying on page 4 of a list that now has one page shows an empty table and
+  // reads as "no results".
+  const narrow = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPage(1) }
+
+  /** A saved note or tag has to land in the open drawer AND in the row behind it. */
+  function applyWrite(phoneKey: string, fields: { note: string | null; tags: string[] }) {
+    setCustomers(prev => prev?.map(c => (c.phoneKey === phoneKey ? { ...c, ...fields } : c)) ?? prev)
+    setSelected(cur => (cur && cur.phoneKey === phoneKey ? { ...cur, ...fields } : cur))
   }
 
-  if (customers === null) {
+  if (customers === null && !failed) {
     return <div className={PANEL}><SkeletonText lines={4} /></div>
   }
 
-  if (customers.length === 0) {
+  if (failed) {
     return (
       <div className={`${PANEL} text-center text-rose-muted text-sm`}>
-        <p>{t('No customers yet.', '暂无顾客。')}</p>
+        <p>{t('Could not load your customers. Try again in a moment.', '无法加载顾客名单，请稍后再试。')}</p>
       </div>
     )
   }
 
-  const q = query.trim().toLowerCase()
-  const qDigits = q.replace(/\D/g, '')
-  const filtered = customers.filter(c => {
-    if (!q) return true
-    const nameHit = (c.name || '').toLowerCase().includes(q)
-    const waHit = qDigits !== '' && (c.wa || '').replace(/\D/g, '').includes(qDigits)
-    return nameHit || waHit
-  })
+  const narrowed = search.trim() !== '' || tag !== null
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <>
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <Input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
+          value={search}
+          onChange={e => narrow(setSearch)(e.target.value)}
           placeholder={t('Search by name or WhatsApp…', '按姓名或 WhatsApp 搜索…')}
           className="max-w-sm bg-cream border-clay-border text-[13px]"
         />
+
+        <SortControl sort={sort} onSort={narrow(setSort)} isPro={isPro} />
+
+        {tag && (
+          <button
+            type="button"
+            onClick={() => narrow(setTag)(null)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-rose-border bg-oxblood-tint px-3 py-1 text-[12px] text-oxblood"
+          >
+            {tag}
+            <X size={12} />
+          </button>
+        )}
       </div>
 
-      {/* pixel-match of .admin-panel + .mm-customers-wrap (padding: 0; overflow: hidden) */}
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-0 mb-8 w-full box-border overflow-hidden">
-        {/* pixel-match of .mm-customers-table-wrap */}
-        <div className="overflow-x-auto">
-          {/* pixel-match of .mm-customers-table */}
-          <table className="w-full border-collapse text-[13px]">
-            <thead>
-              <tr>
-                <th className={TH}>{t('Name', '姓名')}</th>
-                <th className={TH}>{t('WhatsApp', 'WhatsApp')}</th>
-                <th className={TH}>{t('Orders', '订单数')}</th>
-                <th className={TH}>{t('Last Order', '最近订单')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
+      {customers!.length === 0 ? (
+        <div className={`${PANEL} text-center text-rose-muted text-sm`}>
+          <p>
+            {narrowed
+              ? t('No customers match that.', '没有符合条件的顾客。')
+              : t('No customers yet.', '暂无顾客。')}
+          </p>
+        </div>
+      ) : (
+        // pixel-match of .admin-panel + .mm-customers-wrap (padding: 0; overflow: hidden)
+        <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-0 mb-3 w-full box-border overflow-hidden">
+          {/* pixel-match of .mm-customers-table-wrap */}
+          <div className="overflow-x-auto">
+            {/* pixel-match of .mm-customers-table */}
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
                 <tr>
-                  <td className={`${TD} text-center text-rose-muted`} colSpan={4}>
-                    {t(`No customers match “${query.trim()}”.`, `没有顾客匹配“${query.trim()}”。`)}
-                  </td>
+                  <th className={TH}>{t('Name', '姓名')}</th>
+                  <th className={TH}>{t('WhatsApp', 'WhatsApp')}</th>
+                  <th className={TH}>{t('Orders', '订单数')}</th>
+                  <th className={TH}>{t('Spent', '消费额')}</th>
+                  <th className={TH}>{t('Last Order', '最近订单')}</th>
                 </tr>
-              ) : (
-                filtered.map((c, i) => (
+              </thead>
+              <tbody>
+                {customers!.map(c => (
                   // group enables hover wash; last-child clears bottom border
                   <tr
-                    key={c.key || i}
-                    onClick={() => setSelectedCustomer(c)}
+                    key={c.phoneKey}
+                    onClick={() => setSelected(c)}
                     className="group cursor-pointer [&:last-child>td]:border-b-0"
                   >
-                    <td className={TD}>{c.name || '—'}</td>
+                    <td className={TD}>
+                      <span className="inline-flex items-center gap-1.5">
+                        {c.name || '—'}
+                        {c.hasAccount && <AccountMark />}
+                      </span>
+                    </td>
                     <td className={TD}>{c.wa ? <WaLink wa={c.wa} stopClick /> : '—'}</td>
-                    <td className={TD_COUNT}>{c.orderCount}</td>
-                    <td className={TD}>{fmtDate(c.lastOrder)}</td>
+                    <td className={TD_COUNT}>{c.bookedOrders}</td>
+                    <td className={`${TD} tabular-nums`}>{formatMoney(c.lifetimeSpend, merchant?.currency)}</td>
+                    <td className={TD}>
+                      <span className="flex flex-col">
+                        <span>{fmtDate(c.lastOrderAt)}</span>
+                        <span className="text-[11px] text-text-tertiary">{agoLabel(c.daysSinceLastOrder, t)}</span>
+                      </span>
+                    </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
+      )}
+
+      <ListFooter
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        unattributed={unattributed}
+        onPage={setPage}
+      />
+
+      <CustomerDrawer
+        customer={selected}
+        merchantId={merchantId}
+        isPro={isPro}
+        onClose={() => setSelected(null)}
+        onWritten={applyWrite}
+        onTagClicked={next => { setSelected(null); narrow(setTag)(next) }}
+      />
+    </>
+  )
+}
+
+/** The has-an-account marker. Says who receives an order confirmation email — nothing more. */
+function AccountMark() {
+  const { t } = useSession()
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="text-text-tertiary" />}>
+        <UserCheck size={13} strokeWidth={2} />
+      </TooltipTrigger>
+      <TooltipContent>
+        {t('Has an account — gets order confirmation emails.', '拥有账户，会收到订单确认邮件。')}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function SortControl({
+  sort, onSort, isPro,
+}: { sort: ShopCustomerSort; onSort: (s: ShopCustomerSort) => void; isPro: boolean }) {
+  const { t } = useSession()
+  // A basic shop sees the control, disabled, beside the badge — the lock has to name what it
+  // is locking or it reads as a broken dropdown.
+  return (
+    <div className="flex items-center gap-2">
+      <Select value={sort} onValueChange={v => onSort(v as ShopCustomerSort)} disabled={!isPro}>
+        <SelectTrigger className="w-[190px] bg-cream border-clay-border text-[13px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="recent">{t('Most recent order', '最近下单')}</SelectItem>
+          <SelectItem value="spend">{t('Highest spend', '消费最高')}</SelectItem>
+          <SelectItem value="orders">{t('Most orders', '订单最多')}</SelectItem>
+        </SelectContent>
+      </Select>
+      {!isPro && (
+        <Tooltip>
+          <TooltipTrigger render={<span />}><ProBadge /></TooltipTrigger>
+          <TooltipContent>{t('Sorting and tags are a Pro feature.', '排序和标签是 Pro 功能。')}</TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The count, the pager, and the one line that keeps the numbers honest.
+ *
+ * `unattributed` is not a footnote for tidiness: without it a merchant comparing this screen to
+ * their order list finds fewer orders here and nothing saying why.
+ */
+function ListFooter({
+  total, page, pageCount, unattributed, onPage,
+}: { total: number; page: number; pageCount: number; unattributed: number; onPage: (p: number) => void }) {
+  const { t } = useSession()
+  return (
+    <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
+      <div className="text-[12px] text-text-tertiary">
+        <p>{t(`${total} customer${total === 1 ? '' : 's'}`, `${total} 位顾客`)}</p>
+        {unattributed > 0 && (
+          <p className="mt-1">
+            {t(
+              `${unattributed} order${unattributed === 1 ? '' : 's'} without a contact number ${unattributed === 1 ? 'is' : 'are'} not shown here.`,
+              `${unattributed} 个订单没有联系电话，未在此显示。`,
+            )}
+          </p>
+        )}
       </div>
 
-      {/* Customer drawer — order history */}
-      <Sheet open={selectedCustomer !== null} onOpenChange={open => { if (!open) setSelectedCustomer(null) }}>
-        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
-          {selectedCustomer && (
-            <>
+      {pageCount > 1 && (
+        <div className="flex items-center gap-2">
+          <Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+            {t('Previous', '上一页')}
+          </Button>
+          <span className="text-[12px] text-text-tertiary tabular-nums">{page} / {pageCount}</span>
+          <Button type="button" size="sm" variant="outline" disabled={page >= pageCount} onClick={() => onPage(page + 1)}>
+            {t('Next', '下一页')}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * One customer: what they spent, what the merchant wrote, and every order they placed here.
+ *
+ * The orders are fetched when the drawer opens rather than carried on every row of the table —
+ * shipping hundreds of customers' full order histories to draw a table that shows none of them
+ * is the mistake this whole change removes.
+ */
+function CustomerDrawer({
+  customer, merchantId, isPro, onClose, onWritten, onTagClicked,
+}: {
+  customer: ShopCustomer | null
+  merchantId: string
+  isPro: boolean
+  onClose: () => void
+  onWritten: (phoneKey: string, fields: { note: string | null; tags: string[] }) => void
+  onTagClicked: (tag: string) => void
+}) {
+  return (
+    <Sheet open={customer !== null} onOpenChange={open => { if (!open) onClose() }}>
+      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+        {/* Keyed, so switching customers REMOUNTS this: the order list and the note draft
+            reset because they are born fresh, not because an effect remembered to clear them. */}
+        {customer && (
+          <DrawerContents
+            key={customer.phoneKey}
+            customer={customer}
+            merchantId={merchantId}
+            isPro={isPro}
+            onWritten={onWritten}
+            onTagClicked={onTagClicked}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function DrawerContents({
+  customer, merchantId, isPro, onWritten, onTagClicked,
+}: {
+  customer: ShopCustomer
+  merchantId: string
+  isPro: boolean
+  onWritten: (phoneKey: string, fields: { note: string | null; tags: string[] }) => void
+  onTagClicked: (tag: string) => void
+}) {
+  const { t, merchant } = useSession()
+  const [orders, setOrders] = useState<Order[] | null>(null)
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+
+  useEffect(() => {
+    let live = true
+    fetchShopCustomerOrders(merchantId, customer.phoneKey).then(r => {
+      if (live) setOrders(r.ok ? r.data : [])
+    })
+    return () => { live = false }
+  }, [customer.phoneKey, merchantId])
+
+  // A status or note change inside the stacked order detail must reflect in this drawer's list,
+  // so re-opening shows the new value.
+  function handleOrderUpdated(updated: Order) {
+    setOrders(prev => prev?.map(o => (o.id === updated.id ? updated : o)) ?? prev)
+    setSelectedOrder(cur => (cur && cur.id === updated.id ? updated : cur))
+  }
+
+  return (
+    <>
               <SheetHeader className="border-b border-surface-sunken">
-                <SheetTitle className="text-[15px]">{selectedCustomer.name || '—'}</SheetTitle>
-                {selectedCustomer.wa && (
-                  <span className="text-[13px]"><WaLink wa={selectedCustomer.wa} /></span>
-                )}
+                <SheetTitle className="text-[15px] flex items-center gap-1.5">
+                  {customer.name || '—'}
+                  {customer.hasAccount && <AccountMark />}
+                </SheetTitle>
+                {customer.wa && <span className="text-[13px]"><WaLink wa={customer.wa} /></span>}
                 <span className="text-[12px] text-text-tertiary">
-                  {t(`${selectedCustomer.orderCount} order${selectedCustomer.orderCount === 1 ? '' : 's'}`,
-                     `${selectedCustomer.orderCount} 个订单`)}
+                  {t(
+                    `${customer.bookedOrders} order${customer.bookedOrders === 1 ? '' : 's'} · ${formatMoney(customer.lifetimeSpend, merchant?.currency)} · avg ${formatMoney(customer.avgOrder, merchant?.currency)}`,
+                    `${customer.bookedOrders} 个订单 · ${formatMoney(customer.lifetimeSpend, merchant?.currency)} · 平均 ${formatMoney(customer.avgOrder, merchant?.currency)}`,
+                  )}
+                </span>
+                <span className="text-[12px] text-text-tertiary">
+                  {t(
+                    `Since ${fmtDate(customer.firstOrderAt)} · last ${agoLabel(customer.daysSinceLastOrder, t)}`,
+                    `自 ${fmtDate(customer.firstOrderAt)} · 最近 ${agoLabel(customer.daysSinceLastOrder, t)}`,
+                  )}
                 </span>
               </SheetHeader>
 
-              <div className="flex flex-col gap-2 px-4 pb-4 pt-4">
-                {selectedCustomer.orders.map(o => (
-                  <button
-                    key={o.id}
-                    type="button"
-                    onClick={() => setSelectedOrder(o)}
-                    className="flex flex-col gap-1 w-full text-left rounded-lg border border-rose-border bg-cream px-3 py-2.5 hover:bg-oxblood-tint transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-heading text-[14px] font-medium text-oxblood">{o.order_number || '—'}</span>
-                      <span className="tabular-nums text-[13px] font-medium text-ink">
-                        {formatMoney(o.total, o.currency ?? merchant?.currency)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[12px] text-text-tertiary">{fmtDate(o.created_at)}</span>
-                      <StatusBadge status={o.status || 'new'} t={t} />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+              <NotesPanel
+                customer={customer}
+                merchantId={merchantId}
+                isPro={isPro}
+                onWritten={onWritten}
+                onTagClicked={onTagClicked}
+              />
+
+              <div className="flex flex-col gap-2 px-4 pb-4">
+                {orders === null ? (
+                  <SkeletonText lines={3} />
+                ) : (
+                  orders.map(o => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => setSelectedOrder(o)}
+                      className="flex flex-col gap-1 w-full text-left rounded-lg border border-rose-border bg-cream px-3 py-2.5 hover:bg-oxblood-tint transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-heading text-[14px] font-medium text-oxblood">{o.order_number || '—'}</span>
+                        <span className="tabular-nums text-[13px] font-medium text-ink">
+                          {formatMoney(o.total, o.currency ?? merchant?.currency)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] text-text-tertiary">{fmtDate(o.created_at)}</span>
+                        <StatusBadge status={o.status || 'new'} t={t} />
+                      </div>
+                    </button>
+                  ))
+                )}
+      </div>
 
       {/* Full order detail — stacked on top of the customer drawer */}
       <OrderDetailSheet
@@ -166,4 +419,129 @@ export default function CustomersView() {
       />
     </>
   )
+}
+
+/**
+ * What the merchant knows, in their own words. Shop-private and invisible to the customer,
+ * which is what makes it worth writing candidly — so the panel says so.
+ */
+function NotesPanel({
+  customer, merchantId, isPro, onWritten, onTagClicked,
+}: {
+  customer: ShopCustomer
+  merchantId: string
+  isPro: boolean
+  onWritten: (phoneKey: string, fields: { note: string | null; tags: string[] }) => void
+  onTagClicked: (tag: string) => void
+}) {
+  const { t } = useSession()
+  const [note, setNote] = useState(customer.note ?? '')
+  const [tagDraft, setTagDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function save(fields: { note: string | null; tags: string[] }) {
+    setBusy(true)
+    const r = await saveShopCustomer(merchantId, customer.phoneKey, fields)
+    setBusy(false)
+    if (!r.ok) {
+      toast.error(r.error.message || t('Could not save', '保存失败'))
+      return
+    }
+    onWritten(customer.phoneKey, { note: r.data.note, tags: r.data.tags })
+  }
+
+  if (!isPro) {
+    return (
+      <div className="mx-4 my-4 rounded-lg border border-rose-border bg-surface-sunken px-3 py-3 text-center">
+        <div className="mb-1.5 flex items-center justify-center gap-2">
+          <span className="text-[13px] font-medium text-oxblood">{t('Notes & tags', '备注与标签')}</span>
+          <ProBadge />
+        </div>
+        <p className="mb-3 text-[12px] leading-[1.6] text-text-secondary">
+          {t(
+            'Keep a private note against a customer and tag your regulars. Only you can see it.',
+            '为顾客保存私密备注并为常客添加标签，仅你可见。',
+          )}
+        </p>
+        <UpgradeLink />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3 px-4 py-4">
+      <div>
+        <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+          {customer.tags.map(tag => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 rounded-full border border-rose-border bg-oxblood-tint px-2.5 py-0.5 text-[12px] text-oxblood"
+            >
+              <button type="button" onClick={() => onTagClicked(tag)} className="cursor-pointer">{tag}</button>
+              <button
+                type="button"
+                aria-label={t(`Remove tag ${tag}`, `移除标签 ${tag}`)}
+                onClick={() => save({ note: customer.note, tags: customer.tags.filter(x => x !== tag) })}
+                className="cursor-pointer opacity-60 hover:opacity-100"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+        <Input
+          value={tagDraft}
+          onChange={e => setTagDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            const next = tagDraft.trim()
+            if (!next || customer.tags.includes(next)) { setTagDraft(''); return }
+            save({ note: customer.note, tags: [...customer.tags, next] })
+            setTagDraft('')
+          }}
+          placeholder={t('Add a tag, press Enter…', '添加标签，按回车…')}
+          className="bg-cream border-clay-border text-[13px]"
+        />
+      </div>
+
+      <div>
+        <Textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          rows={3}
+          placeholder={t('Private note — only your shop sees this…', '私密备注，仅本店可见…')}
+          className="bg-cream border-clay-border text-[13px]"
+        />
+        {note !== (customer.note ?? '') && (
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy}
+            onClick={() => save({ note: note.trim() || null, tags: customer.tags })}
+            className="mt-2"
+          >
+            {busy ? t('Saving…', '保存中…') : t('Save note', '保存备注')}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * How long ago, in the coarsest unit that is still true.
+ *
+ * Deliberately NOT a "dormant" verdict. What counts as gone quiet is a shop's own judgement —
+ * two weeks at a lunch place, most of a year at a cake shop — and a flag the platform cannot
+ * get right is worse than a number the merchant reads themselves (CONTEXT.md → Shop customer).
+ */
+function agoLabel(days: number, t: (en: string, zh?: string) => string): string {
+  if (days <= 0) return t('today', '今天')
+  if (days === 1) return t('yesterday', '昨天')
+  if (days < 30) return t(`${days} days ago`, `${days} 天前`)
+  const months = Math.floor(days / 30)
+  if (months < 12) return t(`${months} month${months === 1 ? '' : 's'} ago`, `${months} 个月前`)
+  const years = Math.floor(days / 365)
+  return t(`${years} year${years === 1 ? '' : 's'} ago`, `${years} 年前`)
 }

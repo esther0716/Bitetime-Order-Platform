@@ -4,7 +4,7 @@ import type { FeedbackDraft, FeedbackStatus, OrderRefusal, QuoteRefusal } from '
 import { supabase } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
-import type { AddressParts, EarnedReward, FeedbackItem, MerchantCustomer, Order, ReferredShop, Voucher } from './types';
+import type { AddressParts, EarnedReward, FeedbackItem, Order, ReferredShop, ShopCustomer, ShopCustomerPage, ShopCustomerSort, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { API_URL, apiGet, apiGetFile, apiSend, mapOk, toVoid } from './api'
@@ -679,24 +679,52 @@ export async function fetchOrderTracking(merchantId: string, orderNumber: string
   } | null
 }
 
-export async function fetchMerchantCustomers(merchantId: string): Promise<Result<MerchantCustomer[]>> {
-  const r = await fetchMerchantOrders(merchantId)
-  if (!r.ok) return r // could not read the orders → could not aggregate the customers
-  const orders = r.data
-  const byWa = new Map<string, MerchantCustomer>()
-  for (const o of orders) {
-    const key = o.customer_wa || o.customer_name || '—'
-    const cur: MerchantCustomer = byWa.get(key) ?? { key, name: o.customer_name, wa: o.customer_wa, orderCount: 0, lastOrder: o.created_at ?? '', orders: [] }
-    cur.orderCount += 1
-    cur.orders.push(o)
-    if ((o.created_at ?? '') > cur.lastOrder) cur.lastOrder = o.created_at ?? ''
-    byWa.set(key, cur)
-  }
-  // Newest-first within each customer — the drawer lists them top-down.
-  for (const c of byWa.values()) {
-    c.orders.sort((a, b) => ((a.created_at ?? '') < (b.created_at ?? '') ? 1 : (a.created_at ?? '') > (b.created_at ?? '') ? -1 : 0))
-  }
-  return { ok: true, data: [...byWa.values()] }
+/**
+ * The shop's customers (#143), aggregated by the BACKEND.
+ *
+ * This used to fetch every order and group them here, on the raw `customer_wa` string. That was
+ * wrong three ways at once — two spellings of one number were two customers, cancelled orders
+ * counted as business, and every order with no number collapsed into one fake row called `—` —
+ * and it sat on top of an orders endpoint that truncates at 1000 rows without saying so (#144).
+ * All of it now happens in SQL and one pure module; see CONTEXT.md → Shop customer.
+ *
+ * `sort` other than `recent`, and `tag`, are Pro: the backend answers `403 requires_pro`, which
+ * `isRequiresPro` turns into an upgrade prompt rather than a bare error.
+ */
+export async function fetchShopCustomers(
+  merchantId: string,
+  opts: { sort?: ShopCustomerSort; tag?: string; search?: string; page?: number; pageSize?: number } = {},
+): Promise<Result<ShopCustomerPage>> {
+  if (!merchantId) return { ok: true, data: { customers: [], total: 0, unattributedOrders: 0 } }
+  const q = new URLSearchParams()
+  if (opts.sort) q.set('sort', opts.sort)
+  if (opts.tag) q.set('tag', opts.tag)
+  if (opts.search?.trim()) q.set('search', opts.search.trim())
+  if (opts.page) q.set('page', String(opts.page))
+  if (opts.pageSize) q.set('pageSize', String(opts.pageSize))
+  const qs = q.toString()
+  return apiGet<ShopCustomerPage>(`/api/merchants/${merchantId}/customers${qs ? `?${qs}` : ''}`, { auth: true })
+}
+
+/** One customer's orders, newest-first — what the drawer opens. Cancelled orders included. */
+export async function fetchShopCustomerOrders(merchantId: string, phoneKey: string): Promise<Result<Order[]>> {
+  return apiGet<Order[]>(`/api/merchants/${merchantId}/customers/${phoneKey}/orders`, { auth: true })
+}
+
+/**
+ * Save what the merchant wrote about one customer. Pro-only, and the row is created on the
+ * first write — most customers never have one.
+ *
+ * Sends BOTH fields every time rather than patching one: the dashboard edits them in one panel
+ * with one save, and a partial write would need the server to distinguish "cleared the note"
+ * from "did not mention the note", which is a distinction nothing on screen offers.
+ */
+export async function saveShopCustomer(
+  merchantId: string,
+  phoneKey: string,
+  fields: { note: string | null; tags: string[] },
+): Promise<Result<{ phoneKey: string; note: string | null; tags: string[] }>> {
+  return apiSend(`/api/merchants/${merchantId}/customers/${phoneKey}`, 'PUT', fields, { auth: true })
 }
 
 // ── Products ──────────────────────────────────────────────────────────────────

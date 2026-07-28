@@ -2,6 +2,7 @@ import type postgres from 'postgres'
 import { priceOrder, voucherFromRow, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
+import { phoneKey } from './phone.js'
 import { COUNTER_START, formatOrderNumber, orderDay } from './orderNumber.js'
 import { type DistanceDeps } from './distance.js'
 import { resolveRoutedDistance } from './routedDistance.js'
@@ -272,7 +273,7 @@ export async function placeOrder(
 
     await tx`
       insert into orders (
-        merchant_id, user_id, customer_name, customer_wa, mode, address,
+        merchant_id, user_id, customer_name, customer_wa, customer_phone_key, mode, address,
         shipping_fee, items, total, currency, discount, tax, tax_rate, voucher_code, fulfil_date, order_number, status,
         delivery_distance_km, delivery_base_fee, delivery_rate_per_km
       ) values (
@@ -280,6 +281,12 @@ export async function placeOrder(
         ${input.userId},
         ${input.customerName},
         ${input.customerWa},
+        -- Which shop customer this order belongs to (#143, ADR 0007). Stamped from phoneKey()
+        -- — the SAME function guest order tracking matches on — so the two can never come to
+        -- disagree about who is one person. In TypeScript rather than as a generated column:
+        -- one rule, one language. The door already refused a number with no digits, so this
+        -- is never null on a new order; older rows carry the migration's backfill.
+        ${phoneKey(input.customerWa)},
         ${input.mode},
         ${tx.json((input.address ?? null) as never)},
         ${bd.shipping},
