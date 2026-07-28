@@ -9,6 +9,7 @@ import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { API_URL, apiGet, apiGetFile, apiSend, mapOk, toVoid } from './api'
 import type { Result } from './api'
+import type { CartLine } from '@bitetime/shared'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -496,7 +497,7 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
   // anything else, because `mode` selects the shipping fee. Mirrors PlaceOrderInput's union.
   mode: 'pickup' | 'delivery' | 'express'
   address?: AddressParts | string
-  cart: Record<string, number>
+  cart: CartLine[]
   quotedTotal: number
   voucherCode?: string | null
   /** `YYYY-MM-DD` on the shop's clock. The backend re-checks it against the shop's window. */

@@ -20,8 +20,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { DataTable, SortableHeader } from '../components/ui/data-table'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../components/ui/empty'
 import ImagePicker from './ProductImages'
+import OptionGroupsEditor from './OptionGroupsEditor'
 import { ProBadge, UpgradeLink } from './ProLock'
 import { useProAccess, isRequiresPro } from '../plan'
+import { optionGroupsFromRow } from '@bitetime/shared'
+import type { OptionGroup } from '@bitetime/shared'
 
 // Canonical unit options (value stored as-is; label is bilingual).
 const UNITS: { value: string; en: string; zh: string }[] = [
@@ -134,7 +137,7 @@ const columns: ColumnDef<any>[] = [
 ]
 
 export default function ProductsManager() {
-  const { t, merchant } = useSession()
+  const { t, lang, merchant } = useSession()
   const [rows, setRows] = useState<any[] | null>(null)
   const [form, setForm] = useState<any>(BLANK)
   const [busy, setBusy] = useState(false)
@@ -146,6 +149,8 @@ export default function ProductsManager() {
   const [draftId, setDraftId] = useState(() => crypto.randomUUID())
   // Photos being edited in the add/edit dialog (add: new draft; edit: the row's).
   const [images, setImages] = useState<string[]>([])
+  // Saved by the product's own upsert, not by a second write — see ADR 0008.
+  const [optionGroups, setOptionGroups] = useState<OptionGroup[]>([])
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
   // Promos are Pro-only (#110); ordinary product editing is not. This flag locks the promo
@@ -166,7 +171,7 @@ export default function ProductsManager() {
   function openAdd() {
     setEditingProduct(null)
     setForm(BLANK)
-    setImages([]); setDraftId(crypto.randomUUID()); setMsg(''); setPromoEnded(false)
+    setImages([]); setOptionGroups([]); setDraftId(crypto.randomUUID()); setMsg(''); setPromoEnded(false)
     setFormOpen(true)
   }
   function openEdit(p: any) {
@@ -180,6 +185,7 @@ export default function ProductsManager() {
       promo_end: promoEndToDate(p.promo_end),
     })
     setImages(p.image_urls ?? [])
+    setOptionGroups(optionGroupsFromRow(p.option_groups))
     setPromoEnded(!!p.promo_end && new Date(p.promo_end).getTime() < Date.now())
     setFormOpen(true)
   }
@@ -260,6 +266,7 @@ export default function ProductsManager() {
       ? await upsertProduct({
           ...editingProduct, ...form, ...promoWrite(editingProduct),
           image_urls: images,
+          option_groups: optionGroups,
           price: Number(form.price) || 0,
           unit_quantity: coerceQuantity(form.unit_quantity),
         })
@@ -268,12 +275,13 @@ export default function ProductsManager() {
           ...promoWrite(null),
           id: draftId,
           image_urls: images,
+          option_groups: optionGroups,
           price: Number(form.price) || 0,
           unit_quantity: coerceQuantity(form.unit_quantity),
           merchant_id: merchant!.id,
         })
     if (r.ok) {
-      setFormOpen(false); setForm(BLANK); setEditingProduct(null); setImages([]); setDraftId(crypto.randomUUID())
+      setFormOpen(false); setForm(BLANK); setEditingProduct(null); setImages([]); setOptionGroups([]); setDraftId(crypto.randomUUID())
       await load()
       toast.success(t('Product saved', '产品已保存'))
     } else {
@@ -564,6 +572,23 @@ export default function ProductsManager() {
                     if (editingProduct) return setProductImages(editingProduct, paths as string[])
                   }}
                   t={t}
+                />
+              </div>
+              <div className="flex flex-col gap-[6px]">
+                <Label>{t('Options (optional)', '选项（可选）')}</Label>
+                <OptionGroupsEditor
+                  value={optionGroups}
+                  onChange={setOptionGroups}
+                  currency={currency}
+                  t={t}
+                  copyFrom={rows
+                    .filter(p => p.id !== editingProduct?.id
+                      && optionGroupsFromRow(p.option_groups).length > 0)
+                    .map(p => ({
+                      id: p.id,
+                      name: (lang === 'zh' && p.name_zh) ? p.name_zh : p.name,
+                      groups: optionGroupsFromRow(p.option_groups),
+                    }))}
                 />
               </div>
               <div className="flex items-center justify-between gap-3 pt-1">

@@ -1,4 +1,7 @@
-import { MAX_CART_QTY, MAX_CART_LINES } from '@bitetime/shared'
+import {
+  MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES, cartLineKey, validateSelections,
+} from '@bitetime/shared'
+import type { CartLine, OptionGroup } from '@bitetime/shared'
 import type { Translate } from '../types'
 
 /**
@@ -22,9 +25,18 @@ import type { Translate } from '../types'
 export interface MenuItem {
   id: string
   active?: boolean
+  /** The questions this product asks, mapped. Absent means it asks none. */
+  optionGroups?: OptionGroup[]
 }
 
-export type Cart = Record<string, number>
+/**
+ * A LIST since ADR 0009: one product occupies several lines when its options differ, so there is
+ * no map keyed on product id that can hold a cart at all.
+ */
+export type Cart = CartLine[]
+
+/** What identifies a line: the product plus what was chosen on it. `qty` is what merging SETS. */
+export type CartTarget = Pick<CartLine, 'productId' | 'selections'>
 
 export interface PruneResult {
   /** The cart with every entry the menu no longer sells removed. Same object when nothing went. */
@@ -63,13 +75,15 @@ export interface PruneResult {
  * fetchers report failure rather than returning `[]`.
  */
 export function pruneCart(cart: Cart, fresh: readonly MenuItem[]): PruneResult {
-  const removedIds = Object.keys(cart).filter(id => !fresh.some(p => p.id === id && p.active))
+  // DISTINCT ids, in cart order: one product can hold several lines, and a customer who loses a
+  // latte lost "Latte" once — not once per milk they had chosen.
+  const removedIds = [...new Set(cart.map(l => l.productId))]
+    .filter(id => !fresh.some(p => p.id === id && p.active))
   if (removedIds.length === 0) {
     return { cart, removed: 0, removedIds: [], nameableIds: [], unnameable: 0 }
   }
 
-  const next = { ...cart }
-  for (const id of removedIds) delete next[id]
+  const next = cart.filter(l => !removedIds.includes(l.productId))
 
   const nameableIds = removedIds.filter(id => fresh.some(p => p.id === id))
   return {
@@ -111,7 +125,7 @@ export function pruneMessage(names: readonly string[], unnameable: number, t: Tr
 }
 
 /** Why a quantity change was refused. The caller turns this into an instruction. */
-export type CartRefusal = 'qty_cap' | 'line_cap'
+export type CartRefusal = 'qty_cap' | 'line_cap' | 'entry_cap'
 
 export type CartChange =
   /** Apply this cart. */
@@ -132,21 +146,64 @@ export type CartChange =
  * A refusal is returned rather than performed, which is also what keeps the caller's `setCart`
  * updater pure — the toast is a side effect, and React may run an updater twice.
  */
-export function nextCart(cart: Cart, productId: string, delta: number): CartChange {
-  const current = cart[productId] || 0
+export function nextCart(cart: Cart, target: CartTarget, delta: number): CartChange {
+  const key = cartLineKey({ ...target, qty: 0 })
+  const at = cart.findIndex(l => cartLineKey(l) === key)
+  const current = at === -1 ? 0 : cart[at].qty
   const next = Math.max(0, current + delta)
   if (next === current) return { refused: 'noop' }
 
-  if (next > MAX_CART_QTY) return { refused: 'qty_cap' }
-  // A new LINE, not a bigger one: only an id that is not in the cart yet can breach the line cap,
-  // so raising an existing line is never blocked by it.
-  if (current === 0 && Object.keys(cart).length >= MAX_CART_LINES) return { refused: 'line_cap' }
+  // The per-item ceiling binds on the PRODUCT, summed across its lines. Reading it per line would
+  // let a customer walk past it simply by choosing a different milk each time.
+  const otherLines = cart.reduce(
+    (sum, l, i) => (l.productId === target.productId && i !== at ? sum + l.qty : sum), 0)
+  if (otherLines + next > MAX_CART_QTY) return { refused: 'qty_cap' }
 
-  if (next === 0) {
-    const { [productId]: _removed, ...rest } = cart
-    return { cart: rest }
+  // A new PRODUCT, not a bigger line: only an id not in the cart yet can breach the line cap.
+  const isNewProduct = !cart.some(l => l.productId === target.productId)
+  if (isNewProduct && new Set(cart.map(l => l.productId)).size >= MAX_CART_LINES) {
+    return { refused: 'line_cap' }
   }
-  return { cart: { ...cart, [productId]: next } }
+  // A new LINE. Its own dimension since ADR 0009 — one product with many option combinations can
+  // exhaust the request without ever adding a second distinct product.
+  if (at === -1 && cart.length >= MAX_CART_ENTRIES) return { refused: 'entry_cap' }
+
+  if (next === 0) return { cart: cart.filter((_, i) => i !== at) }
+  if (at === -1) return { cart: [...cart, { ...target, qty: next }] }
+  return { cart: cart.map((l, i) => (i === at ? { ...l, qty: next } : l)) }
+}
+
+export interface RepairResult {
+  /** The cart with every line the menu can no longer answer removed. Same object when none went. */
+  readonly cart: Cart
+  /** How many LINES were dropped. */
+  readonly removed: number
+}
+
+/**
+ * Drop the lines whose ANSWERS the refreshed menu no longer accepts.
+ *
+ * The `option_unavailable` recovery, and the half `pruneCart` cannot do: there, the product left
+ * the menu and the line went with it. Here the product is still on sale and only an option died
+ * — switched off, deleted, or made impossible by a merchant widening the question — so a prune
+ * removes nothing, the dead pick survives the refresh, and every retry is refused identically.
+ * That is exactly the permanent refusal loop the refusal vocabulary exists to prevent.
+ *
+ * Dropping the line is the TERMINATING case. Reopening the picker is nicer and belongs in the UI,
+ * but something must always end the loop, and a customer left in a picker with nothing valid to
+ * pick is the same trap in a friendlier costume.
+ *
+ * Runs AFTER the menu is adopted — against a stale menu it would keep the option just withdrawn.
+ */
+export function repairCart(cart: Cart, fresh: readonly MenuItem[]): RepairResult {
+  const kept = cart.filter(l => {
+    const groups = fresh.find(p => p.id === l.productId)?.optionGroups ?? []
+    // A product that asks nothing cannot hold a broken answer — most shops are this shop.
+    if (groups.length === 0 && l.selections.length === 0) return true
+    return validateSelections(groups, l.selections) === null
+  })
+  if (kept.length === cart.length) return { cart, removed: 0 }
+  return { cart: kept, removed: cart.length - kept.length }
 }
 
 /** What a refused quantity change tells the customer. Empty for a no-op, which says nothing. */
@@ -158,7 +215,21 @@ export function cartRefusalMessage(refusal: CartRefusal | 'noop', t: Translate):
     case 'line_cap':
       return t(`You can order at most ${MAX_CART_LINES} different items in one order.`,
                `每单最多 ${MAX_CART_LINES} 种不同商品。`)
+    case 'entry_cap':
+      return t(`You can order at most ${MAX_CART_ENTRIES} lines in one order.`,
+               `每单最多 ${MAX_CART_ENTRIES} 个项目。`)
     case 'noop':
       return ''
   }
+}
+
+/**
+ * How many of a product the customer holds on its PLAIN line — the one carrying no selections.
+ *
+ * What the ±1 stepper on a product card reads and writes. A product that asks questions has no
+ * plain line and no stepper: there is no answer to which selection a bare `+` would raise, which
+ * is why those cards get an Add button and a picker instead.
+ */
+export function plainQty(cart: Cart, productId: string): number {
+  return cart.find(l => l.productId === productId && l.selections.length === 0)?.qty ?? 0
 }
