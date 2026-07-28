@@ -5,6 +5,9 @@
 // saw. No I/O: the clock and the loaded voucher are passed in.
 // See CONTEXT.md → "Order pricing".
 
+import { snapshotSelections, picksDelta, cartLineKey } from './options.js'
+import type { CartLine, OptionGroup, PickSnapshot } from './options.js'
+
 /**
  * Only the fields the pricing rule reads. Declared here rather than imported because this package
  * is the boundary between the two workspaces: a frontend `Product` row and a backend `products`
@@ -25,6 +28,11 @@ export interface PricedProduct {
   /** An ISO INSTANT, never a local date string. See the migration's comment. */
   promoEnd?: string | null
   promoSold?: number
+  /**
+   * The questions this product asks. DECLARED for the same reason the promo fields are: reached
+   * through the index signature, a typo would price every option at zero delta, silently.
+   */
+  optionGroups?: OptionGroup[]
   [key: string]: unknown
 }
 
@@ -46,9 +54,15 @@ export interface PriceLine {
   id: string
   name: string
   qty: number
+  /** ALL-IN: the product's price for this line plus what its options add, per unit. */
   unitPrice: number
   lineTotal: number
   promo: boolean
+  /**
+   * What was chosen on this line, resolved. ABSENT (not `[]`) when the product asks nothing, so
+   * a plain shop's breakdown is byte-identical to what it was before options existed.
+   */
+  selections?: PickSnapshot[]
 }
 
 export interface PriceBreakdown {
@@ -75,7 +89,11 @@ export interface PriceBreakdown {
 
 export interface PriceInput {
   products: PricedProduct[]
-  cart: Record<string, number>
+  /**
+   * A LIST, not a map keyed on product id — one product can occupy several lines once its
+   * options differ (two boxes of six, different flavours). See ADR 0009.
+   */
+  cart: CartLine[]
   /**
    * Which method the customer chose. An ALLOWLIST, and it is a price rule: `mode` selects the
    * shipping fee, so any unrecognised value prices shipping at 0.
@@ -345,30 +363,78 @@ export function priceOrder(input: PriceInput): PriceBreakdown {
   const now = input.now ?? new Date()
 
   const lines: PriceLine[] = []
-  for (const id of Object.keys(input.cart)) {
-    const qty = input.cart[id] || 0
-    if (qty <= 0) continue
-    const product = input.products.find(p => p.id === id)
-    if (!product) continue
 
-    // THE CAP BINDS PER UNIT, so one cart product can produce TWO lines at two prices. A cart of
-    // 10 against 3 remaining promo units is 3 + 7 — all-or-nothing would let a cap of 3 sell 100
-    // promo units to a single order, which is not a cap. Two lines share a product id: any list
-    // rendering these must key by INDEX.
-    const promo = promoState(product, now)
-    const promoQty = promo ? Math.min(qty, promo.remaining) : 0
+  /**
+   * Promo units already taken by an EARLIER line of the same product.
+   *
+   * `promo.remaining` is a budget for the whole order, not an allowance each line draws fresh.
+   * Under the old `Record<productId, qty>` cart this could not go wrong — one product, one entry
+   * — so the per-entry read was safe by construction. A list removes that guarantee, and the
+   * failure is silent and OPEN: two lines of one product each take the full remainder, and
+   * `promoClaims` sums them into a `promo_sold` increment past the merchant's own cap.
+   */
+  const claimed = new Map<string, number>()
 
-    if (promo && promoQty > 0) {
+  // Resolve every line ONCE, keeping its position in the customer's cart. What each line's
+  // answer costs is derived from the SHOP'S OWN groups — the body says which options, never what
+  // they cost, exactly as it carries no prices at all.
+  const resolved = input.cart
+    .map((cartLine, at) => ({ at, cartLine, product: input.products.find(p => p.id === cartLine.productId) }))
+    .filter((r): r is { at: number; cartLine: CartLine; product: PricedProduct } =>
+      !!r.product && (r.cartLine.qty || 0) > 0)
+    .map(r => {
+      const picks = r.product.optionGroups?.length
+        ? snapshotSelections(r.product.optionGroups, r.cartLine.selections)
+        : []
+      return { ...r, picks, delta: picksDelta(picks), key: cartLineKey(r.cartLine) }
+    })
+
+  // PASS 1 — spend the promo budget, in CANONICAL key order.
+  //
+  // Which line wins scarce promo units must not hinge on click sequence, so the walk is ordered
+  // by the derived key. It is a separate pass because `lines` is ALSO what renders the cart:
+  // ordering the output canonically would reorder a customer's cart by id instead of by when
+  // they added things. Attribution is deterministic; display stays theirs. The total is the same
+  // either way — `min(sum qty, remaining)` — so no money rides on this, only which line is
+  // labelled promo and what the order items say.
+  const promoUnits = new Map<number, number>()
+  for (const r of [...resolved].sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0))) {
+    const promo = promoState(r.product, now)
+    if (!promo) continue
+    const spent = claimed.get(r.cartLine.productId) ?? 0
+    const take = Math.max(0, Math.min(r.cartLine.qty, promo.remaining - spent))
+    if (take > 0) {
+      claimed.set(r.cartLine.productId, spent + take)
+      promoUnits.set(r.at, take)
+    }
+  }
+
+  // PASS 2 — emit, in the customer's own order.
+  //
+  // THE CAP BINDS PER UNIT, so one cart line can produce TWO lines at two prices. A line of 10
+  // against 3 remaining promo units is 3 + 7 — all-or-nothing would let a cap of 3 sell 100 promo
+  // units to a single order, which is not a cap. Both halves carry the SAME answer, so both carry
+  // the same delta. Two lines share a product id: any list rendering these must key by INDEX.
+  for (const r of resolved) {
+    const { product, picks, delta } = r
+    const id = r.cartLine.productId
+    const qty = r.cartLine.qty
+    const chosen = picks.length ? { selections: picks } : {}
+    const promoQty = promoUnits.get(r.at) ?? 0
+
+    if (promoQty > 0) {
+      const unitPrice = round2(promoState(product, now)!.price + delta)
       lines.push({
         id, name: product.name, qty: promoQty,
-        unitPrice: promo.price, lineTotal: round2(promo.price * promoQty), promo: true,
+        unitPrice, lineTotal: round2(unitPrice * promoQty), promo: true, ...chosen,
       })
     }
     const baseQty = qty - promoQty
     if (baseQty > 0) {
+      const unitPrice = round2(product.price + delta)
       lines.push({
         id, name: product.name, qty: baseQty,
-        unitPrice: product.price, lineTotal: round2(product.price * baseQty), promo: false,
+        unitPrice, lineTotal: round2(unitPrice * baseQty), promo: false, ...chosen,
       })
     }
   }
@@ -534,7 +600,29 @@ export function productFromRow(row: Record<string, unknown>): PricedProduct {
     // postgres.js hands back a Date; PostgREST hands back an ISO string. `new Date` takes both.
     promoEnd: promoEnd && !isNaN(promoEnd.getTime()) ? promoEnd.toISOString() : null,
     promoSold: num(row.promo_sold) ?? 0,
+    optionGroups: optionGroupsFromRow(row.option_groups),
   }
+}
+
+/**
+ * A `products.option_groups` value → the groups `priceOrder` reads.
+ *
+ * Both drivers hand `jsonb` back already parsed, which is the whole reason ADR 0008 put the
+ * groups in a jsonb column: a `delta numeric` COLUMN would arrive as a string from postgres.js
+ * and a number from PostgREST, and mapping one side and not the other refuses every option
+ * order — the trap `productFromRow` above already records for `price`.
+ *
+ * FAILS CLOSED, to no groups. A shop that predates the column, or a value that cannot be read,
+ * asks nothing — the same direction `shopRates` and `shopTax` fail in. Half-reading it would
+ * price against questions nobody can see.
+ */
+export function optionGroupsFromRow(value: unknown): OptionGroup[] {
+  const raw = typeof value === 'string' ? safeParse(value) : value
+  return Array.isArray(raw) ? (raw as OptionGroup[]) : []
+}
+
+function safeParse(s: string): unknown {
+  try { return JSON.parse(s) } catch { return null }
 }
 
 /**

@@ -115,3 +115,20 @@ describe('quoteRefusalPlan', () => {
     expect(quoteRefusalPlan('some_new_code' as never, qctx())).toBe(QUOTE_GENERIC)
   })
 })
+
+describe('option_unavailable', () => {
+  // Order as DATA, for the same reason price_changed's is: repairing against the stale menu
+  // would keep the very option that was just withdrawn, and the retry would be refused again.
+  it('refreshes the menu BEFORE repairing the lines', () => {
+    const { actions } = orderRefusalPlan('option_unavailable', ctx())
+    expect(actions).toEqual(['refresh_sources', 'repair_selections'])
+  })
+
+  // product_unavailable removes the item; this one keeps it and fixes the choice. Telling a
+  // customer their coffee is gone because the oat milk ran out is the wrong sentence.
+  it('does not reuse the product_unavailable copy', () => {
+    const optionMsg = orderRefusalPlan('option_unavailable', ctx()).message
+    const productMsg = orderRefusalPlan('product_unavailable', ctx()).message
+    expect(optionMsg).not.toBe(productMsg)
+  })
+})

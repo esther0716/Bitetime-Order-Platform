@@ -6,9 +6,19 @@ import {
   shopMethods, offersMethod, firstOfferedMethod, isDistancePriced,
 } from './pricing.js'
 import type { PricedProduct } from './pricing.js'
+import type { CartLine } from './options.js'
 
 const RATES = { WM: 8, EM: 12 }
 const NOW = new Date('2026-06-29T12:00:00')
+
+/**
+ * The pre-options cart shape, as a list. Every assertion in this suite predates menu options and
+ * is the independent record of what pricing already promised, so the shape is migrated and the
+ * expectations are left exactly as they were — a rule nobody asked to change must not quietly
+ * change here.
+ */
+const asCart = (c: Record<string, number>): CartLine[] =>
+  Object.entries(c).map(([productId, qty]) => ({ productId, qty, selections: [] }))
 
 function product(id: string, price: number, extra: Partial<PricedProduct> = {}): PricedProduct {
   return { id, name: id, price, ...extra }
@@ -18,7 +28,7 @@ describe('priceOrder', () => {
   it('pickup with items only: total equals subtotal, no shipping', () => {
     const r = priceOrder({
       products: [product('a', 10), product('b', 5)],
-      cart: { a: 2, b: 1 },
+      cart: asCart({ a: 2, b: 1 }),
       mode: 'pickup',
       rates: RATES,
       now: NOW,
@@ -35,7 +45,7 @@ describe('priceOrder', () => {
 
   it('delivery adds WM rate for West Malaysia state', () => {
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'delivery', state: 'Selangor', rates: RATES, now: NOW,
     })
     expect(r.shipping).toBe(8)
@@ -44,7 +54,7 @@ describe('priceOrder', () => {
 
   it('delivery adds EM rate for East Malaysia state', () => {
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'delivery', state: 'Sabah', rates: RATES, now: NOW,
     })
     expect(r.shipping).toBe(12)
@@ -53,7 +63,7 @@ describe('priceOrder', () => {
 
   it('resolvedShipping overrides region logic (storefront with no state)', () => {
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'delivery', rates: RATES, now: NOW,
       resolvedShipping: 8,
     })
@@ -63,7 +73,7 @@ describe('priceOrder', () => {
 
   it('percent voucher discounts items + shipping', () => {
     const r = priceOrder({
-      products: [product('a', 100)], cart: { a: 1 },
+      products: [product('a', 100)], cart: asCart({ a: 1 }),
       mode: 'delivery', state: 'Selangor', rates: RATES, now: NOW,
       voucher: { code: 'X', type: 'percent', value: 10 } as any,
     })
@@ -74,7 +84,7 @@ describe('priceOrder', () => {
 
   it('fixed voucher is capped at the total', () => {
     const r = priceOrder({
-      products: [product('a', 5)], cart: { a: 1 },
+      products: [product('a', 5)], cart: asCart({ a: 1 }),
       mode: 'pickup', rates: RATES, now: NOW,
       voucher: { code: 'X', type: 'fixed', value: 20 } as any,
     })
@@ -84,7 +94,7 @@ describe('priceOrder', () => {
 
   it('appends extra lines (e.g. a free gift line) into the breakdown', () => {
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 }, mode: 'pickup', rates: RATES, now: NOW,
+      products: [product('a', 10)], cart: asCart({ a: 1 }), mode: 'pickup', rates: RATES, now: NOW,
       extraLines: [{ id: 'gift', name: '🎁 Gift', qty: 1, unitPrice: 0, lineTotal: 0, promo: false }],
     })
     expect(r.lines).toHaveLength(2)
@@ -100,7 +110,7 @@ describe('promo', () => {
   it('prices at the promo price while the promo runs', () => {
     const bd = priceOrder({
       products: [product('a', 100, { promoPrice: 80, promoEnd: FUTURE })],
-      cart: { a: 2 }, mode: 'pickup', rates: { WM: 8, EM: 18 },
+      cart: asCart({ a: 2 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines).toEqual([
       { id: 'a', name: 'a', qty: 2, unitPrice: 80, lineTotal: 160, promo: true },
@@ -111,7 +121,7 @@ describe('promo', () => {
   it('a promo with no cap and no end date runs anyway', () => {
     const bd = priceOrder({
       products: [product('a', 100, { promoPrice: 80 })],
-      cart: { a: 1 }, mode: 'pickup', rates: { WM: 8, EM: 18 },
+      cart: asCart({ a: 1 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines[0].unitPrice).toBe(80)
     expect(bd.lines[0].promo).toBe(true)
@@ -120,7 +130,7 @@ describe('promo', () => {
   it('a promo price of 0 is a promo, not a falsy nothing', () => {
     const bd = priceOrder({
       products: [product('a', 100, { promoPrice: 0 })],
-      cart: { a: 3 }, mode: 'pickup', rates: { WM: 8, EM: 18 },
+      cart: asCart({ a: 3 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines[0].unitPrice).toBe(0)
     expect(bd.lines[0].promo).toBe(true)
@@ -130,7 +140,7 @@ describe('promo', () => {
   it('an elapsed promo does not apply', () => {
     const bd = priceOrder({
       products: [product('a', 100, { promoPrice: 80, promoEnd: PAST })],
-      cart: { a: 1 }, mode: 'pickup', rates: { WM: 8, EM: 18 },
+      cart: asCart({ a: 1 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines[0].unitPrice).toBe(100)
     expect(bd.lines[0].promo).toBe(false)
@@ -140,7 +150,7 @@ describe('promo', () => {
   it('splits the line at the cap', () => {
     const bd = priceOrder({
       products: [product('a', 100, { promoPrice: 80, promoLimit: 5, promoSold: 2 })],
-      cart: { a: 10 }, mode: 'pickup', rates: { WM: 8, EM: 18 },
+      cart: asCart({ a: 10 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines).toEqual([
       { id: 'a', name: 'a', qty: 3, unitPrice: 80, lineTotal: 240, promo: true },
@@ -163,7 +173,7 @@ describe('promo', () => {
     // Exactly the cap: every unit in the cart is still the promo — `claimed` would read 3 and
     // `remainingForNextUnit` (promo.remaining - claimed) is 0, which is the signal the card
     // acts on.
-    const atCap = priceOrder({ products, cart: { a: 3 }, mode: 'pickup', rates: RATES, now: NOW })
+    const atCap = priceOrder({ products, cart: asCart({ a: 3 }), mode: 'pickup', rates: RATES, now: NOW })
     expect(atCap.lines).toEqual([
       { id: 'a', name: 'a', qty: 3, unitPrice: 8, lineTotal: 24, promo: true },
     ])
@@ -174,7 +184,7 @@ describe('promo', () => {
     // One more unit is what the customer would actually get if the card's fallback failed to
     // fire and they tapped '+' a fourth time: it must price at BASE, not promo — proving the
     // headline the card shows for "the next unit" has to be base once claimed === remaining.
-    const onePastCap = priceOrder({ products, cart: { a: 4 }, mode: 'pickup', rates: RATES, now: NOW })
+    const onePastCap = priceOrder({ products, cart: asCart({ a: 4 }), mode: 'pickup', rates: RATES, now: NOW })
     expect(onePastCap.lines).toEqual([
       { id: 'a', name: 'a', qty: 3, unitPrice: 8, lineTotal: 24, promo: true },
       { id: 'a', name: 'a', qty: 1, unitPrice: 13, lineTotal: 13, promo: false },
@@ -184,7 +194,7 @@ describe('promo', () => {
   it('a sold-out cap prices the whole line at base, and claims nothing', () => {
     const products = [product('a', 100, { promoPrice: 80, promoLimit: 5, promoSold: 5 })]
     const bd = priceOrder({
-      products, cart: { a: 2 }, mode: 'pickup', rates: { WM: 8, EM: 18 },
+      products, cart: asCart({ a: 2 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines).toEqual([
       { id: 'a', name: 'a', qty: 2, unitPrice: 100, lineTotal: 200, promo: false },
@@ -195,7 +205,7 @@ describe('promo', () => {
   it('promoClaims never claims an extraLines id, even when it is flagged promo: true', () => {
     const products = [product('a', 100, { promoPrice: 80, promoEnd: FUTURE })]
     const bd = priceOrder({
-      products, cart: { a: 1 }, mode: 'pickup', rates: { WM: 8, EM: 18 },
+      products, cart: asCart({ a: 1 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
       extraLines: [{ id: 'gift', name: '🎁 Gift', qty: 1, unitPrice: 0, lineTotal: 0, promo: true }],
     })
     // the cart line for 'a' is claimed; the extra 'gift' line is not, because it never came
@@ -205,7 +215,7 @@ describe('promo', () => {
 
   it('promoClaims aggregates the same product id across two promo lines', () => {
     const products = [product('a', 100, { promoPrice: 80, promoEnd: FUTURE })]
-    const bd = priceOrder({ products, cart: { a: 2 }, mode: 'pickup', rates: { WM: 8, EM: 18 } })
+    const bd = priceOrder({ products, cart: asCart({ a: 2 }), mode: 'pickup', rates: { WM: 8, EM: 18 } })
     // synthesize a second promo line for the same id, as a caller merging two carts might
     const merged = { ...bd, lines: [...bd.lines, { ...bd.lines[0], qty: 3 }] }
     expect(promoClaims(merged, products)).toEqual({ a: 5 })
@@ -217,7 +227,7 @@ describe('promo', () => {
       product('normal-item', 30),
     ]
     const bd = priceOrder({
-      products, cart: { 'promo-item': 1, 'normal-item': 2 }, mode: 'pickup', rates: { WM: 8, EM: 18 },
+      products, cart: asCart({ 'promo-item': 1, 'normal-item': 2 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.lines).toEqual([
       { id: 'promo-item', name: 'promo-item', qty: 1, unitPrice: 80, lineTotal: 80, promo: true },
@@ -230,7 +240,7 @@ describe('promo', () => {
   it('unrounded line totals sum to a rounded subtotal (0.1 + 0.2 display defect)', () => {
     const bd = priceOrder({
       products: [product('a', 0.1), product('b', 0.2)],
-      cart: { a: 1, b: 1 }, mode: 'pickup', rates: { WM: 8, EM: 18 },
+      cart: asCart({ a: 1, b: 1 }), mode: 'pickup', rates: { WM: 8, EM: 18 },
     })
     expect(bd.subtotal).toBe(0.3)
   })
@@ -245,7 +255,7 @@ describe('promoState', () => {
   it('promoSold greater than promoLimit means no promo, and promoClaims is {}', () => {
     const p = product('a', 100, { promoPrice: 80, promoLimit: 5, promoSold: 9 })
     expect(promoState(p, NOW)).toBeNull()
-    const bd = priceOrder({ products: [p], cart: { a: 1 }, mode: 'pickup', rates: { WM: 8, EM: 18 }, now: NOW })
+    const bd = priceOrder({ products: [p], cart: asCart({ a: 1 }), mode: 'pickup', rates: { WM: 8, EM: 18 }, now: NOW })
     expect(promoClaims(bd, [p])).toEqual({})
   })
 
@@ -324,7 +334,7 @@ describe('productFromRow', () => {
       id: 'a', name: 'a', price: 100, promo_price: 80,
       promo_limit: 5, promo_sold: 2, promo_end: '2027-01-01T00:00:00+00:00',
     })
-    const opts = { cart: { a: 10 }, mode: 'pickup' as const, rates: { WM: 8, EM: 18 } }
+    const opts = { cart: asCart({ a: 10 }), mode: 'pickup' as const, rates: { WM: 8, EM: 18 } }
     expect(priceOrder({ products: [pg], ...opts })).toEqual(priceOrder({ products: [rest], ...opts }))
   })
 })
@@ -415,7 +425,7 @@ describe('shopRates', () => {
 
 describe('tax', () => {
   const products = [{ id: 'a', name: 'Nasi Lemak', price: 10 }]
-  const cart = { a: 2 }
+  const cart = asCart({ a: 2 })
   const rates = { WM: 8, EM: 18 }
 
   it('is absent when no tax is configured — today\'s numbers, unchanged', () => {
@@ -475,7 +485,7 @@ describe('tax', () => {
 
   it('rounds tax to cents', () => {
     const bd = priceOrder({
-      products: [{ id: 'a', name: 'Kopi', price: 3.33 }], cart: { a: 1 },
+      products: [{ id: 'a', name: 'Kopi', price: 3.33 }], cart: asCart({ a: 1 }),
       mode: 'pickup', rates,
       tax: { enabled: true, rate: 6 },
     })
@@ -631,7 +641,7 @@ describe('priceOrder — express', () => {
 
   it('prices express by distance: base + rate x rounded km', () => {
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'express', rates: RATES, now: NOW,
       distance, routedMetres: 25216,
     })
@@ -645,7 +655,7 @@ describe('priceOrder — express', () => {
     // The whole point of #103: the fee rule follows the METHOD, not the shop. This shop offers
     // express (DISTANCE_ROW), but a `delivery` order is priced by the flat region rate regardless.
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'delivery', state: 'Selangor', rates: RATES, now: NOW,
       distance, routedMetres: 25216,
     })
@@ -655,7 +665,7 @@ describe('priceOrder — express', () => {
 
   it('ignores the shop region rates entirely on an express order', () => {
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'express', rates: { WM: 8, EM: 999 }, now: NOW,
       distance, routedMetres: 25216,
     })
@@ -664,7 +674,7 @@ describe('priceOrder — express', () => {
 
   it('charges NOTHING and flags the fee pending when the distance is not known yet', () => {
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'express', rates: RATES, now: NOW,
       distance, routedMetres: null,
     })
@@ -675,7 +685,7 @@ describe('priceOrder — express', () => {
   it('flags pending — never a fee — when express is priced by an unusable configuration', () => {
     const broken = shopDistance({ ...DISTANCE_ROW, origin_place_id: null })
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'express', rates: RATES, now: NOW,
       distance: broken, routedMetres: 25216,
     })
@@ -685,7 +695,7 @@ describe('priceOrder — express', () => {
 
   it('charges no shipping on a pickup at an express shop, and never flags it pending', () => {
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'pickup', rates: RATES, now: NOW, distance, routedMetres: null,
     })
     expect(r.shipping).toBe(0)
@@ -696,7 +706,7 @@ describe('priceOrder — express', () => {
     // Deliberately unchanged (#101 "What deliberately does not change"): moving the discount
     // base would shift totals at every shop that never asked for distance pricing.
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'express', rates: RATES, now: NOW,
       distance, routedMetres: 25216,
       voucher: { code: 'X', type: 'percent', value: 20 },
@@ -706,7 +716,7 @@ describe('priceOrder — express', () => {
 
   it('flags pending — never a reduced fee — for a negative routed distance', () => {
     const r = priceOrder({
-      products: [product('a', 10)], cart: { a: 1 },
+      products: [product('a', 10)], cart: asCart({ a: 1 }),
       mode: 'express', rates: RATES, now: NOW,
       distance, routedMetres: -5000,
     })
@@ -775,7 +785,7 @@ describe('firstOfferedMethod', () => {
 describe('region pricing is untouched', () => {
   it('produces the same money with and without the distance fields present', () => {
     const base = {
-      products: [product('a', 10)], cart: { a: 2 },
+      products: [product('a', 10)], cart: asCart({ a: 2 }),
       mode: 'delivery' as const, state: 'Sabah', rates: RATES, now: NOW,
       tax: { enabled: true, rate: 6 },
     }
@@ -810,7 +820,7 @@ describe('isDistancePriced', () => {
     })
     for (const mode of ['pickup', 'delivery', 'express'] as const) {
       const bd = priceOrder({
-        products, cart: { a: 1 }, now: NOW, mode,
+        products, cart: asCart({ a: 1 }), now: NOW, mode,
         state: mode === 'delivery' ? 'Selangor' : null,
         rates: RATES, distance, routedMetres: 13_900,
       })
@@ -818,5 +828,202 @@ describe('isDistancePriced', () => {
       // above are only consumed by one: the flat methods ignore them entirely.
       expect(bd.shipping === 4 + 1.5 * 13.9).toBe(isDistancePriced(mode))
     }
+  })
+})
+
+describe('promo cap across several lines of one product (ADR 0009)', () => {
+  const withMilk = (qty: number, milk: string) => ({
+    productId: 'a', qty, selections: [{ groupId: 'milk', picks: { [milk]: 1 } }],
+  })
+
+  // Safe by construction until options existed: `Record<productId, qty>` made two lines of one
+  // product impossible, so reading `promo.remaining` per entry could not double-count. Under a
+  // list it can, and it fails OPEN — the cap sells twice over with nothing on screen to say so.
+  it('spends the cap ONCE, not once per line', () => {
+    const a = product('a', 100, { promoPrice: 80, promoLimit: 3, promoSold: 0 })
+    const bd = priceOrder({
+      products: [a],
+      cart: [withMilk(3, 'oat'), withMilk(3, 'soy')],
+      mode: 'pickup', rates: RATES, now: NOW,
+    })
+    const promoUnits = bd.lines.filter(l => l.promo).reduce((s, l) => s + l.qty, 0)
+    expect(promoUnits).toBe(3)
+    expect(promoClaims(bd, [a])).toEqual({ a: 3 })
+    // Six units bought: 3 at 80, 3 at 100.
+    expect(bd.subtotal).toBe(540)
+  })
+
+  // A cap already fully spent by an earlier line leaves nothing for a later one — and must not
+  // emit an empty promo line to say so.
+  it('leaves a later line entirely at base once the cap is gone', () => {
+    const a = product('a', 100, { promoPrice: 80, promoLimit: 2, promoSold: 0 })
+    const bd = priceOrder({
+      products: [a],
+      cart: [withMilk(2, 'oat'), withMilk(4, 'soy')],
+      mode: 'pickup', rates: RATES, now: NOW,
+    })
+    expect(bd.lines.filter(l => l.promo).reduce((s, l) => s + l.qty, 0)).toBe(2)
+    expect(bd.lines.every(l => l.qty > 0)).toBe(true)
+    expect(bd.subtotal).toBe(560)
+  })
+
+describe('option deltas', () => {
+  const milk = {
+    id: 'milk', name: 'Milk', name_zh: '奶', minSelect: 1, maxSelect: 1, maxPerOption: 1,
+    active: true,
+    options: [
+      { id: 'regular', name: 'Regular', delta: 0, active: true },
+      { id: 'oat', name: 'Oat milk', name_zh: '燕麦奶', delta: 2, active: true },
+    ],
+  }
+  const latte = (extra = {}) => product('latte', 10, { optionGroups: [milk], ...extra })
+  const oat = (qty: number) => ([{
+    productId: 'latte', qty, selections: [{ groupId: 'milk', picks: { oat: 1 } }],
+  }])
+
+  it('adds the delta to the base price, per unit', () => {
+    const bd = priceOrder({
+      products: [latte()], cart: oat(2), mode: 'pickup', rates: RATES, now: NOW,
+    })
+    expect(bd.lines[0].unitPrice).toBe(12)
+    expect(bd.lines[0].lineTotal).toBe(24)
+    expect(bd.subtotal).toBe(24)
+  })
+
+  // The delta is a COST, not a discount: oat milk costs the shop the same on promo day. A promo
+  // that absorbed it would hand out every paid extra free to whoever noticed.
+  it('adds the delta on top of the promo price, not instead of it', () => {
+    const bd = priceOrder({
+      products: [latte({ promoPrice: 8, promoEnd: FUTURE })],
+      cart: oat(1), mode: 'pickup', rates: RATES, now: NOW,
+    })
+    expect(bd.lines[0].promo).toBe(true)
+    expect(bd.lines[0].unitPrice).toBe(10)
+    expect(bd.subtotal).toBe(10)
+  })
+
+  // Both halves of a split carry the same answer, so both carry the same delta.
+  it('carries the delta into both halves of a promo split', () => {
+    const bd = priceOrder({
+      products: [latte({ promoPrice: 8, promoLimit: 1, promoSold: 0 })],
+      cart: oat(3), mode: 'pickup', rates: RATES, now: NOW,
+    })
+    expect(bd.lines).toEqual([
+      expect.objectContaining({ qty: 1, unitPrice: 10, promo: true }),
+      expect.objectContaining({ qty: 2, unitPrice: 12, promo: false }),
+    ])
+    expect(bd.subtotal).toBe(34)
+  })
+
+  // A mix-and-match box: the delta is per SELECTED UNIT, so three of a +0.50 flavour is +1.50.
+  it('sums the delta across an allocation', () => {
+    const box = product('box', 30, {
+      optionGroups: [{
+        id: 'flavours', name: 'Flavours', minSelect: 6, maxSelect: 6, maxPerOption: null,
+        active: true,
+        options: [
+          { id: 'choc', name: 'Chocolate', delta: 0, active: true },
+          { id: 'red', name: 'Red velvet', delta: 0.5, active: true },
+        ],
+      }],
+    })
+    const bd = priceOrder({
+      products: [box],
+      cart: [{ productId: 'box', qty: 1, selections: [{ groupId: 'flavours', picks: { choc: 3, red: 3 } }] }],
+      mode: 'pickup', rates: RATES, now: NOW,
+    })
+    expect(bd.lines[0].unitPrice).toBe(31.5)
+  })
+
+  // The receipt has to be self-proving: a merchant who edits "oat +2" to "+3" next month must
+  // not change what last month's line means.
+  it('snapshots the names and the delta that was charged', () => {
+    const bd = priceOrder({
+      products: [latte()], cart: oat(1), mode: 'pickup', rates: RATES, now: NOW,
+    })
+    expect(bd.lines[0].selections).toEqual([
+      {
+        groupId: 'milk', groupName: 'Milk', groupName_zh: '奶',
+        optionId: 'oat', optionName: 'Oat milk', optionName_zh: '燕麦奶',
+        qty: 1, delta: 2,
+      },
+    ])
+  })
+
+  it('leaves a product with no options exactly as it was', () => {
+    const bd = priceOrder({
+      products: [product('plain', 10)], cart: asCart({ plain: 2 }),
+      mode: 'pickup', rates: RATES, now: NOW,
+    })
+    expect(bd.lines[0]).toEqual({
+      id: 'plain', name: 'plain', qty: 2, unitPrice: 10, lineTotal: 20, promo: false,
+    })
+  })
+})
+
+  // Q9/ADR 0009: which line WINS the scarce promo units must not hinge on click sequence — but
+  // `bd.lines` is also what renders the cart, so sorting the OUTPUT would reorder a customer's
+  // cart by id. Attribution is canonical; display follows the cart.
+  it('attributes the cap in canonical order, but emits lines in cart order', () => {
+    const a = product('a', 100, {
+      promoPrice: 80, promoLimit: 3, promoSold: 0,
+      optionGroups: [{
+        id: 'milk', name: 'Milk', minSelect: 1, maxSelect: 1, maxPerOption: 1, active: true,
+        options: [
+          { id: 'oat', name: 'Oat', delta: 0, active: true },
+          { id: 'soy', name: 'Soy', delta: 0, active: true },
+        ],
+      }],
+    })
+    const milkOf = (l: any) => l.selections?.[0]?.optionId
+    const promoQtyFor = (bd: any, milk: string) =>
+      bd.lines.filter((l: any) => l.promo && milkOf(l) === milk)
+        .reduce((s: number, l: any) => s + l.qty, 0)
+
+    const run = (cart: any) => priceOrder({ products: [a], cart, mode: 'pickup', rates: RATES, now: NOW })
+    const oatFirst = run([withMilk(3, 'oat'), withMilk(3, 'soy')])
+    const soyFirst = run([withMilk(3, 'soy'), withMilk(3, 'oat')])
+
+    // 'oat' sorts before 'soy', so oat takes the cap in BOTH carts.
+    expect(promoQtyFor(oatFirst, 'oat')).toBe(3)
+    expect(promoQtyFor(soyFirst, 'oat')).toBe(3)
+    expect(promoQtyFor(soyFirst, 'soy')).toBe(0)
+
+    // Display still follows the cart the customer built.
+    expect(milkOf(soyFirst.lines[0])).toBe('soy')
+    expect(milkOf(oatFirst.lines[0])).toBe('oat')
+    expect(oatFirst.subtotal).toBe(soyFirst.subtotal)
+  })
+})
+
+describe('productFromRow — option groups', () => {
+  const row = (option_groups: unknown) => ({
+    id: 'a', name: 'a', price: 10, option_groups,
+  })
+  const milk = [{
+    id: 'milk', name: 'Milk', minSelect: 1, maxSelect: 1, maxPerOption: 1, active: true,
+    options: [{ id: 'oat', name: 'Oat', delta: 2, active: true }],
+  }]
+
+  // Both drivers hand jsonb back already parsed, which is exactly WHY the groups live in a jsonb
+  // column: a `delta numeric` column would arrive as a STRING from postgres.js and a NUMBER from
+  // PostgREST, and mapping one side and not the other refuses every option order (ADR 0008).
+  it('maps the column and keeps the delta a number on both drivers', () => {
+    const p = productFromRow(row(milk))
+    expect(p.optionGroups?.[0].options[0].delta).toBe(2)
+    expect(typeof p.optionGroups?.[0].options[0].delta).toBe('number')
+  })
+
+  // A shop that predates the column, and a column that somehow arrives as text.
+  it('reads a missing column as no groups, and parses a stringified one', () => {
+    expect(productFromRow(row(undefined)).optionGroups).toEqual([])
+    expect(productFromRow(row(null)).optionGroups).toEqual([])
+    expect(productFromRow(row(JSON.stringify(milk))).optionGroups?.[0].id).toBe('milk')
+  })
+
+  // Fails to NO groups, never to a half-read one — the direction `shopTax` and `shopRates` fail in.
+  it('fails closed on an unusable value', () => {
+    expect(productFromRow(row('not json')).optionGroups).toEqual([])
+    expect(productFromRow(row(42)).optionGroups).toEqual([])
   })
 })
