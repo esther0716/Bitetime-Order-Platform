@@ -11,6 +11,7 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '../components/ui/empty'
 import type { Voucher } from '../types'
 
@@ -32,15 +33,6 @@ function generateVoucherCode(slug: string) {
   return `${voucherPrefix(slug)}-${randomChars(5)}`
 }
 
-// Self-contained select classes — pixel-match of .admin-field select in .admin-field.full context
-const SELECT_CLS =
-  'w-full py-[7px] pl-[10px] pr-[32px] border border-clay-border rounded-sm text-[13px] ' +
-  'bg-cream text-ink font-sans appearance-none bg-no-repeat cursor-pointer ' +
-  'focus:outline-none focus:border-oxblood focus:shadow-[0_0_0_2px_rgba(122,16,40,0.1)]'
-
-// Chevron SVG data-URI — matches the one in .admin-field select
-const CHEVRON_SVG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237A4F55' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`
-
 export default function VouchersManager() {
   const { t, merchant } = useSession()
   const [rows, setRows] = useState<Voucher[] | null>(null)
@@ -50,6 +42,11 @@ export default function VouchersManager() {
   const [pendingDelete, setPendingDelete] = useState<Voucher | null>(null)
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
+
+  const kindItems = [
+    { value: 'percent', label: t('Percentage (%)', '百分比 (%)') },
+    { value: 'fixed', label: t(`Fixed amount (${symbol})`, `固定金额 (${symbol})`) },
+  ]
 
   // Parity with the old `[]`-on-failure behaviour: a dashboard list that could not load shows
   // empty rather than a stuck spinner. The load-bearing could-not-ask handling lives on the
@@ -203,16 +200,20 @@ export default function VouchersManager() {
             </div>
             <div className="flex flex-col gap-[6px]">
               <Label htmlFor="vm-kind">{t('Type', '类型')}</Label>
-              <select
-                id="vm-kind"
-                className={SELECT_CLS}
-                style={{ backgroundImage: CHEVRON_SVG, backgroundPosition: 'right 10px center' }}
+              <Select
                 value={form.kind}
-                onChange={e => setForm({ ...form, kind: e.target.value })}
+                onValueChange={v => setForm({ ...form, kind: v ?? form.kind })}
+                items={kindItems}
               >
-                <option value="percent">{t('Percentage (%)', '百分比 (%)')}</option>
-                <option value="fixed">{t(`Fixed amount (${symbol})`, `固定金额 (${symbol})`)}</option>
-              </select>
+                <SelectTrigger id="vm-kind" className="w-full bg-cream text-[13px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {kindItems.map(i => (
+                    <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-[6px]">
               <Label htmlFor="vm-amount">
