@@ -13,10 +13,17 @@ const config = JSON.parse(
 describe('vercel.json', () => {
   it('rewrites unmatched routes to the EMPTY shell, not the prerendered landing page', () => {
     // dist/index.html is the prerendered marketing page (scripts/prerender.tsx) and dist/app.html
-    // is the empty SPA shell. Vercel checks the filesystem before rewrites, so `/` is served by
-    // index.html and never reaches this rule; everything else does. Point it at index.html and
-    // every storefront is served the marketing page's markup as its initial content.
-    expect(config.rewrites).toEqual([{ source: '/(.*)', destination: '/app.html' }])
+    // is the empty SPA shell. `/` is served by index.html as the directory index and never reaches
+    // this rule; everything without a rule of its own does. Point it at index.html and every
+    // storefront is served the marketing page's markup as its initial content.
+    //
+    // The rules ABOVE it are the other prerendered routes, which each need one — Vercel does not
+    // try `<path>.html` for an extensionless request unless `cleanUrls` is on, so without a rule
+    // this catch-all serves /pricing the shell. That pairing is asserted against routeMeta.ts in
+    // vercelRewrites.test.ts; here we only pin the last rule and its destination.
+    const rewrites = config.rewrites as { source: string; destination: string }[]
+    expect(rewrites[rewrites.length - 1]).toEqual({ source: '/(.*)', destination: '/app.html' })
+    expect(rewrites.filter(r => r.destination === '/app.html')).toHaveLength(1)
   })
 
   it('caches the hashed assets forever, and does not cache the HTML that names them', () => {
