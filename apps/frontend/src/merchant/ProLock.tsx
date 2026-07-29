@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import { openBillingPortal } from '../store'
 import { useUpgradeNav } from './UpgradeNav'
+import { billingErrorMessage } from './billingErrors'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
@@ -62,7 +63,9 @@ export function UpgradeButton({ className }: { className?: string }) {
     // Stripe customer — a comped or pre-checkout basic shop. Swallowing that (as
     // BillingBanner can afford to, since its audience always has a subscription) would
     // leave the one button on this panel doing nothing at all, with no word why.
-    toast.error(r.error.message || t('Could not open the billing portal', '无法打开账单门户'))
+    toast.error(billingErrorMessage(r.error.code, t)
+      || r.error.message
+      || t('Could not open the billing portal', '无法打开账单门户'))
     setBusy(false)
   }
   // size="sm" deliberately: the default size is `w-full` (it is the auth/save button geometry),
