@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Lock, MoreHorizontal, Package } from 'lucide-react'
+import { MoreHorizontal, Package } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
 import { lookupProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl } from '../store'
@@ -8,6 +8,7 @@ import { coerceQuantity, formatUnit } from '../productUnit'
 import { formatMoney, currencyDef } from '../currency'
 import { promoEndFromDate, promoEndToDate } from '../promoEnd'
 import { SkeletonText } from '../components/Loaders'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -20,8 +21,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { DataTable, SortableHeader } from '../components/ui/data-table'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../components/ui/empty'
 import ImagePicker from './ProductImages'
-import { ProBadge, UpgradeLink } from './ProLock'
+import OptionGroupsEditor from './OptionGroupsEditor'
+import { UpgradeLink } from './ProLock'
 import { useProAccess, isRequiresPro } from '../plan'
+import { optionGroupsFromRow } from '@bitetime/shared'
+import type { OptionGroup } from '@bitetime/shared'
 
 // Canonical unit options (value stored as-is; label is bilingual).
 const UNITS: { value: string; en: string; zh: string }[] = [
@@ -134,7 +138,7 @@ const columns: ColumnDef<any>[] = [
 ]
 
 export default function ProductsManager() {
-  const { t, merchant } = useSession()
+  const { t, lang, merchant } = useSession()
   const [rows, setRows] = useState<any[] | null>(null)
   const [form, setForm] = useState<any>(BLANK)
   const [busy, setBusy] = useState(false)
@@ -146,6 +150,8 @@ export default function ProductsManager() {
   const [draftId, setDraftId] = useState(() => crypto.randomUUID())
   // Photos being edited in the add/edit dialog (add: new draft; edit: the row's).
   const [images, setImages] = useState<string[]>([])
+  // Saved by the product's own upsert, not by a second write — see ADR 0008.
+  const [optionGroups, setOptionGroups] = useState<OptionGroup[]>([])
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
   // Promos are Pro-only (#110); ordinary product editing is not. This flag locks the promo
@@ -159,6 +165,9 @@ export default function ProductsManager() {
   // merchant's laptop clock being a few minutes off only makes the hint a few minutes early or late,
   // never a wrong price. `promo_end` is an absolute instant already (see promoEnd.ts).
   const [promoEnded, setPromoEnded] = useState(false)
+  // The row a Delete action is asking about, held here rather than in the column def so the
+  // columns stay stable (see ProductTableMeta). null → no confirm open.
+  const [pendingDelete, setPendingDelete] = useState<any | null>(null)
 
   async function load() { const r = await lookupProducts(merchant!.id); setRows(r.ok ? r.data : []) }
   useEffect(() => { lookupProducts(merchant!.id).then(r => setRows(r.ok ? r.data : [])) }, [merchant!.id])
@@ -166,7 +175,7 @@ export default function ProductsManager() {
   function openAdd() {
     setEditingProduct(null)
     setForm(BLANK)
-    setImages([]); setDraftId(crypto.randomUUID()); setMsg(''); setPromoEnded(false)
+    setImages([]); setOptionGroups([]); setDraftId(crypto.randomUUID()); setMsg(''); setPromoEnded(false)
     setFormOpen(true)
   }
   function openEdit(p: any) {
@@ -180,6 +189,7 @@ export default function ProductsManager() {
       promo_end: promoEndToDate(p.promo_end),
     })
     setImages(p.image_urls ?? [])
+    setOptionGroups(optionGroupsFromRow(p.option_groups))
     setPromoEnded(!!p.promo_end && new Date(p.promo_end).getTime() < Date.now())
     setFormOpen(true)
   }
@@ -260,6 +270,7 @@ export default function ProductsManager() {
       ? await upsertProduct({
           ...editingProduct, ...form, ...promoWrite(editingProduct),
           image_urls: images,
+          option_groups: optionGroups,
           price: Number(form.price) || 0,
           unit_quantity: coerceQuantity(form.unit_quantity),
         })
@@ -268,12 +279,13 @@ export default function ProductsManager() {
           ...promoWrite(null),
           id: draftId,
           image_urls: images,
+          option_groups: optionGroups,
           price: Number(form.price) || 0,
           unit_quantity: coerceQuantity(form.unit_quantity),
           merchant_id: merchant!.id,
         })
     if (r.ok) {
-      setFormOpen(false); setForm(BLANK); setEditingProduct(null); setImages([]); setDraftId(crypto.randomUUID())
+      setFormOpen(false); setForm(BLANK); setEditingProduct(null); setImages([]); setOptionGroups([]); setDraftId(crypto.randomUUID())
       await load()
       toast.success(t('Product saved', '产品已保存'))
     } else {
@@ -288,8 +300,14 @@ export default function ProductsManager() {
       // The promo fields are locked for a basic shop, so this is the fallback for a `plan` that
       // moved under a long-open tab — an upgrade prompt, not the bare error code (#110).
       if (isRequiresPro(err)) {
-        setMsg(t('Putting an item on sale is a Pro feature. Upgrade to Pro to set a promo price.',
-          '限时优惠是 Pro 功能。升级到 Pro 即可设置优惠价。'))
+        // Both promos and options are Pro and share this endpoint, so name the one they were
+        // actually reaching for — being told about a "promo price" while adding flavours reads
+        // as the wrong error, which is worse than a vague one.
+        setMsg(optionGroups.length > 0
+          ? t('Menu options are a Pro feature. Upgrade to Pro to let customers choose sizes, flavours or add-ons.',
+              '商品选项是 Pro 功能。升级到 Pro 即可让顾客选择规格、口味或加料。')
+          : t('Putting an item on sale is a Pro feature. Upgrade to Pro to set a promo price.',
+              '限时优惠是 Pro 功能。升级到 Pro 即可设置优惠价。'))
       } else if (err.message.includes('products_promo_below_price')) {
         setMsg(t('The promo price is no longer below the normal price. Lower or clear the promo price first.',
           '优惠价已不低于原价。请先降低或清除优惠价。'))
@@ -306,6 +324,10 @@ export default function ProductsManager() {
     const r = await upsertProduct({ ...p, image_urls })
     if (r.ok) await load()
   }
+  // The name to quote back in the delete confirm, in the language being read.
+  function productLabel(p: any) {
+    return (lang === 'zh' && p.name_zh) ? p.name_zh : p.name
+  }
   async function remove(p: any) {
     const r = await deleteProduct(p.id, merchant!.id)
     if (!r.ok) { toast.error(r.error.message || t('Could not delete product', '无法删除产品')); return }
@@ -316,7 +338,7 @@ export default function ProductsManager() {
   const meta: ProductTableMeta = {
     t, currency,
     onEdit: openEdit,
-    onRemove: remove,
+    onRemove: setPendingDelete,
   }
 
   if (!rows) return (
@@ -369,7 +391,7 @@ export default function ProductsManager() {
           portals its menu to <body>, so an item click would otherwise read as an
           outside-press and close the dialog. Close via the X, Save, or Escape. */}
       <Dialog open={formOpen} onOpenChange={setFormOpen} disablePointerDismissal>
-        <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingProduct ? t('Edit product', '编辑产品') : t('Add a product', '添加产品')}</DialogTitle>
           </DialogHeader>
@@ -456,21 +478,14 @@ export default function ProductsManager() {
                   </Select>
                 </div>
               </div>
-              {/* Promo pricing is Pro-only (#110). The fields stay on screen for a basic shop —
-                  visibly disabled behind a Pro marker — because the rest of this form is the
-                  ordinary product editing every shop keeps. `display: contents` leaves a Pro
-                  shop's layout exactly as it was; only the locked state adds a wrapper. */}
-              <div className={pro ? 'contents' : 'flex flex-col gap-2 rounded-xl border-[1.5px] border-dashed border-clay-border p-3'}>
-                {!pro && (
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="flex items-center gap-2 text-[13px] font-medium text-oxblood">
-                      <Lock size={14} strokeWidth={1.75} aria-hidden />
-                      {t('Put this item on sale', '为此商品设置优惠')}
-                      <ProBadge />
-                    </span>
-                    <UpgradeLink className="px-3 py-[6px] text-[12px]" />
-                  </div>
-                )}
+              {/* Promo pricing is Pro-only (#110), and a basic shop does not see these fields at
+                  all. This form is the ONE place a Pro lock would have appeared twice — promo and
+                  options — and two disabled panels in a single dialog buried the ordinary product
+                  editing every shop keeps. What is not shown here is still offered: the footer
+                  names both features once, so there is still something to sell against.
+                  `display: contents` keeps a Pro shop's layout exactly as it always was. */}
+              {pro && (
+              <div className="contents">
                 <div className="flex flex-col gap-[6px]">
                   <Label htmlFor="pm-promo-price">{t('Promo price', '优惠价')}</Label>
                   <Input
@@ -478,7 +493,6 @@ export default function ProductsManager() {
                     variant="compact"
                     type="number"
                     step="0.01"
-                    disabled={!pro}
                     value={form.promo_price}
                     onChange={e => setForm({ ...form, promo_price: e.target.value })}
                     placeholder="0.00"
@@ -493,7 +507,6 @@ export default function ProductsManager() {
                     type="number"
                     step="1"
                     min="1"
-                    disabled={!pro}
                     value={form.promo_limit}
                     onChange={e => setForm({ ...form, promo_limit: e.target.value })}
                     placeholder={t('No limit', '不限')}
@@ -508,7 +521,6 @@ export default function ProductsManager() {
                     id="pm-promo-end"
                     variant="compact"
                     type="date"
-                    disabled={!pro}
                     value={form.promo_end}
                     onChange={e => setForm({ ...form, promo_end: e.target.value })}
                   />
@@ -517,6 +529,7 @@ export default function ProductsManager() {
                   </span>
                 </div>
               </div>
+              )}
               {editingProduct && editingProduct.promo_price !== null && editingProduct.promo_price !== undefined && (() => {
                 // M-1: `promo_sold` can outlive a LOWERED `promo_limit` — sell 8 against a cap of
                 // 10, then drop the cap to 3, and the row is `promo_sold: 8, promo_limit: 3`.
@@ -566,6 +579,29 @@ export default function ProductsManager() {
                   t={t}
                 />
               </div>
+              {pro && (
+              <div className="flex flex-col gap-[6px] min-w-0">
+                <Label>{t('Options (optional)', '选项（可选）')}</Label>
+                <OptionGroupsEditor
+                  // Keyed on the product, so each one gets its own editor. `open` is seeded from
+                  // `value.length` on MOUNT only, so without this a new product inherited the
+                  // expanded editor of whichever product was edited before it.
+                  key={editingProduct?.id ?? draftId}
+                  value={optionGroups}
+                  onChange={setOptionGroups}
+                  currency={currency}
+                  t={t}
+                  copyFrom={rows
+                    .filter(p => p.id !== editingProduct?.id
+                      && optionGroupsFromRow(p.option_groups).length > 0)
+                    .map(p => ({
+                      id: p.id,
+                      name: (lang === 'zh' && p.name_zh) ? p.name_zh : p.name,
+                      groups: optionGroupsFromRow(p.option_groups),
+                    }))}
+                />
+              </div>
+              )}
               <div className="flex items-center justify-between gap-3 pt-1">
                 <div className="flex flex-col">
                   <Label htmlFor="pm-active">{t('Visible in storefront', '在店面显示')}</Label>
@@ -585,12 +621,41 @@ export default function ProductsManager() {
                 </button>
               </div>
             </div>
+            {/* The form's ONE upgrade offer. Each locked section says what it is; repeating the
+                CTA beside every one of them is the same offer twice in a single dialog. Here it
+                sits with the primary action, which is where a merchant looks when they try to
+                save and find out something was locked. */}
+            {!pro && (
+              <div className="mt-4 flex items-center justify-between gap-3 flex-wrap rounded-lg bg-surface-sunken px-3 py-2.5">
+                <span className="text-[12px] text-rose-muted">
+                  {t('Sale prices and customer options are Pro features.',
+                     '优惠价与商品选项为 Pro 功能。')}
+                </span>
+                <UpgradeLink className="px-3 py-[6px] text-[12px]" />
+              </div>
+            )}
             <Button type="submit" size="md" className="mt-4 w-full" disabled={busy}>
               {busy ? t('Saving…', '保存中…') : editingProduct ? t('Save changes', '保存更改') : t('Add product', '添加产品')}
             </Button>
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={o => { if (!o) setPendingDelete(null) }}
+        title={t('Delete this product?', '删除此产品？')}
+        body={
+          <p>
+            {t(
+              `“${pendingDelete ? productLabel(pendingDelete) : ''}” disappears from your storefront and cannot be brought back. Orders already placed keep their record of it.`,
+              `“${pendingDelete ? productLabel(pendingDelete) : ''}” 将从店面消失且无法恢复。已下的订单仍保留该记录。`,
+            )}
+          </p>
+        }
+        confirmLabel={t('Delete product', '删除产品')}
+        onConfirm={async () => { if (pendingDelete) await remove(pendingDelete) }}
+      />
     </div>
   )
 }

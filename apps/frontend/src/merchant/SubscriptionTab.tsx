@@ -11,6 +11,7 @@ import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
 import { fmtDate } from '../merchantDate'
 import { subscriptionTabState, type SubscriptionSnapshot } from './subscriptionTabState'
+import { billingErrorMessage } from './billingErrors'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import {
@@ -60,7 +61,9 @@ function useBillingPortal() {
     const r = await openBillingPortal()
     if (r.ok) window.location.assign(r.data)
     else {
-      toast.error(r.error.message || t('Could not open the billing portal', '无法打开账单门户'))
+      toast.error(billingErrorMessage(r.error.code, t)
+        || r.error.message
+        || t('Could not open the billing portal', '无法打开账单门户'))
       setBusy(false)
     }
   }
@@ -160,10 +163,9 @@ function ConfirmAction({
       return
     }
     toast.error(
-      r.error.code === 'no_live_subscription'
-        ? t('This shop no longer has a subscription to change. Reload the page.',
-            '此店铺已无可更改的订阅。请刷新页面。')
-        : r.error.message || t('That did not work. Please try again.', '操作失败，请重试。'),
+      billingErrorMessage(r.error.code, t)
+        || r.error.message
+        || t('That did not work. Please try again.', '操作失败，请重试。'),
     )
   }
 
@@ -281,6 +283,30 @@ function CancelBody({ renewsAt }: { renewsAt: string | null }) {
 }
 
 /**
+ * What stands in for every billing control while a superadmin is impersonating a shop.
+ *
+ * Not a disabled button: the action is not temporarily unavailable, it belongs to someone else,
+ * and a greyed-out "Cancel subscription" invites a support session spent wondering why it will
+ * not click. Every one of these routes (`/api/billing/*` and `/api/checkout`) resolves its shop
+ * from the caller's OWN `owner_id` with no superadmin bypass — see the note on
+ * `requireOwnMerchant` in the backend's mw.ts, where that asymmetry is deliberate. A superadmin
+ * owns no shop, so the honest answer is that this is the owner's to do.
+ *
+ * Rendered ONCE per card, never twice on the same screen: the plan card and the upgrade card are
+ * separate surfaces, but the Summary grid sits directly under the plan card and simply drops its
+ * portal cells rather than repeating this sentence a few pixels below itself.
+ */
+function OwnerOnlyNote() {
+  const { t } = useSession()
+  return (
+    <p className="text-[12px] text-text-tertiary mt-3">
+      {t('You are viewing this shop as an admin. Billing actions can only be taken by the shop owner.',
+        '您正以管理员身份查看此店铺。账单操作仅限店主本人执行。')}
+    </p>
+  )
+}
+
+/**
  * The trial callout — the one place a merchant sees "you are on a clock" without having to read
  * the plan sentence. A tinted card, not a rose one, so it reads as information rather than the
  * warning states the BillingBanner owns. The bar drains: `progress` is the fraction of the trial
@@ -324,10 +350,11 @@ function TrialBanner({ daysLeft, trialEndsAt, progress }: {
  * portal: the last4 and the invoices live there, and duplicating them here would mean a second
  * source to keep honest. Only rendered for a shop with a live subscription (`canManage`).
  */
-function SummaryGrid({ nextPayment, renewalLabel, renewalValue }: {
+function SummaryGrid({ nextPayment, renewalLabel, renewalValue, readOnly }: {
   nextPayment: string | null
   renewalLabel: string
   renewalValue: string
+  readOnly: boolean
 }) {
   const { t } = useSession()
   const { busy, toPortal } = useBillingPortal()
@@ -348,25 +375,39 @@ function SummaryGrid({ nextPayment, renewalLabel, renewalValue }: {
           <p className={label}>{renewalLabel}</p>
           <p className={value}>{renewalValue}</p>
         </div>
-        <div>
-          <p className={label}>{t('Payment method', '付款方式')}</p>
-          <button type="button" className={portalLink} onClick={toPortal} disabled={busy}>
-            {t('Manage in portal', '在门户中管理')}
-          </button>
-        </div>
-        <div>
-          <p className={label}>{t('Payment history', '付款记录')}</p>
-          <button type="button" className={portalLink} onClick={toPortal} disabled={busy}>
-            {t('Billing portal', '账单门户')}
-          </button>
-        </div>
+        {/* Both cells are nothing but a door to the portal, so an admin who cannot open it is
+            better off not seeing them at all — a "Payment method" label above a dead link says
+            less than nothing. The plan card immediately above has already said why. */}
+        {!readOnly && (
+          <>
+            <div>
+              <p className={label}>{t('Payment method', '付款方式')}</p>
+              <button type="button" className={portalLink} onClick={toPortal} disabled={busy}>
+                {t('Manage in portal', '在门户中管理')}
+              </button>
+            </div>
+            <div>
+              <p className={label}>{t('Payment history', '付款记录')}</p>
+              <button type="button" className={portalLink} onClick={toPortal} disabled={busy}>
+                {t('Billing portal', '账单门户')}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
 }
 
 export default function SubscriptionTab() {
-  const { t, merchant } = useSession()
+  // `impersonating` is what makes this tab read-only. Everything ABOVE the buttons keeps working
+  // while it is true — the card is fetched by explicit merchant id through `requireMerchantOwns`,
+  // which superadmins do pass — and that split is exactly the trap: a fully populated plan card
+  // implies the buttons under it belong to the same shop, and they do not. They post to routes
+  // with no id in them, which resolve the caller's own shop and answer 404 to a superadmin who
+  // owns none. Read `readOnly` as "these controls are not this viewer's to use", not "loading".
+  const { t, merchant, impersonating } = useSession()
+  const readOnly = impersonating
   const { pricing } = usePlatformPricing()
   const [billing, setBilling] = useState<SubscriptionSnapshot | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -468,7 +509,9 @@ export default function SubscriptionTab() {
         {/* Gated on canManage, NOT on canUpgrade: a Pro shop cannot upgrade but must still be
             able to change its card and read invoices — a sentence promising the billing portal
             with no way to reach it is the same dead end in a different costume. */}
-        {state.canManage && (
+        {state.canManage && readOnly && <OwnerOnlyNote />}
+
+        {state.canManage && !readOnly && (
           <>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <PortalButton label={t('Manage subscription', '管理订阅')} />
@@ -546,6 +589,7 @@ export default function SubscriptionTab() {
               ? (endsAt ? fmtDate(endsAt) : t('End of current period', '本周期结束时'))
               : (renewsAt ? fmtDate(renewsAt) : t('Active', '有效'))
           }
+          readOnly={readOnly}
         />
       )}
 
@@ -576,7 +620,13 @@ export default function SubscriptionTab() {
               comes with a mid-period increase. Without one (an active shop approved without a
               trial, or one whose subscription lapsed): Checkout sells a new one, which the
               `checkout.session.completed` reconciliation then turns into real Pro access. */}
-          {state.canManage ? (
+          {/* The pitch above stays — an admin has every reason to read what Pro costs and adds.
+              Only the act of buying is withheld, and BOTH branches have to be: `/api/checkout`
+              is guarded by `requireOwnMerchant` exactly as the portal is, so the no-subscription
+              path 404s for an admin just as the portal path does. */}
+          {readOnly ? (
+            <OwnerOnlyNote />
+          ) : state.canManage ? (
             <>
               <PortalButton label={t('Upgrade to Pro', '升级到 Pro')} />
               <p className="text-[12px] text-text-tertiary mt-3">

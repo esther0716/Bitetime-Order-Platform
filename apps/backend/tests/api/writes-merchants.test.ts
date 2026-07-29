@@ -97,6 +97,55 @@ describe('POST /api/merchants', () => {
     const res = await post('/api/merchants', {})
     expect(res.status).toBe(401)
   })
+
+  // #161. Read back with the service client rather than trusting the response body: the point
+  // is that the column the admin Overview groups on actually holds the industry.
+  it('stores the business nature the signup form collected', async () => {
+    await resetMerchant('nature-shop')
+    const client = await makeUser('create-nature@example.com', 'password123')
+    const { token } = await tokenOf(client)
+
+    const res = await post('/api/merchants', { name: 'Nature Shop', businessNature: 'bakery' }, token)
+
+    expect(res.status).toBe(200)
+    const m = (await res.json()) as MerchantRow
+    const { data: row } = await serviceClient()
+      .from('merchants').select('business_nature').eq('id', m.id).single()
+    expect(row!.business_nature).toBe('bakery')
+
+    await serviceClient().from('merchants').delete().eq('id', m.id)
+  })
+
+  // Shops that predate the field are a real state, so an absent one creates the shop with a
+  // NULL industry rather than refusing it.
+  it('creates the shop with no industry when none is sent', async () => {
+    await resetMerchant('natureless-shop')
+    const client = await makeUser('create-natureless@example.com', 'password123')
+    const { token } = await tokenOf(client)
+
+    const res = await post('/api/merchants', { name: 'Natureless Shop' }, token)
+
+    expect(res.status).toBe(200)
+    const m = (await res.json()) as MerchantRow
+    const { data: row } = await serviceClient()
+      .from('merchants').select('business_nature').eq('id', m.id).single()
+    expect(row!.business_nature).toBeNull()
+
+    await serviceClient().from('merchants').delete().eq('id', m.id)
+  })
+
+  it('400s on an unknown business nature rather than creating a shop without one', async () => {
+    await resetMerchant('bad-nature-shop')
+    const client = await makeUser('create-bad-nature@example.com', 'password123')
+    const { token } = await tokenOf(client)
+
+    const res = await post('/api/merchants', { name: 'Bad Nature Shop', businessNature: 'cake shop' }, token)
+
+    expect(res.status).toBe(400)
+    const { data: rows } = await serviceClient()
+      .from('merchants').select('id').eq('slug', 'bad-nature-shop')
+    expect(rows ?? []).toEqual([])
+  })
 })
 
 describe('PATCH /api/merchants/:id (config)', () => {
@@ -138,6 +187,56 @@ describe('PATCH /api/merchants/:id (config)', () => {
       .from('merchants').select('status, owner_id').eq('id', id).single()
     expect(row!.status).toBe('suspended')
     expect(row!.owner_id).toBe(userId)
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  // #161. A shop that signed up before the field existed fills its own industry in from the
+  // Shop tab; an unknown code is refused rather than dropped, so the merchant is told.
+  it('updates the business nature, and refuses an unknown one', async () => {
+    await resetMerchant('cfg-nature-shop')
+    const client = await makeUser('cfg-nature@example.com', 'password123')
+    const { token, userId } = await tokenOf(client)
+    const id = await seedMerchant({ slug: 'cfg-nature-shop', owner_id: userId })
+
+    const ok = await patch(`/api/merchants/${id}`, { business_nature: 'florist' }, token)
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as { business_nature: string }).business_nature).toBe('florist')
+
+    const bad = await patch(`/api/merchants/${id}`, { business_nature: 'flower stall' }, token)
+    expect(bad.status).toBe(400)
+
+    const { data: row } = await serviceClient()
+      .from('merchants').select('business_nature').eq('id', id).single()
+    expect(row!.business_nature).toBe('florist')
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  // #156. The QR is a Storage path, and the write goes through the service role — no policy
+  // runs on it, so this endpoint is the only thing keeping a shop's row pointed at its own
+  // object. A stranger's path is refused, and the stored value is left alone.
+  it('saves a payment QR path in the shop\'s own folder, and refuses another shop\'s', async () => {
+    await resetMerchant('cfg-qr-shop')
+    const client = await makeUser('cfg-qr@example.com', 'password123')
+    const { token, userId } = await tokenOf(client)
+    const id = await seedMerchant({ slug: 'cfg-qr-shop', owner_id: userId })
+
+    const ok = await patch(`/api/merchants/${id}`, { payment_qr: `${id}/duitnow.png` }, token)
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as { payment_qr: string }).payment_qr).toBe(`${id}/duitnow.png`)
+
+    const stranger = '00000000-0000-0000-0000-000000000000'
+    const bad = await patch(`/api/merchants/${id}`, { payment_qr: `${stranger}/duitnow.png` }, token)
+    expect(bad.status).toBe(400)
+
+    // Clearing is legal, and is the only way back to no QR.
+    const cleared = await patch(`/api/merchants/${id}`, { payment_qr: '' }, token)
+    expect(cleared.status).toBe(200)
+
+    const { data: row } = await serviceClient()
+      .from('merchants').select('payment_qr').eq('id', id).single()
+    expect(row!.payment_qr).toBeNull()
 
     await serviceClient().from('merchants').delete().eq('id', id)
   })

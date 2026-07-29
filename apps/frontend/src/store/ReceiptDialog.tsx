@@ -6,6 +6,7 @@ import { formatAddress } from '../address'
 import { formatOrderDateTime, formatCalendarDate } from '../orderDate'
 import { receiptSubtotal, formatTaxRate } from '../receipt'
 import MoneyLine from './MoneyLine'
+import { ItemSelections } from '../ItemSelections'
 import { fulfilmentLabel, feeLineLabel } from '../fulfilmentLabel'
 import type { Merchant, Order, OrderItem } from '../types'
 
@@ -94,17 +95,20 @@ export default function ReceiptDialog({ order, merchant, itemName, onClose }: Re
               <MoneyLine
                 key={`${item.id ?? item.name}-${n}`}
                 label={
-                  <span className="inline-flex items-center gap-1.5 min-w-0">
-                    <span className="min-w-0">{itemName(item)} × {item.qty}</span>
-                    {/* Rows written before the promo split lack the key; undefined is falsy. */}
-                    {item.promo && (
-                      <span
-                        data-receipt-promo
-                        className="shrink-0 px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium"
-                      >
-                        {t('Promo', '优惠')}
-                      </span>
-                    )}
+                  <span className="inline-flex flex-col gap-0.5 min-w-0">
+                    <span className="inline-flex items-center gap-1.5 min-w-0">
+                      <span className="min-w-0">{itemName(item)} × {item.qty}</span>
+                      {/* Rows written before the promo split lack the key; undefined is falsy. */}
+                      {item.promo && (
+                        <span
+                          data-receipt-promo
+                          className="shrink-0 px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium"
+                        >
+                          {t('Promo', '优惠')}
+                        </span>
+                      )}
+                    </span>
+                    <ItemSelections item={item} />
                   </span>
                 }
                 value={money((item.price ?? 0) * (item.qty ?? 0))}

@@ -1,6 +1,6 @@
 import type postgres from 'postgres'
-import { priceOrder, voucherFromRow, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
-import type { PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal } from '@bitetime/shared'
+import { priceOrder, validateSelections, voucherFromRow, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import type { CartLine, PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
 import { phoneKey } from './phone.js'
 import { COUNTER_START, formatOrderNumber, orderDay } from './orderNumber.js'
@@ -52,7 +52,7 @@ export interface PlaceOrderInput {
   mode: 'pickup' | 'delivery' | 'express'
   address?: unknown
   /** What they want, not what it costs. `{ [productId]: qty }`. */
-  cart: Record<string, number>
+  cart: CartLine[]
   /**
    * The total the customer SAW. A confirmation to check, not an input to trust: the order
    * commits at the price this function derives, and only when the two agree.
@@ -202,6 +202,11 @@ export async function placeOrder(
     // through.
     const products = await cartProducts(tx, input.merchantId, input.cart)
 
+    // The answers are checked against the SHOP'S OWN groups, here, inside the lock — the body
+    // says which options, and whether those are still legal options is never its to assert.
+    // Without this an option the merchant switched off at 3pm would still price and still sell.
+    assertSelectionsHold(products, input.cart)
+
     const bd = priceOrder({
       products,
       cart: input.cart,
@@ -261,7 +266,15 @@ export async function placeOrder(
     // anyone looking at the stored order later, not just at checkout. `orders.items` is a jsonb
     // blob with no schema, so every consumer must treat a MISSING key (rows written before this
     // field existed) as `false`, never as a crash.
-    const items = bd.lines.map(l => ({ id: l.id, name: l.name, qty: l.qty, price: l.unitPrice, promo: l.promo }))
+    // `selections` is spread in only when the line has any, so an order at a shop with no menu
+    // options stores exactly the item shape it always did. It is a SNAPSHOT — names in both
+    // languages and the delta CHARGED — never a reference: a merchant tidying their menu next
+    // month must not rewrite this month's receipts, and the groups live in a jsonb column, so no
+    // foreign key would stop them.
+    const items = bd.lines.map(l => ({
+      id: l.id, name: l.name, qty: l.qty, price: l.unitPrice, promo: l.promo,
+      ...(l.selections?.length ? { selections: l.selections } : {}),
+    }))
     const discount = bd.discount > 0 ? bd.discount : null
 
     // The snapshot. `delivery_distance_km` LABELS the receipt line; base/rate exist because
@@ -502,9 +515,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 async function cartProducts(
   tx: postgres.TransactionSql,
   merchantId: string,
-  cart: Record<string, number>,
+  cart: CartLine[],
 ): Promise<PricedProduct[]> {
-  const ids = Object.keys(cart).filter(id => (cart[id] ?? 0) > 0)
+  // DISTINCT product ids: one product can hold several lines now that its options can differ, and
+  // `= any(...::uuid[])` with a repeated id returns ONE row, which would then fail the
+  // "every requested id came back" count below and refuse a perfectly good cart.
+  const ids = [...new Set(cart.filter(l => (l.qty ?? 0) > 0).map(l => l.productId))]
   // Unreachable over HTTP — app.ts's isCart already requires at least one positive quantity —
   // and kept as the module's own guard, not as a tested path. An empty cart must never reach
   // `= any('{}'::uuid[])`, which matches nothing and would commit an order for no products.
@@ -512,7 +528,7 @@ async function cartProducts(
   if (!ids.every(id => UUID.test(id))) throw new OrderError('product_unavailable')
 
   const rows = await tx<Record<string, unknown>[]>`
-    select id, name, price, promo_price, promo_limit, promo_end, promo_sold
+    select id, name, price, promo_price, promo_limit, promo_end, promo_sold, option_groups
     from products
     where merchant_id = ${merchantId} and id = any(${ids}::uuid[]) and active
     order by id
@@ -635,4 +651,32 @@ async function claimVoucher(
     where id = ${voucher.id}
   `
   return voucherFromRow(voucher as unknown as Record<string, unknown>)
+}
+
+/**
+ * Every line's answer must still be a legal answer to its product's questions.
+ *
+ * The split between the two refusals is about what a CORRECT client could produce. A menu that
+ * moved under a customer mid-checkout is ordinary and recoverable — an option switched off, a
+ * group deleted, a `minSelect` the merchant raised — so those are `option_unavailable`, whose
+ * recovery repairs the line and lets the customer choose again. A fractional quantity or two
+ * answers to one group is something no correct client sends, so that is `invalid_body`, the same
+ * answer the cart caps give.
+ *
+ * Getting this backwards costs a real checkout: `invalid_body` offers the customer nothing to do,
+ * and a refusal with no recovery on a menu that simply changed is a dead order.
+ */
+function assertSelectionsHold(products: PricedProduct[], cart: CartLine[]): void {
+  for (const line of cart) {
+    const product = products.find(p => p.id === line.productId)
+    // Unreachable — `cartProducts` refuses a cart holding an id it could not load — and guarded
+    // rather than assumed, because skipping here would price an unchecked answer.
+    if (!product) throw new OrderError('product_unavailable')
+
+    const bad = validateSelections(product.optionGroups ?? [], line.selections)
+    if (!bad) continue
+    throw new OrderError(
+      bad === 'invalid_pick' || bad === 'duplicate_group' ? 'invalid_body' : 'option_unavailable',
+    )
+  }
 }

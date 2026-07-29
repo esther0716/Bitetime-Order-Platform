@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 // not dismissible: trial expiry and failed payments are the two states a
 // merchant must not be able to hide from themselves.
 export default function BillingBanner() {
-  const { t, lang, merchant } = useSession()
+  const { t, lang, merchant, impersonating } = useSession()
   const { goToSubscription } = useUpgradeNav()
   const [billing, setBilling] = useState<BillingSnapshot | null>(null)
   const [busy, setBusy] = useState(false)
@@ -77,25 +77,32 @@ export default function BillingBanner() {
                   `免费试用将在 ${countdown} 后结束。请添加付款方式以保持店铺营业。`)
               : t(`Free trial — ${countdown} left.`, `免费试用——剩余 ${countdown}。`)}
       </span>
-      <Button
-        size="none"
-        variant="outline"
-        className="py-[5px] px-3 rounded-pill text-[12px] whitespace-nowrap bg-surface-raised hover:bg-oxblood-tint hover:text-oxblood hover:border-oxblood"
-        disabled={busy}
-        // An ending subscription is the one state Stripe's portal cannot resolve: the way back
-        // is undoing the cancellation, and that button lives on the Subscription tab.
-        onClick={state.kind === 'ending' ? goToSubscription : toPortal}
-      >
-        {busy
-          ? t('Opening…', '打开中…')
-          : state.kind === 'ending'
-            ? t('Keep my subscription', '继续订阅')
-            : state.kind === 'past-due'
-              ? t('Update card', '更新银行卡')
-              : carded
-                ? t('Manage billing', '管理账单')
-                : t('Add payment method', '添加付款方式')}
-      </Button>
+      {/* The WARNING is for anyone standing in this dashboard — an admin looking at a shop whose
+          trial is running out should see that as plainly as its owner does. The ACTION is not:
+          `/api/billing/portal` resolves the caller's own shop and 404s for a superadmin, so the
+          button would be a dead end dressed as a fix. The `ending` branch is the exception and
+          stays — it only navigates to the Subscription tab, which any admin can reach. */}
+      {(!impersonating || state.kind === 'ending') && (
+        <Button
+          size="none"
+          variant="outline"
+          className="py-[5px] px-3 rounded-pill text-[12px] whitespace-nowrap bg-surface-raised hover:bg-oxblood-tint hover:text-oxblood hover:border-oxblood"
+          disabled={busy}
+          // An ending subscription is the one state Stripe's portal cannot resolve: the way back
+          // is undoing the cancellation, and that button lives on the Subscription tab.
+          onClick={state.kind === 'ending' ? goToSubscription : toPortal}
+        >
+          {busy
+            ? t('Opening…', '打开中…')
+            : state.kind === 'ending'
+              ? t('Keep my subscription', '继续订阅')
+              : state.kind === 'past-due'
+                ? t('Update card', '更新银行卡')
+                : carded
+                  ? t('Manage billing', '管理账单')
+                  : t('Add payment method', '添加付款方式')}
+        </Button>
+      )}
     </div>
   )
 }
