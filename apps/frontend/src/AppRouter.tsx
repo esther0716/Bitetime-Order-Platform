@@ -7,6 +7,7 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { MerchantProvider, useMerchant } from './MerchantContext'
 import RequireRole from './RequireRole'
 import { useCanonical } from './canonical'
+import { useDocumentMeta } from './documentMeta'
 import { Spinner } from './components/Loaders'
 import Wordmark from './components/Wordmark'
 // STATICALLY IMPORTED, and it is the one route that must be. `/` is prerendered into the HTML
@@ -17,6 +18,11 @@ import Wordmark from './components/Wordmark'
 // 0.934 and the entire desktop performance gap. Splitting a chunk the entry HTML already contains
 // buys nothing and costs the paint we prerendered it for.
 import Landing from './marketing/Landing'
+// STATICALLY IMPORTED for the same reason and by the same rule: /pricing is prerendered too
+// (dist/pricing.html), so a lazy() boundary would throw its markup away on boot and hand the
+// visitor a spinner where a finished page already was. It shares nearly all of Landing's imports,
+// so the entry chunk grows by this file and not by a second copy of the marketing chrome.
+import Pricing from './marketing/Pricing'
 
 // Route-level code splitting: every OTHER surface ships its own chunk, so a storefront
 // customer never downloads merchant/admin/signup code (signup pulls in the heavy
@@ -154,6 +160,9 @@ function AnimatedRoutes() {
   // Written per route, not in index.html: one HTML file serves every path, so a static tag would
   // declare every storefront to be the homepage. See canonical.ts.
   useCanonical()
+  // Same argument, same place, for the title and description — a route with no entry of its own
+  // gets the served document's back rather than keeping the last route's. See documentMeta.ts.
+  useDocumentMeta(location.pathname)
   return (
     <Suspense fallback={<RouteFallback />}>
       {/* Keyed on the path so each route fades in, and NOT wrapped in AnimatePresence: an
@@ -162,6 +171,10 @@ function AnimatedRoutes() {
       <PageTransition key={location.pathname}>
         <Routes location={location}>
           <Route path="/" element={<Landing />} />
+          {/* A route, not the landing page's `#pricing` anchor. An anchor is the same URL to a
+              crawler; this is a second page with its own <title> and description, which is what
+              Google draws a sitelink label from (#169). Prerendered — see scripts/prerender.tsx. */}
+          <Route path="/pricing" element={<Pricing />} />
           {/* Top-level on purpose, NOT nested under /s/:slug: the storefront shell's status gate
               would swallow it, and a suspended shop must never lock a customer out of their own
               account. Role-blind — `?shop=` decides where they land afterwards. */}

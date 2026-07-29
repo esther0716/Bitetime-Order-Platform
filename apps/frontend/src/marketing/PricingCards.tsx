@@ -1,0 +1,148 @@
+// The plan cards and the monthly/yearly toggle — the full treatment, which lives on /pricing.
+//
+// The landing page deliberately does NOT render this. It carries a short summary that links here
+// instead, because two pages showing the same cards are two URLs competing for the same query,
+// which splits whatever authority either has — the same argument canonicalPath() makes about the
+// four signup CTAs (#169).
+
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useSession } from '../SessionContext'
+import { usePlatformPricing } from '../usePlatformPricing'
+import { formatMoney } from '../currency'
+import { PRICING_TIERS } from './pricingTiers'
+import { cardCtaPrimary, cardCtaGhost } from './ctaStyles'
+import { cn } from '../lib/utils'
+import { Reveal } from './LandingMotion'
+
+export default function PricingCards() {
+  const { t } = useSession()
+  const { pricing } = usePlatformPricing()
+  const [billing, setBilling] = useState<'monthly' | 'yearly'>('monthly')
+
+  const toggleButton = (value: 'monthly' | 'yearly') =>
+    cn(
+      'inline-flex items-center gap-2 py-2 px-[18px] border-0 rounded-pill font-sans text-sm font-medium cursor-pointer [transition:background_0.15s,color_0.15s]',
+      billing === value ? 'bg-oxblood text-cream' : 'bg-transparent text-ink-soft'
+    )
+
+  return (
+    <div className="text-center">
+      {/* Billing toggle */}
+      <div
+        className="inline-flex gap-1 p-1 border-[1.5px] border-clay-border rounded-pill bg-surface-raised"
+        role="group"
+        aria-label={t('Billing period', '付费周期')}
+      >
+        <button
+          type="button"
+          className={toggleButton('monthly')}
+          aria-pressed={billing === 'monthly'}
+          onClick={() => setBilling('monthly')}
+        >
+          {t('Monthly', '按月')}
+        </button>
+        <button
+          type="button"
+          className={toggleButton('yearly')}
+          aria-pressed={billing === 'yearly'}
+          onClick={() => setBilling('yearly')}
+        >
+          {t('Yearly', '按年')}
+          <span
+            className={cn(
+              'text-[11px] font-medium py-[2px] px-2 rounded-pill',
+              billing === 'yearly'
+                ? 'bg-[rgba(255,255,255,0.2)] text-cream'
+                : 'bg-oxblood-tint text-oxblood'
+            )}
+          >
+            {t('Save ~17%', '省约17%')}
+          </span>
+        </button>
+      </div>
+
+      <Reveal>
+        {/* Cards stretch to a shared height; cardCta* pins each CTA to the bottom edge */}
+        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))] gap-6 mt-10 text-left">
+          {PRICING_TIERS.map(tier => {
+            const tierPrices = pricing.prices[tier.id]
+            // Yearly is billed at 10× monthly (2 months free) and shown as an effective /mo.
+            const amount = billing === 'yearly' ? tierPrices.yearly / 12 : tierPrices.monthly
+            return (
+              <div
+                key={tier.id}
+                className={cn(
+                  'flex flex-col p-7 rounded-lg bg-surface-raised',
+                  tier.highlight
+                    ? 'border-[1.5px] border-oxblood shadow-[0_6px_24px_rgba(122,16,40,0.12)]'
+                    : 'border border-clay-border'
+                )}
+              >
+                {tier.badge && (
+                  <span className="self-start text-[11px] font-semibold py-[3px] px-[10px] mb-3 rounded-pill bg-oxblood text-cream">
+                    {t(tier.badge.en, tier.badge.zh)}
+                  </span>
+                )}
+                <h3 className="font-heading text-xl font-medium text-ink m-0">
+                  {t(tier.name.en, tier.name.zh)}
+                </h3>
+                <div className="flex items-baseline gap-[0.35rem] mt-3">
+                  <span className="font-heading text-[34px] font-semibold text-oxblood leading-none">
+                    {formatMoney(amount, pricing.currency)}
+                  </span>
+                  <span className="text-sm text-rose-muted">{t('/mo', '/月')}</span>
+                </div>
+                {pricing.estimate && amount > 0 && (
+                  <p className="text-xs text-rose-muted mt-1 mb-0">
+                    ≈ {formatMoney(amount * pricing.estimate.rate, pricing.estimate.currency)}{t('/mo', '/月')}
+                  </p>
+                )}
+                <p className="min-h-[1.1em] text-xs text-rose-muted mt-[0.35rem] mb-0">
+                  {billing === 'yearly' && amount > 0 ? t('billed yearly', '按年付费') : ' '}
+                </p>
+                <p className="text-sm leading-[1.6] text-ink-soft mt-3 mb-5">
+                  {t(tier.blurb.en, tier.blurb.zh)}
+                </p>
+                {/* Inherited-tier label — a heading for the list, not a feature, so no ✓ */}
+                {tier.inherits && (
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-rose-muted mt-0 mb-3">
+                    {t(tier.inherits.en, tier.inherits.zh)}
+                  </p>
+                )}
+                <ul className="list-none m-0 mb-7 p-0 flex flex-col gap-[0.6rem]">
+                  {tier.features.map((f, i) => (
+                    <li
+                      key={i}
+                      className="relative pl-6 text-sm leading-[1.5] text-ink before:content-['✓'] before:absolute before:left-0 before:text-oxblood before:font-semibold"
+                    >
+                      {t(f.en, f.zh)}
+                    </li>
+                  ))}
+                </ul>
+                {/* Path segments, not `?plan=…&billing=…`: this is the one CTA a crawler reads,
+                    and a query string is what a link auditor and a human both score as an
+                    unfriendly URL. All four collapse to /merchant/signup in the canonical tag
+                    (canonical.ts), so the form stays one indexed page. */}
+                <Link
+                  to={`/merchant/signup/${tier.id}/${billing}`}
+                  className={tier.highlight ? cardCtaPrimary : cardCtaGhost}
+                >
+                  {t(tier.cta.en, tier.cta.zh)}
+                </Link>
+                {/* Risk reversal sits at the click, not at the foot of the section — and it is
+                    per-tier, because only Basic has a trial to reverse the risk with */}
+                <p className="mt-2.5 mb-0 text-center text-xs text-rose-muted">
+                  {t(tier.note.en, tier.note.zh)}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+        <p className="mt-8 text-[13px] text-rose-muted">
+          {t('Cancel anytime — no contracts, no lock-in.', '随时取消——无合约，不绑定。')}
+        </p>
+      </Reveal>
+    </div>
+  )
+}

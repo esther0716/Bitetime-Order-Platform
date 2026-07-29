@@ -1,0 +1,201 @@
+// /pricing — the plans in full.
+//
+// A page of its own rather than a section of the landing page (#169). The landing page keeps a
+// summary and links here; this page owns the detail, so the two are not two URLs answering the
+// same query. Its `<title>` and `<meta name="description">` come from ROUTE_META and are baked
+// into dist/pricing.html by scripts/prerender.tsx — which is the whole mechanism: a sitelink's
+// label IS the target page's title, and until this route existed the site had exactly one.
+//
+// NO FAQ HERE, on purpose. The landing page's accordion answers the billing questions already and
+// carries the FAQPage markup; repeating those answers here would be the duplication this split
+// exists to avoid. The prose below is written for this page and appears on no other.
+
+import { Link } from 'react-router-dom'
+import { useSession } from '../SessionContext'
+import { MarketingNav, MarketingFooter } from './MarketingChrome'
+import { useTopOnRouteChange } from './useTopOnRouteChange'
+import PricingCards from './PricingCards'
+import { PLAN_COMPARISON } from './pricingTiers'
+import { ctaPrimary, sectionTitle } from './ctaStyles'
+import { GrainOverlay, Reveal } from './LandingMotion'
+
+export default function Pricing() {
+  const { t } = useSession()
+  useTopOnRouteChange()
+  // No useCanonical / useDocumentMeta here: both are mounted once in AppRouter and keyed on the
+  // pathname, so every route gets them and none can be forgotten. See canonical.ts, documentMeta.ts.
+
+  return (
+    // Keep mm-land class — body:has(.mm-land) in index.css resets body padding/alignment
+    <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-ink bg-cream">
+      <GrainOverlay />
+      <MarketingNav />
+
+      {/* ── Header ── */}
+      <section className="max-w-[720px] mx-auto px-8 pt-16 pb-4 text-center max-[600px]:px-5 max-[600px]:pt-10">
+        <h1 className="font-heading text-[clamp(1.9rem,4vw,2.75rem)] font-medium text-ink leading-[1.2] tracking-[-0.01em] mb-5">
+          {t(
+            'One flat price. No commission on a single order.',
+            '固定价格。订单一分钱都不抽成。',
+          )}
+        </h1>
+        <p className="text-base leading-[1.75] text-ink-soft max-w-[580px] mx-auto mb-4">
+          {t(
+            'You pay a subscription and nothing else — the month your shop does well is the month you keep the difference. Start on Basic free for seven days, without a card, and move to Pro when the alerts and vouchers start earning their keep.',
+            '你只需支付订阅费，不再有其他费用——生意好的那个月，多出来的部分全归你。基础版可免费试用七天，无需信用卡；等到即时通知与优惠券开始带来回报，再升级 Pro。',
+          )}
+        </p>
+      </section>
+
+      {/* ── The plans ── */}
+      <section className="px-8 pb-16 max-w-[1000px] mx-auto w-full max-[600px]:px-5 max-[600px]:pb-10">
+        <PricingCards />
+      </section>
+
+      {/* ── Comparison ── */}
+      {/* The detail the landing summary does not carry, and the reason a visitor clicks through.
+          Rows come from pricingTiers.ts, where each one is checked against what the backend
+          actually gates — a ✓/✗ grid that disagrees with `requirePro` is a refund request. */}
+      <section className="border-t border-clay-border px-8 py-16 max-w-[860px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className={sectionTitle}>
+            {t('What is in each plan', '两个方案分别包含什么')}
+          </h2>
+          {/* Scrolls inside itself on a narrow screen rather than widening the page. */}
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm min-w-[520px]">
+              <caption className="sr-only">
+                {t(
+                  'Basic and Pro compared, feature by feature',
+                  '基础版与 Pro 版逐项比较',
+                )}
+              </caption>
+              <thead>
+                <tr className="border-b-[1.5px] border-clay-border">
+                  <th scope="col" className="py-3 pr-4 font-heading text-[15px] font-medium text-ink">
+                    {t('Feature', '功能')}
+                  </th>
+                  <th scope="col" className="py-3 px-4 font-heading text-[15px] font-medium text-ink">
+                    {t('Basic', '基础版')}
+                  </th>
+                  <th scope="col" className="py-3 pl-4 font-heading text-[15px] font-medium text-oxblood">
+                    Pro
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {PLAN_COMPARISON.map(row => (
+                  <tr key={row.id} className="border-b border-clay-border align-top">
+                    <th scope="row" className="py-3 pr-4 font-normal text-ink leading-[1.55]">
+                      {t(row.label.en, row.label.zh)}
+                    </th>
+                    <td className="py-3 px-4 text-ink-soft leading-[1.55]">
+                      {t(row.basic.en, row.basic.zh)}
+                    </td>
+                    <td className="py-3 pl-4 text-ink-soft leading-[1.55]">
+                      {t(row.pro.en, row.pro.zh)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Reveal>
+      </section>
+
+      {/* ── How billing works ── */}
+      {/* Prose, not cards: this is one explanation in four moves, and every claim here is enforced
+          somewhere real — the trial in the approval flow, the proration rule in the subscription
+          handling, the currency in the platform pricing endpoint. */}
+      <section className="border-t border-clay-border px-8 py-16 max-w-[720px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className={sectionTitle}>
+            {t('How billing works', '扣款方式')}
+          </h2>
+          <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-soft">
+            <p className="m-0">
+              {t(
+                'Basic starts with seven free days and asks for no card. The clock starts when your shop is approved, not when you fill in the form, so the trial is seven days of actually taking orders rather than seven days of waiting. We remind you before it ends. If you decide not to continue, it stops on its own and you are never charged.',
+                '基础版有七天免费期，且无需绑定信用卡。计时从店铺通过审核那一刻开始，而不是从你填表时开始——所以这七天是真正在接单的七天，不是在等待的七天。结束前我们会提醒你。若决定不继续，试用期结束即自动停止，不会产生任何费用。',
+              )}
+            </p>
+            <p className="m-0">
+              {t(
+                'Pro has no separate trial: choosing it takes you straight to payment and your shop opens as soon as the payment clears. If you would rather try first, start on Basic and upgrade from your dashboard whenever you like — your shop, your products and your orders all stay where they are.',
+                'Pro 版没有独立的试用期：选择后会直接进入付款，款项完成即可开店。若想先试用，可先选基础版，之后随时在仪表板升级——店铺、产品与订单都原封不动。',
+              )}
+            </p>
+            <p className="m-0">
+              {t(
+                'Yearly is billed once at ten months\' worth, so two months are free, and the price shown above is what that works out to per month. Monthly and yearly buy exactly the same thing; the only difference is when you pay for it.',
+                '年付一次收取相当于十个月的费用，等于免费两个月，上方显示的价格即为折算后的月费。月付与年付买到的功能完全相同，差别只在付款时机。',
+              )}
+            </p>
+            <p className="m-0">
+              {t(
+                'Cancel any time from your dashboard. Your shop keeps working to the end of the period you have already paid for and is not billed again. We do not refund part of a period, so the tidy time to cancel is just before your billing date.',
+                '随时可在仪表板取消。已付费的周期内店铺照常运作，之后不再扣款。我们不退还周期内的部分费用，因此最划算的取消时机是扣款日之前。',
+              )}
+            </p>
+          </div>
+        </Reveal>
+      </section>
+
+      {/* ── What we do not charge for ── */}
+      {/* The competitive argument, stated once and only here. The landing page's "what it replaces"
+          section makes the same point about marketplaces in passing; this is the version a visitor
+          comparing two prices came to read. */}
+      <section className="border-t border-clay-border px-8 py-16 max-w-[720px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className={sectionTitle}>
+            {t('What we do not charge for', '我们不收费的部分')}
+          </h2>
+          <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-soft">
+            <p className="m-0">
+              {t(
+                'No commission, on any order, ever. A marketplace takes a percentage of every sale for as long as you use it, which means the better your shop does the more it costs you. Your subscription here is the same number whether you take four orders this month or four hundred.',
+                '任何订单都不抽佣金，永远如此。外卖平台只要你还在用，就会从每一笔销售抽成——生意越好，付得越多。在这里，无论这个月是四张单还是四百张单，订阅费都是同一个数字。',
+              )}
+            </p>
+            <p className="m-0">
+              {t(
+                'No payment fees from us, because the money never comes to us. Your customers pay you directly — you show your bank details or payment instructions on your storefront and the amount lands in your account. The subscription is the only thing you pay TinyOrder.',
+                '我们不收取任何支付手续费，因为货款根本不经我们的手。顾客直接付款给你——你在店面页面展示银行账号或付款说明，款项直接进你的账户。你付给 TinyOrder 的只有订阅费。',
+              )}
+            </p>
+            <p className="m-0">
+              {t(
+                'No setup fee, no per-product fee, no charge for a second language. Prices are billed in Malaysian ringgit wherever you are; if your currency is different we show an approximate conversion next to the price so you know roughly what your bank will take.',
+                '没有开通费、没有单品费用，第二语言也不额外收费。无论你在哪里，都以马币计价；若你使用其他货币，我们会在价格旁附上约略换算，让你大致知道银行会扣多少。',
+              )}
+            </p>
+          </div>
+        </Reveal>
+      </section>
+
+      {/* ── Closing CTA ── */}
+      <section className="border-t border-clay-border px-8 py-16 text-center bg-oxblood-tint max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className="font-heading italic text-[18px] text-ink mb-6 max-w-[520px] mx-auto">
+            {t(
+              'Seven days, no card, and your own shop at the end of it.',
+              '七天免费，无需信用卡，结束时你已经有了自己的店。',
+            )}
+          </h2>
+          <Link to="/merchant/signup" className={ctaPrimary}>
+            {t('Start your shop', '开始建店')}
+          </Link>
+          {/* Back up the tree: a page whose only outbound links point deeper is a dead end to a
+              crawler working out which pages belong to which. */}
+          <p className="mt-6 mb-0 text-[13px] text-rose-muted">
+            <Link to="/" className="underline underline-offset-4 hover:text-oxblood">
+              {t('See how TinyOrder works', '了解 TinyOrder 怎么运作')}
+            </Link>
+          </p>
+        </Reveal>
+      </section>
+
+      <MarketingFooter />
+    </div>
+  )
+}
