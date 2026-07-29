@@ -32,7 +32,32 @@ const MERCHANT_CONFIG_FIELDS = [
   // What industry the shop is in (#161). Collected at signup and editable afterwards from the
   // Shop tab, so an existing shop that predates the field can fill in its own.
   'business_nature',
+  // The DuitNow QR the storefront shows a customer after they order (#156). A Storage PATH in
+  // the public `payment-qr` bucket, never a URL — see isOwnStoragePath below for why it is
+  // checked against the merchant it is being written for.
+  'payment_qr',
 ] as const
+
+// A Storage object path the given merchant owns: `{merchantId}/{filename}`, one segment deep,
+// with the filename limited to the characters the uploader already sanitises to.
+//
+// The bucket's own RLS policy scopes what a merchant may WRITE (first folder = their id), but
+// this column is written through the service role, on a connection no policy runs on — so
+// nothing in Postgres stops a crafted PATCH from pointing a shop's row at a stranger's object,
+// or at `{me}/../{them}/qr.png`. This function is that check. It also refuses an absolute URL,
+// which would otherwise render fine (the storefront resolves the path through getPublicUrl) and
+// quietly turn a shop's payment panel into an image hotlinked from anywhere.
+// The id is compared as a plain string rather than interpolated into the pattern: `:id` is a URL
+// segment, and a regex built out of one is a regex an attacker writes half of.
+const STORAGE_FILENAME = /^[A-Za-z0-9._-]+$/
+function isOwnStoragePath(value: unknown, merchantId: string): boolean {
+  if (typeof value !== 'string' || !merchantId) return false
+  const [folder, file, ...rest] = value.split('/')
+  if (rest.length > 0 || folder !== merchantId) return false
+  // `.` and `..` satisfy STORAGE_FILENAME above (dots are legal in it) and are not filenames.
+  if (file === '.' || file === '..') return false
+  return STORAGE_FILENAME.test(file ?? '')
+}
 
 // `undefined` means "not being written" and passes through untouched; a present-but-invalid
 // value is REFUSED (see pickMerchantConfig's doc below), never coerced.
@@ -46,8 +71,14 @@ export type PickResult =
  * must not save silently: the merchant would see a success toast and charge nothing (or the
  * wrong thing), because the column's own CHECK would otherwise answer with a bare 500 from deep
  * inside PostgREST, long after the merchant who typed 150 has moved on.
+ *
+ * `merchantId` is the shop being written (the route's `:id`, already proven to be the caller's by
+ * `requireMerchantOwns`). Only `payment_qr` needs it — a Storage path is only valid relative to
+ * the merchant that owns the folder — but it is REQUIRED, not optional: an optional tenancy
+ * argument is one the next call site forgets, and forgetting it here would write a stranger's
+ * path unchecked.
  */
-export function pickMerchantConfig(body: any): PickResult {
+export function pickMerchantConfig(body: any, merchantId: string): PickResult {
   const out: Record<string, unknown> = {}
   for (const k of MERCHANT_CONFIG_FIELDS) if (body?.[k] !== undefined) out[k] = body[k]
   // A timezone is not free text: `todayInZone` feeds it to Intl on EVERY order intake, and a
@@ -93,6 +124,18 @@ export function pickMerchantConfig(body: any): PickResult {
   if (out.business_nature !== undefined && out.business_nature !== null
       && !isBusinessNature(out.business_nature)) {
     return { ok: false, error: 'business_nature must be one of the listed industries' }
+  }
+
+  // The payment QR (#156). `null` — and the empty string the form sends when the merchant clears
+  // it — mean "take it down", the only way back to no QR. Anything else must be a path inside
+  // this merchant's own folder; refused, not dropped, because a QR that silently failed to save
+  // is a shop showing customers a stale account to pay into.
+  if (out.payment_qr !== undefined) {
+    if (out.payment_qr === null || out.payment_qr === '') {
+      out.payment_qr = null
+    } else if (!isOwnStoragePath(out.payment_qr, merchantId)) {
+      return { ok: false, error: 'payment_qr must be an uploaded image path belonging to this shop' }
+    }
   }
 
   // Real booleans, not truthiness: these columns are `boolean not null`, and a coerced 'false'

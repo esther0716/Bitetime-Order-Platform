@@ -23,6 +23,8 @@ export type SettingsFields = {
   businessNature?: string
   bank?: string
   note?: string
+  /** The Payment tab's QR image (#156): a Storage path, '' when the shop has none. */
+  qr?: string
   tgToken?: string
   tgChat?: string
 }

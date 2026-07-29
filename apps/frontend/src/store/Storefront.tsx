@@ -5,7 +5,7 @@ import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
 import { Images, Expand } from 'lucide-react'
-import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, saveCustomerDetails } from '../store'
+import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, paymentQrUrl, saveCustomerDetails } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { noticeText, type Notice } from './notice'
 import { useDeliveryQuote } from './useDeliveryQuote'
@@ -874,7 +874,7 @@ export default function Storefront() {
               </div>
             </div>
 
-            {(merchant.payment_note || merchant.payment_bank) && (
+            {(merchant.payment_note || merchant.payment_bank || merchant.payment_qr) && (
               <div className="max-w-[360px] mx-auto mb-4 text-left px-[14px] py-[10px] bg-surface-raised border-[1.5px] border-divider rounded-md text-[13px] text-ink-faint leading-[1.5]">
                 <div className="font-semibold text-oxblood mb-1">
                   {t('Payment Instructions', '付款说明')}
@@ -884,6 +884,36 @@ export default function Storefront() {
                   <p className={cn("whitespace-pre-line", merchant.payment_bank && "mt-[6px]")}>
                     {merchant.payment_note}
                   </p>
+                )}
+                {/* The shop's payment QR (#156). Last in the block on purpose: the words say who
+                    is being paid, the code is how.
+                    NO fixed aspect ratio, and no cropping: what merchants upload here is a phone
+                    SCREENSHOT of their banking app as often as a clean QR, and letterboxing a
+                    portrait screenshot into a square leaves the code itself a third of the width
+                    — a QR too small to scan is the one failure this whole feature cannot survive.
+                    It renders at its own aspect, as wide as the block allows, and links to the
+                    full-resolution original for a customer whose camera still will not read it. */}
+                {merchant.payment_qr && (
+                  <div className={cn(
+                    'flex flex-col items-center gap-1.5',
+                    (merchant.payment_bank || merchant.payment_note) && 'mt-3',
+                  )}>
+                    <a
+                      href={paymentQrUrl(merchant.payment_qr)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full max-w-[240px] rounded-md bg-white p-2 border border-divider"
+                    >
+                      <img
+                        src={paymentQrUrl(merchant.payment_qr)}
+                        alt={t('Payment QR code', '付款二维码')}
+                        className="w-full h-auto object-contain"
+                      />
+                    </a>
+                    <span className="text-[12px] text-rose-muted">
+                      {t('Scan to pay · tap to enlarge', '扫码付款 · 点击放大')}
+                    </span>
+                  </div>
                 )}
               </div>
             )}

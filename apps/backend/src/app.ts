@@ -173,7 +173,7 @@ app.post('/api/merchants', requireUser, async (c) => {
 // writes.ts and Global Constraint 1.
 app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
-  const picked = pickMerchantConfig(await c.req.json().catch(() => ({})))
+  const picked = pickMerchantConfig(await c.req.json().catch(() => ({})), id)
   if (!picked.ok) return c.json({ error: picked.error }, 400)
   const patch = picked.patch
   if (Object.keys(patch).length === 0) return c.json({ error: 'No updatable fields' }, 400)

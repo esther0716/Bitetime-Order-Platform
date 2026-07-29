@@ -881,6 +881,46 @@ export async function deleteProductImages(paths: string[]): Promise<void> {
   if (error) throw error
 }
 
+// ── Payment QR (Supabase Storage: public `payment-qr` bucket) ─────────────────
+// One image per shop, shown to the customer on the order-placed screen (#156). Stored as a
+// PATH under {merchantId}/…; the column is `merchants.payment_qr`, and the backend refuses a
+// path that is not inside this merchant's own folder (writes.ts).
+
+export const PAYMENT_QR_BUCKET = 'payment-qr'
+export const MAX_PAYMENT_QR_BYTES = 2 * 1024 * 1024
+export const PAYMENT_QR_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+
+export function paymentQrUrl(path: string): string {
+  return supabase.storage.from(PAYMENT_QR_BUCKET).getPublicUrl(path).data.publicUrl
+}
+
+// Validate + upload; returns the stored path. Same shape as uploadProductImages, one file: the
+// limits are stated here so the merchant gets a readable message before a 2MB body crosses the
+// wire, and again on the bucket (20260729130000) so they hold for any client.
+export async function uploadPaymentQr(merchantId: string, file: File): Promise<string> {
+  if (!PAYMENT_QR_TYPES.includes(file.type)) {
+    throw new Error(`Unsupported image type: ${file.name}`)
+  }
+  if (file.size > MAX_PAYMENT_QR_BYTES) {
+    throw new Error(`Image too large (max 2MB): ${file.name}`)
+  }
+  // Flattened to a single path segment: the backend only accepts {merchantId}/{file}, and the
+  // file name is sanitised to the characters that check allows.
+  const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = `${merchantId}/${crypto.randomUUID()}-${safe}`
+  const { error } = await supabase.storage
+    .from(PAYMENT_QR_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: true })
+  if (error) throw error
+  return path
+}
+
+export async function deletePaymentQr(path: string): Promise<void> {
+  if (!path) return
+  const { error } = await supabase.storage.from(PAYMENT_QR_BUCKET).remove([path])
+  if (error) throw error
+}
+
 // ── Merchant config & secrets ─────────────────────────────────────────────────
 
 export async function updateMerchantConfig(id: string, patch: any): Promise<Result<any>> {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, merchantHasOrders } from '../store'
+import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, merchantHasOrders, deletePaymentQr } from '../store'
 import { shopRates, shopTax, shopDistance, shopMethods } from '@bitetime/shared'
 import { CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../currency'
 import BusinessNaturePicker from '../components/BusinessNaturePicker'
@@ -22,6 +22,7 @@ import SubscriptionTab from './SubscriptionTab'
 import { useDashboardSubsection } from '../useDashboardSection'
 import { useProAccess, isRequiresPro } from '../plan'
 import AddressAutocomplete from '../store/AddressAutocomplete'
+import PaymentQrPicker from './PaymentQrPicker'
 
 type TabKey = 'shop' | 'shipping' | 'fulfilment' | 'payment' | 'notifications' | 'subscription' | 'referral'
 
@@ -507,10 +508,15 @@ function PaymentTab({ onDirtyChange }: TabProps) {
       taxRate: tax.rate ? String(tax.rate) : '',
       bank: merchant!.payment_bank ?? '',
       note: merchant!.payment_note ?? '',
+      qr: merchant!.payment_qr ?? '',
     }
   })
   const [fields, setFields] = useState<SettingsFields>(initial)
   const [busy, setBusy] = useState(false)
+  // The QR path the shop's row currently holds — updated on every save, not read from `initial`,
+  // which is the value at mount. The replaced object is deleted only AFTER the row that pointed
+  // at it saved, so a failed save leaves a live QR live.
+  const savedQr = useRef(initial.qr ?? '')
   // Currency locks after the first order so past orders/aggregates never
   // re-denominate. Assume locked until the check clears, so it can't flip open.
   const [currencyLocked, setCurrencyLocked] = useState(true)
@@ -533,6 +539,8 @@ function PaymentTab({ onDirtyChange }: TabProps) {
         ...(currencyLocked ? {} : { currency: fields.currency }),
         payment_bank: fields.bank,
         payment_note: fields.note,
+        // '' is how this form says "no QR"; the backend reads it as null (writes.ts).
+        payment_qr: fields.qr ?? '',
         // A blank rate box is 0, and 0 is "no tax" — the same collapse `shopTax` makes when it
         // reads the row back. The checkbox is stored as typed.
         tax_enabled: fields.taxEnabled,
@@ -551,6 +559,12 @@ function PaymentTab({ onDirtyChange }: TabProps) {
       }
       setFields(applied)
       commit(applied)
+      // Best-effort cleanup of the object the row no longer points at, now that the row has
+      // actually been written. Unawaited and swallowed: an orphaned image in Storage costs a few
+      // kilobytes; a failed delete must never look like a failed save.
+      const previous = savedQr.current
+      savedQr.current = applied.qr ?? ''
+      if (previous && previous !== savedQr.current) deletePaymentQr(previous).catch(() => {})
       toast.success(t('Payment saved', '付款已保存'))
     } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
     finally { setBusy(false) }
@@ -628,6 +642,22 @@ function PaymentTab({ onDirtyChange }: TabProps) {
             <Label htmlFor="shop-note">{t('Payment note (shown to customers)', '付款备注（顾客可见）')}</Label>
             <Input id="shop-note" value={fields.note}
               onChange={e => setFields(f => ({ ...f, note: e.target.value }))} variant="compact" />
+          </div>
+          {/* #156. The image sits with the bank details it belongs to, not in its own tab: a
+              customer reading the success screen sees one payment block, and the merchant
+              should fill it in as one. */}
+          <div className="flex flex-col gap-[6px]">
+            <Label>{t('Payment QR (DuitNow, shown after checkout)', '付款二维码（DuitNow，下单后显示）')}</Label>
+            <PaymentQrPicker
+              merchantId={merchant!.id}
+              value={fields.qr ?? ''}
+              onChange={path => setFields(f => ({ ...f, qr: path }))}
+              t={t}
+            />
+            <p className="text-[12px] text-rose-muted leading-[1.5]">
+              {t('A photo or screenshot of your DuitNow QR. Customers see it on the order-placed screen, so they can pay you straight away. PNG, JPG or WebP, up to 2MB. Remember to save.',
+                 '您的 DuitNow 二维码照片或截图。顾客下单后会在确认页看到，可立即付款。支持 PNG、JPG、WebP，最大 2MB。请记得保存。')}
+            </p>
           </div>
         </div>
       </div>

@@ -2,12 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { BUSINESS_NATURES } from '@bitetime/shared'
 import { pickMerchantConfig, promoChanged, optionGroupsChanged } from '../../src/writes.js'
 
+// The shop being written. Only `payment_qr` is judged against it (a Storage path belongs to one
+// merchant's folder); every other field in this file is tenant-agnostic, so these cases pass the
+// same stand-in rather than one id each.
+const SHOP = '33333333-3333-3333-3333-333333333333'
+
 describe('pickMerchantConfig — fulfilment', () => {
   it('accepts a config bag and a real timezone', () => {
     expect(pickMerchantConfig({
       config: { fulfilment: { lead_days: 1, window_days: 7, closed_weekdays: [1] } },
       timezone: 'Asia/Kuala_Lumpur',
-    })).toEqual({
+    }, SHOP)).toEqual({
       ok: true,
       patch: {
         config: { fulfilment: { lead_days: 1, window_days: 7, closed_weekdays: [1] } },
@@ -17,64 +22,64 @@ describe('pickMerchantConfig — fulfilment', () => {
   })
 
   it('drops a timezone Intl cannot parse rather than writing it', () => {
-    expect(pickMerchantConfig({ timezone: 'Mars/Olympus' })).toEqual({ ok: true, patch: {} })
+    expect(pickMerchantConfig({ timezone: 'Mars/Olympus' }, SHOP)).toEqual({ ok: true, patch: {} })
   })
 
   it('still refuses the privilege columns', () => {
-    expect(pickMerchantConfig({ status: 'active', owner_id: 'x', slug: 'y', plan: 'pro' })).toEqual({ ok: true, patch: {} })
+    expect(pickMerchantConfig({ status: 'active', owner_id: 'x', slug: 'y', plan: 'pro' }, SHOP)).toEqual({ ok: true, patch: {} })
   })
 })
 
 describe('pickMerchantConfig — tax (#88)', () => {
   it('accepts a valid enabled + rate pair', () => {
-    expect(pickMerchantConfig({ tax_enabled: true, tax_rate: 6 })).toEqual({
+    expect(pickMerchantConfig({ tax_enabled: true, tax_rate: 6 }, SHOP)).toEqual({
       ok: true,
       patch: { tax_enabled: true, tax_rate: 6 },
     })
   })
 
   it('coerces a numeric-string rate (PATCH bodies can carry either)', () => {
-    expect(pickMerchantConfig({ tax_rate: '6' })).toEqual({ ok: true, patch: { tax_rate: 6 } })
+    expect(pickMerchantConfig({ tax_rate: '6' }, SHOP)).toEqual({ ok: true, patch: { tax_rate: 6 } })
   })
 
   it('refuses a rate above 100 rather than clamping it', () => {
-    expect(pickMerchantConfig({ tax_rate: 150 })).toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ tax_rate: 150 }, SHOP)).toEqual({ ok: false, error: expect.any(String) })
   })
 
   it('refuses a negative rate', () => {
-    expect(pickMerchantConfig({ tax_rate: -1 })).toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ tax_rate: -1 }, SHOP)).toEqual({ ok: false, error: expect.any(String) })
   })
 
   it('refuses a non-numeric rate', () => {
-    expect(pickMerchantConfig({ tax_rate: 'six' })).toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ tax_rate: 'six' }, SHOP)).toEqual({ ok: false, error: expect.any(String) })
   })
 
   it('refuses a blank rate rather than coercing it to 0', () => {
-    expect(pickMerchantConfig({ tax_rate: '' })).toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ tax_rate: '' }, SHOP)).toEqual({ ok: false, error: expect.any(String) })
   })
 
   it('refuses a whitespace-only rate rather than coercing it to 0', () => {
-    expect(pickMerchantConfig({ tax_rate: '   ' })).toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ tax_rate: '   ' }, SHOP)).toEqual({ ok: false, error: expect.any(String) })
   })
 
   it('refuses a non-boolean tax_enabled', () => {
-    expect(pickMerchantConfig({ tax_enabled: 'yes' })).toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ tax_enabled: 'yes' }, SHOP)).toEqual({ ok: false, error: expect.any(String) })
   })
 
   it('refuses a rate the numeric(5,2) column would round on write', () => {
-    expect(pickMerchantConfig({ tax_rate: 100.005 })).toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ tax_rate: 100.005 }, SHOP)).toEqual({ ok: false, error: expect.any(String) })
   })
 
   it('refuses a rate with more than 2 decimal places', () => {
-    expect(pickMerchantConfig({ tax_rate: 6.567 })).toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ tax_rate: 6.567 }, SHOP)).toEqual({ ok: false, error: expect.any(String) })
   })
 
   it('accepts a rate with exactly 1 decimal place', () => {
-    expect(pickMerchantConfig({ tax_rate: 6.5 })).toEqual({ ok: true, patch: { tax_rate: 6.5 } })
+    expect(pickMerchantConfig({ tax_rate: 6.5 }, SHOP)).toEqual({ ok: true, patch: { tax_rate: 6.5 } })
   })
 
   it('accepts a whole-number rate', () => {
-    expect(pickMerchantConfig({ tax_rate: 6 })).toEqual({ ok: true, patch: { tax_rate: 6 } })
+    expect(pickMerchantConfig({ tax_rate: 6 }, SHOP)).toEqual({ ok: true, patch: { tax_rate: 6 } })
   })
 })
 
@@ -84,7 +89,7 @@ describe('pickMerchantConfig — onboarding flags (#102)', () => {
       onboarding_shipping_set: true,
       onboarding_link_shared: true,
       onboarding_dismissed: true,
-    })).toEqual({
+    }, SHOP)).toEqual({
       ok: true,
       patch: {
         onboarding_shipping_set: true,
@@ -95,16 +100,16 @@ describe('pickMerchantConfig — onboarding flags (#102)', () => {
   })
 
   it('passes a field through untouched when absent', () => {
-    expect(pickMerchantConfig({ onboarding_link_shared: true })).toEqual({
+    expect(pickMerchantConfig({ onboarding_link_shared: true }, SHOP)).toEqual({
       ok: true,
       patch: { onboarding_link_shared: true },
     })
   })
 
   it('refuses a non-boolean onboarding flag rather than coercing it', () => {
-    expect(pickMerchantConfig({ onboarding_shipping_set: 'yes' }))
+    expect(pickMerchantConfig({ onboarding_shipping_set: 'yes' }, SHOP))
       .toEqual({ ok: false, error: expect.any(String) })
-    expect(pickMerchantConfig({ onboarding_dismissed: 1 }))
+    expect(pickMerchantConfig({ onboarding_dismissed: 1 }, SHOP))
       .toEqual({ ok: false, error: expect.any(String) })
   })
 })
@@ -112,7 +117,7 @@ describe('pickMerchantConfig — onboarding flags (#102)', () => {
 describe('pickMerchantConfig — business nature (#161)', () => {
   it('accepts every code in the shared vocabulary', () => {
     for (const code of BUSINESS_NATURES) {
-      expect(pickMerchantConfig({ business_nature: code }))
+      expect(pickMerchantConfig({ business_nature: code }, SHOP))
         .toEqual({ ok: true, patch: { business_nature: code } })
     }
   })
@@ -120,22 +125,22 @@ describe('pickMerchantConfig — business nature (#161)', () => {
   // Refused, never dropped: this column is what the admin Overview groups on, and a silently
   // ignored value would hand the merchant a success toast for an industry that never saved.
   it('refuses a code outside the vocabulary rather than dropping it', () => {
-    expect(pickMerchantConfig({ business_nature: 'cake shop' }))
+    expect(pickMerchantConfig({ business_nature: 'cake shop' }, SHOP))
       .toEqual({ ok: false, error: expect.any(String) })
-    expect(pickMerchantConfig({ business_nature: 'Bakery' }))
+    expect(pickMerchantConfig({ business_nature: 'Bakery' }, SHOP))
       .toEqual({ ok: false, error: expect.any(String) })
-    expect(pickMerchantConfig({ business_nature: '' }))
+    expect(pickMerchantConfig({ business_nature: '' }, SHOP))
       .toEqual({ ok: false, error: expect.any(String) })
-    expect(pickMerchantConfig({ business_nature: 7 }))
+    expect(pickMerchantConfig({ business_nature: 7 }, SHOP))
       .toEqual({ ok: false, error: expect.any(String) })
   })
 
   // NULL is the column's "never said", and the only way back to it. Distinct from absent,
   // which means "not being written at all".
   it('accepts null as clearing the field, and leaves it alone when absent', () => {
-    expect(pickMerchantConfig({ business_nature: null }))
+    expect(pickMerchantConfig({ business_nature: null }, SHOP))
       .toEqual({ ok: true, patch: { business_nature: null } })
-    expect(pickMerchantConfig({ timezone: 'Asia/Kuala_Lumpur' }))
+    expect(pickMerchantConfig({ timezone: 'Asia/Kuala_Lumpur' }, SHOP))
       .toEqual({ ok: true, patch: { timezone: 'Asia/Kuala_Lumpur' } })
   })
 })
@@ -258,5 +263,51 @@ describe('optionGroupsChanged', () => {
   it('treats a missing stored row as no groups', () => {
     expect(optionGroupsChanged({ option_groups: milk }, null)).toBe(true)
     expect(optionGroupsChanged({ option_groups: [] }, null)).toBe(false)
+  })
+})
+
+describe('pickMerchantConfig — payment QR (#156)', () => {
+  const M = '11111111-1111-1111-1111-111111111111'
+  const OTHER = '22222222-2222-2222-2222-222222222222'
+
+  it('accepts a path inside the merchant\'s own Storage folder', () => {
+    expect(pickMerchantConfig({ payment_qr: `${M}/abc-duitnow.png` }, M))
+      .toEqual({ ok: true, patch: { payment_qr: `${M}/abc-duitnow.png` } })
+  })
+
+  it('accepts null — the only way to take the QR back down', () => {
+    expect(pickMerchantConfig({ payment_qr: null }, M)).toEqual({ ok: true, patch: { payment_qr: null } })
+  })
+
+  it('reads an empty string as null rather than storing a blank path', () => {
+    expect(pickMerchantConfig({ payment_qr: '' }, M)).toEqual({ ok: true, patch: { payment_qr: null } })
+  })
+
+  // The whole reason this check exists: the backend writes through the service role, so nothing
+  // in Postgres stops a merchant from pointing their row at a stranger's object.
+  it('refuses a path in another merchant\'s folder', () => {
+    expect(pickMerchantConfig({ payment_qr: `${OTHER}/abc-duitnow.png` }, M))
+      .toEqual({ ok: false, error: expect.any(String) })
+  })
+
+  it('refuses a traversal that would climb out of the folder', () => {
+    expect(pickMerchantConfig({ payment_qr: `${M}/../${OTHER}/qr.png` }, M))
+      .toEqual({ ok: false, error: expect.any(String) })
+  })
+
+  it('refuses an absolute URL — the column holds a Storage PATH', () => {
+    expect(pickMerchantConfig({ payment_qr: 'https://evil.example/qr.png' }, M))
+      .toEqual({ ok: false, error: expect.any(String) })
+  })
+
+  it('refuses a non-string', () => {
+    expect(pickMerchantConfig({ payment_qr: 42 }, M)).toEqual({ ok: false, error: expect.any(String) })
+  })
+
+  // The argument is required, so this is the empty-string case a caller could still reach — a
+  // caller that cannot name the merchant cannot prove the path belongs to them, and the field is
+  // refused rather than written unchecked.
+  it('refuses a QR path when the merchant id is blank', () => {
+    expect(pickMerchantConfig({ payment_qr: `${M}/qr.png` }, '')).toEqual({ ok: false, error: expect.any(String) })
   })
 })

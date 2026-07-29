@@ -213,6 +213,34 @@ describe('PATCH /api/merchants/:id (config)', () => {
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 
+  // #156. The QR is a Storage path, and the write goes through the service role — no policy
+  // runs on it, so this endpoint is the only thing keeping a shop's row pointed at its own
+  // object. A stranger's path is refused, and the stored value is left alone.
+  it('saves a payment QR path in the shop\'s own folder, and refuses another shop\'s', async () => {
+    await resetMerchant('cfg-qr-shop')
+    const client = await makeUser('cfg-qr@example.com', 'password123')
+    const { token, userId } = await tokenOf(client)
+    const id = await seedMerchant({ slug: 'cfg-qr-shop', owner_id: userId })
+
+    const ok = await patch(`/api/merchants/${id}`, { payment_qr: `${id}/duitnow.png` }, token)
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as { payment_qr: string }).payment_qr).toBe(`${id}/duitnow.png`)
+
+    const stranger = '00000000-0000-0000-0000-000000000000'
+    const bad = await patch(`/api/merchants/${id}`, { payment_qr: `${stranger}/duitnow.png` }, token)
+    expect(bad.status).toBe(400)
+
+    // Clearing is legal, and is the only way back to no QR.
+    const cleared = await patch(`/api/merchants/${id}`, { payment_qr: '' }, token)
+    expect(cleared.status).toBe(200)
+
+    const { data: row } = await serviceClient()
+      .from('merchants').select('payment_qr').eq('id', id).single()
+    expect(row!.payment_qr).toBeNull()
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
   it('403 for a non-owner', async () => {
     await resetMerchant('cfg-a-shop')
     const owner = await makeUser('cfg-a@example.com', 'password123')
