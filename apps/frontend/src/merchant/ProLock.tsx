@@ -1,10 +1,6 @@
-import { useState } from 'react'
 import { Lock } from 'lucide-react'
-import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { openBillingPortal } from '../store'
 import { useUpgradeNav } from './UpgradeNav'
-import { billingErrorMessage } from './billingErrors'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
@@ -44,38 +40,9 @@ export function UpgradeLink({ className }: { className?: string }) {
   )
 }
 
-/**
- * Sends the merchant to the Stripe billing portal, where the plan switch actually happens.
- *
- * Used only from the Subscription tab — the portal is a terminal action, taken once the merchant
- * has seen the price. Stripe owns the swap (and its proration and scheduling); the
- * `customer.subscription.updated` webhook brings the new tier back into `merchants.plan`.
- */
-export function UpgradeButton({ className }: { className?: string }) {
-  const { t } = useSession()
-  const [busy, setBusy] = useState(false)
-  async function toPortal() {
-    setBusy(true)
-    const r = await openBillingPortal()
-    if (r.ok) { window.location.assign(r.data); return }
-    // Say something. This CTA's whole audience is shops that are NOT paying for Pro, and
-    // `POST /api/billing/portal` answers 404 "No billing account yet" for a shop with no
-    // Stripe customer — a comped or pre-checkout basic shop. Swallowing that (as
-    // BillingBanner can afford to, since its audience always has a subscription) would
-    // leave the one button on this panel doing nothing at all, with no word why.
-    toast.error(billingErrorMessage(r.error.code, t)
-      || r.error.message
-      || t('Could not open the billing portal', '无法打开账单门户'))
-    setBusy(false)
-  }
-  // size="sm" deliberately: the default size is `w-full` (it is the auth/save button geometry),
-  // which stretches this CTA across a settings card or a product dialog.
-  return (
-    <Button type="button" size="sm" onClick={toPortal} disabled={busy} className={className}>
-      {busy ? t('Opening…', '打开中…') : t('Upgrade to Pro', '升级到 Pro')}
-    </Button>
-  )
-}
+// The Stripe portal hand-off does NOT live here: it is `PortalButton` in SubscriptionTab.tsx,
+// which is the only place the merchant has already been shown the price and the shop's billing
+// state. A portal button beside a lock would 404 for exactly the shops that see locks.
 
 /**
  * The panel that stands in for a whole locked feature (the Vouchers section, the Notifications
