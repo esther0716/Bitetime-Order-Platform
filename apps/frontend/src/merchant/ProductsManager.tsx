@@ -377,7 +377,7 @@ export default function ProductsManager() {
           portals its menu to <body>, so an item click would otherwise read as an
           outside-press and close the dialog. Close via the X, Save, or Escape. */}
       <Dialog open={formOpen} onOpenChange={setFormOpen} disablePointerDismissal>
-        <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingProduct ? t('Edit product', '编辑产品') : t('Add a product', '添加产品')}</DialogTitle>
           </DialogHeader>
@@ -574,7 +574,7 @@ export default function ProductsManager() {
                   t={t}
                 />
               </div>
-              <div className="flex flex-col gap-[6px]">
+              <div className="flex flex-col gap-[6px] min-w-0">
                 <Label>{t('Options (optional)', '选项（可选）')}</Label>
                 <OptionGroupsEditor
                   value={optionGroups}

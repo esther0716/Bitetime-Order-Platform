@@ -72,7 +72,7 @@ export default function OptionGroupsEditor({
   }
 
   return (
-    <div className="flex flex-col gap-4 border border-clay-border rounded-md p-3">
+    <div className="flex flex-col gap-4 border border-clay-border rounded-md p-3 min-w-0">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[13px] font-medium">{t('Options', '选项')}</span>
         {copyFrom.length > 0 && value.length === 0 && (
@@ -93,9 +93,9 @@ export default function OptionGroupsEditor({
       </div>
 
       {value.map((group, gi) => (
-        <div key={group.id} className="flex flex-col gap-2 border-t border-divider pt-3 first:border-t-0 first:pt-0">
-          <div className="flex items-end gap-2 flex-wrap">
-            <div className="flex-1 min-w-[140px]">
+        <div key={group.id} className="flex flex-col gap-2 border-t border-divider pt-3 first:border-t-0 first:pt-0 min-w-0">
+          <div className="flex items-end gap-2 flex-wrap min-w-0">
+            <div className="flex-1 basis-[180px] min-w-0">
               <Label className="text-[12px]">{t('Question', '问题')}</Label>
               <Input
                 value={group.name}
@@ -103,7 +103,7 @@ export default function OptionGroupsEditor({
                 onChange={e => patchGroup(gi, { name: e.target.value })}
               />
             </div>
-            <div className="flex-1 min-w-[140px]">
+            <div className="flex-1 basis-[150px] min-w-0">
               {/* Optional, like `products.name_zh`. The ORDER snapshots both languages, so what
                   is typed here is what a Chinese-reading customer sees on their receipt. */}
               <Label className="text-[12px]">{t('Question (中文)', '问题（中文）')}</Label>
@@ -113,14 +113,17 @@ export default function OptionGroupsEditor({
                 onChange={e => patchGroup(gi, { name_zh: e.target.value || null })}
               />
             </div>
-            <div className="w-[92px]">
+            {/* The three numbers are one thought — "how many, and how many of each" — so they
+                wrap together instead of one field peeling off onto its own line. */}
+            <div className="flex items-end gap-2 basis-full sm:basis-auto min-w-0">
+            <div className="flex-1 sm:w-[92px] sm:flex-none">
               <Label className="text-[12px]">{t('Choose at least', '最少选')}</Label>
               <Input
                 type="number" min={0} value={group.minSelect}
                 onChange={e => patchGroup(gi, { minSelect: Number(e.target.value) || 0 })}
               />
             </div>
-            <div className="w-[92px]">
+            <div className="flex-1 sm:w-[92px] sm:flex-none">
               <Label className="text-[12px]">{t('At most', '最多选')}</Label>
               <Input
                 type="number" min={1} value={group.maxSelect ?? ''}
@@ -130,7 +133,7 @@ export default function OptionGroupsEditor({
                 })}
               />
             </div>
-            <div className="w-[132px]">
+            <div className="flex-1 sm:w-[124px] sm:flex-none">
               {/* Independent of "at most", and it cannot be inferred from it: "up to 3 toppings"
                   with a per-option cap of 1 is three DIFFERENT toppings, not chilli three times. */}
               <Label className="text-[12px]">{t('Max of one choice', '同一选项上限')}</Label>
@@ -142,27 +145,31 @@ export default function OptionGroupsEditor({
                 })}
               />
             </div>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-1.5 pl-1">
+          <div className="flex flex-col gap-1.5 pl-1 min-w-0">
             {group.options.map((option, oi) => (
-              <div key={option.id} className="flex items-center gap-2">
+              // WRAPS, and every field can shrink. Fixed minimums with no wrap meant this row
+              // could not fit a narrow dialog, so it pushed the card wider than its container and
+              // the availability and remove controls were simply cut off the right edge.
+              <div key={option.id} className="flex flex-wrap items-center gap-2 min-w-0">
                 <Input
-                  className="flex-1 min-w-[90px]"
+                  className="flex-1 basis-[130px] min-w-0"
                   value={option.name}
                   placeholder={t('Choice name', '选项名称')}
                   onChange={e => patchOption(gi, oi, { name: e.target.value })}
                 />
                 <Input
-                  className="flex-1 min-w-[80px]"
+                  className="flex-1 basis-[110px] min-w-0"
                   value={option.name_zh ?? ''}
                   placeholder={t('中文（选填）', '中文（选填）')}
                   onChange={e => patchOption(gi, oi, { name_zh: e.target.value || null })}
                 />
-                <div className="flex items-center gap-1">
-                  <span className="text-[12px] text-text-tertiary">+{currency ?? ''}</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-[12px] text-text-tertiary whitespace-nowrap">+{currency ?? ''}</span>
                   <Input
-                    className="w-[76px]"
+                    className="w-[72px]"
                     type="number" min={0} step="0.01" value={option.delta}
                     onChange={e => patchOption(gi, oi, { delta: Number(e.target.value) || 0 })}
                   />
@@ -171,6 +178,7 @@ export default function OptionGroupsEditor({
                     that runs out of oat milk switches it off rather than deleting it, keeping the
                     price and the name for tomorrow. Without this the only way an option ever went
                     inactive was a Pro downgrade. */}
+                <div className="flex items-center gap-1 shrink-0 ml-auto">
                 <Button
                   type="button" variant={option.active ? 'soft' : 'outline'} size="sm"
                   onClick={() => patchOption(gi, oi, { active: !option.active })}
@@ -183,9 +191,10 @@ export default function OptionGroupsEditor({
                   onClick={() => patchGroup(gi, { options: group.options.filter((_, n) => n !== oi) })}
                   aria-label={t('Remove choice', '删除选项')}
                 >×</Button>
+                </div>
               </div>
             ))}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 min-w-0">
               <Button
                 type="button" variant="outline" size="sm"
                 disabled={group.options.length >= MAX_OPTIONS_PER_GROUP}
