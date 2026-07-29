@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Lock, MoreHorizontal, Package } from 'lucide-react'
+import { MoreHorizontal, Package } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
 import { lookupProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl } from '../store'
@@ -21,7 +21,7 @@ import { DataTable, SortableHeader } from '../components/ui/data-table'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../components/ui/empty'
 import ImagePicker from './ProductImages'
 import OptionGroupsEditor from './OptionGroupsEditor'
-import { ProBadge, UpgradeLink } from './ProLock'
+import { ProLockHeading, UpgradeLink } from './ProLock'
 import { useProAccess, isRequiresPro } from '../plan'
 import { optionGroupsFromRow } from '@bitetime/shared'
 import type { OptionGroup } from '@bitetime/shared'
@@ -475,16 +475,7 @@ export default function ProductsManager() {
                   ordinary product editing every shop keeps. `display: contents` leaves a Pro
                   shop's layout exactly as it was; only the locked state adds a wrapper. */}
               <div className={pro ? 'contents' : 'flex flex-col gap-2 rounded-xl border-[1.5px] border-dashed border-clay-border p-3'}>
-                {!pro && (
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="flex items-center gap-2 text-[13px] font-medium text-oxblood">
-                      <Lock size={14} strokeWidth={1.75} aria-hidden />
-                      {t('Put this item on sale', '为此商品设置优惠')}
-                      <ProBadge />
-                    </span>
-                    <UpgradeLink className="px-3 py-[6px] text-[12px]" />
-                  </div>
-                )}
+                {!pro && <ProLockHeading>{t('Put this item on sale', '为此商品设置优惠')}</ProLockHeading>}
                 <div className="flex flex-col gap-[6px]">
                   <Label htmlFor="pm-promo-price">{t('Promo price', '优惠价')}</Label>
                   <Input
@@ -583,16 +574,7 @@ export default function ProductsManager() {
               <div className={pro
                 ? 'flex flex-col gap-[6px] min-w-0'
                 : 'flex flex-col gap-2 rounded-xl border-[1.5px] border-dashed border-clay-border p-3 min-w-0'}>
-                {!pro && (
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="flex items-center gap-2 text-[13px] font-medium text-oxblood">
-                      <Lock size={14} strokeWidth={1.75} aria-hidden />
-                      {t('Let customers choose', '让顾客选择')}
-                      <ProBadge />
-                    </span>
-                    <UpgradeLink className="px-3 py-[6px] text-[12px]" />
-                  </div>
-                )}
+                {!pro && <ProLockHeading>{t('Let customers choose', '让顾客选择')}</ProLockHeading>}
                 <Label>{t('Options (optional)', '选项（可选）')}</Label>
                 <OptionGroupsEditor
                   // Keyed on the product, so each one gets its own editor. `open` is seeded from
@@ -633,6 +615,19 @@ export default function ProductsManager() {
                 </button>
               </div>
             </div>
+            {/* The form's ONE upgrade offer. Each locked section says what it is; repeating the
+                CTA beside every one of them is the same offer twice in a single dialog. Here it
+                sits with the primary action, which is where a merchant looks when they try to
+                save and find out something was locked. */}
+            {!pro && (
+              <div className="mt-4 flex items-center justify-between gap-3 flex-wrap rounded-lg bg-surface-sunken px-3 py-2.5">
+                <span className="text-[12px] text-rose-muted">
+                  {t('Sale prices and customer options are Pro features.',
+                     '优惠价与商品选项为 Pro 功能。')}
+                </span>
+                <UpgradeLink className="px-3 py-[6px] text-[12px]" />
+              </div>
+            )}
             <Button type="submit" size="md" className="mt-4 w-full" disabled={busy}>
               {busy ? t('Saving…', '保存中…') : editingProduct ? t('Save changes', '保存更改') : t('Add product', '添加产品')}
             </Button>

@@ -15,6 +15,27 @@ import { Button } from '@/components/ui/button'
 // None of this is the gate. The backend refuses the write (`403 requires_pro`) whether or not
 // this renders; see CONTEXT.md → Plan entitlement.
 
+/**
+ * A locked section's heading: padlock, what it does, and the Pro marker.
+ *
+ * NO call to action. One form can hold SEVERAL locked sections — the product editor holds two —
+ * and repeating the upgrade button beside each one turns show-but-lock into nagging: the same
+ * offer, twice, in one dialog. The sections say WHAT is locked; the form offers the upgrade once,
+ * next to its primary action, where a merchant is already looking when they try to save.
+ *
+ * A screen with a SINGLE locked feature (the Vouchers tab, Telegram in settings) has no such
+ * problem and still pairs this with `UpgradeLink` directly.
+ */
+export function ProLockHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="flex items-center gap-2 text-[13px] font-medium text-oxblood">
+      <Lock size={14} strokeWidth={1.75} aria-hidden />
+      {children}
+      <ProBadge />
+    </span>
+  )
+}
+
 /** The "Pro" marker. Sits beside a locked field group's own heading. */
 export function ProBadge() {
   return (
