@@ -1,15 +1,31 @@
-// Bake the landing page into the HTML that serves it.
+// Bake the marketing pages into the HTML files that serve them.
 //
 // WHY: the app ships one near-empty `<div id="root">` and builds every word in the browser. Google
-// executes JavaScript and sees the finished page; most of the LLM crawlers do not, so to them the
-// marketing page reads as a blank document with a title. This step renders the landing route to
+// executes JavaScript and sees the finished page; most of the LLM crawlers do not, so to them a
+// marketing page reads as a blank document with a title. This step renders each marketing route to
 // static markup at build time so the words are in the file.
 //
-// WHY TWO FILES: on Vercel the filesystem is checked BEFORE `rewrites`, so `/` is always served by
-// `dist/index.html` and no rewrite can redirect it elsewhere. The prerendered page therefore has to
-// BE index.html, and the empty shell every other route needs becomes `app.html` — which vercel.json
-// rewrites to. That split is the whole point: baking landing markup into the file that also serves
-// /s/<slug> would hand a crawler the marketing page as the content of every shop.
+// WHY A FILE PER ROUTE: the empty shell every non-prerendered route needs is `app.html`, which
+// vercel.json rewrites everything to. Baking landing markup into a file that also serves /s/<slug>
+// would hand a crawler the marketing page as the content of every shop, so each prerendered route
+// gets a file nothing else is served from.
+//
+// AND EACH ONE NEEDS ITS OWN REWRITE. Vercel checks the filesystem before `rewrites`, but it does
+// NOT try `<path>.html` for an extensionless request unless `cleanUrls` is on — so `/pricing` does
+// not find `pricing.html` on its own, and the catch-all `/(.*)` → `/app.html` swallows it. `/` is
+// the exception, and the reason this is easy to get wrong: it resolves to `index.html` as the
+// directory index, before any rewrite. Everything else needs an explicit
+// `{ source: '/x', destination: '/x.html' }` ABOVE the catch-all in apps/frontend/vercel.json.
+// vercelRewrites.test.ts fails the build if one is missing.
+//
+// The symptom when it IS missing hides itself: the route still works in a browser, because React
+// boots and renders it client-side. Only the served bytes differ — which is all a JS-less crawler
+// ever sees, and the entire reason this file exists.
+//
+// WHY MORE THAN ONE ROUTE (#169): a sitelink's label is the target page's `<title>` and its snippet
+// is that page's meta description, so a site served entirely out of one shell offers Google exactly
+// one candidate. Adding a marketing page means adding it HERE, to AppRouter, to routeMeta.ts and to
+// vercel.json's rewrites.
 //
 // The render is safe without a database or a backend because `renderToStaticMarkup` never runs
 // effects: SessionProvider renders its initial state (nothing loaded yet, which is the same first
@@ -18,76 +34,125 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { SessionProvider } from '../src/SessionContext'
 import { TooltipProvider } from '../src/components/ui/tooltip'
 import Landing from '../src/marketing/Landing'
+import Pricing from '../src/marketing/Pricing'
 import { landingStructuredData } from '../src/marketing/structuredData'
+import { ROUTE_META } from '../src/routeMeta'
 import { SITE_URL } from '../src/site'
 
 const dist = path.resolve(process.cwd(), 'dist')
 const ROOT_DIV = '<div id="root"></div>'
+
+interface PrerenderRoute {
+  /** The path Vercel will serve the file at, and the ROUTE_META key. */
+  path: string
+  /** The file to write under dist/. `/` must be index.html — see the note above. */
+  file: string
+  element: ReactElement
+  /**
+   * Extra `<head>` markup this route owns. The FAQ block belongs to `/` alone: index.html is the
+   * one file served for exactly one path, and a FAQPage claiming to describe /pricing — or a
+   * storefront — is the same mistake as a hardcoded canonical tag. See structuredData.ts.
+   */
+  head?: string
+}
+
+// The FAQ markup the landing route otherwise injects from an effect, so a crawler that does not run
+// JavaScript gets it too. English, because that is what an unswitched page renders; the effect in
+// structuredData.ts adopts this element and rewrites it if the visitor is reading Chinese.
+const faqLd =
+  `<script type="application/ld+json" data-structured-data="landing-faq">` +
+  `${JSON.stringify(landingStructuredData('en'))}</script>`
+
+const ROUTES: PrerenderRoute[] = [
+  { path: '/', file: 'index.html', element: <Landing />, head: faqLd },
+  { path: '/pricing', file: 'pricing.html', element: <Pricing /> },
+]
 
 const shell = readFileSync(path.join(dist, 'index.html'), 'utf8')
 if (!shell.includes(ROOT_DIV)) {
   throw new Error(`prerender: ${ROOT_DIV} not found in dist/index.html — did the entry markup change?`)
 }
 
-// Every route except `/` keeps the empty shell, untouched.
+// Every route not listed above keeps the empty shell, untouched.
 writeFileSync(path.join(dist, 'app.html'), shell)
 
-const markup = renderToStaticMarkup(
-  // The same tree AppRouter builds for "/", minus the lazy() boundary: renderToStaticMarkup cannot
-  // suspend, so Landing is imported directly here.
-  <MemoryRouter initialEntries={['/']}>
-    <SessionProvider>
-      <TooltipProvider delay={200}>
-        <Landing />
-      </TooltipProvider>
-    </SessionProvider>
-  </MemoryRouter>,
-)
+/** Attribute-safe. Titles and descriptions are ours, but an unescaped quote would break the tag. */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
 
-// The scroll/stagger animations start at `opacity:0` and are revealed by JavaScript. In the
-// prerendered file that would be text nobody can read without JS — including a reader with it
-// switched off — so the starting state is opened up. It costs nothing at runtime: main.tsx uses
-// createRoot, not hydrateRoot, so React discards this markup and re-renders from scratch (with the
-// animations intact) the moment it boots.
-const visible = markup.replace(/opacity:0(?=[;"])/g, 'opacity:1')
+/** Replace the shell's `<title>`, or fail loudly rather than ship a page titled as the homepage.
+ *
+ * Tests the pattern rather than comparing before and after: the homepage's own entry is the shell's
+ * title verbatim (routeMeta.test.ts pins them together), so a changed-or-not check would call the
+ * one route that is always correct a build failure. */
+function withTitle(html: string, title: string): string {
+  const tag = /<title>[\s\S]*?<\/title>/
+  if (!tag.test(html)) throw new Error('prerender: no <title> in the shell to replace')
+  return html.replace(tag, `<title>${escapeHtml(title)}</title>`)
+}
 
-// The FAQ markup, which the landing route otherwise injects from an effect — so a crawler that does
-// not run JavaScript gets it too. Safe in THIS file and not in app.html, which is exactly the
-// distinction the two-file split buys. English, because that is what an unswitched page renders;
-// the effect in structuredData.ts adopts this element and rewrites it if the visitor is reading
-// Chinese.
-const faqLd =
-  `<script type="application/ld+json" data-structured-data="landing-faq">` +
-  `${JSON.stringify(landingStructuredData('en'))}</script>`
-
-// The two head tags index.html cannot carry and this file can.
-//
-// Both are absent from index.html for the same stated reason: that file is served for every path,
-// so a hardcoded URL in either would name the homepage on a storefront. THIS file is served for
-// exactly one path — Vercel checks the filesystem before `rewrites`, so `/` gets index.html and
-// every other route gets app.html — which makes `SITE_URL + '/'` simply true here.
-//
-// `canonical` is otherwise written by an effect (src/canonical.ts), which Google runs and an LLM
-// crawler does not; useCanonical ADOPTS this element rather than appending a second, and rewrites
-// the href to the serving origin, so a preview deployment still declares itself and not production.
-// `og:url` had no runtime writer at all and could not have one that worked: link-preview scrapers
-// execute no JavaScript, which is the whole argument in index.html for leaving it out. Prerendering
-// is what removes that argument for this one route.
-const routeHead =
-  `<link rel="canonical" href="${SITE_URL}/">\n    ` +
-  `<meta property="og:url" content="${SITE_URL}/">`
-
-writeFileSync(
-  path.join(dist, 'index.html'),
-  shell
-    .replace(ROOT_DIV, `<div id="root">${visible}</div>`)
-    .replace('</head>', `${routeHead}\n    ${faqLd}\n  </head>`),
-)
+/** Same for the meta description, which is what a sitelink's snippet is drawn from. */
+function withDescription(html: string, description: string): string {
+  const tag = /<meta name="description" content="[\s\S]*?"\s*\/?>/
+  if (!tag.test(html)) throw new Error('prerender: no <meta name="description"> in the shell to replace')
+  return html.replace(tag, `<meta name="description" content="${escapeHtml(description)}" />`)
+}
 
 const kb = (s: string) => `${Math.round(Buffer.byteLength(s) / 1024)}kB`
-console.log(`prerender: dist/index.html ${kb(shell)} → ${kb(visible)} of landing markup, dist/app.html left as the shell`)
+
+for (const route of ROUTES) {
+  const meta = ROUTE_META[route.path]
+  if (!meta) throw new Error(`prerender: ${route.path} has no ROUTE_META entry to title it`)
+
+  const markup = renderToStaticMarkup(
+    // The same tree AppRouter builds for this path, minus the lazy() boundary and the Routes
+    // switch: renderToStaticMarkup cannot suspend, so the page component is imported directly.
+    <MemoryRouter initialEntries={[route.path]}>
+      <SessionProvider>
+        <TooltipProvider delay={200}>{route.element}</TooltipProvider>
+      </SessionProvider>
+    </MemoryRouter>,
+  )
+
+  // The scroll/stagger animations start at `opacity:0` and are revealed by JavaScript. In a
+  // prerendered file that would be text nobody can read without JS — including a reader with it
+  // switched off — so the starting state is opened up. It costs nothing at runtime: main.tsx uses
+  // createRoot, not hydrateRoot, so React discards this markup and re-renders from scratch (with
+  // the animations intact) the moment it boots.
+  const visible = markup.replace(/opacity:0(?=[;"])/g, 'opacity:1')
+
+  // The two head tags index.html cannot carry and these files can.
+  //
+  // Both are absent from index.html for the same stated reason: that file is the shell every
+  // non-prerendered path is served from (as app.html), so a hardcoded URL in either would name the
+  // homepage on a storefront. THESE files are served for exactly one path each — `/` as the
+  // directory index, the rest through their own rewrite — which makes a per-route URL true here.
+  //
+  // `canonical` is otherwise written by an effect (src/canonical.ts), which Google runs and an LLM
+  // crawler does not; useCanonical ADOPTS this element rather than appending a second, and rewrites
+  // the href to the serving origin, so a preview deployment still declares itself and not
+  // production. `og:url` had no runtime writer at all and could not have one that worked:
+  // link-preview scrapers execute no JavaScript, which is the whole argument in index.html for
+  // leaving it out. Prerendering is what removes that argument for these routes.
+  const url = `${SITE_URL}${route.path}`
+  const routeHead =
+    `<link rel="canonical" href="${url}">\n    ` +
+    `<meta property="og:url" content="${url}">` +
+    (route.head ? `\n    ${route.head}` : '')
+
+  const html = withDescription(withTitle(shell, meta.title), meta.description)
+    .replace(ROOT_DIV, `<div id="root">${visible}</div>`)
+    .replace('</head>', `${routeHead}\n  </head>`)
+
+  writeFileSync(path.join(dist, route.file), html)
+  console.log(`prerender: dist/${route.file} ← ${route.path}, ${kb(visible)} of markup`)
+}
+
+console.log(`prerender: dist/app.html left as the ${kb(shell)} shell`)
