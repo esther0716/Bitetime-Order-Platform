@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams, useParams, Link } from 'react-router-dom'
 import { signUp, signIn, createMerchant, startCheckout } from '../store'
 import { toSlugBase } from '../slug'
 import { useSession } from '../SessionContext'
@@ -16,13 +16,27 @@ import Wordmark from '../components/Wordmark'
 const PLANS = ['basic', 'pro']
 const CYCLES = ['monthly', 'yearly']
 
+/**
+ * The first of `candidates` that is one of `allowed`, else `fallback`.
+ *
+ * Two candidates, in order, because the plan reaches this screen two ways. The path segment
+ * (`/merchant/signup/pro/yearly`) is what the pricing cards link to — a query string is what a
+ * link auditor and a human both read as an unfriendly URL. The query string (`?plan=pro`) is what
+ * Stripe's `cancel_url` sends back and what any link already sitting in an inbox still says, so
+ * it keeps working rather than silently landing everyone on Basic.
+ */
+function pick(allowed: string[], candidates: (string | null | undefined)[], fallback: string) {
+  return candidates.find(c => c != null && allowed.includes(c)) ?? fallback
+}
+
 export default function SignupScreen() {
   const { t, lang, refreshMerchant } = useSession()
   const { pricing } = usePlatformPricing()
   const [params] = useSearchParams()
+  const path = useParams()
 
-  const plan = PLANS.includes(params.get('plan') as string) ? (params.get('plan') as string) : 'basic'
-  const billing = CYCLES.includes(params.get('billing') as string) ? (params.get('billing') as string) : 'monthly'
+  const plan = pick(PLANS, [path.plan, params.get('plan')], 'basic')
+  const billing = pick(CYCLES, [path.billing, params.get('billing')], 'monthly')
   const canceled = params.get('canceled') === '1'
   const ref = params.get('ref') ?? undefined
 

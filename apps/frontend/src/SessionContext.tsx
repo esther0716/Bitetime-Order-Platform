@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import type { ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { onAuthChange, fetchProfileByUserId, lookupMyMerchant, lookupMerchantBySlug, getCurrentUser } from './store'
+import { ensureCjkFont } from './cjkFont'
 import type { Lang, Merchant, Profile, Role, SessionValue } from './types'
 
 const SessionContext = createContext<SessionValue | null>(null)
@@ -24,6 +25,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return stored === 'zh' || stored === 'en' ? stored : 'en'
   })
   useEffect(() => { try { localStorage.setItem('lang', lang) } catch { /* storage unavailable */ } }, [lang])
+  // The two things outside React that have to agree with `lang`. `<html lang>` is what a screen
+  // reader picks a voice from and what a crawler reads the page as; it is baked `en` in index.html
+  // and would otherwise stay `en` on a fully Chinese page. The CJK webfont is fetched here rather
+  // than from index.html so an English visitor never pays for it — see cjkFont.ts.
+  useEffect(() => {
+    document.documentElement.lang = lang === 'zh' ? 'zh' : 'en'
+    ensureCjkFont(lang)
+  }, [lang])
 
   // `profileLoaded` is not bookkeeping: `role` reads app_role off this row, so until it lands a
   // superadmin is indistinguishable from a customer. It must gate `loading` alongside the shop

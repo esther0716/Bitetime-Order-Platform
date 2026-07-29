@@ -24,6 +24,7 @@ import { SessionProvider } from '../src/SessionContext'
 import { TooltipProvider } from '../src/components/ui/tooltip'
 import Landing from '../src/marketing/Landing'
 import { landingStructuredData } from '../src/marketing/structuredData'
+import { SITE_URL } from '../src/site'
 
 const dist = path.resolve(process.cwd(), 'dist')
 const ROOT_DIV = '<div id="root"></div>'
@@ -64,9 +65,28 @@ const faqLd =
   `<script type="application/ld+json" data-structured-data="landing-faq">` +
   `${JSON.stringify(landingStructuredData('en'))}</script>`
 
+// The two head tags index.html cannot carry and this file can.
+//
+// Both are absent from index.html for the same stated reason: that file is served for every path,
+// so a hardcoded URL in either would name the homepage on a storefront. THIS file is served for
+// exactly one path — Vercel checks the filesystem before `rewrites`, so `/` gets index.html and
+// every other route gets app.html — which makes `SITE_URL + '/'` simply true here.
+//
+// `canonical` is otherwise written by an effect (src/canonical.ts), which Google runs and an LLM
+// crawler does not; useCanonical ADOPTS this element rather than appending a second, and rewrites
+// the href to the serving origin, so a preview deployment still declares itself and not production.
+// `og:url` had no runtime writer at all and could not have one that worked: link-preview scrapers
+// execute no JavaScript, which is the whole argument in index.html for leaving it out. Prerendering
+// is what removes that argument for this one route.
+const routeHead =
+  `<link rel="canonical" href="${SITE_URL}/">\n    ` +
+  `<meta property="og:url" content="${SITE_URL}/">`
+
 writeFileSync(
   path.join(dist, 'index.html'),
-  shell.replace(ROOT_DIV, `<div id="root">${visible}</div>`).replace('</head>', `${faqLd}\n  </head>`),
+  shell
+    .replace(ROOT_DIV, `<div id="root">${visible}</div>`)
+    .replace('</head>', `${routeHead}\n    ${faqLd}\n  </head>`),
 )
 
 const kb = (s: string) => `${Math.round(Buffer.byteLength(s) / 1024)}kB`
