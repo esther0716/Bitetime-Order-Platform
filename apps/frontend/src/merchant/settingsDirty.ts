@@ -19,6 +19,8 @@ export type SettingsFields = {
   deliveryEnabled?: boolean
   expressEnabled?: boolean
   taxRate?: string
+  /** The Shop tab's business nature (#161); '' when the shop has never set one. */
+  businessNature?: string
   bank?: string
   note?: string
   tgToken?: string

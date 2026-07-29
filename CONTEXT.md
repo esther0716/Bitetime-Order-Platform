@@ -176,6 +176,16 @@ One shop's record of one person who orders from it. **Not a `Customer`** — tha
 
 The list itself stays **free** — it ships to basic shops today and withdrawing it would be a regression wearing a feature's clothes. Notes, tags, tag filtering and sorting are **Pro**. On stepping down, notes and tags **survive, hidden not deleted**, following `promo_price` rather than `vouchers.active`: a merchant's own words are their record, not a platform artifact (see *Plan entitlement*).
 
+## Business nature
+
+What a shop sells, as one code from a **closed** vocabulary — `BUSINESS_NATURES` in `@bitetime/shared`, the `merchants_business_nature_check` CHECK, and `merchants.business_nature` (#161). Collected at signup, editable afterwards from Shop Settings → Shop. Platform-facing only: it is never shown to a customer, and it exists to answer one question — which industries the platform actually serves.
+
+**Business nature is the domain term; "industry" is the word the admin Overview says.** The superadmin panel is titled *Merchants by industry* because that is what reads as English to the person looking at it — the code, the column and the shared list all say `business_nature`, and the stats slices (`IndustrySlice`, `stats.industries`) name the ranked view of it. One concept, two registers; do not add a third.
+
+**A closed list, because the whole point is a group-by.** Free text was rejected: `bakery` / `Bakery` / `cake shop` cannot be ranked without a human normalising them afterwards. Consequences: a code is **never renamed in place** (every shop already carrying it would silently change industry), and adding one means the shared list, a new migration's CHECK, and an EN/ZH label — only the label is compiler-enforced.
+
+**NULL is "never said", and is counted.** Every shop predating the field carries it, and the migration backfills nothing — `other` is an answer a merchant *chose*, and defaulting to it would be a lie on the very chart this exists to draw. The admin Overview names the bucket *Unspecified*, sorts it **last** however large it is (it is not an industry), and scales the bars against the biggest *named* industry so day-one's all-NULL platform does not compress every real bar to a stub. The signup form requires a pick; `POST /api/merchants` deliberately does **not** — analytics must never be the reason a shop fails to be created — but a present-but-unknown code is refused, never dropped, on both the create and the settings path.
+
 ## Customer signup
 
 How a customer account comes into being. Email confirmation is on **project-wide** and stays on — it is shared with merchants, and a merchant account controls a shop and its Stripe billing. A client-side `signUp` would therefore return no session, stranding a customer mid-checkout in their inbox holding a cart, so customers are minted **pre-confirmed** by the backend instead (`POST /api/customer/signup` → `admin.auth.admin.createUser({ email_confirm: true })`), and the client signs in normally. Pure seams: `customerSignup` (policy; the account-creation and profile writes are injected adapters), `rateLimit` (clock-injected sliding window), `clientIp` (backend), `signupError` (frontend).

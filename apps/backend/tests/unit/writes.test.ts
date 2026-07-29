@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { BUSINESS_NATURES } from '@bitetime/shared'
 import { pickMerchantConfig, promoChanged, optionGroupsChanged } from '../../src/writes.js'
 
 describe('pickMerchantConfig — fulfilment', () => {
@@ -105,6 +106,37 @@ describe('pickMerchantConfig — onboarding flags (#102)', () => {
       .toEqual({ ok: false, error: expect.any(String) })
     expect(pickMerchantConfig({ onboarding_dismissed: 1 }))
       .toEqual({ ok: false, error: expect.any(String) })
+  })
+})
+
+describe('pickMerchantConfig — business nature (#161)', () => {
+  it('accepts every code in the shared vocabulary', () => {
+    for (const code of BUSINESS_NATURES) {
+      expect(pickMerchantConfig({ business_nature: code }))
+        .toEqual({ ok: true, patch: { business_nature: code } })
+    }
+  })
+
+  // Refused, never dropped: this column is what the admin Overview groups on, and a silently
+  // ignored value would hand the merchant a success toast for an industry that never saved.
+  it('refuses a code outside the vocabulary rather than dropping it', () => {
+    expect(pickMerchantConfig({ business_nature: 'cake shop' }))
+      .toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ business_nature: 'Bakery' }))
+      .toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ business_nature: '' }))
+      .toEqual({ ok: false, error: expect.any(String) })
+    expect(pickMerchantConfig({ business_nature: 7 }))
+      .toEqual({ ok: false, error: expect.any(String) })
+  })
+
+  // NULL is the column's "never said", and the only way back to it. Distinct from absent,
+  // which means "not being written at all".
+  it('accepts null as clearing the field, and leaves it alone when absent', () => {
+    expect(pickMerchantConfig({ business_nature: null }))
+      .toEqual({ ok: true, patch: { business_nature: null } })
+    expect(pickMerchantConfig({ timezone: 'Asia/Kuala_Lumpur' }))
+      .toEqual({ ok: true, patch: { timezone: 'Asia/Kuala_Lumpur' } })
   })
 })
 

@@ -163,8 +163,8 @@ export async function lookupMyMerchant(userId: string): Promise<Result<any | nul
   return apiGet<any | null>('/api/me/merchant', { auth: true })
 }
 
-export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode }: { name: string; plan?: string; billing?: string; referredByCode?: string }): Promise<Result<any>> {
-  return apiSend<any>('/api/merchants', 'POST', { name, plan, billing, referredByCode }, { auth: true })
+export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode, businessNature }: { name: string; plan?: string; billing?: string; referredByCode?: string; businessNature?: string }): Promise<Result<any>> {
+  return apiSend<any>('/api/merchants', 'POST', { name, plan, billing, referredByCode, businessNature }, { auth: true })
 }
 
 // ── Billing (Stripe via the Hono backend) ──────────────────────────────────────

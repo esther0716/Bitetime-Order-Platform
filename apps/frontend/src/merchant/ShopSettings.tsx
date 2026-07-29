@@ -4,6 +4,7 @@ import { useSession } from '../SessionContext'
 import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, merchantHasOrders } from '../store'
 import { shopRates, shopTax, shopDistance, shopMethods } from '@bitetime/shared'
 import { CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../currency'
+import BusinessNaturePicker from '../components/BusinessNaturePicker'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -22,7 +23,7 @@ import { useDashboardSubsection } from '../useDashboardSection'
 import { useProAccess, isRequiresPro } from '../plan'
 import AddressAutocomplete from '../store/AddressAutocomplete'
 
-type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'notifications' | 'subscription' | 'referral'
+type TabKey = 'shop' | 'shipping' | 'fulfilment' | 'payment' | 'notifications' | 'subscription' | 'referral'
 
 // Tabbed Shop Settings (issue #19). A container renders a horizontal tab bar and
 // the active tab's form; each tab is its own form with its own Save. Only the
@@ -40,6 +41,9 @@ export default function ShopSettings() {
   const [dirtyTab, setDirtyTab] = useState<TabKey | null>(null)
 
   const TABS: { key: TabKey; label: string; tag?: string }[] = [
+    // What the shop IS, as opposed to how it charges or delivers. Holds the business nature
+    // (#161), which shops that signed up before the field existed fill in from here.
+    { key: 'shop', label: t('Shop', '店铺') },
     { key: 'shipping', label: t('Shipping', '运费') },
     { key: 'fulfilment', label: t('Fulfilment', '取货') },
     { key: 'payment', label: t('Payment', '付款') },
@@ -53,6 +57,9 @@ export default function ShopSettings() {
   // The sub-tab lives in the URL hash (`#settings/payment`), so it survives a refresh and a Pro
   // CTA can link straight at Subscription (#112). Keys come from TABS so a new tab is declared
   // once, not in a parallel list that can drift.
+  // Default stays 'shipping', NOT the new first tab: every merchant who opens Settings or
+  // follows an existing `#settings` link lands where they always have. A one-field page about
+  // what the shop sells is not worth moving everyone's shipping form behind a click (#161).
   const [tab, setTab] = useDashboardSubsection('settings', TABS.map(x => x.key), 'shipping')
 
   const dirty = dirtyTab === tab
@@ -105,6 +112,7 @@ export default function ShopSettings() {
         </TabsList>
       </Tabs>
 
+      {tab === 'shop' && <ShopTab onDirtyChange={setDirty} />}
       {tab === 'shipping' && <ShippingTab onDirtyChange={setDirty} />}
       {tab === 'fulfilment' && <FulfilmentTab onDirtyChange={setDirty} />}
       {tab === 'payment' && <PaymentTab onDirtyChange={setDirty} />}
@@ -153,6 +161,57 @@ function SaveRow({ busy, label }: { busy: boolean; label: { idle: string; busy: 
     <Button type="submit" size="md" className="mt-1" disabled={busy}>
       {busy ? label.busy : label.idle}
     </Button>
+  )
+}
+
+// What the shop IS (#161). One field today — the industry it operates in — and the home for
+// shop-identity settings that follow.
+function ShopTab({ onDirtyChange }: TabProps) {
+  const { t, merchant, refreshMerchant } = useSession()
+  // '' is "never said", which is what every shop that predates the field carries. It is NOT an
+  // option in the dropdown: the merchant can set an industry or leave it, but cannot pick
+  // "unspecified" back, so the empty state stays an artefact of history rather than a choice.
+  const [initial] = useState<SettingsFields>(() => ({ businessNature: merchant!.business_nature ?? '' }))
+  const [fields, setFields] = useState<SettingsFields>(initial)
+  const [busy, setBusy] = useState(false)
+  const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
+
+  const nature = fields.businessNature ?? ''
+
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true)
+    try {
+      // Only ever sent as a real code: the backend REFUSES a value outside the vocabulary, and
+      // '' is not one — a shop that has not picked yet simply saves nothing here.
+      if (!nature) { toast.error(t('Choose what you sell', '请选择你卖什么')); return }
+      const saved = await updateMerchantConfig(merchant!.id, { business_nature: nature })
+      if (!saved.ok) { toast.error(saved.error.message || t('Save failed', '保存失败')); return }
+      await refreshMerchant()
+      commit(fields)
+      toast.success(t('Shop saved', '店铺已保存'))
+    } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <form onSubmit={save}>
+      <div className={CARD}>
+        <h3 className={HEADING}>{t('Business type', '业务类型')}</h3>
+        <div className="flex flex-col gap-[6px]">
+          <BusinessNaturePicker
+            id="shop-nature"
+            value={nature}
+            onChange={(v) => setFields(f => ({ ...f, businessNature: v }))}
+            className="max-w-[280px]"
+          />
+          <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+            {t('Helps us understand who we build for. Not shown to your customers.',
+               '帮助我们了解服务对象，顾客看不到。')}
+          </p>
+        </div>
+      </div>
+      <SaveRow busy={busy} label={{ idle: t('Save shop', '保存店铺'), busy: t('Saving…', '保存中…') }} />
+    </form>
   )
 }
 

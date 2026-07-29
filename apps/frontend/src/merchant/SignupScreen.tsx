@@ -5,6 +5,7 @@ import { toSlugBase } from '../slug'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
+import BusinessNaturePicker from '../components/BusinessNaturePicker'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -26,6 +27,10 @@ export default function SignupScreen() {
   const ref = params.get('ref') ?? undefined
 
   const [name, setName] = useState('')
+  // No default (#161): pre-selecting an industry would collect a guess from every merchant who
+  // never opened the dropdown, on the one field that exists to be counted. Submit stays disabled
+  // until they pick.
+  const [businessNature, setBusinessNature] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -55,7 +60,7 @@ export default function SignupScreen() {
                  '账号已创建。请查收邮件确认，然后登录以完成店铺设置。'))
         setBusy(false); return
       }
-      const created = await createMerchant({ name, plan, billing, referredByCode: ref })
+      const created = await createMerchant({ name, plan, billing, referredByCode: ref, businessNature })
       if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
       await refreshMerchant()
       if (plan === 'basic') {
@@ -121,6 +126,9 @@ export default function SignupScreen() {
             <p className="text-[12px] text-rose-muted px-[10px] py-[5px] bg-surface-sunken rounded-sm font-mono tracking-[0.3px] leading-[1.5]">
               {t('Your store URL', '店铺网址')}: /s/{slugPreview}
             </p>
+            {/* Sits with the shop name, not below the credentials: both describe the SHOP, and
+                the email/password pair below is about the account. */}
+            <BusinessNaturePicker id="signup-nature" value={businessNature} onChange={setBusinessNature} />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="signup-2">{t('Email', '邮箱')}</Label>
               <Input id="signup-2" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
@@ -130,7 +138,8 @@ export default function SignupScreen() {
               <Input id="signup-3" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
             </div>
           </div>
-          <Button type="submit" variant="default" size="md" className="py-3" disabled={busy}>
+          {/* A Radix select carries no native `required`, so the button is the gate. */}
+          <Button type="submit" variant="default" size="md" className="py-3" disabled={busy || !businessNature}>
             {busy
               ? t('Creating…', '创建中…')
               : plan === 'basic'

@@ -2,6 +2,8 @@
 // workspaces compile TypeScript themselves (Vite/esbuild/Vitest), so there is no build
 // step and no dist — the consumers bundle this source directly.
 export { MIN_PASSWORD_LENGTH, isPasswordLongEnough } from './password.js'
+export { BUSINESS_NATURES, isBusinessNature } from './businessNature.js'
+export type { BusinessNature } from './businessNature.js'
 export { MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES, isCart } from './cart.js'
 export {
   validateFeedback, isFeedbackCategory, isFeedbackStatus,

@@ -44,7 +44,7 @@ import { processReferralReward } from './referralRewardGrant.js'
 import { trackOrder } from './orderTracking.js'
 import { placeOrder, OrderError } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus } from './feedback.js'
-import { isCart, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
@@ -133,6 +133,16 @@ app.post('/api/merchants', requireUser, async (c) => {
   const name = String(body?.name ?? '').trim()
   if (!name) return c.json({ error: 'Missing name' }, 400)
 
+  // The signup form makes this required and the column is CHECKed, but the endpoint accepts an
+  // absent one (#161): the field arrived after shops already existed, so "unspecified" is a real
+  // state the admin Overview has to draw anyway, and this is analytics — not a privilege worth
+  // refusing a shop's creation over. A PRESENT-but-unknown value is still refused rather than
+  // dropped, so a client typo surfaces here instead of as a silently industry-less shop.
+  const businessNature = body?.businessNature
+  if (businessNature !== undefined && businessNature !== null && !isBusinessNature(businessNature)) {
+    return c.json({ error: 'Unknown business nature' }, 400)
+  }
+
   const { data: rows } = await admin.from('merchants').select('slug')
   const slug = await resolveSlug(name, { taken: (rows ?? []).map((r) => r.slug), id: user.id })
 
@@ -147,6 +157,8 @@ app.post('/api/merchants', requireUser, async (c) => {
       plan: body?.plan ?? 'basic',
       billing_cycle: body?.billing ?? 'monthly',
       billing_region: 'MY', // everyone is charged MYR
+      // Already validated above, so this only maps an ABSENT one onto the column's own "never said".
+      business_nature: businessNature ?? null,
       referred_by_code: resolveReferredByCode(body?.referredByCode, referralCodeOf(user.id)),
     })
     .select()

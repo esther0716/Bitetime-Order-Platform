@@ -45,6 +45,10 @@ export interface Merchant {
   delivery_max_km?: number | string | null
   origin_place_id?: string | null
   origin_address?: string | null
+  /** Industry the shop runs in (#161), one of `BUSINESS_NATURES`. Absent/null for a shop that
+   *  signed up before the field existed — render it through `businessNatureLabel`, which names
+   *  that state rather than dropping the shop. */
+  business_nature?: string | null
   /** Onboarding checklist flags (#102). Read via `onboardingSteps`; absent means false. */
   onboarding_shipping_set?: boolean
   onboarding_link_shared?: boolean
