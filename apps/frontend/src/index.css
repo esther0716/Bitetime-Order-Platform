@@ -1,4 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@400;500&family=Noto+Serif+SC:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+/* The webfonts are requested from index.html, NOT from here.
+   An `@import url(https://fonts.googleapis.com/…)` at the top of this file is the worst place a
+   font request can sit: this stylesheet is render-blocking, and the import inside it is invisible
+   to the browser's preload scanner, so the request is only discovered after the whole bundle has
+   downloaded AND parsed. That makes the critical path four serial trips — HTML → app CSS → Google's
+   CSS (cold origin) → the font file on a second cold origin — and nothing paints until it finishes.
+   In <head> the same two requests are found immediately and warmed by preconnect. */
 @import 'tailwindcss';
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
