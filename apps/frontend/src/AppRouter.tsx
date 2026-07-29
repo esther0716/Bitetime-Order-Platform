@@ -165,7 +165,12 @@ function AnimatedRoutes() {
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/s/:slug/*" element={<MerchantProvider><StorefrontShell /></MerchantProvider>} />
-          <Route path="/merchant/signup" element={<SignupScreen />} />
+          {/* The optional segments are the plan and billing cycle the pricing cards preselect —
+              `/merchant/signup/pro/yearly` rather than `?plan=pro&billing=yearly`, because a query
+              string is what a link auditor and a human both read as unfriendly. Optional, so the
+              bare URL in sitemap.xml and a half-typed one still land on the form; collapsed to
+              that bare URL by canonicalPath, so the four CTAs are one indexed page. */}
+          <Route path="/merchant/signup/:plan?/:billing?" element={<SignupScreen />} />
           <Route path="/merchant/login" element={<RedirectSignedInMerchant><LoginScreen /></RedirectSignedInMerchant>} />
           <Route path="/merchant" element={<RequireRole role="merchant"><MerchantHome /></RequireRole>} />
           <Route path="/merchant/:slug" element={<RequireRole role="superadmin"><MerchantHome /></RequireRole>} />

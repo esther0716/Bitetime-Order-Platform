@@ -523,8 +523,12 @@ export default function Landing() {
                     </li>
                   ))}
                 </ul>
+                {/* Path segments, not `?plan=…&billing=…`: this is the one CTA a crawler reads,
+                    and a query string is what a link auditor and a human both score as an
+                    unfriendly URL. All four collapse to /merchant/signup in the canonical tag
+                    (canonical.ts), so the form stays one indexed page. */}
                 <Link
-                  to={`${tier.to}?plan=${tier.id}&billing=${billing}`}
+                  to={`${tier.to}/${tier.id}/${billing}`}
                   className={tier.highlight ? cardCtaPrimary : cardCtaGhost}
                 >
                   {tier.cta}
