@@ -1,4 +1,4 @@
-import { isTimezone } from '@bitetime/shared'
+import { canonicalJson, optionGroupsFromRow, isTimezone } from '@bitetime/shared'
 
 // Column allowlists for write endpoints. The service-role `admin` client bypasses RLS and the
 // guard_merchant_status / guard_profile_privileges triggers, so these picks are the ONLY thing
@@ -171,7 +171,7 @@ export function pickProfileFields(body: any): Record<string, unknown> {
 // inflating a promo's sold counter (Global Constraint 1).
 const PRODUCT_FIELDS = [
   'id', 'name', 'name_zh', 'descr', 'price', 'unit', 'unit_quantity', 'active',
-  'image_urls', 'promo_price', 'promo_limit', 'promo_end',
+  'image_urls', 'promo_price', 'promo_limit', 'promo_end', 'option_groups',
 ] as const
 
 export function pickProductFields(body: any): Record<string, unknown> {
@@ -247,4 +247,40 @@ export function pickOrderFields(body: any): Record<string, unknown> {
   if (body?.courier !== undefined) out.courier = body.courier || null
   if (body?.awb !== undefined) out.awb = String(body.awb ?? '').trim() || null
   return out
+}
+
+/**
+ * Does this product upsert CHANGE the option groups, versus the row already in the table? (#145)
+ *
+ * `promoChanged`'s twin, on the same endpoint, and deliberately the same shape — including the
+ * reason. Asking whether the column is PRESENT is the wrong question: a shop that dropped from
+ * pro to basic still has groups on its rows, and the dashboard resubmits the whole row, so
+ * presence would refuse an ordinary rename. The workaround (omit the column) would leave a
+ * shop's menu one payload mistake from being cleared behind a success toast.
+ *
+ * The comparison is `canonicalJson` rather than `===` for the jsonb equivalent of the reason
+ * `samePromoValue` is not `===`: the two sides do not arrive in the same shape. The browser sends
+ * an object graph in whatever key order it built, PostgREST hands back parsed jsonb in the order
+ * Postgres stored it, and a stored value can arrive as text. A strict compare would call every
+ * one of those a change — a 403 on a rename.
+ *
+ * THAT SERIALISER IS ALSO THE CART LINE KEY, which is not a coincidence and is the point: if it
+ * normalises away a real difference a Basic shop can edit its groups for free, and if it invents
+ * one no Basic shop can save a product at all. One function, one test, one blast radius.
+ *
+ * CLEARING IS A CHANGE. `[]` against stored groups is refused, so the groups a Basic shop may no
+ * longer edit stay put until it is Pro again — a Pro feature must not be removable by the act of
+ * ceasing to pay for it.
+ *
+ * `stored` is null on the create path (`mayCreate`), where any groups at all are new — so a basic
+ * shop cannot be born with them. An empty list is not "groups", so a plain product still saves.
+ */
+export function optionGroupsChanged(
+  fields: Record<string, unknown>,
+  stored: Record<string, any> | null,
+): boolean {
+  const submitted = fields.option_groups
+  if (submitted === undefined) return false
+  return canonicalJson(optionGroupsFromRow(submitted))
+    !== canonicalJson(optionGroupsFromRow(stored?.option_groups ?? null))
 }

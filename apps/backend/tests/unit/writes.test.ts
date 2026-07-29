@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pickMerchantConfig, promoChanged } from '../../src/writes.js'
+import { pickMerchantConfig, promoChanged, optionGroupsChanged } from '../../src/writes.js'
 
 describe('pickMerchantConfig — fulfilment', () => {
   it('accepts a config bag and a real timezone', () => {
@@ -167,5 +167,64 @@ describe('promoChanged', () => {
   it('is true for an unparseable submitted value', () => {
     expect(promoChanged({ promo_price: 'free' }, { promo_price: 8 })).toBe(true)
     expect(promoChanged({ promo_end: 'someday' }, { promo_end: '2030-01-01T00:00:00.000Z' })).toBe(true)
+  })
+})
+
+// `optionGroupsChanged` is `promoChanged`'s twin on the same endpoint, and must stay one: same
+// question ("did this CHANGE?"), same answer to an unchanged full-row resubmit, same refusal of
+// a clear. Where it differs is the comparison itself — jsonb, so key order and number formatting
+// are noise, which is what `canonicalJson` exists to remove. That serialiser is ALSO the cart
+// line key, so a bug here is a bug there: normalise away a real difference and a Basic shop can
+// edit its groups; invent one and no Basic shop can save a product at all.
+describe('optionGroupsChanged', () => {
+  const milk = [{
+    id: 'milk', name: 'Milk', minSelect: 1, maxSelect: 1, maxPerOption: 1, active: true,
+    options: [{ id: 'oat', name: 'Oat', delta: 2, active: true }],
+  }]
+
+  it('is false when the column is not submitted at all', () => {
+    expect(optionGroupsChanged({ name: 'Latte' }, { option_groups: milk })).toBe(false)
+  })
+
+  // The rename case. The dashboard resubmits the whole row, so this is the ordinary edit a Basic
+  // ex-Pro shop must still be allowed to make.
+  it('is false when the submitted groups equal the stored ones', () => {
+    expect(optionGroupsChanged({ option_groups: milk }, { option_groups: milk })).toBe(false)
+  })
+
+  it('sees through key order and number formatting', () => {
+    const reordered = [{
+      options: [{ active: true, delta: 2.0, id: 'oat', name: 'Oat' }],
+      active: true, maxPerOption: 1, maxSelect: 1, minSelect: 1, name: 'Milk', id: 'milk',
+    }]
+    expect(optionGroupsChanged({ option_groups: reordered }, { option_groups: milk })).toBe(false)
+  })
+
+  it('reads a stored value that arrived as text', () => {
+    expect(optionGroupsChanged({ option_groups: milk }, { option_groups: JSON.stringify(milk) })).toBe(false)
+  })
+
+  it('is true when a delta, a window or an option moves', () => {
+    const dearer = [{ ...milk[0], options: [{ ...milk[0].options[0], delta: 3 }] }]
+    expect(optionGroupsChanged({ option_groups: dearer }, { option_groups: milk })).toBe(true)
+    expect(optionGroupsChanged({ option_groups: [{ ...milk[0], maxSelect: 2 }] }, { option_groups: milk })).toBe(true)
+    expect(optionGroupsChanged(
+      { option_groups: [{ ...milk[0], options: [...milk[0].options, { id: 'soy', name: 'Soy', delta: 2, active: true }] }] },
+      { option_groups: milk },
+    )).toBe(true)
+  })
+
+  // Clearing is a change like any other — the groups a Basic shop may no longer edit stay put
+  // until it is Pro again. Otherwise the feature is removable by anyone who stops paying, which
+  // is the "success toast, wrong data" failure the promo gate was fixed to stop.
+  it('is true when the groups are cleared', () => {
+    expect(optionGroupsChanged({ option_groups: [] }, { option_groups: milk })).toBe(true)
+  })
+
+  // The create path: `stored` is null, so any groups at all are new and a Basic shop cannot be
+  // born with them. An empty list is not "groups", so a plain product still saves.
+  it('treats a missing stored row as no groups', () => {
+    expect(optionGroupsChanged({ option_groups: milk }, null)).toBe(true)
+    expect(optionGroupsChanged({ option_groups: [] }, null)).toBe(false)
   })
 })

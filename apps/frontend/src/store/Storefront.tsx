@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
@@ -10,9 +10,10 @@ import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderR
 import { noticeText, type Notice } from './notice'
 import { useDeliveryQuote } from './useDeliveryQuote'
 import { submitGate } from './submitGate'
-import { pruneCart, pruneMessage, nextCart, cartRefusalMessage } from './cartRules'
-import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
-import type { FulfilmentMethod } from '@bitetime/shared'
+import { pruneCart, pruneMessage, nextCart, repairCart, plainQty, cartRefusalMessage } from './cartRules'
+import type { CartTarget } from './cartRules'
+import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, optionGroupsFromRow, cartLineKey, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import type { FulfilmentMethod, CartLine, PickSnapshot } from '@bitetime/shared'
 import { prefillFromProfile, savedDetailsFromOrder, carriesAddress } from '../savedDetails'
 import { fulfilmentLabel, feeLineLabel } from '../fulfilmentLabel'
 import { formatMoney } from '../currency'
@@ -25,6 +26,8 @@ import type { Product, Voucher, AddressParts } from '../types'
 import LanguageSelect from '../components/LanguageSelect'
 import ImageLightbox from '../components/ImageLightbox'
 import SignInDialog from './SignInDialog'
+import { OptionPicker } from './OptionPicker'
+import { ItemSelections } from '../ItemSelections'
 import CheckoutGate, { GuestStrip } from './CheckoutGate'
 import FulfilDatePicker from './FulfilDatePicker'
 import AddressAutocomplete from './AddressAutocomplete'
@@ -38,7 +41,20 @@ import { Label } from '../components/ui/label'
 
 const EMPTY_ADDRESS: AddressParts = { line1: '', postcode: '', city: '', state: '' }
 
-interface CartLine {
+/**
+ * A priced line for DISPLAY. Renamed off `CartLine` in #145: that name now means what the
+ * customer put in the cart (`{productId, qty, selections}`), and one name for both is what the
+ * promo split was already straining.
+ */
+interface ReceiptLine {
+  /**
+   * The CART LINE this row was priced from. Absent for an extra line, which has no cart entry.
+   * NOT the product id: a promo split renders one cart line as two rows that must remove
+   * together, and one product holds several lines once its options differ.
+   */
+  key?: string
+  /** The options chosen on it, resolved — so the row says what the customer actually ordered. */
+  selections?: PickSnapshot[]
   id: string
   name: string
   qty: number
@@ -52,7 +68,7 @@ interface CartLine {
 
 interface SuccessState {
   orderNumber: string
-  items: CartLine[]
+  items: ReceiptLine[]
   subtotal: number
   fee: number
   discount: number
@@ -84,7 +100,11 @@ export default function Storefront() {
   const enterView = useEnterTransition()
 
   const [products, setProducts] = useState<Product[]>([])
-  const [cart, setCart] = useState<Record<string, number>>({})        // { [productId]: qty }
+  const [cart, setCart] = useState<CartLine[]>([])   // one entry per product+selections (ADR 0009)
+  // See `adoptProducts`: the freshly-adopted menu, readable before the render that carries it.
+  const latestProducts = useRef<Product[]>([])
+  // The product whose questions the customer is answering, or null. See `OptionPicker`.
+  const [picking, setPicking] = useState<Product | null>(null)
   const [fulfilDate, setFulfilDate] = useState<string | null>(null)
 
   // Prefill is DERIVED, never copied into state by an effect. `null` means "the customer hasn't
@@ -303,6 +323,10 @@ export default function Storefront() {
    */
   const adoptProducts = (fresh: Product[]) => {
     setProducts(fresh)
+    // The menu as of RIGHT NOW, for a `setCart` updater that runs before this render commits.
+    // `repair_selections` fires immediately after `refresh_sources` inside one handler, so
+    // reading `products` there would read the menu the option was withdrawn FROM.
+    latestProducts.current = fresh
 
     // What goes, and what can be said about it, is `cartRules.ts`'s decision. This performs it.
     const pruned = pruneCart(cart, fresh)
@@ -395,7 +419,10 @@ export default function Storefront() {
     // here is a second rule, and the customer meets it as a refused checkout (`price_changed`).
     tax,
   })
-  const cartItems: CartLine[] = bd.lines.map(l => ({ id: l.id, name: l.name, qty: l.qty, price: l.unitPrice, promo: l.promo }))
+  const cartItems: ReceiptLine[] = bd.lines.map(l => ({
+    id: l.id, name: l.name, qty: l.qty, price: l.unitPrice, promo: l.promo,
+    key: l.key, selections: l.selections,
+  }))
   const subtotal = bd.subtotal
   const discount = bd.discount
   const total = bd.total
@@ -458,12 +485,30 @@ export default function Storefront() {
   }
 
   /**
+   * A row's cart line, when it has one.
+   *
+   * `extraLines` (a gift line) have no cart entry behind them and must not offer a remove — the
+   * same reason `promoClaims` refuses to claim one.
+   */
+  const removableKey = (item: ReceiptLine) => item.key
+
+  /**
+   * Take a whole cart line out, by its derived key.
+   *
+   * Removes the LINE, not one unit: a product with options has an Add button rather than a
+   * stepper, so this is the only exit that line has. A promo split shows it as two rows and both
+   * carry the same key, so removing either takes the entry with it.
+   */
+  const removeLine = (key: string) =>
+    setCart(prev => prev.filter(l => cartLineKey(l) !== key))
+
+  /**
    * The only place a cart can grow. What the ceilings are and when they bind is `cartRules.ts`'s
    * decision; the toast is this component's, which is why the module RETURNS a refusal rather
    * than performing one — a setState updater must stay pure, and React may run one twice.
    */
-  const updateQty = (productId: string, delta: number) => {
-    const change = nextCart(cart, productId, delta)
+  const updateQty = (target: CartTarget, delta: number) => {
+    const change = nextCart(cart, target, delta)
     if (change.refused) {
       // `noop` says nothing — refusing to go below zero is not something the customer did wrong.
       const message = cartRefusalMessage(change.refused, t)
@@ -474,7 +519,7 @@ export default function Storefront() {
     // before a re-render both read the same stale `cart`, and writing a whole cart computed from
     // it would drop the first one. `?? prev` keeps a ceiling that only binds against the newer
     // cart from blanking the line instead of refusing it.
-    setCart(prev => nextCart(prev, productId, delta).cart ?? prev)
+    setCart(prev => nextCart(prev, target, delta).cart ?? prev)
   }
 
   /**
@@ -571,6 +616,39 @@ export default function Storefront() {
         requote()
       } else if (action === 'clear_date') {
         setFulfilDate(null)
+      } else if (action === 'repair_selections') {
+        // AFTER `refresh_sources`, which is why the plan returns an ORDERED list and this loop
+        // walks it rather than choosing for itself: against the stale menu this would keep the
+        // very option that was just withdrawn, and the retry would be refused identically.
+        const menu = latestProducts.current.map(p => ({
+          id: p.id, active: p.active, optionGroups: optionGroupsFromRow(p.option_groups),
+        }))
+        // Decided from `cart`, WRITTEN against `prev` — the same split `adoptProducts` makes,
+        // and for the same reason: the decision needs a value to reason about, while the write
+        // must survive a tap that landed between this render and it. `repairCart` is pure, so an
+        // updater React chooses to run twice still lands the same cart.
+        const repaired = repairCart(cart, menu)
+        setCart(prev => repairCart(prev, menu).cart)
+
+        // REPAIR first, drop second. Losing a coffee because one milk ran out, while three
+        // remain, is the wrong answer to a menu that merely moved — so a product that can still
+        // be answered reopens its picker. Dropping is the TERMINATING case, and something must
+        // terminate: a picker with nothing valid to pick is the same dead end in nicer manners.
+        const askAgain = repaired.reask
+          .map(id => latestProducts.current.find(p => p.id === id))
+          .find(Boolean)
+        if (askAgain) {
+          setPicking(askAgain)
+          toast(t(
+            'An option you chose is no longer available — please choose again.',
+            '你选择的选项已不可用，请重新选择。',
+          ))
+        } else if (repaired.removed > 0) {
+          toast(t(
+            'An option you chose is no longer available, so that item was removed.',
+            '你选择的选项已不可用，该商品已移除。',
+          ))
+        }
       }
     }
   }
@@ -633,7 +711,7 @@ export default function Storefront() {
         address: carriesAddress(mode) ? address : '',
         // What they want, and what they saw. Never what it costs: the shop's own rows are the
         // only thing that may say that, and `bd` is only ever a quote.
-        cart: Object.fromEntries(Object.entries(cart).filter(([, qty]) => qty > 0)),
+        cart: cart.filter(l => l.qty > 0),
         quotedTotal: total,
         voucherCode: appliedVoucher?.code ?? null,
         fulfilDate: chosenDate,
@@ -698,7 +776,7 @@ export default function Storefront() {
   // blank — a signed-in customer's second order of the day should not make them retype either.
   const handleReset = () => {
     setSuccess(null)
-    setCart({})
+    setCart([])
     setNameInput(null)
     setWaInput(null)
     setAddressInput(null)
@@ -751,13 +829,16 @@ export default function Storefront() {
                 <div key={i} className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
                   {/* min-w-0 (not shrink-0): a long product name must wrap inside its own column.
                       shrink-0 let it push the price out past the card's right edge. */}
-                  <span className="min-w-0 flex items-center gap-1.5 flex-wrap">
-                    {item.name} × {item.qty}
-                    {item.promo && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
-                        {t('Promo', '优惠')}
-                      </span>
-                    )}
+                  <span className="min-w-0 flex flex-col gap-0.5">
+                    <span className="flex items-center gap-1.5 flex-wrap">
+                      {item.name} × {item.qty}
+                      {item.promo && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
+                          {t('Promo', '优惠')}
+                        </span>
+                      )}
+                    </span>
+                    <ItemSelections item={item} />
                   </span>
                   <span className="shrink-0 text-right whitespace-nowrap">{formatMoney(item.price * item.qty, currency)}</span>
                 </div>
@@ -882,6 +963,21 @@ export default function Storefront() {
           </div>
 
           <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />
+          <OptionPicker
+            product={picking}
+            onClose={() => setPicking(null)}
+            productName={picking ? productName(picking) : ''}
+            currency={currency}
+            groups={picking ? optionGroupsFromRow(picking.option_groups) : []}
+            t={t}
+            label={(name, nameZh) => (lang === 'zh' && nameZh) ? nameZh : name}
+            onAdd={selections => {
+              // Straight through `updateQty`, so the ceilings and the MERGE rule stay the cart's
+              // one decision rather than a second copy living in the sheet: adding the same drink
+              // with the same milk twice raises the line the customer already has.
+              if (picking) updateQty({ productId: picking.id, selections }, 1)
+            }}
+          />
 
           {/* Product list */}
           <div className="mb-7">
@@ -897,7 +993,7 @@ export default function Storefront() {
                     key={p.id}
                     className={cn(
                       "flex items-center gap-[14px] px-4 py-[14px] bg-surface-raised border-[1.5px] border-clay-border rounded-xl transition-colors",
-                      (cart[p.id] || 0) > 0 && "border-oxblood bg-oxblood-tint"
+                      cart.some(l => l.productId === p.id) && "border-oxblood bg-oxblood-tint"
                     )}
                   >
                     {p.image_urls?.length ? (
@@ -947,7 +1043,13 @@ export default function Storefront() {
                         // the next tap prices at base — so the card must fall through to the same
                         // plain base-price display a non-promo product gets, badge and strike-
                         // through and all, or it advertises a price the backend will refuse.
-                        const claimed = promo ? (bd.lines.find(l => l.id === p.id && l.promo)?.qty ?? 0) : 0
+                        // SUM, never `find`: one product can occupy several lines once its
+                        // options differ, and `find` would report only the first — under-counting
+                        // the units this cart has already claimed and advertising a promo price
+                        // for a unit that will be charged at base.
+                        const claimed = promo
+                          ? bd.lines.reduce((n, l) => (l.id === p.id && l.promo ? n + l.qty : n), 0)
+                          : 0
                         const remainingForNextUnit = promo && Number.isFinite(promo.remaining)
                           ? promo.remaining - claimed
                           : Infinity
@@ -978,27 +1080,38 @@ export default function Storefront() {
                         )
                       })()}
                     </div>
+                    {optionGroupsFromRow(p.option_groups).some(g => g.active) ? (
+                      /* A product that asks questions has no plain line to step: there is no
+                         answer to which selection a bare + would raise. It gets Add, and the
+                         quantity is adjusted in the cart or by adding again. */
+                      <Button
+                        size="sm"
+                        className="pointer-coarse:h-11"
+                        onClick={() => setPicking(p)}
+                      >{t('Add', '加入')}</Button>
+                    ) : (
                     <div className="flex items-center gap-2">
                       <Button
                         variant="soft"
                         size="iconRound"
                         className="text-[16px] pointer-coarse:size-11 pointer-coarse:text-[18px]"
-                        onClick={() => updateQty(p.id, -1)}
+                        onClick={() => updateQty({ productId: p.id, selections: [] }, -1)}
                         aria-label={t('Decrease quantity', '减少数量')}
                       >−</Button>
                       <span
                         className="text-[14px] font-medium min-w-[20px] pointer-coarse:min-w-[28px] text-center text-ink"
                         aria-live="polite"
                         aria-label={t('Quantity', '数量')}
-                      >{cart[p.id] || 0}</span>
+                      >{plainQty(cart, p.id)}</span>
                       <Button
                         variant="soft"
                         size="iconRound"
                         className="text-[16px] pointer-coarse:size-11 pointer-coarse:text-[18px]"
-                        onClick={() => updateQty(p.id, 1)}
+                        onClick={() => updateQty({ productId: p.id, selections: [] }, 1)}
                         aria-label={t('Increase quantity', '增加数量')}
                       >+</Button>
                     </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1311,14 +1424,34 @@ export default function Storefront() {
                     <div key={i} className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
                       {/* min-w-0, not shrink-0 — see the success view's line items (#92). */}
                       <span className="min-w-0 flex items-center gap-1.5 flex-wrap">
-                        {displayName} × {item.qty}
+                        <span className="flex flex-col">
+                          <span>{displayName} × {item.qty}</span>
+                          {/* What they actually chose, under the name. The order snapshots this;
+                              showing it is what lets them notice a wrong pick before paying. */}
+                          <ItemSelections item={item} />
+                        </span>
                         {item.promo && (
                           <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
                             {t('Promo', '优惠')}
                           </span>
                         )}
                       </span>
-                      <span className="shrink-0 text-right whitespace-nowrap">{formatMoney(item.price * item.qty, currency)}</span>
+                      <span className="shrink-0 flex items-center gap-2">
+                        <span className="text-right whitespace-nowrap">{formatMoney(item.price * item.qty, currency)}</span>
+                        {/* The ONLY way out for a line with options: its card has an Add button
+                            rather than a stepper, because there is no answer to which selection a
+                            bare + would raise. Without this a customer who picked the wrong milk
+                            could not remove it at all. Keyed on the CART LINE — a promo split
+                            renders two rows for one entry, and removing either removes the line. */}
+                        {removableKey(item) && (
+                          <button
+                            type="button"
+                            onClick={() => removeLine(removableKey(item)!)}
+                            aria-label={t(`Remove ${displayName}`, `移除 ${displayName}`)}
+                            className="text-rose-muted hover:text-oxblood cursor-pointer leading-none px-1 pointer-coarse:px-2"
+                          >×</button>
+                        )}
+                      </span>
                     </div>
                   )
                 })}

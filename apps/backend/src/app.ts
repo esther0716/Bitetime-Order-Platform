@@ -44,10 +44,11 @@ import { processReferralReward } from './referralRewardGrant.js'
 import { trackOrder } from './orderTracking.js'
 import { placeOrder, OrderError } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus } from './feedback.js'
-import { isCart, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
-import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
+import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
 
@@ -638,6 +639,21 @@ app.put('/api/merchants/:id/products/:productId', requireMerchantOwns, requireOw
   const fields = pickProductFields(await c.req.json().catch(() => ({})))
   if (promoChanged(fields, c.get('child')) && !(await hasProAccess(c))) {
     return c.json({ error: REQUIRES_PRO }, 403)
+  }
+  // Menu options are Pro, gated the same way and for the same reason (ADR 0010). Clearing counts
+  // as a change, so a shop that stepped down to basic cannot delete the groups it can no longer
+  // edit — a Pro feature must not be removable by the act of ceasing to pay for it.
+  if (optionGroupsChanged(fields, c.get('child')) && !(await hasProAccess(c))) {
+    return c.json({ error: REQUIRES_PRO }, 403)
+  }
+  // ADR 0008 traded every `check` constraint on these groups for atomic saves and a jsonb column
+  // that both drivers parse identically. THIS is what stands in their place: Postgres will store
+  // `minSelect: 9, maxSelect: 2` without complaint, and a customer would then meet a question no
+  // answer can satisfy. Refused here, where the merchant is present to see it, rather than as a
+  // storefront that silently cannot be ordered from.
+  if (fields.option_groups !== undefined) {
+    const bad = validateOptionGroups(optionGroupsFromRow(fields.option_groups))
+    if (bad) return c.json({ error: bad }, 400)
   }
   const row = { ...fields, id: productId, merchant_id: id }
   const { data, error } = await admin.from('products').upsert(row).select().single()
@@ -1364,7 +1380,7 @@ app.post('/api/orders', async (c) => {
       customerWa: b.customerWa,
       mode,
       address: b.address ?? null,
-      cart: b.cart,
+      cart: b.cart as CartLine[],
       quotedTotal,
       voucherCode: typeof b.voucherCode === 'string' ? b.voucherCode : null,
       fulfilDate,

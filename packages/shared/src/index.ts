@@ -2,7 +2,7 @@
 // workspaces compile TypeScript themselves (Vite/esbuild/Vitest), so there is no build
 // step and no dist — the consumers bundle this source directly.
 export { MIN_PASSWORD_LENGTH, isPasswordLongEnough } from './password.js'
-export { MAX_CART_QTY, MAX_CART_LINES, isCart } from './cart.js'
+export { MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES, isCart } from './cart.js'
 export {
   validateFeedback, isFeedbackCategory, isFeedbackStatus,
   FEEDBACK_CATEGORIES, FEEDBACK_STATUSES, FEEDBACK_MAX_LENGTH,
@@ -12,7 +12,7 @@ export type {
 } from './feedback.js'
 export {
   priceOrder, voucherError, shippingFee, voucherFromRow, shopRates, shopTax,
-  promoState, promoClaims, productFromRow,
+  promoState, promoClaims, productFromRow, optionGroupsFromRow,
   shopDistance, routedKm, distanceFee, exceedsMaxKm,
   shopMethods, offersMethod, firstOfferedMethod, FULFILMENT_METHODS, isDistancePriced,
   EM_STATES, DEFAULT_WM_RATE,
@@ -39,3 +39,13 @@ export type {
   MerchantStats, SeriesPoint, SeriesWindow, Slice, StatusSlice, Delta, Granularity,
   StatsOrder, StatsOrderItem, StatsVoucher, WindowTotals, RevenueRange,
 } from './merchantStats.js'
+export {
+  canonicalJson, cartLineKey, validateSelections, validateOptionGroups,
+  snapshotSelections, picksDelta,
+  deactivateGroups, hasRequiredGroup, hasActiveGroup, canBeAnswered,
+  MAX_PICK_QTY, MAX_GROUPS_PER_PRODUCT, MAX_OPTIONS_PER_GROUP,
+} from './options.js'
+export type {
+  Option, OptionGroup, Selection, CartLine, PickSnapshot,
+  SelectionError, GroupConfigError,
+} from './options.js'

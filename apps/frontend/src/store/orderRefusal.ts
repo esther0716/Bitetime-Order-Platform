@@ -32,6 +32,12 @@ export type RefusalAction =
   | 'requote'
   /** Clear the chosen fulfilment date so the stale one leaves the grid. */
   | 'clear_date'
+  /**
+   * Re-check every cart line's selections against the freshly-loaded menu: drop picks whose
+   * option is gone or switched off, and reopen the picker on what that leaves invalid. MUST come
+   * after `refresh_sources` — against a stale menu it would keep the withdrawn option.
+   */
+  | 'repair_selections'
 
 export interface RefusalPlan {
   readonly message: string
@@ -127,6 +133,24 @@ export function orderRefusalPlan(code: OrderRefusalCode | undefined, ctx: OrderR
           '购物车中有商品已下架，已为你移除，请确认订单后重新下单。',
         ),
         actions: ['refresh_sources'],
+      }
+
+    case 'option_unavailable':
+      // NOT `product_unavailable`'s recovery, and the difference is what stops a refusal loop.
+      // That one recovers because adopting the new menu drops a vanished product id out of the
+      // cart. Here the product id still EXISTS — only an option died — so a refetch drops
+      // nothing, the dead pick survives it, and every retry is refused identically.
+      //
+      // `repair_selections` MUST come after `refresh_sources`: repairing against the stale menu
+      // would keep the very option that was just withdrawn. Where a repair is impossible (the
+      // whole group is gone) the line is dropped instead — that fallback is the terminating
+      // case, not a courtesy, and without it the customer sits in a picker with nothing to pick.
+      return {
+        message: t(
+          'An option you chose is no longer available. Please choose again and place your order.',
+          '你选择的选项已不可用，请重新选择后下单。',
+        ),
+        actions: ['refresh_sources', 'repair_selections'],
       }
 
     case 'delivery_state_required':
