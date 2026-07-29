@@ -53,7 +53,13 @@ minimum_password_length = 8
 
 [auth.email]
 enable_signup = true
-enable_confirmations = false
+# ON, to match production (Resend sends the confirmation there). Off, local silently ran a
+# DIFFERENT signup flow than the real one: `signUp` returns a session, the sign-in after it
+# succeeds, and the shop is created in the same submit. That is not what merchants get — with
+# confirmations on there is no session, the sign-in fails, and the shop half of signup has to
+# survive the round trip on its own (see pendingShop.ts). Turning this off hides that whole
+# path. Local confirmation mail lands in Mailpit, not an inbox: `supabase status` → MAILPIT_URL.
+enable_confirmations = true
 
 # Bilingual in one body: the app's t(en, zh) cannot reach Supabase's templates under any design,
 # so both languages ship together and the reader takes the half they need.

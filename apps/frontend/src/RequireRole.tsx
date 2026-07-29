@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, lazy } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useSession } from './SessionContext'
@@ -41,13 +41,26 @@ function ShopUnreachable() {
   )
 }
 
+// Lazy so the merchant-signup half of the bundle stays out of the guard every route imports.
+// Rendered under AppRouter's own Suspense.
+const FinishSignupScreen = lazy(() => import('./merchant/FinishSignupScreen'))
+
 export default function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
-  const { role: current, loading, merchantUnknown } = useSession()
+  const { role: current, loading, merchantUnknown, account } = useSession()
   if (loading) return <PageSkeleton />
   if (current === 'superadmin') return children
-  // A lookup that never landed is not an answer. Treating it as one is what turned an
-  // unreachable API into "you are not a merchant" and bounced every login to the landing
-  // page, silently (#98) — the role here is derived from a shop row we failed to read.
-  if (current !== role) return merchantUnknown ? <ShopUnreachable /> : <Navigate to="/" replace />
+  if (current !== role) {
+    // A lookup that never landed is not an answer. Treating it as one is what turned an
+    // unreachable API into "you are not a merchant" and bounced every login to the landing
+    // page, silently (#98) — the role here is derived from a shop row we failed to read.
+    if (merchantUnknown) return <ShopUnreachable />
+    // A SIGNED-IN user asking for the merchant console who owns no shop is the other half of
+    // merchant signup, not a stranger: email confirmation splits account creation from shop
+    // creation, and the shop half is lost whenever the sign-in between them fails. Bouncing
+    // them to the marketing page is what made that unrecoverable. Signed OUT is still a
+    // bounce — there is no one to finish signing up.
+    if (role === 'merchant' && account) return <FinishSignupScreen />
+    return <Navigate to="/" replace />
+  }
   return children
 }
