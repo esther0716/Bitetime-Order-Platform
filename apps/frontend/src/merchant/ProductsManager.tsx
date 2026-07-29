@@ -296,8 +296,14 @@ export default function ProductsManager() {
       // The promo fields are locked for a basic shop, so this is the fallback for a `plan` that
       // moved under a long-open tab — an upgrade prompt, not the bare error code (#110).
       if (isRequiresPro(err)) {
-        setMsg(t('Putting an item on sale is a Pro feature. Upgrade to Pro to set a promo price.',
-          '限时优惠是 Pro 功能。升级到 Pro 即可设置优惠价。'))
+        // Both promos and options are Pro and share this endpoint, so name the one they were
+        // actually reaching for — being told about a "promo price" while adding flavours reads
+        // as the wrong error, which is worse than a vague one.
+        setMsg(optionGroups.length > 0
+          ? t('Menu options are a Pro feature. Upgrade to Pro to let customers choose sizes, flavours or add-ons.',
+              '商品选项是 Pro 功能。升级到 Pro 即可让顾客选择规格、口味或加料。')
+          : t('Putting an item on sale is a Pro feature. Upgrade to Pro to set a promo price.',
+              '限时优惠是 Pro 功能。升级到 Pro 即可设置优惠价。'))
       } else if (err.message.includes('products_promo_below_price')) {
         setMsg(t('The promo price is no longer below the normal price. Lower or clear the promo price first.',
           '优惠价已不低于原价。请先降低或清除优惠价。'))
@@ -574,9 +580,26 @@ export default function ProductsManager() {
                   t={t}
                 />
               </div>
-              <div className="flex flex-col gap-[6px] min-w-0">
+              <div className={pro
+                ? 'flex flex-col gap-[6px] min-w-0'
+                : 'flex flex-col gap-2 rounded-xl border-[1.5px] border-dashed border-clay-border p-3 min-w-0'}>
+                {!pro && (
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="flex items-center gap-2 text-[13px] font-medium text-oxblood">
+                      <Lock size={14} strokeWidth={1.75} aria-hidden />
+                      {t('Let customers choose', '让顾客选择')}
+                      <ProBadge />
+                    </span>
+                    <UpgradeLink className="px-3 py-[6px] text-[12px]" />
+                  </div>
+                )}
                 <Label>{t('Options (optional)', '选项（可选）')}</Label>
                 <OptionGroupsEditor
+                  // Keyed on the product, so each one gets its own editor. `open` is seeded from
+                  // `value.length` on MOUNT only, so without this a new product inherited the
+                  // expanded editor of whichever product was edited before it.
+                  key={editingProduct?.id ?? draftId}
+                  disabled={!pro}
                   value={optionGroups}
                   onChange={setOptionGroups}
                   currency={currency}

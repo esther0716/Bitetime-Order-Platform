@@ -38,6 +38,14 @@ export interface OptionGroupsEditorProps {
   t: (en: string, zh: string) => string
   /** Products this merchant already has, for "copy options from…". */
   copyFrom?: { id: string; name: string; groups: OptionGroup[] }[]
+  /**
+   * Basic shop. Every control is inert and the section reads as locked.
+   *
+   * SHOWN, not hidden — the rule `ProLock.tsx` states: hiding a Pro feature reads as a missing
+   * one or a bug, and leaves nothing to sell against. This is UX only; the backend refuses the
+   * write either way (`optionGroupsChanged` -> 403), which is what actually shuts the door.
+   */
+  disabled?: boolean
 }
 
 const move = <T,>(xs: T[], from: number, to: number): T[] => {
@@ -49,7 +57,7 @@ const move = <T,>(xs: T[], from: number, to: number): T[] => {
 }
 
 export default function OptionGroupsEditor({
-  value, onChange, currency, t, copyFrom = [],
+  value, onChange, currency, t, copyFrom = [], disabled = false,
 }: OptionGroupsEditorProps) {
   const [open, setOpen] = useState(value.length > 0)
 
@@ -65,7 +73,11 @@ export default function OptionGroupsEditor({
   // that ask no questions, and they should never meet this section at all.
   if (!open) {
     return (
-      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+      <Button
+        type="button" variant="outline" size="sm"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
         {t('Add options (sizes, flavours, add-ons)', '添加选项（规格、口味、加料）')}
       </Button>
     )
@@ -77,7 +89,8 @@ export default function OptionGroupsEditor({
         <span className="text-[13px] font-medium">{t('Options', '选项')}</span>
         {copyFrom.length > 0 && value.length === 0 && (
           <select
-            className="text-[12px] border border-clay-border rounded px-2 py-1 bg-transparent"
+            className="text-[12px] border border-clay-border rounded px-2 py-1 bg-transparent disabled:opacity-60"
+            disabled={disabled}
             value=""
             onChange={e => {
               const src = copyFrom.find(p => p.id === e.target.value)
@@ -100,6 +113,7 @@ export default function OptionGroupsEditor({
               <Input
                 value={group.name}
                 placeholder={t('e.g. Choose your flavours', '例如：选择口味')}
+                disabled={disabled}
                 onChange={e => patchGroup(gi, { name: e.target.value })}
               />
             </div>
@@ -110,6 +124,7 @@ export default function OptionGroupsEditor({
               <Input
                 value={group.name_zh ?? ''}
                 placeholder={t('optional', '选填')}
+                disabled={disabled}
                 onChange={e => patchGroup(gi, { name_zh: e.target.value || null })}
               />
             </div>
@@ -120,6 +135,7 @@ export default function OptionGroupsEditor({
               <Label className="text-[12px]">{t('Choose at least', '最少选')}</Label>
               <Input
                 type="number" min={0} value={group.minSelect}
+                disabled={disabled}
                 onChange={e => patchGroup(gi, { minSelect: Number(e.target.value) || 0 })}
               />
             </div>
@@ -128,6 +144,7 @@ export default function OptionGroupsEditor({
               <Input
                 type="number" min={1} value={group.maxSelect ?? ''}
                 placeholder={t('any', '不限')}
+                disabled={disabled}
                 onChange={e => patchGroup(gi, {
                   maxSelect: e.target.value === '' ? null : Number(e.target.value) || 1,
                 })}
@@ -140,6 +157,7 @@ export default function OptionGroupsEditor({
               <Input
                 type="number" min={1} value={group.maxPerOption ?? ''}
                 placeholder={t('any', '不限')}
+                disabled={disabled}
                 onChange={e => patchGroup(gi, {
                   maxPerOption: e.target.value === '' ? null : Number(e.target.value) || 1,
                 })}
@@ -158,12 +176,14 @@ export default function OptionGroupsEditor({
                   className="flex-1 basis-[130px] min-w-0"
                   value={option.name}
                   placeholder={t('Choice name', '选项名称')}
+                  disabled={disabled}
                   onChange={e => patchOption(gi, oi, { name: e.target.value })}
                 />
                 <Input
                   className="flex-1 basis-[110px] min-w-0"
                   value={option.name_zh ?? ''}
                   placeholder={t('中文（选填）', '中文（选填）')}
+                  disabled={disabled}
                   onChange={e => patchOption(gi, oi, { name_zh: e.target.value || null })}
                 />
                 <div className="flex items-center gap-1 shrink-0">
@@ -171,6 +191,7 @@ export default function OptionGroupsEditor({
                   <Input
                     className="w-[72px]"
                     type="number" min={0} step="0.01" value={option.delta}
+                    disabled={disabled}
                     onChange={e => patchOption(gi, oi, { delta: Number(e.target.value) || 0 })}
                   />
                 </div>
@@ -181,6 +202,7 @@ export default function OptionGroupsEditor({
                 <div className="flex items-center gap-1 shrink-0 ml-auto">
                 <Button
                   type="button" variant={option.active ? 'soft' : 'outline'} size="sm"
+                  disabled={disabled}
                   onClick={() => patchOption(gi, oi, { active: !option.active })}
                   aria-pressed={!option.active}
                   aria-label={t(`Mark ${option.name || 'choice'} unavailable`, `将 ${option.name || '选项'} 设为不可选`)}
@@ -188,6 +210,7 @@ export default function OptionGroupsEditor({
                 >{option.active ? t('Available', '可选') : t('Sold out', '售罄')}</Button>
                 <Button
                   type="button" variant="ghost" size="sm"
+                  disabled={disabled}
                   onClick={() => patchGroup(gi, { options: group.options.filter((_, n) => n !== oi) })}
                   aria-label={t('Remove choice', '删除选项')}
                 >×</Button>
@@ -197,28 +220,30 @@ export default function OptionGroupsEditor({
             <div className="flex flex-wrap gap-2 min-w-0">
               <Button
                 type="button" variant="outline" size="sm"
-                disabled={group.options.length >= MAX_OPTIONS_PER_GROUP}
+                disabled={disabled || group.options.length >= MAX_OPTIONS_PER_GROUP}
                 onClick={() => patchGroup(gi, { options: [...group.options, blankOption(group.options.length + 1)] })}
               >{t('Add choice', '添加选项')}</Button>
               <Button
                 type="button" variant="ghost" size="sm"
                 onClick={() => onChange(move(value, gi, gi - 1))}
-                disabled={gi === 0}
+                disabled={disabled || gi === 0}
                 aria-label={t('Move up', '上移')}
               >↑</Button>
               <Button
                 type="button" variant="ghost" size="sm"
                 onClick={() => onChange(move(value, gi, gi + 1))}
-                disabled={gi === value.length - 1}
+                disabled={disabled || gi === value.length - 1}
                 aria-label={t('Move down', '下移')}
               >↓</Button>
               <Button
                 type="button" variant={group.active ? 'ghost' : 'outline'} size="sm"
+                disabled={disabled}
                 onClick={() => patchGroup(gi, { active: !group.active })}
                 aria-pressed={!group.active}
               >{group.active ? t('Switch off', '停用') : t('Switched off', '已停用')}</Button>
               <Button
                 type="button" variant="ghost" size="sm"
+                disabled={disabled}
                 onClick={() => onChange(value.filter((_, n) => n !== gi))}
               >{t('Remove question', '删除问题')}</Button>
             </div>
@@ -229,7 +254,7 @@ export default function OptionGroupsEditor({
       <div className="flex items-center justify-between gap-2">
         <Button
           type="button" variant="outline" size="sm"
-          disabled={value.length >= MAX_GROUPS_PER_PRODUCT}
+          disabled={disabled || value.length >= MAX_GROUPS_PER_PRODUCT}
           onClick={() => onChange([...value, blankGroup(value.length + 1)])}
         >{t('Add a question', '添加问题')}</Button>
         {/* The same verdict the write endpoint refuses on, shown while the merchant is still
