@@ -5,6 +5,7 @@ import { fetchAllMerchants } from '../store'
 import { SkeletonText } from '../components/Loaders'
 import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from '../components/charts/DashCharts'
 import { computeAdminStats, type AdminStats } from './adminStats'
+import { businessNatureLabel } from '../businessNature'
 
 const STAT_ICON = { size: 15, strokeWidth: 1.75 }
 
@@ -52,6 +53,20 @@ export default function AdminOverview() {
           revenueLabel={t('Sign-ups', '注册')}
           ordersLabel=""
         />
+      </ChartPanel>
+
+      {/* Full width, above the two half-width panels: this is the platform question the page
+          exists to answer (#161), and a ranked bar list reads an order a donut cannot. */}
+      <ChartPanel title={t('Merchants by industry', '商家行业')}>
+        {stats.industries.length === 0
+          ? <p className="text-[13px] text-text-tertiary italic">{t('No merchants yet.', '暂无商家。')}</p>
+          : <BreakdownList rows={stats.industries.map(i => ({
+              label: t(...businessNatureLabel(i.nature)),
+              // Count first, percentage after: "which industry has the MOST merchants" is a
+              // question about counts, and a share alone cannot answer it.
+              value: `${i.count} · ${i.pct}%`,
+              pct: i.bar,
+            }))} />}
       </ChartPanel>
 
       <div className="grid grid-cols-1 min-[900px]:grid-cols-2 gap-5">

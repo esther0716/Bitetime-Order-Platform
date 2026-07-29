@@ -1,4 +1,4 @@
-import { isTimezone } from '@bitetime/shared'
+import { canonicalJson, optionGroupsFromRow, isBusinessNature, isTimezone } from '@bitetime/shared'
 
 // Column allowlists for write endpoints. The service-role `admin` client bypasses RLS and the
 // guard_merchant_status / guard_profile_privileges triggers, so these picks are the ONLY thing
@@ -29,7 +29,35 @@ const MERCHANT_CONFIG_FIELDS = [
   // one-time spotlight tour marking itself seen.
   'onboarding_shipping_set', 'onboarding_link_shared', 'onboarding_dismissed',
   'onboarding_tour_seen',
+  // What industry the shop is in (#161). Collected at signup and editable afterwards from the
+  // Shop tab, so an existing shop that predates the field can fill in its own.
+  'business_nature',
+  // The DuitNow QR the storefront shows a customer after they order (#156). A Storage PATH in
+  // the public `payment-qr` bucket, never a URL — see isOwnStoragePath below for why it is
+  // checked against the merchant it is being written for.
+  'payment_qr',
 ] as const
+
+// A Storage object path the given merchant owns: `{merchantId}/{filename}`, one segment deep,
+// with the filename limited to the characters the uploader already sanitises to.
+//
+// The bucket's own RLS policy scopes what a merchant may WRITE (first folder = their id), but
+// this column is written through the service role, on a connection no policy runs on — so
+// nothing in Postgres stops a crafted PATCH from pointing a shop's row at a stranger's object,
+// or at `{me}/../{them}/qr.png`. This function is that check. It also refuses an absolute URL,
+// which would otherwise render fine (the storefront resolves the path through getPublicUrl) and
+// quietly turn a shop's payment panel into an image hotlinked from anywhere.
+// The id is compared as a plain string rather than interpolated into the pattern: `:id` is a URL
+// segment, and a regex built out of one is a regex an attacker writes half of.
+const STORAGE_FILENAME = /^[A-Za-z0-9._-]+$/
+function isOwnStoragePath(value: unknown, merchantId: string): boolean {
+  if (typeof value !== 'string' || !merchantId) return false
+  const [folder, file, ...rest] = value.split('/')
+  if (rest.length > 0 || folder !== merchantId) return false
+  // `.` and `..` satisfy STORAGE_FILENAME above (dots are legal in it) and are not filenames.
+  if (file === '.' || file === '..') return false
+  return STORAGE_FILENAME.test(file ?? '')
+}
 
 // `undefined` means "not being written" and passes through untouched; a present-but-invalid
 // value is REFUSED (see pickMerchantConfig's doc below), never coerced.
@@ -43,8 +71,14 @@ export type PickResult =
  * must not save silently: the merchant would see a success toast and charge nothing (or the
  * wrong thing), because the column's own CHECK would otherwise answer with a bare 500 from deep
  * inside PostgREST, long after the merchant who typed 150 has moved on.
+ *
+ * `merchantId` is the shop being written (the route's `:id`, already proven to be the caller's by
+ * `requireMerchantOwns`). Only `payment_qr` needs it — a Storage path is only valid relative to
+ * the merchant that owns the folder — but it is REQUIRED, not optional: an optional tenancy
+ * argument is one the next call site forgets, and forgetting it here would write a stranger's
+ * path unchecked.
  */
-export function pickMerchantConfig(body: any): PickResult {
+export function pickMerchantConfig(body: any, merchantId: string): PickResult {
   const out: Record<string, unknown> = {}
   for (const k of MERCHANT_CONFIG_FIELDS) if (body?.[k] !== undefined) out[k] = body[k]
   // A timezone is not free text: `todayInZone` feeds it to Intl on EVERY order intake, and a
@@ -81,6 +115,27 @@ export function pickMerchantConfig(body: any): PickResult {
   }
   if (out.tax_enabled !== undefined && typeof out.tax_enabled !== 'boolean') {
     return { ok: false, error: 'tax_enabled must be a boolean' }
+  }
+
+  // Refused, not dropped like `timezone` above: an ignored industry saves nothing while the
+  // merchant is shown a success toast, and the column is the whole input to the admin
+  // Overview's industry chart. `null` is the column's own "never said" and stays legal — it is
+  // the only way back to unspecified. `merchants_business_nature_check` is the backstop.
+  if (out.business_nature !== undefined && out.business_nature !== null
+      && !isBusinessNature(out.business_nature)) {
+    return { ok: false, error: 'business_nature must be one of the listed industries' }
+  }
+
+  // The payment QR (#156). `null` — and the empty string the form sends when the merchant clears
+  // it — mean "take it down", the only way back to no QR. Anything else must be a path inside
+  // this merchant's own folder; refused, not dropped, because a QR that silently failed to save
+  // is a shop showing customers a stale account to pay into.
+  if (out.payment_qr !== undefined) {
+    if (out.payment_qr === null || out.payment_qr === '') {
+      out.payment_qr = null
+    } else if (!isOwnStoragePath(out.payment_qr, merchantId)) {
+      return { ok: false, error: 'payment_qr must be an uploaded image path belonging to this shop' }
+    }
   }
 
   // Real booleans, not truthiness: these columns are `boolean not null`, and a coerced 'false'
@@ -171,7 +226,7 @@ export function pickProfileFields(body: any): Record<string, unknown> {
 // inflating a promo's sold counter (Global Constraint 1).
 const PRODUCT_FIELDS = [
   'id', 'name', 'name_zh', 'descr', 'price', 'unit', 'unit_quantity', 'active',
-  'image_urls', 'promo_price', 'promo_limit', 'promo_end',
+  'image_urls', 'promo_price', 'promo_limit', 'promo_end', 'option_groups',
 ] as const
 
 export function pickProductFields(body: any): Record<string, unknown> {
@@ -247,4 +302,40 @@ export function pickOrderFields(body: any): Record<string, unknown> {
   if (body?.courier !== undefined) out.courier = body.courier || null
   if (body?.awb !== undefined) out.awb = String(body.awb ?? '').trim() || null
   return out
+}
+
+/**
+ * Does this product upsert CHANGE the option groups, versus the row already in the table? (#145)
+ *
+ * `promoChanged`'s twin, on the same endpoint, and deliberately the same shape — including the
+ * reason. Asking whether the column is PRESENT is the wrong question: a shop that dropped from
+ * pro to basic still has groups on its rows, and the dashboard resubmits the whole row, so
+ * presence would refuse an ordinary rename. The workaround (omit the column) would leave a
+ * shop's menu one payload mistake from being cleared behind a success toast.
+ *
+ * The comparison is `canonicalJson` rather than `===` for the jsonb equivalent of the reason
+ * `samePromoValue` is not `===`: the two sides do not arrive in the same shape. The browser sends
+ * an object graph in whatever key order it built, PostgREST hands back parsed jsonb in the order
+ * Postgres stored it, and a stored value can arrive as text. A strict compare would call every
+ * one of those a change — a 403 on a rename.
+ *
+ * THAT SERIALISER IS ALSO THE CART LINE KEY, which is not a coincidence and is the point: if it
+ * normalises away a real difference a Basic shop can edit its groups for free, and if it invents
+ * one no Basic shop can save a product at all. One function, one test, one blast radius.
+ *
+ * CLEARING IS A CHANGE. `[]` against stored groups is refused, so the groups a Basic shop may no
+ * longer edit stay put until it is Pro again — a Pro feature must not be removable by the act of
+ * ceasing to pay for it.
+ *
+ * `stored` is null on the create path (`mayCreate`), where any groups at all are new — so a basic
+ * shop cannot be born with them. An empty list is not "groups", so a plain product still saves.
+ */
+export function optionGroupsChanged(
+  fields: Record<string, unknown>,
+  stored: Record<string, any> | null,
+): boolean {
+  const submitted = fields.option_groups
+  if (submitted === undefined) return false
+  return canonicalJson(optionGroupsFromRow(submitted))
+    !== canonicalJson(optionGroupsFromRow(stored?.option_groups ?? null))
 }

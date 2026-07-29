@@ -41,3 +41,13 @@ describe('quote refusals', () => {
     expect(QUOTE_REFUSAL_STATUS.quota_exceeded).toBe(429)
   })
 })
+
+describe('option_unavailable', () => {
+  // Its own code, not a reuse of product_unavailable: the two RECOVER differently, and reusing
+  // the wrong one loops the checkout forever. See CONTEXT.md -> Menu options.
+  it('is a distinct order refusal with a status', () => {
+    expect(ORDER_REFUSALS).toContain('option_unavailable')
+    expect(ORDER_REFUSALS).toContain('product_unavailable')
+    expect(REFUSAL_STATUS.option_unavailable).toBe(409)
+  })
+})

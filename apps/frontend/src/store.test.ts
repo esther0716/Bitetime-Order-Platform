@@ -697,7 +697,7 @@ describe('placeOrder', () => {
       customerWa: '60123456789',
       mode: 'delivery',
       address: '123 Jalan ABC',
-      cart: { p1: 2 },
+      cart: [{ productId: 'p1', qty: 2, selections: [] }],
       quotedTotal: 24,
       fulfilDate: '2026-07-21',
     })
@@ -708,7 +708,7 @@ describe('placeOrder', () => {
     expect(JSON.parse(init.body)).toMatchObject({
       merchantId: 'm1',
       customerName: 'Alice',
-      cart: { p1: 2 },
+      cart: [{ productId: 'p1', qty: 2, selections: [] }],
       quotedTotal: 24,
       fulfilDate: '2026-07-21',
     })

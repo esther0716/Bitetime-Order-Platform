@@ -74,7 +74,19 @@ export function buildOrderMessage(order: any, merchantName?: string): string {
   // and this is the one place in the app that can't reach for the storefront's pill styling.
   // Missing key reads as `false` (older rows never wrote it), never as a crash — see orders.ts.
   const itemLines = items
-    .map((i: any) => `• ${i.name}${i.promo ? ' (Promo)' : ''} × ${i.qty} — ${formatMoney((i.price ?? 0) * (i.qty ?? 0), cur)}`)
+    .map((i: any) => {
+      const head = `• ${i.name}${i.promo ? ' (Promo)' : ''} × ${i.qty} — ${formatMoney((i.price ?? 0) * (i.qty ?? 0), cur)}`
+      // A SUB-LINE, not parentheses mid-line (#145). The person packing the box scans for
+      // quantities per flavour, and burying them between the name and the price is the format
+      // most likely to be misread at speed — Telegram wraps a long line arbitrarily on a phone.
+      // Rows written before menu options carry no `selections` at all, which reads as no
+      // sub-line rather than as a crash.
+      const picks: any[] = Array.isArray(i.selections) ? i.selections : []
+      if (picks.length === 0) return head
+      // Plain text, no `*` markers: this goes out as Markdown and every marker added here is
+      // another way an unclosed one turns the whole send into a 400.
+      return `${head}\n    ↳ ${picks.map(s => `${s.optionName} ×${s.qty}`).join(', ')}`
+    })
   let msg = `🛎️ *New order${merchantName ? ` — ${merchantName}` : ''}*\n\n`
   msg += `*Order No.:* ${order.order_number}\n`
   msg += `*Name:* ${order.customer_name ?? ''}\n`

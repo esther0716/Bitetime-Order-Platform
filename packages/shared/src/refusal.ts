@@ -45,6 +45,15 @@ export type OrderRefusal =
   /** Something in the cart stopped being on sale mid-checkout. */
   | 'product_unavailable'
   /**
+   * An option chosen on a line stopped being available mid-checkout — switched off, or removed
+   * from the group. NOT `product_unavailable`, whose recovery is to refetch the menu so the
+   * vanished id drops out of the cart: the product id still EXISTS here, so a refetch drops
+   * nothing, the dead selection survives it, and every retry is refused identically. Recovery is
+   * to repair the line (reopen the picker), falling back to dropping it when the whole group is
+   * gone — that fallback is the terminating case, not a courtesy. See CONTEXT.md -> Menu options.
+   */
+  | 'option_unavailable'
+  /**
    * A `delivery` that declared no state. Refused, never priced: with no state `shippingFee`
    * falls through to 0 and the shop would ship to Sabah for free.
    */
@@ -120,6 +129,7 @@ export const REFUSAL_STATUS: Record<OrderRefusal, 400 | 404 | 409 | 500> = {
   voucher_requires_account: 409,
   price_changed: 409,
   product_unavailable: 409,
+  option_unavailable: 409,
   delivery_state_required: 409,
   fulfil_date_unavailable: 409,
   fulfil_date_required: 409,

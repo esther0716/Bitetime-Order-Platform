@@ -45,6 +45,15 @@ export interface Merchant {
   delivery_max_km?: number | string | null
   origin_place_id?: string | null
   origin_address?: string | null
+  /** DuitNow (or any) payment QR shown on the order-placed screen (#156). A Storage PATH in the
+   *  public `payment-qr` bucket, never a URL — render it through `paymentQrUrl`. */
+  payment_qr?: string | null
+  payment_bank?: string | null
+  payment_note?: string | null
+  /** Industry the shop runs in (#161), one of `BUSINESS_NATURES`. Absent/null for a shop that
+   *  signed up before the field existed — render it through `businessNatureLabel`, which names
+   *  that state rather than dropping the shop. */
+  business_nature?: string | null
   /** Onboarding checklist flags (#102). Read via `onboardingSteps`; absent means false. */
   onboarding_shipping_set?: boolean
   onboarding_link_shared?: boolean

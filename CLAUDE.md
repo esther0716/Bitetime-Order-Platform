@@ -26,7 +26,7 @@ pnpm --filter @bitetime/backend dev         # billing server only
 pnpm --filter @bitetime/backend test        # backend unit tests (notify, etc.) — no Supabase needed
 pnpm --filter @bitetime/backend test:db     # DB-backed tests: RLS + API (needs a running local Supabase; reads its keys itself)
 pnpm --filter @bitetime/backend db:migrate   # apply pending SQL migrations to the LOCAL Supabase DB
-pnpm --filter @bitetime/backend db:push      # push migrations to a linked REMOTE Supabase project
+pnpm --filter @bitetime/backend db:push      # HUMAN ONLY — writes to PRODUCTION. Never run this yourself.
 
 stripe listen --forward-to http://localhost:8787/api/stripe/webhook   # REQUIRED for any local billing work
 ```
@@ -36,6 +36,28 @@ stripe listen --forward-to http://localhost:8787/api/stripe/webhook   # REQUIRED
 The CLI prints its own signing secret on startup; it must equal `STRIPE_WEBHOOK_SECRET` in `apps/backend/.env` or every event is rejected as an invalid signature (a `<-- [400]` in the listener's own output). Started late? `stripe events resend <evt_id>` replays one — the handlers upsert, so a replay is safe. And check the listener is actually still up (`ps -eo command | grep stripe`) before concluding the code is at fault: a dead forwarder and a broken handler look identical from the app.
 
 Migrations live in `apps/backend/supabase/migrations/`. Adding a migration file does **not** apply it — run `db:migrate` (local) so the running app (and PostgREST's schema cache) sees the new columns; otherwise queries fail with `Could not find the 'X' column … in the schema cache`.
+
+**Never run `db:push`, or any other `supabase` command that reaches production. Writing a migration file and applying it locally is the whole job; a human runs the push.** Say plainly that production still needs it, and stop there.
+
+`apps/backend/supabase` is **linked** (`supabase/.temp/project-ref` → the live project), and that makes the CLI's default target the trap:
+
+| Command | Targets |
+|---------|---------|
+| `supabase migration up` / `db:migrate` | LOCAL stack |
+| `supabase db push` | **PRODUCTION** |
+| `supabase migration repair` / `list` | **PRODUCTION**, silently, unless given `--db-url` |
+
+`repair` is the one that bites: it names no database, prompts for nothing, and reports success either way. To repair a LOCAL history row you must point it there explicitly:
+
+```bash
+supabase migration repair --status reverted <version> --db-url "postgresql://postgres:postgres@127.0.0.1:55322/postgres"
+```
+
+That URL comes from `supabase status` (`-o env` prints it as `DB_URL="…"`, quotes included — read the port off it rather than pasting the line into a flag). The port is **55321/55322 here, not the 54321/54322 default**. All of these run from `apps/backend/` only; from the repo root they fail with "Cannot find project ref".
+
+This is not hypothetical. On 2026-07-29 a bare `repair --status applied <version>` intended to fix local drift instead marked a migration **applied on production that had only ever run locally** — which would have made the next `db:push` skip it and ship code reading a column production did not have. Nothing broke (repair touches history rows, never tables), and it was undone with `repair --status reverted <version>`, but the honest lesson is: **establish what a `supabase` subcommand targets before running it, and treat anything remote as the human's call.**
+
+Local history drifts for an ordinary reason — one local Supabase shared across branches. Migrate on a feature branch, switch back to `dev`, and `db:migrate` refuses: the local history holds a version whose FILE is gone. The lossless fix is `repair --status reverted <version> --db-url <local>`, which costs nothing when that branch's migration is idempotent (`add column if not exists`). `supabase db reset` also fixes it and wipes every local shop, order and user — a last resort, and the user's decision, not yours.
 
 Tests use Vitest (added during the multi-merchant build). Pure logic and `store.ts` functions have unit tests (`apps/frontend/src/*.test.ts`); the backend has pure unit tests in `apps/backend/tests/unit/` (run by `test`, no Supabase).
 

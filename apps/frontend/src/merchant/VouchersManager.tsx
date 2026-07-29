@@ -6,6 +6,7 @@ import { fetchMerchantVouchers, createMerchantVoucher, deleteMerchantVoucher } f
 import { formatMoney, currencyDef } from '../currency'
 import { isRequiresPro } from '../plan'
 import { SkeletonText } from '../components/Loaders'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -45,6 +46,8 @@ export default function VouchersManager() {
   const [rows, setRows] = useState<Voucher[] | null>(null)
   const [form, setForm] = useState<any>(BLANK)
   const [busy, setBusy] = useState(false)
+  // The voucher a Delete button is asking about; null → no confirm open.
+  const [pendingDelete, setPendingDelete] = useState<Voucher | null>(null)
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
 
@@ -157,7 +160,7 @@ export default function VouchersManager() {
                     variant="outline"
                     size="none"
                     className="rounded-pill py-[5px] px-3 text-[12px] bg-surface-raised whitespace-nowrap hover:border-oxblood hover:text-oxblood hover:bg-oxblood-tint"
-                    onClick={() => remove((v as any).id)}
+                    onClick={() => setPendingDelete(v)}
                   >
                     {t('Delete', '删除')}
                   </Button>
@@ -244,6 +247,22 @@ export default function VouchersManager() {
           </Button>
         </form>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={o => { if (!o) setPendingDelete(null) }}
+        title={t('Delete this voucher?', '删除此优惠券？')}
+        body={
+          <p>
+            {t(
+              `Code ${pendingDelete?.code ?? ''} stops working at checkout, and any customer already holding it can no longer redeem it. This cannot be undone.`,
+              `优惠码 ${pendingDelete?.code ?? ''} 将在结账时失效，已持有该码的顾客也无法再使用。此操作无法撤销。`,
+            )}
+          </p>
+        }
+        confirmLabel={t('Delete voucher', '删除优惠券')}
+        onConfirm={async () => { if (pendingDelete) await remove((pendingDelete as any).id) }}
+      />
     </div>
   )
 }

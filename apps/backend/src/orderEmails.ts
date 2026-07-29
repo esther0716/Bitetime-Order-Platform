@@ -81,8 +81,15 @@ function itemsTableHtml(
     .map((i: any) => {
       const promo = i.promo ? ` <span style="color:#b45309;font-size:12px;">${esc(labels.promo)}</span>` : ''
       const line = formatMoney((i.price ?? 0) * (i.qty ?? 0), cur)
+      // The chosen options, under the name in the same cell (#145). Rows written before menu
+      // options carry no `selections`, which reads as no sub-line.
+      const picks: any[] = Array.isArray(i.selections) ? i.selections : []
+      const chosen = picks.length
+        ? `<div style="color:#666;font-size:12px;padding-top:2px;">↳ ${
+            picks.map(s => `${esc(s.optionName)} ×${esc(String(s.qty ?? 0))}`).join(', ')}</div>`
+        : ''
       return `<tr>
-        <td style="padding:6px 0;border-bottom:1px solid #eee;">${esc(i.name)}${promo} <span style="color:#666;">× ${esc(String(i.qty ?? 0))}</span></td>
+        <td style="padding:6px 0;border-bottom:1px solid #eee;">${esc(i.name)}${promo} <span style="color:#666;">× ${esc(String(i.qty ?? 0))}</span>${chosen}</td>
         <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;">${esc(line)}</td>
       </tr>`
     })

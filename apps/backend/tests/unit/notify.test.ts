@@ -258,3 +258,45 @@ describe('notifyOrderPlaced', () => {
     expect(spy).not.toHaveBeenCalled()
   })
 })
+
+describe('menu options on the ticket (#145)', () => {
+  const order = (items: unknown[]) => ({
+    order_number: 'BT-260728-0050', customer_name: 'Ah Meng', customer_wa: '60123456789',
+    mode: 'pickup', items, total: 30, currency: 'MYR',
+  })
+
+  // A SUB-LINE. The person packing the box scans for quantities per flavour; inline parentheses
+  // between the name and the price is the format most likely to be misread at speed.
+  it('lists the chosen options under the item', () => {
+    const msg = buildOrderMessage(order([{
+      name: 'Box of 6', qty: 1, price: 30,
+      selections: [
+        { groupId: 'f', groupName: 'Flavours', optionId: 'c', optionName: 'Chocolate', qty: 3, delta: 0 },
+        { groupId: 'f', groupName: 'Flavours', optionId: 'v', optionName: 'Vanilla', qty: 3, delta: 0 },
+      ],
+    }]) as never)
+    expect(msg).toContain('↳ Chocolate ×3, Vanilla ×3')
+    // The sub-line sits under its item, not spliced into it.
+    expect(msg.indexOf('Box of 6')).toBeLessThan(msg.indexOf('↳ Chocolate'))
+  })
+
+  // Every order placed before this feature existed. `selections` is simply absent, and absent
+  // must read as "no options" rather than as a crash in the one call that tells a merchant an
+  // order arrived at all.
+  it('renders an order that predates menu options unchanged', () => {
+    const msg = buildOrderMessage(order([{ name: 'Cookie', qty: 2, price: 5 }]) as never)
+    expect(msg).toContain('Cookie')
+    expect(msg).not.toContain('↳')
+  })
+
+  // No `*` markers in the sub-line: the send is Markdown, and an unclosed marker is itself a 400
+  // — a decoration that loses the whole notification.
+  it('adds no Markdown markers that could break the send', () => {
+    const msg = buildOrderMessage(order([{
+      name: 'Latte', qty: 1, price: 12,
+      selections: [{ groupId: 'm', groupName: 'Milk', optionId: 'o', optionName: 'Oat', qty: 1, delta: 2 }],
+    }]) as never)
+    const subLine = msg.split('\n').find(l => l.includes('↳')) ?? ''
+    expect(subLine).not.toContain('*')
+  })
+})
