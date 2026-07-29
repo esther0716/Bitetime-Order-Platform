@@ -410,7 +410,7 @@ export default function Landing() {
             </p>
             <p className="m-0">
               {t(
-                'A marketplace brings you traffic and charges for it, on every order, forever — and it lists a competitor beside you while doing it. The customer belongs to the platform, not to you. TinyOrder is the other trade: you bring your own customers, from the places you already post, and you keep every ringgit of what they spend. We charge one flat subscription and take no commission, so the month your shop does well is the month you keep the difference.',
+                'A marketplace brings you traffic and charges for it, on every order, forever — and it lists a competitor beside you while doing it. The customer belongs to the platform, not to you. TinyOrder is the other trade: you bring your own customers, from the places you already post, and you keep the whole of what they spend. We charge one flat subscription and take no commission, so the month your shop does well is the month you keep the difference.',
                 '外卖平台替你带来流量，代价是每一笔订单都要抽成，永远如此——而且在你旁边同时列出竞争对手。顾客属于平台，不属于你。TinyOrder 是另一种交换：顾客由你自己从既有的社群管道带来，他们花的每一分钱都是你的。我们只收固定订阅费，不抽任何佣金——生意好的那个月，多出来的部分全归你。',
               )}
             </p>
