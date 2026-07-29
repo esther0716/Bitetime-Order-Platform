@@ -236,18 +236,27 @@ function SortControl({
   sort, onSort, isPro,
 }: { sort: ShopCustomerSort; onSort: (s: ShopCustomerSort) => void; isPro: boolean }) {
   const { t } = useSession()
+  // One array feeds both `items` (what the trigger reads a label from) and the rendered
+  // list, so the two cannot drift apart. Annotated rather than inferred: a typo'd value would
+  // otherwise widen to `string`, compile, and surface as a raw key on the trigger — the exact
+  // failure `items` was added to prevent.
+  const sortItems: { value: ShopCustomerSort; label: string }[] = [
+    { value: 'recent', label: t('Most recent order', '最近下单') },
+    { value: 'spend', label: t('Highest spend', '消费最高') },
+    { value: 'orders', label: t('Most orders', '订单最多') },
+  ]
   // A basic shop sees the control, disabled, beside the badge — the lock has to name what it
   // is locking or it reads as a broken dropdown.
   return (
     <div className="flex items-center gap-2">
-      <Select value={sort} onValueChange={v => onSort(v as ShopCustomerSort)} disabled={!isPro}>
+      <Select value={sort} onValueChange={v => onSort(v as ShopCustomerSort)} disabled={!isPro} items={sortItems}>
         <SelectTrigger className="w-[190px] bg-cream border-clay-border text-[13px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="recent">{t('Most recent order', '最近下单')}</SelectItem>
-          <SelectItem value="spend">{t('Highest spend', '消费最高')}</SelectItem>
-          <SelectItem value="orders">{t('Most orders', '订单最多')}</SelectItem>
+          {sortItems.map(i => (
+            <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>
+          ))}
         </SelectContent>
       </Select>
       {!isPro && (
