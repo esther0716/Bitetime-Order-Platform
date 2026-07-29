@@ -1321,11 +1321,15 @@ export default function Storefront() {
                         {/* The class string is Input's, verbatim — this field sits between two
                             Inputs and has always been pixel-matched to them. text-[16px] is not
                             decorative: iOS Safari zooms the viewport on focus of any control
-                            under 16px, and this is the checkout address form. h-auto overrides
-                            the trigger's default h-9, which is shorter than an Input. */}
+                            under 16px, and this is the checkout address form.
+                            The height override has to be spelled `data-[size=default]:h-auto`,
+                            not `h-auto`: the trigger sets its height under that same variant, and
+                            an unprefixed h-auto neither out-specifies it nor gets deduped by
+                            tailwind-merge — it just loses, leaving this field 36px beside a 46px
+                            Input. Matching the variant lets the merge drop the h-9. */}
                         <SelectTrigger
                           id="sf-state"
-                          className="w-full min-w-0 h-auto rounded-md border border-clay-border bg-surface-raised px-[13px] py-2.5 text-[16px] text-ink transition-colors outline-none focus-visible:border-oxblood focus-visible:ring-3 focus-visible:ring-oxblood/10 data-placeholder:text-text-tertiary"
+                          className="w-full min-w-0 data-[size=default]:h-auto rounded-md border border-clay-border bg-surface-raised px-[13px] py-2.5 text-[16px] text-ink transition-colors outline-none focus-visible:border-oxblood focus-visible:ring-3 focus-visible:ring-oxblood/10 data-placeholder:text-text-tertiary"
                         >
                           <SelectValue placeholder={t('Select state…', '选择州属…')} />
                         </SelectTrigger>
