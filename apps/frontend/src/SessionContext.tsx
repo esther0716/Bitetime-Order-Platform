@@ -9,6 +9,7 @@ const SessionContext = createContext<SessionValue | null>(null)
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<User | null | undefined>(undefined)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [profileLoaded, setProfileLoaded] = useState(false)
   const [ownMerchant, setOwnMerchant] = useState<Merchant | null>(null)
   const [merchantLoaded, setMerchantLoaded] = useState(false)
   // True when the last shop lookup never landed (backend down, CORS, 5xx). Distinct from
@@ -24,10 +25,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   })
   useEffect(() => { try { localStorage.setItem('lang', lang) } catch { /* storage unavailable */ } }, [lang])
 
+  // `profileLoaded` is not bookkeeping: `role` reads app_role off this row, so until it lands a
+  // superadmin is indistinguishable from a customer. It must gate `loading` alongside the shop
+  // lookup — on a hard refresh the (usually faster) shop lookup would otherwise end the loading
+  // state on its own, and RequireRole would bounce a superadmin off /admin to the landing page.
   const loadProfile = useCallback(async (user: User | null) => {
-    if (!user) { setProfile(null); return }
+    if (!user) { setProfile(null); setProfileLoaded(true); return }
     const r = await fetchProfileByUserId(user.id)
     setProfile(r.ok ? r.data : null)
+    setProfileLoaded(true)
   }, [])
 
   // The one seam that reads the signed-in user's own shop. A lookup that never landed leaves
@@ -82,7 +88,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await loadOwnMerchant(user?.id)
   }
 
-  const value: SessionValue = { account, profile, role, merchant, ownMerchant, merchantUnknown, impersonating: !!impersonatedMerchant, impersonate, stopImpersonating, loading: account === undefined || !merchantLoaded, lang, setLang, t, refreshProfile, refreshMerchant }
+  const value: SessionValue = { account, profile, role, merchant, ownMerchant, merchantUnknown, impersonating: !!impersonatedMerchant, impersonate, stopImpersonating, loading: account === undefined || !profileLoaded || !merchantLoaded, lang, setLang, t, refreshProfile, refreshMerchant }
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
 }
 
