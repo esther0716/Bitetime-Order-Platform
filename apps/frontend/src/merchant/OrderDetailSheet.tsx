@@ -17,6 +17,7 @@ import { COURIERS, trackingUrl, courierName } from '../couriers'
 import { ORDER_STATUSES, STATUS_LABELS, StatusBadge } from '../orderStatus'
 import { fulfilmentLabel } from '../fulfilmentLabel'
 import WaLink from './WaLink'
+import { ItemSelections } from '../ItemSelections'
 
 // 11px semibold uppercase rose-muted label.
 const LBL = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-rose-muted shrink-0'
@@ -154,6 +155,7 @@ export default function OrderDetailSheet({
                     <li key={i} className="flex justify-between gap-3 text-[13px] text-ink">
                       <span className="min-w-0 break-words">
                         <span className="text-rose-muted tabular-nums">{it.qty}×</span> {it.name}
+                        <ItemSelections item={it} />
                         {/* `it.promo` missing (rows written before I-2) reads as false, not a crash. */}
                         {it.promo && (
                           <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium align-middle">

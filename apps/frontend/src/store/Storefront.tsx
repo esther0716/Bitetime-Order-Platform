@@ -27,6 +27,7 @@ import LanguageSelect from '../components/LanguageSelect'
 import ImageLightbox from '../components/ImageLightbox'
 import SignInDialog from './SignInDialog'
 import { OptionPicker } from './OptionPicker'
+import { ItemSelections } from '../ItemSelections'
 import CheckoutGate, { GuestStrip } from './CheckoutGate'
 import FulfilDatePicker from './FulfilDatePicker'
 import AddressAutocomplete from './AddressAutocomplete'
@@ -491,10 +492,6 @@ export default function Storefront() {
    */
   const removableKey = (item: ReceiptLine) => item.key
 
-  /** An option's name, in the language being read. Falls back rather than showing nothing. */
-  const optionLabel = (pick: PickSnapshot) =>
-    (lang === 'zh' && pick.optionName_zh) ? pick.optionName_zh : pick.optionName
-
   /**
    * Take a whole cart line out, by its derived key.
    *
@@ -832,13 +829,16 @@ export default function Storefront() {
                 <div key={i} className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
                   {/* min-w-0 (not shrink-0): a long product name must wrap inside its own column.
                       shrink-0 let it push the price out past the card's right edge. */}
-                  <span className="min-w-0 flex items-center gap-1.5 flex-wrap">
-                    {item.name} × {item.qty}
-                    {item.promo && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
-                        {t('Promo', '优惠')}
-                      </span>
-                    )}
+                  <span className="min-w-0 flex flex-col gap-0.5">
+                    <span className="flex items-center gap-1.5 flex-wrap">
+                      {item.name} × {item.qty}
+                      {item.promo && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
+                          {t('Promo', '优惠')}
+                        </span>
+                      )}
+                    </span>
+                    <ItemSelections item={item} />
                   </span>
                   <span className="shrink-0 text-right whitespace-nowrap">{formatMoney(item.price * item.qty, currency)}</span>
                 </div>
@@ -1428,13 +1428,7 @@ export default function Storefront() {
                           <span>{displayName} × {item.qty}</span>
                           {/* What they actually chose, under the name. The order snapshots this;
                               showing it is what lets them notice a wrong pick before paying. */}
-                          {item.selections?.length ? (
-                            <span className="text-[12px] text-text-tertiary">
-                              {item.selections
-                                .map(pick => `${optionLabel(pick)} ×${pick.qty}`)
-                                .join(', ')}
-                            </span>
-                          ) : null}
+                          <ItemSelections item={item} />
                         </span>
                         {item.promo && (
                           <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">

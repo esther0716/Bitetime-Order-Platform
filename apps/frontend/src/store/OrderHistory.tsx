@@ -5,6 +5,7 @@ import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { fetchMyOrdersAtShop, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
 import { StatusBadge } from '../orderStatus'
+import { ItemSelections } from '../ItemSelections'
 import { courierName, trackingUrl } from '../couriers'
 import { formatMoney } from '../currency'
 import { formatOrderDate, formatCalendarDate } from '../orderDate'
@@ -194,7 +195,8 @@ export default function OrderHistory() {
                         <MoneyLine
                           key={`${item.id ?? item.name}-${n}`}
                           label={
-                            <span className="inline-flex items-center gap-1.5 min-w-0">
+                            <span className="inline-flex flex-col gap-0.5 min-w-0">
+                              <span className="inline-flex items-center gap-1.5 min-w-0">
                               <span className="truncate">{itemName(item)} × {item.qty}</span>
                               {/* Missing `promo` (rows written before I-2) reads as false. */}
                               {item.promo && (
@@ -202,6 +204,8 @@ export default function OrderHistory() {
                                   {t('Promo', '优惠')}
                                 </span>
                               )}
+                              </span>
+                              <ItemSelections item={item} />
                             </span>
                           }
                           value={formatMoney((item.price ?? 0) * (item.qty ?? 0), currency)}
