@@ -52,7 +52,7 @@ const sectionTitle =
   'font-heading text-2xl font-medium text-ink text-center mb-10'
 
 export default function Landing() {
-  const { t, lang, account, role, loading } = useSession()
+  const { t, lang, account, role, loading, merchantUnknown } = useSession()
   const { pricing } = usePlatformPricing()
   // Schema.org markup for this page only, in the language it is currently showing. See
   // structuredData.ts for why it is not a static block in index.html.
@@ -67,12 +67,21 @@ export default function Landing() {
     [lang]
   )
 
-  // Where the signed-in user's portal lives, by role. Customers have no portal.
+  // Where the signed-in user's portal lives, by role. Customers have no portal — with one
+  // exception: someone who is signed in and owns NO shop is where merchant signup leaves you
+  // when email confirmation splits it in half (see pendingShop.ts). Confirming the email lands
+  // them HERE, and until this case existed the account menu offered them nothing but Sign out —
+  // no dashboard, and no way to reach the half of signup that was never finished.
+  // `merchantUnknown` is the "we could not read your shop" case (#98), which also reads as role
+  // 'customer'. Offering THAT user a shop to set up would state, as fact, that they have none.
+  const shopless = !!account && role === 'customer' && !merchantUnknown
   const portal = role === 'superadmin'
     ? { to: '/admin', label: t('Admin', '管理后台') }
     : role === 'merchant'
       ? { to: '/merchant', label: t('My dashboard', '我的后台') }
-      : null
+      : shopless
+        ? { to: '/merchant', label: t('Set up my shop', '设置我的店铺') }
+        : null
 
   // Pricing tiers. Amounts come from the region-resolved backend pricing (`pricing`);
   // yearly is billed at 10× monthly (2 months free) and shown as an effective /mo.

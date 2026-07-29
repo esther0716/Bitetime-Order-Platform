@@ -52,12 +52,15 @@ export default function SignupScreen() {
     e.preventDefault()
     setBusy(true); setMsg('')
     try {
-      await signUp(name, email, password)
+      // The shop details ride along on the auth user. With email confirmation on, the sign-in
+      // below fails and `createMerchant` never runs — parked, the shop is created for them the
+      // moment they confirm and log in, instead of dying with this page. See pendingShop.ts.
+      await signUp(name, email, password, { name, businessNature, plan: plan as 'basic' | 'pro', billing: billing as 'monthly' | 'yearly', ref })
       try {
         await signIn(email, password)
       } catch {
-        setMsg(t('Account created. Check your email to confirm, then log in to finish setting up your shop.',
-                 '账号已创建。请查收邮件确认，然后登录以完成店铺设置。'))
+        setMsg(t('Account created. Check your email to confirm, then log in — we’ll finish setting up your shop for you.',
+                 '账号已创建。请查收邮件确认后登录，我们会为你完成店铺设置。'))
         setBusy(false); return
       }
       const created = await createMerchant({ name, plan, billing, referredByCode: ref, businessNature })

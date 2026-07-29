@@ -7,6 +7,8 @@ import { SignupError, signupErrorCode } from './signupError'
 import type { AddressParts, EarnedReward, FeedbackItem, Order, ReferredShop, ShopCustomer, ShopCustomerPage, ShopCustomerSort, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
+import { pendingShopMetadata } from './merchant/pendingShop';
+import type { PendingShop } from './merchant/pendingShop';
 import { API_URL, apiGet, apiGetFile, apiSend, mapOk, toVoid } from './api'
 import type { Result } from './api'
 import type { CartLine } from '@bitetime/shared'
@@ -19,11 +21,14 @@ export async function signIn(email: string, password: string) {
   return data.user;
 }
 
-export async function signUp(name: string, email: string, password: string) {
+// Merchant sign-up. `shop` is what the form collected about the SHOP, parked on the auth user
+// so it outlives the confirmation round trip: with confirmations on, the sign-in that follows
+// this call fails and the shop is never created here. See pendingShop.ts.
+export async function signUp(name: string, email: string, password: string, shop?: PendingShop) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { name } },
+    options: { data: { name, ...(shop ? pendingShopMetadata(shop) : {}) } },
   });
   if (error) throw error;
   if (data.user) {
