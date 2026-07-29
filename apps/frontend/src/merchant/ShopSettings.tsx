@@ -578,7 +578,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
           <Label htmlFor="shop-currency">{t('Base currency', '基础货币')}</Label>
           <Select
             value={fields.currency}
-            onValueChange={(v) => setFields(f => ({ ...f, currency: v }))}
+            onValueChange={(v) => setFields(f => ({ ...f, currency: v ?? f.currency }))}
             disabled={currencyLocked}
           >
             <SelectTrigger id="shop-currency" className="w-full max-w-[280px]" aria-label={t('Base currency', '基础货币')}>

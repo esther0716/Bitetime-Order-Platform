@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams, useParams, Link } from 'react-router-dom'
 import { signUp, signIn, createMerchant, startCheckout } from '../store'
 import { toSlugBase } from '../slug'
 import { useSession } from '../SessionContext'
@@ -16,13 +16,27 @@ import Wordmark from '../components/Wordmark'
 const PLANS = ['basic', 'pro']
 const CYCLES = ['monthly', 'yearly']
 
+/**
+ * The first of `candidates` that is one of `allowed`, else `fallback`.
+ *
+ * Two candidates, in order, because the plan reaches this screen two ways. The path segment
+ * (`/merchant/signup/pro/yearly`) is what the pricing cards link to — a query string is what a
+ * link auditor and a human both read as an unfriendly URL. The query string (`?plan=pro`) is what
+ * Stripe's `cancel_url` sends back and what any link already sitting in an inbox still says, so
+ * it keeps working rather than silently landing everyone on Basic.
+ */
+function pick(allowed: string[], candidates: (string | null | undefined)[], fallback: string) {
+  return candidates.find(c => c != null && allowed.includes(c)) ?? fallback
+}
+
 export default function SignupScreen() {
   const { t, lang, refreshMerchant } = useSession()
   const { pricing } = usePlatformPricing()
   const [params] = useSearchParams()
+  const path = useParams()
 
-  const plan = PLANS.includes(params.get('plan') as string) ? (params.get('plan') as string) : 'basic'
-  const billing = CYCLES.includes(params.get('billing') as string) ? (params.get('billing') as string) : 'monthly'
+  const plan = pick(PLANS, [path.plan, params.get('plan')], 'basic')
+  const billing = pick(CYCLES, [path.billing, params.get('billing')], 'monthly')
   const canceled = params.get('canceled') === '1'
   const ref = params.get('ref') ?? undefined
 
@@ -52,12 +66,15 @@ export default function SignupScreen() {
     e.preventDefault()
     setBusy(true); setMsg('')
     try {
-      await signUp(name, email, password)
+      // The shop details ride along on the auth user. With email confirmation on, the sign-in
+      // below fails and `createMerchant` never runs — parked, the shop is created for them the
+      // moment they confirm and log in, instead of dying with this page. See pendingShop.ts.
+      await signUp(name, email, password, { name, businessNature, plan: plan as 'basic' | 'pro', billing: billing as 'monthly' | 'yearly', ref })
       try {
         await signIn(email, password)
       } catch {
-        setMsg(t('Account created. Check your email to confirm, then log in to finish setting up your shop.',
-                 '账号已创建。请查收邮件确认，然后登录以完成店铺设置。'))
+        setMsg(t('Account created. Check your email to confirm, then log in — we’ll finish setting up your shop for you.',
+                 '账号已创建。请查收邮件确认后登录，我们会为你完成店铺设置。'))
         setBusy(false); return
       }
       const created = await createMerchant({ name, plan, billing, referredByCode: ref, businessNature })

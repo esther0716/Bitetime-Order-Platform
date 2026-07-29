@@ -173,7 +173,7 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
         <h3 className={HEADING}>{t('Time zone', '时区')}</h3>
         <div className="flex flex-col gap-[6px]">
           <Label htmlFor="ff-tz">{t('Your shop’s clock', '店铺所在时区')}</Label>
-          <Select value={fields.timezone} onValueChange={v => setFields(f => ({ ...f, timezone: v }))}>
+          <Select value={fields.timezone} onValueChange={v => setFields(f => ({ ...f, timezone: v ?? f.timezone }))}>
             <SelectTrigger id="ff-tz" className="w-full max-w-[280px]" aria-label={t('Time zone', '时区')}>
               <span className="truncate">{fields.timezone}</span>
             </SelectTrigger>

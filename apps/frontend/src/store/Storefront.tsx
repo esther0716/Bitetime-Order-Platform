@@ -38,6 +38,7 @@ import { formatCalendarDate } from '../orderDate'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
 const EMPTY_ADDRESS: AddressParts = { line1: '', postcode: '', city: '', state: '' }
 
@@ -1313,17 +1314,31 @@ export default function Storefront() {
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label htmlFor="sf-state">{t('State', '州属')}</Label>
-                      <select
-                        id="sf-state"
-                        value={address.state}
-                        onChange={e => patchAddress({ state: e.target.value })}
-                        className="w-full min-w-0 rounded-md border border-clay-border bg-surface-raised px-[13px] py-2.5 text-[16px] text-ink transition-colors outline-none focus-visible:border-oxblood focus-visible:ring-3 focus-visible:ring-oxblood/10"
+                      <Select
+                        value={address.state || null}
+                        onValueChange={v => patchAddress({ state: v ?? '' })}
                       >
-                        <option value="">{t('Select state…', '选择州属…')}</option>
-                        {MY_STATES.map(s => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
+                        {/* The class string is Input's, verbatim — this field sits between two
+                            Inputs and has always been pixel-matched to them. text-[16px] is not
+                            decorative: iOS Safari zooms the viewport on focus of any control
+                            under 16px, and this is the checkout address form.
+                            The height override has to be spelled `data-[size=default]:h-auto`,
+                            not `h-auto`: the trigger sets its height under that same variant, and
+                            an unprefixed h-auto neither out-specifies it nor gets deduped by
+                            tailwind-merge — it just loses, leaving this field 36px beside a 46px
+                            Input. Matching the variant lets the merge drop the h-9. */}
+                        <SelectTrigger
+                          id="sf-state"
+                          className="w-full min-w-0 data-[size=default]:h-auto rounded-md border border-clay-border bg-surface-raised px-[13px] py-2.5 text-[16px] text-ink transition-colors outline-none focus-visible:border-oxblood focus-visible:ring-3 focus-visible:ring-oxblood/10 data-placeholder:text-text-tertiary"
+                        >
+                          <SelectValue placeholder={t('Select state…', '选择州属…')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MY_STATES.map(s => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
               </div>
             )}

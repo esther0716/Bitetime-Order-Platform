@@ -341,6 +341,16 @@ export default function ProductsManager() {
     onRemove: setPendingDelete,
   }
 
+  // `items` feeds the trigger's label lookup and the rendered list from one expression.
+  // The leading entry keeps a legacy value (e.g. an old "pc") selectable so existing rows
+  // survive — dropping it would silently rewrite a merchant's unit on the next save.
+  const unitItems = [
+    ...(form.unit && !UNITS.some(u => u.value === form.unit)
+      ? [{ value: form.unit as string, label: form.unit as string }]
+      : []),
+    ...UNITS.map(u => ({ value: u.value, label: t(u.en, u.zh) })),
+  ]
+
   if (!rows) return (
     <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
       <SkeletonText lines={4} />
@@ -461,18 +471,14 @@ export default function ProductsManager() {
                     aria-label={t('Unit quantity', '单位数量')}
                     placeholder="1"
                   />
-                  <Select value={form.unit} onValueChange={v => setForm({ ...form, unit: v })}>
+                  <Select value={form.unit} onValueChange={v => setForm({ ...form, unit: v ?? form.unit })} items={unitItems}>
                     <SelectTrigger id="pm-5" className="flex-1 bg-cream border-clay-border text-[13px]">
                       <SelectValue />
                     </SelectTrigger>
                     {/* z-modal-popover (400) floats above the dialog popup (z-modal). */}
                     <SelectContent className="z-modal-popover">
-                      {/* Keep a legacy value (e.g. old "pc") selectable so existing rows survive. */}
-                      {form.unit && !UNITS.some(u => u.value === form.unit) && (
-                        <SelectItem value={form.unit}>{form.unit}</SelectItem>
-                      )}
-                      {UNITS.map(u => (
-                        <SelectItem key={u.value} value={u.value}>{t(u.en, u.zh)}</SelectItem>
+                      {unitItems.map(u => (
+                        <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

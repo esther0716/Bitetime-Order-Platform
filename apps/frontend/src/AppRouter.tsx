@@ -3,19 +3,25 @@ import type { ReactNode } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { PageTransition } from './motion'
 import { SessionProvider, useSession } from './SessionContext'
-import { Toaster } from './components/ui/sonner'
 import { TooltipProvider } from './components/ui/tooltip'
 import { MerchantProvider, useMerchant } from './MerchantContext'
 import RequireRole from './RequireRole'
 import { useCanonical } from './canonical'
 import { Spinner } from './components/Loaders'
 import Wordmark from './components/Wordmark'
+// STATICALLY IMPORTED, and it is the one route that must be. `/` is prerendered into the HTML
+// (scripts/prerender.tsx) so the page is on screen before any script runs — and behind a lazy()
+// boundary React threw that page away on boot and put the route spinner in its place until the
+// chunk arrived. Measured in a Lighthouse trace: #root went from the full 1350×940 viewport to an
+// 86×470 spinner at t+254ms and back at t+595ms, two layout shifts of 0.468 each, a cumulative
+// 0.934 and the entire desktop performance gap. Splitting a chunk the entry HTML already contains
+// buys nothing and costs the paint we prerendered it for.
+import Landing from './marketing/Landing'
 
-// Route-level code splitting: each surface ships its own chunk, so a storefront
+// Route-level code splitting: every OTHER surface ships its own chunk, so a storefront
 // customer never downloads merchant/admin/signup code (signup pulls in the heavy
 // pinyin-pro dictionary — kept out of the customer path).
 const AdminHome = lazy(() => import('./admin/AdminHome'))
-const Landing = lazy(() => import('./marketing/Landing'))
 const SignupScreen = lazy(() => import('./merchant/SignupScreen'))
 const LoginScreen = lazy(() => import('./merchant/LoginScreen'))
 const MerchantHome = lazy(() => import('./merchant/MerchantHome'))
@@ -25,6 +31,7 @@ const OrderHistory = lazy(() => import('./store/OrderHistory'))
 const ResetPasswordPage = lazy(() => import('./ResetPasswordPage'))
 const TermsPage = lazy(() => import('./legal/TermsPage'))
 const PrivacyPage = lazy(() => import('./legal/PrivacyPage'))
+const Toaster = lazy(() => import('./components/ui/sonner').then(m => ({ default: m.Toaster })))
 
 function RouteFallback() {
   return (
@@ -112,8 +119,33 @@ export default function AppRouter() {
       <TooltipProvider delay={200}>
         <AnimatedRoutes />
       </TooltipProvider>
-      <Toaster position="bottom-center" />
+      <RouteToaster />
     </SessionProvider>
+  )
+}
+
+// Sonner mounts by writing ~15kB of CSS into <head>, and on the landing route that one injection
+// is the largest single difference between the HTML the server sends and the DOM the browser ends
+// up with — larger than the whole body. That difference is measured: `/` is prerendered
+// (scripts/prerender.tsx) precisely so crawlers that do not execute JavaScript can read the page
+// out of the raw HTML, and a page that rewrites its own head on boot is scored as heavily rendered
+// however complete its body is.
+//
+// The landing page fires no toasts — it has no action that can fail — so it mounts no toaster.
+// Every other route keeps one. Lazy for the mirror-image reason: sonner leaves the entry chunk, so
+// the marketing page no longer downloads a toast library it never uses.
+//
+// If a marketing route ever needs a toast, mount one there rather than deleting this gate — a
+// `toast()` with no Toaster mounted is silent, and that failure is invisible in review.
+const NO_TOASTER = new Set(['/'])
+
+function RouteToaster() {
+  const { pathname } = useLocation()
+  if (NO_TOASTER.has(pathname)) return null
+  return (
+    <Suspense fallback={null}>
+      <Toaster position="bottom-center" />
+    </Suspense>
   )
 }
 
@@ -140,7 +172,12 @@ function AnimatedRoutes() {
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/s/:slug/*" element={<MerchantProvider><StorefrontShell /></MerchantProvider>} />
-          <Route path="/merchant/signup" element={<SignupScreen />} />
+          {/* The optional segments are the plan and billing cycle the pricing cards preselect —
+              `/merchant/signup/pro/yearly` rather than `?plan=pro&billing=yearly`, because a query
+              string is what a link auditor and a human both read as unfriendly. Optional, so the
+              bare URL in sitemap.xml and a half-typed one still land on the form; collapsed to
+              that bare URL by canonicalPath, so the four CTAs are one indexed page. */}
+          <Route path="/merchant/signup/:plan?/:billing?" element={<SignupScreen />} />
           <Route path="/merchant/login" element={<RedirectSignedInMerchant><LoginScreen /></RedirectSignedInMerchant>} />
           <Route path="/merchant" element={<RequireRole role="merchant"><MerchantHome /></RequireRole>} />
           <Route path="/merchant/:slug" element={<RequireRole role="superadmin"><MerchantHome /></RequireRole>} />

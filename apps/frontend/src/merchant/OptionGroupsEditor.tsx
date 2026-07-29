@@ -4,6 +4,9 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '../components/ui/dropdown-menu'
+import {
   validateOptionGroups, MAX_GROUPS_PER_PRODUCT, MAX_OPTIONS_PER_GROUP,
 } from '@bitetime/shared'
 import type { OptionGroup, Option } from '@bitetime/shared'
@@ -86,19 +89,38 @@ export default function OptionGroupsEditor({
       <div className="flex items-center justify-between gap-2">
         <span className="text-[13px] font-medium">{t('Options', '选项')}</span>
         {copyFrom.length > 0 && value.length === 0 && (
-          <select
-            className="text-[12px] border border-clay-border rounded px-2 py-1 bg-transparent"
-            value=""
-            onChange={e => {
-              const src = copyFrom.find(p => p.id === e.target.value)
-              // A COPY, not a link. Editing "Milk" on one drink must never reprice eleven others
-              // — that surprise is why there is no shared library (ADR 0008).
-              if (src) onChange(structuredClone(src.groups))
-            }}
-          >
-            <option value="">{t('Copy options from…', '从其他商品复制…')}</option>
-            {copyFrom.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          // A menu, not a select: this holds no value. It fires once, copies, and the
+          // condition above then hides it because `value` is no longer empty.
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button" variant="outline" size="none"
+                  className="text-[12px] px-2 py-1 rounded"
+                />
+              }
+            >
+              {t('Copy options from…', '从其他商品复制…')}
+            </DropdownMenuTrigger>
+            {/* DropdownMenuContent is `w-(--anchor-width)` by default, which is right for the
+                icon-button menus it was built for but not here: this trigger is ~124px, so a
+                real product name wraps to four lines. Size to content instead, capped so a long
+                name truncates rather than stretching the dialog. */}
+            <DropdownMenuContent align="end" className="w-auto max-w-[280px]">
+              {copyFrom.map(p => (
+                <DropdownMenuItem
+                  key={p.id}
+                  onClick={() => {
+                    // A COPY, not a link. Editing "Milk" on one drink must never reprice eleven
+                    // others — that surprise is why there is no shared library (ADR 0008).
+                    onChange(structuredClone(p.groups))
+                  }}
+                >
+                  {p.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 

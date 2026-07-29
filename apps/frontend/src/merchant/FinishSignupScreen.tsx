@@ -1,0 +1,134 @@
+// The second half of merchant signup, for a merchant whose account exists but whose shop does
+// not. That gap is created by email confirmation: `SignupScreen` signs the merchant in and
+// creates the shop in the same submit, and with confirmations on the sign-in fails, so the
+// shop-creating call never runs. The merchant confirms, logs in — and owns nothing.
+//
+// Before this screen existed, `RequireRole` read that as "not a merchant" and bounced them to
+// the marketing page, where no 'My dashboard' link is drawn either. Nothing in the product ever
+// said the shop was missing, and nothing offered to create it.
+//
+// Two paths, and the first is the one that should fire:
+//   - the signup form's answers rode along in the auth user's metadata → create the shop with
+//     no questions asked (pendingShop.ts), which is where a NEW signup lands.
+//   - nothing was carried (a merchant stranded before this shipped) → ask for the two fields a
+//     shop cannot be created without.
+
+import { useState, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
+import { createMerchant, startCheckout } from '../store'
+import { useSession } from '../SessionContext'
+import { pendingShopFromMetadata } from './pendingShop'
+import type { PendingShop } from './pendingShop'
+import BusinessNaturePicker from '../components/BusinessNaturePicker'
+import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import Wordmark from '../components/Wordmark'
+import { Spinner } from '../components/Loaders'
+
+export default function FinishSignupScreen() {
+  const { t, account, refreshMerchant } = useSession()
+  const parked = pendingShopFromMetadata(account?.user_metadata)
+
+  const [name, setName] = useState(parked?.name ?? '')
+  const [businessNature, setBusinessNature] = useState(parked?.businessNature ?? '')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  // Mirrors SignupScreen's post-create branch: a Basic shop waits for approval, a Pro one has
+  // never paid and must reach Checkout — the shop is 'pending' either way, so skipping this
+  // would leave a Pro merchant with a shop no webhook will ever activate.
+  async function create(shop: PendingShop) {
+    setBusy(true); setMsg('')
+    const created = await createMerchant({
+      name: shop.name,
+      plan: shop.plan,
+      billing: shop.billing,
+      referredByCode: shop.ref,
+      businessNature: shop.businessNature || undefined,
+    })
+    if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
+    if (shop.plan === 'pro') {
+      const checkout = await startCheckout({ plan: shop.plan, billing: shop.billing })
+      if (!checkout.ok) { setMsg(checkout.error.message || t('Could not start checkout', '无法开始结账')); setBusy(false); return }
+      window.location.assign(checkout.data)
+      return
+    }
+    // Re-reading the shop is what changes this user's role to 'merchant', which is what lets
+    // the guard above this screen render the dashboard instead of this form.
+    await refreshMerchant()
+  }
+
+  // Auto-create when the signup form's answers were carried: the merchant already filled this
+  // in once, and asking twice is the bug, not the fix. Guarded by a ref rather than the `busy`
+  // state — an effect that reads state it also sets fires twice under StrictMode, and twice
+  // here is two shops.
+  const attempted = useRef(false)
+  useEffect(() => {
+    if (!parked || attempted.current) return
+    attempted.current = true
+    create(parked)
+    // Runs once for the parked shop; `create` closes over nothing that changes before it does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parked])
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    create({ name: name.trim(), businessNature, plan: 'basic', billing: 'monthly' })
+  }
+
+  const heading = (
+    <div className="text-center mb-10">
+      <h1><Wordmark className="h-8 mx-auto" /></h1>
+      <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
+    </div>
+  )
+
+  // The parked-shop path shows work, not a form — the only thing that stops it is a failure,
+  // and that failure keeps the form below as its way out.
+  if (parked && !msg) {
+    return (
+      <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
+        {heading}
+        <Card className="rounded-pill px-8 py-10 gap-0 items-center">
+          <Spinner label={t('Finishing your shop setup…', '正在完成店铺设置…')} />
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
+      {heading}
+      <Card className="rounded-pill px-8 pt-8 pb-7 gap-0">
+        <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">{t('Finish setting up your shop', '完成店铺设置')}</h2>
+        <p className="text-[13px] text-rose-muted mb-6">
+          {t("Your account is confirmed, but your shop was never created. Tell us these two things and it's done.",
+             '你的账号已确认，但店铺尚未创建。填写以下两项即可完成。')}
+        </p>
+        {msg && (
+          <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+            {msg}
+          </div>
+        )}
+        <form onSubmit={onSubmit}>
+          <div className="flex flex-col gap-3 mb-5">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="finish-name">{t('Shop name', '店铺名称')}</Label>
+              <Input id="finish-name" value={name} onChange={e => setName(e.target.value)} required placeholder={t('e.g. Sunny Bakes', '如：阳光烘焙')} />
+            </div>
+            <BusinessNaturePicker id="finish-nature" value={businessNature} onChange={setBusinessNature} />
+          </div>
+          {/* A Radix select carries no native `required`, so the button is the gate. */}
+          <Button type="submit" variant="default" size="md" className="py-3" disabled={busy || !name.trim() || !businessNature}>
+            {busy ? t('Creating…', '创建中…') : t('Create my shop', '创建店铺')}
+          </Button>
+        </form>
+        <p className="text-[13px] text-rose-muted text-center mt-4">
+          <Link to="/" className="text-oxblood cursor-pointer underline">{t('Back to home', '返回首页')}</Link>
+        </p>
+      </Card>
+    </div>
+  )
+}

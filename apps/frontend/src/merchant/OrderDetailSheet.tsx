@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { COURIERS, trackingUrl, courierName } from '../couriers'
 import { ORDER_STATUSES, STATUS_LABELS, StatusBadge } from '../orderStatus'
 import { fulfilmentLabel } from '../fulfilmentLabel'
@@ -21,14 +22,6 @@ import { ItemSelections } from '../ItemSelections'
 
 // 11px semibold uppercase rose-muted label.
 const LBL = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-rose-muted shrink-0'
-
-// Self-contained select classes (pixel-match of .admin-field-select).
-const SELECT_CLS =
-  'w-full py-[7px] pl-[10px] pr-[32px] border border-clay-border rounded-sm text-[13px] ' +
-  'bg-cream text-ink font-sans appearance-none bg-no-repeat cursor-pointer min-w-[140px] ' +
-  'focus:outline-none focus:border-oxblood focus:shadow-[0_0_0_2px_rgba(122,16,40,0.1)]'
-
-const CHEVRON_SVG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237A4F55' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`
 
 // A labelled key/value line in the detail sheet — label in a fixed left column,
 // value aligned in the right column so rows scan like a receipt.
@@ -74,6 +67,12 @@ export default function OrderDetailSheet({
   const [courierDraft, setCourierDraft] = useState('')
   const [awbDraft, setAwbDraft] = useState('')
   const [savingTrack, setSavingTrack] = useState(false)
+
+  const statusItems = ORDER_STATUSES.map(s => ({
+    value: s,
+    label: t(STATUS_LABELS[s].en, STATUS_LABELS[s].zh),
+  }))
+  const courierItems = COURIERS.map(c => ({ value: c.code, label: c.name }))
 
   // Re-seed the drafts when a different order opens (adjust-state-during-render:
   // keyed on id so a status/note/tracking patch that replaces `order` mid-view
@@ -231,18 +230,22 @@ export default function OrderDetailSheet({
                 <Section title={t('Delivery tracking', '物流追踪')}>
                   <div className="flex flex-col gap-1">
                     <label className={LBL} htmlFor={`courier-${order.id}`}>{t('Courier', '快递公司')}</label>
-                    <select
-                      id={`courier-${order.id}`}
-                      className={SELECT_CLS}
-                      style={{ backgroundImage: CHEVRON_SVG, backgroundPosition: 'right 10px center' }}
-                      value={courierDraft}
-                      onChange={e => setCourierDraft(e.target.value)}
+                    <Select
+                      // `courierDraft` stays a string; Base UI spells "nothing selected"
+                      // as null, so the two meet here rather than anywhere downstream.
+                      value={courierDraft || null}
+                      onValueChange={v => setCourierDraft(v ?? '')}
+                      items={courierItems}
                     >
-                      <option value="">{t('Select courier…', '选择快递…')}</option>
-                      {COURIERS.map(c => (
-                        <option key={c.code} value={c.code}>{c.name}</option>
-                      ))}
-                    </select>
+                      <SelectTrigger id={`courier-${order.id}`} className="w-full min-w-[140px] bg-cream text-[13px]">
+                        <SelectValue placeholder={t('Select courier…', '选择快递…')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {courierItems.map(c => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className={LBL} htmlFor={`awb-${order.id}`}>{t('AWB / Tracking no.', '运单号')}</label>
@@ -309,17 +312,22 @@ export default function OrderDetailSheet({
               {/* Status control */}
               {!readOnly && (
                 <Section title={t('Status', '状态')}>
-                  <select
-                    id={`status-${order.id}`}
-                    className={SELECT_CLS}
-                    style={{ backgroundImage: CHEVRON_SVG, backgroundPosition: 'right 10px center' }}
+                  <Select
                     value={order.status || 'new'}
-                    onChange={e => handleStatusChange(order, e.target.value)}
+                    // `if (v)` rather than `?? ` — this handler writes to the database, so a
+                    // null must be dropped, never coerced into a status.
+                    onValueChange={v => { if (v) handleStatusChange(order, v) }}
+                    items={statusItems}
                   >
-                    {ORDER_STATUSES.map(s => (
-                      <option key={s} value={s}>{t(STATUS_LABELS[s].en, STATUS_LABELS[s].zh)}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger id={`status-${order.id}`} className="w-full min-w-[140px] bg-cream text-[13px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusItems.map(i => (
+                        <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </Section>
               )}
             </div>

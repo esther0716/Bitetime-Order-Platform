@@ -13,18 +13,14 @@ import type { VerticalWord } from './verticals'
 const EASE = [0.16, 1, 0.3, 1] as const
 
 // ── Paper grain: fixed, pointer-events-none, painted once (perf guardrail) ──
-const GRAIN = encodeURIComponent(
-  "<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'>" +
-    "<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter>" +
-    "<rect width='100%' height='100%' filter='url(#n)'/></svg>"
-)
-
+// The noise tile itself is `.grain-overlay` in index.css. It is a constant, and a constant in a
+// `style` attribute is ~470 bytes of percent-encoded SVG re-sent inside the HTML of every
+// prerendered page instead of once inside a cached stylesheet.
 export function GrainOverlay() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none fixed inset-0 -z-10 opacity-[0.035] mix-blend-multiply max-[600px]:opacity-[0.025]"
-      style={{ backgroundImage: `url("data:image/svg+xml,${GRAIN}")` }}
+      className="grain-overlay pointer-events-none fixed inset-0 -z-10 opacity-[0.035] mix-blend-multiply max-[600px]:opacity-[0.025]"
     />
   )
 }
