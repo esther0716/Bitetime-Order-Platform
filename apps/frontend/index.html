@@ -16,10 +16,11 @@
     <meta name="description" content="Start your own food shop online and keep every order in one place. TinyOrder helps home kitchens and food businesses take orders from customers. Free 7 days." />
     <!-- Link previews on Instagram / WhatsApp / Facebook.
          og:image must be absolute — most scrapers silently drop relative
-         URLs. No og:url: this is a single-HTML SPA (vercel.json rewrites
-         every path to this file), so a hardcoded URL here would be wrong
-         on every route except the homepage — notably /s/:slug shop
-         links. Without the tag, scrapers fall back to the fetched URL.
+         URLs. No og:url: this file is the SHELL every non-landing route
+         is served from (vercel.json rewrites to app.html, which is a copy
+         of it), so a hardcoded URL here would be wrong on every route
+         except the homepage — notably /s/:slug shop links. Without the
+         tag, scrapers fall back to the fetched URL.
 
          The <link rel="canonical"> that search engines want has the same
          problem and cannot live here either — it is written per route at
@@ -28,7 +29,13 @@
          link-preview scrapers do not run JavaScript. Same reason the
          Schema.org JSON-LD is injected by the landing route rather than
          parked in this file: it would otherwise describe every page.
-         See src/marketing/structuredData.ts. -->
+         See src/marketing/structuredData.ts.
+
+         The homepage is the exception, and gets BOTH tags: the build
+         prerenders `/` over dist/index.html, which Vercel serves for
+         that one path, so scripts/prerender.tsx writes a canonical and
+         an og:url naming the homepage into the copy nothing else uses.
+         Do not move them up here — here they would name every route. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="TinyOrder" />
     <meta property="og:title" content="TinyOrder — Sell your food online" />

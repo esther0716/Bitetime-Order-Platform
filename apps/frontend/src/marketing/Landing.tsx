@@ -562,9 +562,14 @@ export default function Landing() {
           {/* First panel open by default. A collapsed accordion renders NO panel content at all —
               not hidden text, no text — so every answer here was invisible to a crawler and to the
               reader deciding whether to read on. Opening the first one puts a real answer on the
-              page and shows the rest are openable. The others stay closed: the FAQPage markup in
-              structuredData.ts carries all nine to search engines regardless. */}
-          <Accordion className="max-w-[640px] mx-auto" defaultValue={[FAQ[0].id]}>
+              page and shows the rest are openable.
+
+              `hiddenUntilFound` is what gets the other eight into the HTML: the closed panels are
+              rendered with `hidden="until-found"` instead of not being rendered, so the words are
+              in the file a crawler downloads — which is the point on a page that is prerendered
+              for exactly that reason — and find-in-page opens the panel it matched instead of
+              scrolling past nothing. */}
+          <Accordion className="max-w-[640px] mx-auto" defaultValue={[FAQ[0].id]} hiddenUntilFound>
             {FAQ.map(entry => (
               <AccordionItem key={entry.id} value={entry.id} className="border-clay-border">
                 <AccordionTrigger className="font-heading text-[15px] text-ink text-left py-4">

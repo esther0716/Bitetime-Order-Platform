@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { PageTransition } from './motion'
 import { SessionProvider, useSession } from './SessionContext'
-import { Toaster } from './components/ui/sonner'
 import { TooltipProvider } from './components/ui/tooltip'
 import { MerchantProvider, useMerchant } from './MerchantContext'
 import RequireRole from './RequireRole'
@@ -25,6 +24,7 @@ const OrderHistory = lazy(() => import('./store/OrderHistory'))
 const ResetPasswordPage = lazy(() => import('./ResetPasswordPage'))
 const TermsPage = lazy(() => import('./legal/TermsPage'))
 const PrivacyPage = lazy(() => import('./legal/PrivacyPage'))
+const Toaster = lazy(() => import('./components/ui/sonner').then(m => ({ default: m.Toaster })))
 
 function RouteFallback() {
   return (
@@ -112,8 +112,33 @@ export default function AppRouter() {
       <TooltipProvider delay={200}>
         <AnimatedRoutes />
       </TooltipProvider>
-      <Toaster position="bottom-center" />
+      <RouteToaster />
     </SessionProvider>
+  )
+}
+
+// Sonner mounts by writing ~15kB of CSS into <head>, and on the landing route that one injection
+// is the largest single difference between the HTML the server sends and the DOM the browser ends
+// up with — larger than the whole body. That difference is measured: `/` is prerendered
+// (scripts/prerender.tsx) precisely so crawlers that do not execute JavaScript can read the page
+// out of the raw HTML, and a page that rewrites its own head on boot is scored as heavily rendered
+// however complete its body is.
+//
+// The landing page fires no toasts — it has no action that can fail — so it mounts no toaster.
+// Every other route keeps one. Lazy for the mirror-image reason: sonner leaves the entry chunk, so
+// the marketing page no longer downloads a toast library it never uses.
+//
+// If a marketing route ever needs a toast, mount one there rather than deleting this gate — a
+// `toast()` with no Toaster mounted is silent, and that failure is invisible in review.
+const NO_TOASTER = new Set(['/'])
+
+function RouteToaster() {
+  const { pathname } = useLocation()
+  if (NO_TOASTER.has(pathname)) return null
+  return (
+    <Suspense fallback={null}>
+      <Toaster position="bottom-center" />
+    </Suspense>
   )
 }
 
