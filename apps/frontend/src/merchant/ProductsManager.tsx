@@ -8,6 +8,7 @@ import { coerceQuantity, formatUnit } from '../productUnit'
 import { formatMoney, currencyDef } from '../currency'
 import { promoEndFromDate, promoEndToDate } from '../promoEnd'
 import { SkeletonText } from '../components/Loaders'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -164,6 +165,9 @@ export default function ProductsManager() {
   // merchant's laptop clock being a few minutes off only makes the hint a few minutes early or late,
   // never a wrong price. `promo_end` is an absolute instant already (see promoEnd.ts).
   const [promoEnded, setPromoEnded] = useState(false)
+  // The row a Delete action is asking about, held here rather than in the column def so the
+  // columns stay stable (see ProductTableMeta). null → no confirm open.
+  const [pendingDelete, setPendingDelete] = useState<any | null>(null)
 
   async function load() { const r = await lookupProducts(merchant!.id); setRows(r.ok ? r.data : []) }
   useEffect(() => { lookupProducts(merchant!.id).then(r => setRows(r.ok ? r.data : [])) }, [merchant!.id])
@@ -320,6 +324,10 @@ export default function ProductsManager() {
     const r = await upsertProduct({ ...p, image_urls })
     if (r.ok) await load()
   }
+  // The name to quote back in the delete confirm, in the language being read.
+  function productLabel(p: any) {
+    return (lang === 'zh' && p.name_zh) ? p.name_zh : p.name
+  }
   async function remove(p: any) {
     const r = await deleteProduct(p.id, merchant!.id)
     if (!r.ok) { toast.error(r.error.message || t('Could not delete product', '无法删除产品')); return }
@@ -330,7 +338,7 @@ export default function ProductsManager() {
   const meta: ProductTableMeta = {
     t, currency,
     onEdit: openEdit,
-    onRemove: remove,
+    onRemove: setPendingDelete,
   }
 
   if (!rows) return (
@@ -632,6 +640,22 @@ export default function ProductsManager() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={o => { if (!o) setPendingDelete(null) }}
+        title={t('Delete this product?', '删除此产品？')}
+        body={
+          <p>
+            {t(
+              `“${pendingDelete ? productLabel(pendingDelete) : ''}” disappears from your storefront and cannot be brought back. Orders already placed keep their record of it.`,
+              `“${pendingDelete ? productLabel(pendingDelete) : ''}” 将从店面消失且无法恢复。已下的订单仍保留该记录。`,
+            )}
+          </p>
+        }
+        confirmLabel={t('Delete product', '删除产品')}
+        onConfirm={async () => { if (pendingDelete) await remove(pendingDelete) }}
+      />
     </div>
   )
 }

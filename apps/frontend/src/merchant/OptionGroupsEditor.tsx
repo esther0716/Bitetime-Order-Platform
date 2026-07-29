@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -52,6 +53,12 @@ export default function OptionGroupsEditor({
   value, onChange, currency, t, copyFrom = [],
 }: OptionGroupsEditorProps) {
   const [open, setOpen] = useState(value.length > 0)
+  // What a remove control is asking about — a whole question, or one choice inside one. Held by
+  // INDEX because that is what the removal itself uses; the confirm is modal, so no other edit
+  // can reorder the array underneath it while it is open.
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: 'group'; gi: number } | { kind: 'option'; gi: number; oi: number } | null
+  >(null)
 
   const patchGroup = (i: number, patch: Partial<OptionGroup>) =>
     onChange(value.map((g, n) => (n === i ? { ...g, ...patch } : g)))
@@ -191,7 +198,7 @@ export default function OptionGroupsEditor({
                 >{option.active ? t('Available', '可选') : t('Sold out', '售罄')}</Button>
                 <Button
                   type="button" variant="ghost" size="sm"
-                  onClick={() => patchGroup(gi, { options: group.options.filter((_, n) => n !== oi) })}
+                  onClick={() => setPendingDelete({ kind: 'option', gi, oi })}
                   aria-label={t('Remove choice', '删除选项')}
                 >×</Button>
                 </div>
@@ -222,7 +229,7 @@ export default function OptionGroupsEditor({
               >{group.active ? t('Switch off', '停用') : t('Switched off', '已停用')}</Button>
               <Button
                 type="button" variant="ghost" size="sm"
-                onClick={() => onChange(value.filter((_, n) => n !== gi))}
+                onClick={() => setPendingDelete({ kind: 'group', gi })}
               >{t('Remove question', '删除问题')}</Button>
             </div>
           </div>
@@ -239,8 +246,52 @@ export default function OptionGroupsEditor({
             here. Without the SQL constraints ADR 0008 gave up, this is where they find out. */}
         {problem && <span className="text-[12px] text-danger">{configMessage(problem, t)}</span>}
       </div>
+
+      {/* Opened from inside the product form's dialog — z-modal-popover paints it above that
+          popup, the same way the form's Select menu escapes it. */}
+      <ConfirmDialog
+        className="z-modal-popover"
+        open={!!pendingDelete}
+        onOpenChange={o => { if (!o) setPendingDelete(null) }}
+        title={pendingDelete?.kind === 'group'
+          ? t('Remove this question?', '删除这个问题？')
+          : t('Remove this choice?', '删除这个选项？')}
+        body={<p>{pendingDeleteBody()}</p>}
+        confirmLabel={pendingDelete?.kind === 'group'
+          ? t('Remove question', '删除问题')
+          : t('Remove choice', '删除选项')}
+        onConfirm={() => {
+          if (!pendingDelete) return
+          if (pendingDelete.kind === 'group') {
+            onChange(value.filter((_, n) => n !== pendingDelete.gi))
+          } else {
+            const { gi, oi } = pendingDelete
+            patchGroup(gi, { options: value[gi].options.filter((_, n) => n !== oi) })
+          }
+        }}
+      />
     </div>
   )
+
+  // Names what is going, and stays honest that nothing here is written until the product is
+  // saved — unlike a product or a photo, this one IS still recoverable by cancelling the form.
+  function pendingDeleteBody() {
+    if (!pendingDelete) return null
+    const group = value[pendingDelete.gi]
+    if (pendingDelete.kind === 'group') {
+      const name = group?.name || t('this question', '这个问题')
+      const count = group?.options.length ?? 0
+      return t(
+        `“${name}” and its ${count} ${count === 1 ? 'choice' : 'choices'} go with it. Nothing is written until you save the product.`,
+        `“${name}” 及其 ${count} 个选项都会一并删除。在保存产品之前不会写入更改。`,
+      )
+    }
+    const name = group?.options[pendingDelete.oi]?.name || t('this choice', '这个选项')
+    return t(
+      `“${name}” stops being offered on this question. Nothing is written until you save the product.`,
+      `“${name}” 将不再作为该问题的选项。在保存产品之前不会写入更改。`,
+    )
+  }
 }
 
 function configMessage(code: string, t: (en: string, zh: string) => string): string {

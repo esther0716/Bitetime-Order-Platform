@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { paymentQrUrl, uploadPaymentQr, PAYMENT_QR_TYPES } from '../store'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 type T = (en: string, zh: string) => string
 
@@ -21,6 +22,7 @@ export default function PaymentQrPicker({
   t: T
 }) {
   const [busy, setBusy] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function pick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -50,7 +52,7 @@ export default function PaymentQrPicker({
             <button
               type="button"
               disabled={busy}
-              onClick={() => onChange('')}
+              onClick={() => setConfirmRemove(true)}
               aria-label={t('Remove QR code', '删除二维码')}
               className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-oxblood text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-oxblood/90 disabled:opacity-50 cursor-pointer"
             >
@@ -85,6 +87,20 @@ export default function PaymentQrPicker({
         accept={PAYMENT_QR_TYPES.join(',')}
         onChange={pick}
         className="hidden"
+      />
+
+      <ConfirmDialog
+        open={confirmRemove}
+        onOpenChange={setConfirmRemove}
+        title={t('Remove the payment QR?', '删除付款二维码？')}
+        body={
+          <p>
+            {t('Customers stop seeing a QR after they order. The image is deleted for good once you save this tab.',
+               '顾客下单后将不再看到二维码。保存本页后该图片会被永久删除。')}
+          </p>
+        }
+        confirmLabel={t('Remove QR code', '删除二维码')}
+        onConfirm={() => onChange('')}
       />
     </div>
   )
