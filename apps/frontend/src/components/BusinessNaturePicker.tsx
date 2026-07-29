@@ -24,7 +24,7 @@ export default function BusinessNaturePicker({ id, value, onChange, className }:
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onChange}>
+      <Select value={value} onValueChange={v => onChange(v ?? '')}>
         <SelectTrigger id={id} className={cn('w-full', className)} aria-label={label}>
           <span className={cn('truncate', !value && 'text-rose-muted')}>
             {value ? t(...businessNatureLabel(value)) : t('Choose your business type', '选择业务类型')}

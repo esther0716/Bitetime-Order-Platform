@@ -105,6 +105,13 @@ export default function FeedbackFab() {
 
   const title = t('Send feedback', '发送反馈')
 
+  // Still keyed off the shared FEEDBACK_CATEGORIES tuple, so a fifth category upstream is
+  // still a compile error here until it is given a label.
+  const categoryItems = FEEDBACK_CATEGORIES.map(key => ({
+    value: key,
+    label: t(CATEGORY_LABELS[key].en, CATEGORY_LABELS[key].zh),
+  }))
+
   return (
     <>
       <button
@@ -140,15 +147,19 @@ export default function FeedbackFab() {
             </p>
           ) : (
             <div className="flex flex-col gap-4">
-              <Select value={category} onValueChange={(v) => setCategory(v as FeedbackCategory)}>
+              {/* `category` is '' when unset, but Base UI only shows a placeholder for null —
+                  the two spellings of "nothing chosen" meet here. */}
+              <Select
+                value={category || null}
+                onValueChange={(v) => setCategory((v ?? '') as FeedbackCategory | '')}
+                items={categoryItems}
+              >
                 <SelectTrigger aria-label={t('Category', '类别')}>
                   <SelectValue placeholder={t('Pick a category', '选择类别')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {FEEDBACK_CATEGORIES.map(key => (
-                    <SelectItem key={key} value={key}>
-                      {t(CATEGORY_LABELS[key].en, CATEGORY_LABELS[key].zh)}
-                    </SelectItem>
+                  {categoryItems.map(i => (
+                    <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
