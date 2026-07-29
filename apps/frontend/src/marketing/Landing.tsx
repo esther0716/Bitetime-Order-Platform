@@ -11,6 +11,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '..
 import { REFUNDS_ANCHOR } from '../legal/anchors'
 import { FAQ } from './faq'
 import { FEATURES } from './features'
+import { USE_CASES } from './useCases'
 import { VERTICALS } from './verticals'
 import { useLandingStructuredData } from './structuredData'
 import { cn } from '../lib/utils'
@@ -347,6 +348,76 @@ export default function Landing() {
         </Reveal>
       </section>
 
+      {/* ── Ways to sell ── */}
+      {/* Copy lives in useCases.ts as data, same as the FAQ and the feature list, and under the same
+          rule: every line has to be true of the product as shipped. This section answers the question
+          "does it fit the way *I* sell", which the feature list above deliberately does not — and it
+          is the page's main body of real, indexable prose, so it renders open rather than behind a
+          disclosure. */}
+      <section className="border-t border-clay-border px-8 py-16 max-w-[900px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className={sectionTitle}>
+            {t(
+              'Pre-orders, weekly drops, pickup or delivery — set it up your way',
+              '预订、每周上新、自取或配送——按你的方式设定',
+            )}
+          </h2>
+          <p className="-mt-6 mb-10 text-[15px] leading-[1.75] text-ink-soft text-center max-w-[620px] mx-auto">
+            {t(
+              'No two small businesses take orders the same way, so nothing here is fixed for you. Here is how the usual ones are set up — pick the parts that match how you already work.',
+              '没有两家小生意的接单方式是一样的，所以这里没有一条是替你决定好的。以下是几种常见的设定方式——挑出与你现有做法相符的部分即可。',
+            )}
+          </p>
+          <div className="grid [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))] gap-x-12 gap-y-9 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-7">
+            {USE_CASES.map(u => (
+              <div key={u.id}>
+                <h3 className="font-heading text-[17px] font-semibold text-oxblood leading-[1.35] mb-2">
+                  {t(u.title.en, u.title.zh)}
+                </h3>
+                <p className="text-sm leading-[1.7] text-ink-soft m-0">
+                  {t(u.body.en, u.body.zh)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Reveal>
+      </section>
+
+      {/* ── What it replaces ── */}
+      {/* Prose, not data: this is one argument in three moves, and splitting it into title/body cards
+          would break the sequence that makes it read. Every claim about TinyOrder here is stated
+          elsewhere on the page too; nothing about a named competitor is stated at all. */}
+      <section className="border-t border-clay-border px-8 py-16 max-w-[720px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+        <Reveal>
+          <h2 className={sectionTitle}>
+            {t(
+              'What it replaces: the chat group, the spreadsheet, the marketplace',
+              '它取代了什么：聊天群、表格、外卖平台',
+            )}
+          </h2>
+          <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-soft">
+            <p className="m-0">
+              {t(
+                'Most small shops start in a chat group, because it costs nothing and it works — until it does not. Orders arrive in the middle of conversations, half of them missing a quantity or a date. You add the total up by hand, twice, because the first one was wrong. Someone asks where their order is and you scroll back through three days to find out. Nothing is lost dramatically; it leaks, one order at a time.',
+                '大多数小生意都是从聊天群开始的，因为不花钱、而且有用——直到有一天不再管用。订单夹在对话中间陆续进来，有一半没写数量或日期。总价你要手算，还得算两次，因为第一次算错了。有人问「我的单到哪了」，你就得往回翻三天的记录。订单不会一次全丢，而是一笔一笔慢慢漏掉。',
+              )}
+            </p>
+            <p className="m-0">
+              {t(
+                'A form and a spreadsheet fix the collecting and stop there. A form does not know your delivery rates, so shipping is still worked out by hand. It does not number an order, so you and your customer have nothing to call it. It does not tell anyone the order is ready. TinyOrder gives every order its own number, prices the delivery from the address the customer picked, and lets them look the order up themselves — which is most of the messages you answer today.',
+                '表单加试算表只解决了「收集」这一段，然后就没有了。表单不知道你的运费规则，所以运费还是要自己算。它不会给订单编号，你和顾客之间就没有一个共同的称呼。它也不会通知谁订单已经好了。TinyOrder 会为每笔订单生成专属编号，依顾客选定的地址计算运费，顾客还能自己查询进度——那正是你今天要回覆的大部分讯息。',
+              )}
+            </p>
+            <p className="m-0">
+              {t(
+                'A marketplace brings you traffic and charges for it, on every order, forever — and it lists a competitor beside you while doing it. The customer belongs to the platform, not to you. TinyOrder is the other trade: you bring your own customers, from the places you already post, and you keep every ringgit of what they spend. We charge one flat subscription and take no commission, so the month your shop does well is the month you keep the difference.',
+                '外卖平台替你带来流量，代价是每一笔订单都要抽成，永远如此——而且在你旁边同时列出竞争对手。顾客属于平台，不属于你。TinyOrder 是另一种交换：顾客由你自己从既有的社群管道带来，他们花的每一分钱都是你的。我们只收固定订阅费，不抽任何佣金——生意好的那个月，多出来的部分全归你。',
+              )}
+            </p>
+          </div>
+        </Reveal>
+      </section>
+
       {/* ── Pricing ── */}
       <section id="pricing" className="px-8 py-16 max-w-[1000px] mx-auto w-full text-center border-t border-clay-border">
         <Reveal>
@@ -488,7 +559,12 @@ export default function Landing() {
               '店主在注册前最常问我们的问题。',
             )}
           </p>
-          <Accordion className="max-w-[640px] mx-auto">
+          {/* First panel open by default. A collapsed accordion renders NO panel content at all —
+              not hidden text, no text — so every answer here was invisible to a crawler and to the
+              reader deciding whether to read on. Opening the first one puts a real answer on the
+              page and shows the rest are openable. The others stay closed: the FAQPage markup in
+              structuredData.ts carries all nine to search engines regardless. */}
+          <Accordion className="max-w-[640px] mx-auto" defaultValue={[FAQ[0].id]}>
             {FAQ.map(entry => (
               <AccordionItem key={entry.id} value={entry.id} className="border-clay-border">
                 <AccordionTrigger className="font-heading text-[15px] text-ink text-left py-4">
