@@ -9,12 +9,19 @@ import RequireRole from './RequireRole'
 import { useCanonical } from './canonical'
 import { Spinner } from './components/Loaders'
 import Wordmark from './components/Wordmark'
+// STATICALLY IMPORTED, and it is the one route that must be. `/` is prerendered into the HTML
+// (scripts/prerender.tsx) so the page is on screen before any script runs — and behind a lazy()
+// boundary React threw that page away on boot and put the route spinner in its place until the
+// chunk arrived. Measured in a Lighthouse trace: #root went from the full 1350×940 viewport to an
+// 86×470 spinner at t+254ms and back at t+595ms, two layout shifts of 0.468 each, a cumulative
+// 0.934 and the entire desktop performance gap. Splitting a chunk the entry HTML already contains
+// buys nothing and costs the paint we prerendered it for.
+import Landing from './marketing/Landing'
 
-// Route-level code splitting: each surface ships its own chunk, so a storefront
+// Route-level code splitting: every OTHER surface ships its own chunk, so a storefront
 // customer never downloads merchant/admin/signup code (signup pulls in the heavy
 // pinyin-pro dictionary — kept out of the customer path).
 const AdminHome = lazy(() => import('./admin/AdminHome'))
-const Landing = lazy(() => import('./marketing/Landing'))
 const SignupScreen = lazy(() => import('./merchant/SignupScreen'))
 const LoginScreen = lazy(() => import('./merchant/LoginScreen'))
 const MerchantHome = lazy(() => import('./merchant/MerchantHome'))

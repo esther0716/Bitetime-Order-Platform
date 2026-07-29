@@ -6,6 +6,43 @@
    CSS (cold origin) → the font file on a second cold origin — and nothing paints until it finishes.
    In <head> the same two requests are found immediately and warmed by preconnect. */
 @import 'tailwindcss';
+
+/* ── Metric-matched fallbacks ──────────────────────────────────────────────────────────────────
+   The webfonts are requested `display=swap`, so text paints in a system face and is replaced when
+   the real one lands, and that replacement re-measures every line on a 6500px page. These faces
+   make the swap change the SHAPE of the glyphs without changing the space they occupy: each real
+   face is followed by a system font stretched to its metrics, so the line boxes before and after
+   the handover are the same line boxes. The alternative, `display=optional`, would leave a
+   first-time visitor on Times New Roman for the whole visit.
+
+   HONEST SCOPE: this is a guard, not a fix for a measured number. The landing page's 0.93 CLS was
+   the lazy() boundary around the prerendered route (see AppRouter.tsx), and removing that took it
+   to 0 with these rules doing nothing visible — on a desktop run the fonts arrive before first
+   paint, so there is no swap to absorb. They earn their keep on the slow connections where the
+   paint happens first, which is the case no lab run here reproduces.
+
+   The numbers are measured, not guessed: canvas `measureText` on a representative string at
+   1000px, webfont against fallback. size-adjust is the advance-width ratio; the overrides are the
+   webfont's own ascent/descent divided by that ratio. Times New Roman and Arial are the bases
+   because they are the two faces that are actually everywhere. RE-MEASURE IF A FAMILY OR ITS
+   WEIGHTS CHANGE — a stale number here is a silent return of the shift. */
+@font-face {
+  font-family: 'Lora Fallback';
+  src: local('Times New Roman');
+  size-adjust: 109.16%;
+  ascent-override: 92.16%;
+  descent-override: 25.1%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'DM Sans Fallback';
+  src: local('Arial');
+  size-adjust: 100.79%;
+  ascent-override: 98.42%;
+  descent-override: 30.76%;
+  line-gap-override: 0%;
+}
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import './tokens.css';
@@ -184,7 +221,7 @@ html { scroll-behavior: smooth; }
   }
 }
 
-body { font-family: 'DM Sans', 'Noto Sans SC', sans-serif; background: var(--color-cream); color: var(--color-ink); min-height: 100vh; padding: 2rem 1rem 4rem; display: flex; flex-direction: column; align-items: center; scrollbar-gutter: stable; overflow-x: hidden; }
+body { font-family: 'DM Sans', 'DM Sans Fallback', 'Noto Sans SC', sans-serif; background: var(--color-cream); color: var(--color-ink); min-height: 100vh; padding: 2rem 1rem 4rem; display: flex; flex-direction: column; align-items: center; scrollbar-gutter: stable; overflow-x: hidden; }
 /* AA-passing placeholder (browser default fails contrast on cream) */
 input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); opacity: 1; }
 .form-wrap { max-width: 600px; width: calc(100vw - 2rem); }
@@ -218,8 +255,10 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
 @theme inline {
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
-  --font-heading: 'Lora', 'Noto Serif SC', serif;
-  --font-sans: 'DM Sans', 'Noto Sans SC', sans-serif;
+  /* Each real face is followed by its metric twin (see the @font-face pair at the top of this
+     file), so the space a line takes is decided before the webfont arrives, not after it. */
+  --font-heading: 'Lora', 'Lora Fallback', 'Noto Serif SC', serif;
+  --font-sans: 'DM Sans', 'DM Sans Fallback', 'Noto Sans SC', sans-serif;
   /* Body floor: text-sm is the app's de-facto body utility (buttons, inputs,
      card/prose copy). Raised from Tailwind's 14px default to 16px for
      readability + to stop iOS input-focus zoom. Eyebrows/labels stay small

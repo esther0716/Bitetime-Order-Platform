@@ -8,31 +8,16 @@
          series behind it and holds first paint on all four trips. Here both are found in the
          first bytes of the document and the handshakes overlap the app CSS download.
 
-         The Latin faces are the page: they render every heading and every paragraph an
-         English-reading visitor sees, so their stylesheet stays render-blocking (async would
-         paint in a fallback face and reflow when it swapped). The Chinese faces are loaded
-         WITHOUT blocking — `media="print"` is not a rule the browser must satisfy to paint, and
-         the onload flips it to `all` the moment it arrives. A visitor reading Chinese sees the
-         platform's own CJK face (PingFang SC, Noto Sans CJK) for a beat and then ours, which is
-         what `display=swap` already promised them. -->
+         ONLY the Latin faces are here. The Chinese ones are requested by src/cjkFont.ts when the
+         visitor is actually reading Chinese — unconditionally they were the largest single layout
+         shift on the page, because a Latin page still reaches a CJK face for the odd glyph its own
+         faces lack and every one of those re-measures when the font lands. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@400;500&display=swap"
     />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
-      media="print"
-      onload="this.media='all';this.onload=null"
-    />
-    <noscript>
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
-      />
-    </noscript>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />

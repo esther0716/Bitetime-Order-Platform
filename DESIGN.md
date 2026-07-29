@@ -180,7 +180,9 @@ A warm, low-glow palette: one committed oxblood accent over a ladder of cream-to
 **Display Font:** Lora (with Noto Serif SC → Georgia, serif fallback)
 **Body Font:** DM Sans (with Noto Sans SC → sans-serif fallback)
 **Label/Mono Font:** DM Mono (with 'Courier New', monospace) — order numbers, voucher codes, AWB
-**CJK Font:** Noto Serif SC (headings) / Noto Sans SC (body) — the bilingual EN/ZH siblings. Latin glyphs never reach them; they render only Chinese, so the storefront/dashboard keep a single consistent type voice across both languages instead of a browser fallback face.
+**CJK Font:** Noto Serif SC (headings) / Noto Sans SC (body) — the bilingual EN/ZH siblings. Latin glyphs never reach them; they render only Chinese, so the storefront/dashboard keep a single consistent type voice across both languages instead of a browser fallback face. **Requested only when the visitor is reading Chinese** (`src/cjkFont.ts`): an English page that downloads a CJK webfont pays for it twice, once in bytes and once in a re-layout when it lands.
+
+**Metric fallbacks:** `Lora Fallback` and `DM Sans Fallback` (`src/index.css`) are not new faces and are never chosen for their own sake. Each is Times New Roman or Arial stretched by `size-adjust` and `ascent-override` to occupy exactly the space Lora or DM Sans will occupy, and each sits directly behind its real face in the stack, so the `display=swap` handover changes the shape of the glyphs without changing the line boxes. They are a guard against reflow on connections slow enough that the page paints before the fonts land — not the fix for any number measured in a lab run here. The numbers come from `measureText`, not from taste; re-measure if a family or its weights change.
 
 **Character:** A clean serif/sans contrast pairing. Lora is the painted shop sign — humanist, slightly bookish, used at modest sizes with warmth rather than grandeur. DM Sans is the legible counter-clerk handwriting underneath: neutral, quiet, sized small and dense for forms and tables. Monospace appears only where a code must be read character-by-character.
 
