@@ -43,7 +43,8 @@ export default function VouchersManager() {
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
 
-  const kindItems = [
+  // Annotated, not inferred: `form` is `any`, so nothing else here would catch a typo'd kind.
+  const kindItems: { value: 'percent' | 'fixed'; label: string }[] = [
     { value: 'percent', label: t('Percentage (%)', '百分比 (%)') },
     { value: 'fixed', label: t(`Fixed amount (${symbol})`, `固定金额 (${symbol})`) },
   ]

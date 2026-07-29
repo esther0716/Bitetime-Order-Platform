@@ -237,8 +237,10 @@ function SortControl({
 }: { sort: ShopCustomerSort; onSort: (s: ShopCustomerSort) => void; isPro: boolean }) {
   const { t } = useSession()
   // One array feeds both `items` (what the trigger reads a label from) and the rendered
-  // list, so the two cannot drift apart.
-  const sortItems = [
+  // list, so the two cannot drift apart. Annotated rather than inferred: a typo'd value would
+  // otherwise widen to `string`, compile, and surface as a raw key on the trigger — the exact
+  // failure `items` was added to prevent.
+  const sortItems: { value: ShopCustomerSort; label: string }[] = [
     { value: 'recent', label: t('Most recent order', '最近下单') },
     { value: 'spend', label: t('Highest spend', '消费最高') },
     { value: 'orders', label: t('Most orders', '订单最多') },

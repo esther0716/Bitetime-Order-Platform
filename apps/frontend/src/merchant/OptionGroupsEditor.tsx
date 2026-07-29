@@ -102,7 +102,11 @@ export default function OptionGroupsEditor({
             >
               {t('Copy options from…', '从其他商品复制…')}
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            {/* DropdownMenuContent is `w-(--anchor-width)` by default, which is right for the
+                icon-button menus it was built for but not here: this trigger is ~124px, so a
+                real product name wraps to four lines. Size to content instead, capped so a long
+                name truncates rather than stretching the dialog. */}
+            <DropdownMenuContent align="end" className="w-auto max-w-[280px]">
               {copyFrom.map(p => (
                 <DropdownMenuItem
                   key={p.id}
