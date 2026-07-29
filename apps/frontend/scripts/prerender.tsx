@@ -5,18 +5,27 @@
 // marketing page reads as a blank document with a title. This step renders each marketing route to
 // static markup at build time so the words are in the file.
 //
-// WHY A FILE PER ROUTE: on Vercel the filesystem is checked BEFORE `rewrites`, so a request for
-// `/x` is answered by `dist/x.html` if that file exists and no rewrite can redirect it elsewhere.
-// The prerendered homepage therefore has to BE index.html, `/pricing` has to be pricing.html, and
-// the empty shell every OTHER route needs becomes `app.html` — which vercel.json rewrites to. That
-// split is the whole point: baking landing markup into the file that also serves /s/<slug> would
-// hand a crawler the marketing page as the content of every shop.
+// WHY A FILE PER ROUTE: the empty shell every non-prerendered route needs is `app.html`, which
+// vercel.json rewrites everything to. Baking landing markup into a file that also serves /s/<slug>
+// would hand a crawler the marketing page as the content of every shop, so each prerendered route
+// gets a file nothing else is served from.
+//
+// AND EACH ONE NEEDS ITS OWN REWRITE. Vercel checks the filesystem before `rewrites`, but it does
+// NOT try `<path>.html` for an extensionless request unless `cleanUrls` is on — so `/pricing` does
+// not find `pricing.html` on its own, and the catch-all `/(.*)` → `/app.html` swallows it. `/` is
+// the exception, and the reason this is easy to get wrong: it resolves to `index.html` as the
+// directory index, before any rewrite. Everything else needs an explicit
+// `{ source: '/x', destination: '/x.html' }` ABOVE the catch-all in apps/frontend/vercel.json.
+// vercelRewrites.test.ts fails the build if one is missing.
+//
+// The symptom when it IS missing hides itself: the route still works in a browser, because React
+// boots and renders it client-side. Only the served bytes differ — which is all a JS-less crawler
+// ever sees, and the entire reason this file exists.
 //
 // WHY MORE THAN ONE ROUTE (#169): a sitelink's label is the target page's `<title>` and its snippet
 // is that page's meta description, so a site served entirely out of one shell offers Google exactly
-// one candidate. Adding a marketing page means adding it HERE as well as to AppRouter — a route
-// missing from this list still works, it just falls through to app.html and reaches a JS-less
-// crawler as a blank page.
+// one candidate. Adding a marketing page means adding it HERE, to AppRouter, to routeMeta.ts and to
+// vercel.json's rewrites.
 //
 // The render is safe without a database or a backend because `renderToStaticMarkup` never runs
 // effects: SessionProvider renders its initial state (nothing loaded yet, which is the same first
@@ -123,8 +132,8 @@ for (const route of ROUTES) {
   //
   // Both are absent from index.html for the same stated reason: that file is the shell every
   // non-prerendered path is served from (as app.html), so a hardcoded URL in either would name the
-  // homepage on a storefront. THESE files are served for exactly one path each — Vercel checks the
-  // filesystem before `rewrites` — which makes a per-route URL simply true here.
+  // homepage on a storefront. THESE files are served for exactly one path each — `/` as the
+  // directory index, the rest through their own rewrite — which makes a per-route URL true here.
   //
   // `canonical` is otherwise written by an effect (src/canonical.ts), which Google runs and an LLM
   // crawler does not; useCanonical ADOPTS this element rather than appending a second, and rewrites
