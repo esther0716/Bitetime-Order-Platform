@@ -7,7 +7,6 @@ import { CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../cu
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Textarea } from '../components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge'
@@ -335,13 +334,17 @@ function ShippingTab({ onDirtyChange }: TabProps) {
 
       <div className={CARD}>
         <h3 className={HEADING}>{t('Pickup address', '自取地址')}</h3>
-        <div className="flex flex-col gap-[6px]">
-          <Label htmlFor="shop-pickup">{t('Shown to customers who choose pickup', '选择自取的顾客可见')}</Label>
-          <Textarea id="shop-pickup" value={fields.pickupAddress}
-            onChange={e => setFields(f => ({ ...f, pickupAddress: e.target.value }))}
-            rows={3} placeholder={t('e.g. 12 Jalan Example, 50000 Kuala Lumpur', '例如：吉隆坡某某路12号')}
-            className="resize-y min-h-[72px] max-w-[420px]" />
-        </div>
+        {/* Free text still lands in the same column — pickup is never routed, so there is no place
+            id to store — this only gives the merchant Google's suggestions instead of a blank box. */}
+        <AddressAutocomplete
+          id="shop-pickup"
+          t={t}
+          label={t('Shown to customers who choose pickup', '选择自取的顾客可见')}
+          value={fields.pickupAddress ?? ''}
+          placeholder={t('Start typing your shop address…', '输入店铺地址…')}
+          onTextChange={text => setFields(f => ({ ...f, pickupAddress: text }))}
+          onPick={d => setFields(f => ({ ...f, pickupAddress: d.formatted }))}
+        />
       </div>
 
       {/* Both rate cards can be on screen at once — a shop may post parcels at a flat rate AND run
