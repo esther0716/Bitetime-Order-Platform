@@ -871,11 +871,47 @@ app.post('/api/admin/approve-merchant', requireSuperadmin, async (c) => {
   return c.json({ ok: true, trial: outcome.trial })
 })
 
+// ── Owner: retry trial provisioning for a shop parked at `pending` ─────────────
+// The self-serve twin of approve-merchant above. `pending` means "provisioning did not finish"
+// now, which is a Stripe failure during signup — so the merchant, not an admin, is who should
+// be able to push it through.
+//
+// Every guard runs BEFORE the first Stripe call. That is what makes them assertable in
+// tests/api, which is network-free, and it is why one-trial-ever is checked HERE rather than
+// left to startCardlessTrial: that function deliberately activates a shop it cannot re-trial
+// (approval's semantics), which is not what an owner asking for a trial should be handed.
+app.post('/api/merchants/:id/start-trial', requireMerchantOwns, async (c) => {
+  const merchant = c.get('merchant') // loaded by the guard with select('*')
+
+  const refusal = trialStartRefusal(merchant)
+  if (refusal) return c.json({ error: refusal }, 409)
+
+  const { data: billing } = await admin
+    .from('merchant_billing').select('*').eq('merchant_id', merchant.id).maybeSingle()
+  if (!canStartTrial(billing)) {
+    return c.json({ error: 'This shop has already used its free trial — subscribe to reopen it.' }, 409)
+  }
+
+  // Named rather than spread: `c.get('merchant')` is the whole row as `Record<string, any>`, and
+  // listing the five columns the provisioning actually reads is what keeps that untyped bag from
+  // reaching it.
+  const outcome = await startCardlessTrial({
+    id: merchant.id,
+    name: merchant.name,
+    owner_id: merchant.owner_id,
+    plan: merchant.plan,
+    billing_cycle: merchant.billing_cycle,
+  }, billing)
+  if (!outcome.ok) return c.json({ error: outcome.error }, outcome.http)
+  return c.json({ ok: true, trial: outcome.trial })
+})
+
 // ── Superadmin: manual suspend / reject / reactivate ───────────────────────────
 // merchants.status is service_role-only at the DB layer (guard_merchant_status),
 // so the admin console can no longer flip it through PostgREST — these writes must
 // come through here. Covers Reject (pending→suspended), Suspend (active→suspended),
-// and Reactivate (suspended→active). Trial-granting stays in approve-merchant.
+// and Reactivate (suspended→active). Trial-granting stays in approve-merchant and its
+// owner-side twin.
 app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
   const { merchantId, status } = await c.req.json().catch(() => ({}))
   if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
