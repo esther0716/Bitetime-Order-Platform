@@ -1,4 +1,4 @@
-import { canonicalJson, optionGroupsFromRow, isBusinessNature, isTimezone } from '@bitetime/shared'
+import { canonicalJson, optionGroupsFromRow, isTimezone } from '@bitetime/shared'
 
 // Column allowlists for write endpoints. The service-role `admin` client bypasses RLS and the
 // guard_merchant_status / guard_profile_privileges triggers, so these picks are the ONLY thing
@@ -29,9 +29,6 @@ const MERCHANT_CONFIG_FIELDS = [
   // one-time spotlight tour marking itself seen.
   'onboarding_shipping_set', 'onboarding_link_shared', 'onboarding_dismissed',
   'onboarding_tour_seen',
-  // What industry the shop is in (#161). Collected at signup and editable afterwards from the
-  // Shop tab, so an existing shop that predates the field can fill in its own.
-  'business_nature',
   // The DuitNow QR the storefront shows a customer after they order (#156). A Storage PATH in
   // the public `payment-qr` bucket, never a URL — see isOwnStoragePath below for why it is
   // checked against the merchant it is being written for.
@@ -115,15 +112,6 @@ export function pickMerchantConfig(body: any, merchantId: string): PickResult {
   }
   if (out.tax_enabled !== undefined && typeof out.tax_enabled !== 'boolean') {
     return { ok: false, error: 'tax_enabled must be a boolean' }
-  }
-
-  // Refused, not dropped like `timezone` above: an ignored industry saves nothing while the
-  // merchant is shown a success toast, and the column is the whole input to the admin
-  // Overview's industry chart. `null` is the column's own "never said" and stays legal — it is
-  // the only way back to unspecified. `merchants_business_nature_check` is the backstop.
-  if (out.business_nature !== undefined && out.business_nature !== null
-      && !isBusinessNature(out.business_nature)) {
-    return { ok: false, error: 'business_nature must be one of the listed industries' }
   }
 
   // The payment QR (#156). `null` — and the empty string the form sends when the merchant clears

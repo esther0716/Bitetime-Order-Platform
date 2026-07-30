@@ -114,33 +114,20 @@ describe('pickMerchantConfig — onboarding flags (#102)', () => {
   })
 })
 
-describe('pickMerchantConfig — business nature (#161)', () => {
-  it('accepts every code in the shared vocabulary', () => {
+describe('pickMerchantConfig — business nature is signup-only, not editable (#161)', () => {
+  // business_nature is set once at signup (POST /api/merchants) and deliberately not in
+  // MERCHANT_CONFIG_FIELDS, so a PATCH naming it — valid code or not — is silently ignored
+  // rather than refused; the merchant simply has no field left that writes this column.
+  it('ignores business_nature entirely, valid or not', () => {
     for (const code of BUSINESS_NATURES) {
-      expect(pickMerchantConfig({ business_nature: code }, SHOP))
-        .toEqual({ ok: true, patch: { business_nature: code } })
+      expect(pickMerchantConfig({ business_nature: code }, SHOP)).toEqual({ ok: true, patch: {} })
     }
+    expect(pickMerchantConfig({ business_nature: 'cake shop' }, SHOP)).toEqual({ ok: true, patch: {} })
+    expect(pickMerchantConfig({ business_nature: null }, SHOP)).toEqual({ ok: true, patch: {} })
   })
 
-  // Refused, never dropped: this column is what the admin Overview groups on, and a silently
-  // ignored value would hand the merchant a success toast for an industry that never saved.
-  it('refuses a code outside the vocabulary rather than dropping it', () => {
-    expect(pickMerchantConfig({ business_nature: 'cake shop' }, SHOP))
-      .toEqual({ ok: false, error: expect.any(String) })
-    expect(pickMerchantConfig({ business_nature: 'Bakery' }, SHOP))
-      .toEqual({ ok: false, error: expect.any(String) })
-    expect(pickMerchantConfig({ business_nature: '' }, SHOP))
-      .toEqual({ ok: false, error: expect.any(String) })
-    expect(pickMerchantConfig({ business_nature: 7 }, SHOP))
-      .toEqual({ ok: false, error: expect.any(String) })
-  })
-
-  // NULL is the column's "never said", and the only way back to it. Distinct from absent,
-  // which means "not being written at all".
-  it('accepts null as clearing the field, and leaves it alone when absent', () => {
-    expect(pickMerchantConfig({ business_nature: null }, SHOP))
-      .toEqual({ ok: true, patch: { business_nature: null } })
-    expect(pickMerchantConfig({ timezone: 'Asia/Kuala_Lumpur' }, SHOP))
+  it('still passes other fields through when business_nature rides along in the same body', () => {
+    expect(pickMerchantConfig({ business_nature: 'bakery', timezone: 'Asia/Kuala_Lumpur' }, SHOP))
       .toEqual({ ok: true, patch: { timezone: 'Asia/Kuala_Lumpur' } })
   })
 })

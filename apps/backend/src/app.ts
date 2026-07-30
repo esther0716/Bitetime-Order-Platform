@@ -133,14 +133,12 @@ app.post('/api/merchants', requireUser, async (c) => {
   const name = String(body?.name ?? '').trim()
   if (!name) return c.json({ error: 'Missing name' }, 400)
 
-  // The signup form makes this required and the column is CHECKed, but the endpoint accepts an
-  // absent one (#161): the field arrived after shops already existed, so "unspecified" is a real
-  // state the admin Overview has to draw anyway, and this is analytics — not a privilege worth
-  // refusing a shop's creation over. A PRESENT-but-unknown value is still refused rather than
-  // dropped, so a client typo surfaces here instead of as a silently industry-less shop.
+  // Mandatory at signup and never editable afterwards (business_nature is no longer in
+  // MERCHANT_CONFIG_FIELDS — see writes.ts). Shops that signed up before this was required keep
+  // whatever they have (including null); this only gates NEW rows.
   const businessNature = body?.businessNature
-  if (businessNature !== undefined && businessNature !== null && !isBusinessNature(businessNature)) {
-    return c.json({ error: 'Unknown business nature' }, 400)
+  if (!isBusinessNature(businessNature)) {
+    return c.json({ error: 'Missing or unknown business nature' }, 400)
   }
 
   const { data: rows } = await admin.from('merchants').select('slug')
@@ -157,8 +155,7 @@ app.post('/api/merchants', requireUser, async (c) => {
       plan: body?.plan ?? 'basic',
       billing_cycle: body?.billing ?? 'monthly',
       billing_region: 'MY', // everyone is charged MYR
-      // Already validated above, so this only maps an ABSENT one onto the column's own "never said".
-      business_nature: businessNature ?? null,
+      business_nature: businessNature,
       referred_by_code: resolveReferredByCode(body?.referredByCode, referralCodeOf(user.id)),
     })
     .select()
