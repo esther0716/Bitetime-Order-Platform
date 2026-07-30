@@ -81,8 +81,11 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.9
         version: 5.2.9
-      '@supabase/supabase-js':
-        specifier: ^2.107.0
+      '@supabase/auth-js':
+        specifier: 2.108.2
+        version: 2.108.2
+      '@supabase/storage-js':
+        specifier: 2.108.2
         version: 2.108.2
       '@tanstack/react-table':
         specifier: ^8.21.3
@@ -145,6 +148,9 @@ importers:
       '@playwright/test':
         specifier: ^1.62.0
         version: 1.62.0
+      '@supabase/supabase-js':
+        specifier: ^2.107.0
+        version: 2.108.2
       '@tailwindcss/vite':
         specifier: ^4.3.2
         version: 4.3.2(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0))

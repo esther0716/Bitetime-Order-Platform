@@ -14,7 +14,7 @@
 //
 // Callers that would rather let a failure throw to a React error boundary (admin lists, order
 // history) wrap the call in `unwrap()`; the throw is then explicit at the call site.
-import { supabase } from './supabase'
+import { auth as supabaseAuth } from './supabase'
 
 export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8787'
 
@@ -64,7 +64,7 @@ async function resolveHeaders(
   auth: Auth | undefined,
 ): Promise<{ headers: Record<string, string> } | { fail: ApiError }> {
   if (!auth) return { headers: base }
-  const { data: { session } } = await supabase.auth.getSession()
+  const { data: { session } } = await supabaseAuth.getSession()
   const token = session?.access_token
   if (token) return { headers: { ...base, Authorization: `Bearer ${token}` } }
   if (auth === 'required') return { fail: NOT_SIGNED_IN }

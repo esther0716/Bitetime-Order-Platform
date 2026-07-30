@@ -41,7 +41,11 @@ export default function OnboardingChecklist({ section, onNavigate }: { section: 
 
   useEffect(() => {
     const id = merchant?.id
-    if (!id || !merchant) return
+    // The card only renders on Overview, so only refetch there — but this also re-runs
+    // the count every time the merchant navigates back to Overview (e.g. after adding a
+    // product from the Products section), which is what keeps the "Add your first
+    // product" row from going stale for the rest of the session.
+    if (!id || !merchant || section !== 'overview') return
     let active = true
     lookupProducts(id).then(r => {
       if (!active) return
@@ -61,7 +65,7 @@ export default function OnboardingChecklist({ section, onNavigate }: { section: 
     })
     return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [merchant?.id])
+  }, [merchant?.id, section])
 
   const url = merchant ? storefrontUrl(merchant.slug, window.location.origin) : ''
 

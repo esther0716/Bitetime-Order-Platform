@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
-import type { User } from '@supabase/supabase-js'
+import type { User } from '@supabase/auth-js'
 import { onAuthChange, fetchProfileByUserId, lookupMyMerchant, lookupMerchantBySlug, getCurrentUser } from './store'
 import { ensureCjkFont } from './cjkFont'
 import type { Lang, Merchant, Profile, Role, SessionValue } from './types'

@@ -72,8 +72,13 @@ vi.mock('./supabase', () => {
   // rpc mock — top-level supabase.rpc(name, params) → awaited directly.
   const rpc = vi.fn()
 
+  // storage mock — unused by any test today (no product-image/payment-QR test coverage yet),
+  // kept minimal so the module still shapes correctly for anything that imports it.
+  const storage = { from: vi.fn() }
+
   return {
-    supabase: { from, auth, rpc },
+    auth,
+    storage,
     __mocks: {
       from, select, eq, is, single, maybeSingle, insert, update,
       insertSelect, updateEqSelect, upsertSelect, getUser, getSession, signUp: auth.signUp, order, limit,
