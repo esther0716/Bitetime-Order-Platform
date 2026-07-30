@@ -14,6 +14,12 @@ export interface SubscriptionSnapshot extends BillingSnapshot {
   stripe_customer_id?: string | null
   /** The tier scheduled to take effect next period. Intent, never entitlement — see below. */
   pending_plan?: string | null
+  /**
+   * Complimentary tier, granted by a superadmin, with no Stripe subscription behind it. Every
+   * billing action is off: there is nothing to manage, buy, cancel or downgrade, and only a
+   * superadmin can reverse it. Kept separate from `status`, which stays whatever Stripe says.
+   */
+  comped?: boolean | null
 }
 
 /** What the merchant can do from here. Every flag gates exactly one button. */
@@ -33,6 +39,8 @@ interface Actions {
   canDowngrade: boolean
   /** Undo whatever wind-down is pending. */
   canResume: boolean
+  /** Complimentary tier — the tab says so instead of quoting a price the shop does not pay. */
+  comped: boolean
   /** The tier taking effect next period, or null when nothing is scheduled. */
   pendingPlan: 'basic' | 'pro' | null
   /** When that scheduled change lands. */
@@ -80,7 +88,11 @@ export function subscriptionTabState(
   const tier = plan === 'pro' ? 'pro' : 'basic'
   const customer = billing?.stripe_customer_id
   const status = billing?.status ?? null
-  const live = !!customer && !!status && LIVE.includes(status)
+  // A comp is not a subscription, whatever the row says. `status` stays 'active' on a comped
+  // row (it is what silences nothing in particular — the banner ignores it either way), so
+  // without this term a comped shop reads as live and is offered a portal that 502s.
+  const comped = !!billing?.comped
+  const live = !!customer && !!status && LIVE.includes(status) && !comped
 
   const ending = live && !!billing?.cancel_at_period_end
   // A pending tier means nothing without a subscription running, and a cancellation supersedes
@@ -90,11 +102,14 @@ export function subscriptionTabState(
   const pendingPlan = live && !ending && (raw === 'basic' || raw === 'pro') ? raw : null
 
   const actions: Actions = {
+    comped,
     canManage: live,
-    canSubscribe: !live,
+    canSubscribe: !live && !comped,
     // Hidden while the shop is winding down (no selling Pro to someone on their way out) and
     // while the card is failing (answering a question they did not ask, days from suspension).
-    canUpgrade: tier !== 'pro' && !ending && status !== 'past_due',
+    // `!comped` is inert today — a comp always grants Pro, so `tier !== 'pro'` is already false —
+    // and stands between a future Basic comp and an Upgrade button /api/checkout now refuses.
+    canUpgrade: tier !== 'pro' && !comped && !ending && status !== 'past_due',
     canCancel: live && !ending,
     // There is nothing below Basic but leaving, so a Basic shop is offered Cancel instead.
     canDowngrade: live && tier === 'pro' && !ending && pendingPlan !== 'basic',
