@@ -165,7 +165,24 @@ app.post('/api/merchants', requireUser, async (c) => {
     .select()
     .single()
   if (error) return c.json({ error: 'Create failed' }, 500)
-  return c.json(data)
+
+  // Self-serve: the trial is provisioned HERE, not by an approval. Two things this must not do —
+  // fail the signup because Stripe did (the account, the slug and the form's answers are worth
+  // more than the retry), and return an `active` shop with no subscription behind it
+  // (startCardlessTrial owns that ordering). A shop Stripe refused stays `pending` and the owner
+  // retries from the dashboard via POST /api/merchants/:id/start-trial.
+  if ((data.plan ?? 'basic') === 'pro') return c.json({ ...data, trial: false })
+
+  // `null` billing is not a shortcut: a shop created milliseconds ago has no merchant_billing
+  // row, so there is no customer id to reuse and nothing for canStartTrial to refuse.
+  const outcome = await startCardlessTrial(data, null)
+  if (!outcome.ok) {
+    console.error('Trial provisioning failed at signup for', data.id, '—', outcome.error)
+    return c.json({ ...data, trial: false })
+  }
+  // `data` was read back before the claim flipped it, so say what is true now rather than making
+  // the client refetch to find out.
+  return c.json({ ...data, status: 'active', trial: outcome.trial })
 })
 
 // Owner-editable shop config. The update goes through `admin` (service_role), which bypasses

@@ -98,6 +98,56 @@ describe('POST /api/merchants', () => {
     expect(res.status).toBe(401)
   })
 
+  // Signup provisions the trial itself — no approval in the path. This suite is network-free and
+  // vitest.db.config.ts injects STRIPE_SECRET_KEY='sk_test_stub', which can never authenticate,
+  // so the Stripe call here DETERMINISTICALLY fails. That is the contract under test: a shop is
+  // still created, it is parked at `pending`, `trial` is false, and no billing row is written —
+  // the merchant retries from the dashboard. The happy path needs a real key and is covered by
+  // run-and-verify.
+  it('keeps the shop when Stripe refuses, parked at pending with no trial', async () => {
+    await resetMerchant('stripe-down-cafe')
+    const client = await makeUser('stripe-down@example.com', 'password123')
+    const { token } = await tokenOf(client)
+
+    const res = await post('/api/merchants', { name: 'Stripe Down Cafe', plan: 'basic', billing: 'monthly' }, token)
+
+    expect(res.status).toBe(200)
+    const m = (await res.json()) as MerchantRow & { trial: boolean }
+    expect(m.trial).toBe(false)
+    expect(m.status).toBe('pending')
+
+    const { data: row } = await serviceClient()
+      .from('merchants').select('status').eq('id', m.id).maybeSingle()
+    expect(row!.status).toBe('pending')
+
+    const { data: billing } = await serviceClient()
+      .from('merchant_billing').select('merchant_id').eq('merchant_id', m.id).maybeSingle()
+    expect(billing).toBeNull()
+
+    await serviceClient().from('merchants').delete().eq('id', m.id)
+  })
+
+  // Pro is the pay-upfront path: no trial is provisioned and Stripe is not called at all here —
+  // the Checkout webhook is what activates the shop.
+  it('leaves a pro signup pending without touching Stripe', async () => {
+    await resetMerchant('pro-cafe')
+    const client = await makeUser('pro-signup@example.com', 'password123')
+    const { token } = await tokenOf(client)
+
+    const res = await post('/api/merchants', { name: 'Pro Cafe', plan: 'pro', billing: 'monthly' }, token)
+
+    expect(res.status).toBe(200)
+    const m = (await res.json()) as MerchantRow & { trial: boolean }
+    expect(m.status).toBe('pending')
+    expect(m.trial).toBe(false)
+
+    const { data: billing } = await serviceClient()
+      .from('merchant_billing').select('merchant_id').eq('merchant_id', m.id).maybeSingle()
+    expect(billing).toBeNull()
+
+    await serviceClient().from('merchants').delete().eq('id', m.id)
+  })
+
   // #161. Read back with the service client rather than trusting the response body: the point
   // is that the column the admin Overview groups on actually holds the industry.
   it('stores the business nature the signup form collected', async () => {
