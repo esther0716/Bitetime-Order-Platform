@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion'
+import { FAQ } from './faq'
 import { FEATURES } from './features'
 import { USE_CASES } from './useCases'
 import { VERTICALS } from './verticals'
@@ -317,20 +319,43 @@ export default function Landing() {
 
       {/* ── FAQ ── */}
       {/* After pricing and before the closing CTA: a reader who has just seen a price is
-          exactly the reader with objections. A SUMMARY, and the full accordion plus the FAQPage
-          structured data now live on /faq (#169) — the same two-URLs-one-answer argument as the
-          pricing and features sections above. */}
-      <section id="faq" className="border-t border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10 text-center">
+          exactly the reader with objections. The full accordion, same as /faq (#169) — a teaser
+          with no answers on it wasn't doing its job of handling objections right where they come
+          up. The FAQPage structured data stays exclusive to /faq (structuredData.ts) so this
+          section carries the same words without a second, competing copy of the schema. */}
+      <section id="faq" className="border-t border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className="font-heading text-[26px] text-oxblood text-center mb-2 max-[600px]:text-[22px]">
             {t('Questions from shop owners, answered', '店主常见问题')}
           </h2>
-          <p className="text-sm text-rose-muted text-center mb-0 max-w-[460px] mx-auto">
+          <p className="text-sm text-rose-muted text-center mb-9 max-w-[460px] mx-auto">
             {t(
-              'The things shop owners ask us before they sign up — see the full FAQ.',
-              '店主在注册前最常问我们的问题——查看完整问答。',
+              'The things shop owners ask us before they sign up.',
+              '店主在注册前最常问我们的问题。',
             )}
           </p>
+          {/* First panel open by default. A collapsed accordion renders NO panel content at all —
+              not hidden text, no text — so every answer here was invisible to a crawler and to the
+              reader deciding whether to read on. Opening the first one puts a real answer on the
+              page and shows the rest are openable.
+
+              `hiddenUntilFound` is what gets the other eight into the HTML: the closed panels are
+              rendered with `hidden="until-found"` instead of not being rendered, so the words are
+              in the file a crawler downloads — which is the point on a page that is prerendered
+              for exactly that reason — and find-in-page opens the panel it matched instead of
+              scrolling past nothing. */}
+          <Accordion className="max-w-[640px] mx-auto" defaultValue={[FAQ[0].id]} hiddenUntilFound>
+            {FAQ.map(entry => (
+              <AccordionItem key={entry.id} value={entry.id} className="border-clay-border">
+                <AccordionTrigger className="font-heading text-[15px] text-ink text-left py-4">
+                  {t(entry.q.en, entry.q.zh)}
+                </AccordionTrigger>
+                <AccordionContent className="text-[14px] leading-[1.7] text-rose-muted pb-4">
+                  {t(entry.a.en, entry.a.zh)}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
         </Reveal>
       </section>
 
