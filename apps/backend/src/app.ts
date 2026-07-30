@@ -18,7 +18,8 @@ import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, 
 import { stripe, priceFor, isValidPlan, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileMerchantPlan, LIVE_STATUSES } from './billing.js'
 import { downgradePhases, ScheduleError, type LivePhase } from './subscriptionSchedule.js'
-import { canStartTrial, buildTrialReminderEmail } from './billingLifecycle.js'
+import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
+import { startCardlessTrial } from './trialSubscription.js'
 import { resendSend } from './email.js'
 import { notifyOrderPlaced, telegramSend } from './notify.js'
 import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
@@ -815,12 +816,15 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
   return c.json({ url: session.url })
 })
 
-// ── Superadmin: approve a pending merchant → start its cardless trial ──────────
-// Approval (not signup) is the abuse gate: signup alone never puts a live shop
-// on the platform. The subscription is created with no payment method and
-// cancels itself at trial end (missing_payment_method: 'cancel'), which drives
-// the existing subscription.deleted → suspended webhook path. Trials are granted
-// here and only here — Checkout never grants one.
+// ── Superadmin: push a stuck merchant through to active ────────────────────────
+// Signup provisions its own trial now (POST /api/merchants), so this is no longer a gate
+// anybody waits at — it is the admin-side fallback for a shop parked at `pending` because
+// Stripe refused during signup and the merchant never retried. Same rule, different caller:
+// trialSubscription.ts holds it.
+//
+// Unlike the owner's retry below, this ACTIVATES a shop it cannot re-trial (`canStartTrial`
+// false → `{ ok: true, trial: false }`): an admin pushing a shop through means "open this shop",
+// and the one-trial-ever rule limits the trial, not the activation.
 app.post('/api/admin/approve-merchant', requireSuperadmin, async (c) => {
   const { merchantId } = await c.req.json().catch(() => ({}))
   if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
@@ -841,87 +845,13 @@ app.post('/api/admin/approve-merchant', requireSuperadmin, async (c) => {
   const { data: merchant, error } = merchantRes
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
-  if (merchant.status !== 'pending') return c.json({ error: 'Merchant is not pending' }, 409)
-  if (merchant.plan === 'pro') {
-    return c.json({ error: 'Pro shops activate via payment, not approval' }, 409)
-  }
 
-  const { data: billing } = billingRes
+  const refusal = trialStartRefusal(merchant)
+  if (refusal) return c.json({ error: refusal }, 409)
 
-  // Atomically claim the pending merchant so concurrent approvals can't both
-  // proceed (double-click, two admin tabs) — first caller wins, later ones 409.
-  const { data: claimed, error: claimErr } = await admin
-    .from('merchants')
-    .update({ status: 'active' })
-    .eq('id', merchant.id)
-    .eq('status', 'pending')
-    .select('id')
-    .maybeSingle()
-  if (claimErr) return c.json({ error: 'Claim failed' }, 500)
-  if (!claimed) return c.json({ error: 'Merchant is not pending' }, 409)
-
-  if (!canStartTrial(billing)) {
-    // Had a subscription once already — approval re-activates, but never re-trials.
-    return c.json({ ok: true, trial: false })
-  }
-
-  // Owner email comes from Auth, not profiles — the profiles row may not exist
-  // (client-side profile upsert is currently RLS-blocked for new signups).
-  const { data: ownerUser } = await admin.auth.admin.getUserById(merchant.owner_id)
-  const ownerEmail = ownerUser?.user?.email
-
-  const plan = merchant.plan || 'basic'
-  const cycle = merchant.billing_cycle || 'monthly'
-
-  // Revert the pending→active claim; never throw from a failure path.
-  const revertClaim = async () => {
-    try {
-      await setMerchantStatus(merchant.id, 'pending')
-    } catch (e) {
-      console.error('Claim revert failed — merchant left active without a subscription:', e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  let customerId = billing?.stripe_customer_id
-  let sub
-  try {
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: ownerEmail || undefined,
-        name: merchant.name,
-        metadata: { merchant_id: merchant.id },
-      })
-      customerId = customer.id
-    }
-    sub = await stripe.subscriptions.create({
-      customer: customerId,
-      items: [{ price: priceFor(plan, cycle) }],
-      trial_period_days: 7,
-      trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
-      metadata: { merchant_id: merchant.id, plan, billing: cycle, region: 'MY' },
-    })
-  } catch (err) {
-    console.error('Trial subscription creation failed:', err instanceof Error ? err.message : String(err))
-    await revertClaim()
-    return c.json({ error: 'Subscription creation failed' }, 502)
-  }
-
-  try {
-    await upsertBilling(merchant.id, billingFromSubscription(sub))
-  } catch (err) {
-    // The subscription exists but wasn't persisted — cancel it so a retried
-    // approval can't mint a second trial against an orphaned live one.
-    console.error('Billing persist failed — canceling trial subscription', sub.id, err instanceof Error ? err.message : String(err))
-    try {
-      await stripe.subscriptions.cancel(sub.id)
-    } catch (cancelErr) {
-      console.error('Cancel failed — ORPHANED Stripe subscription', sub.id, cancelErr instanceof Error ? cancelErr.message : String(cancelErr))
-    }
-    await revertClaim()
-    return c.json({ error: 'Subscription creation failed' }, 502)
-  }
-
-  return c.json({ ok: true, trial: true })
+  const outcome = await startCardlessTrial(merchant, billingRes.data)
+  if (!outcome.ok) return c.json({ error: outcome.error }, outcome.http)
+  return c.json({ ok: true, trial: outcome.trial })
 })
 
 // ── Superadmin: manual suspend / reject / reactivate ───────────────────────────
