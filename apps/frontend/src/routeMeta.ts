@@ -38,4 +38,14 @@ export const ROUTE_META: Record<string, RouteMeta> = {
     description:
       'Simple monthly pricing with no commission on your orders. Compare Basic and Pro, see what each plan includes, and start free for 7 days without a card.',
   },
+  '/features': {
+    title: 'Features — Everything Your Shop Needs | TinyOrder',
+    description:
+      'A shop page you control, delivery fees that match how you deliver, numbered orders, instant alerts and a customer list that builds itself. See it all.',
+  },
+  '/faq': {
+    title: 'FAQ — Answers for Shop Owners | TinyOrder',
+    description:
+      'What TinyOrder costs, how the free trial works, how customers pay you, and what Pro adds. The questions shop owners ask us before they sign up.',
+  },
 }

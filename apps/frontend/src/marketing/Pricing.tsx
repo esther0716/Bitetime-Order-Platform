@@ -6,9 +6,10 @@
 // into dist/pricing.html by scripts/prerender.tsx — which is the whole mechanism: a sitelink's
 // label IS the target page's title, and until this route existed the site had exactly one.
 //
-// NO FAQ HERE, on purpose. The landing page's accordion answers the billing questions already and
-// carries the FAQPage markup; repeating those answers here would be the duplication this split
-// exists to avoid. The prose below is written for this page and appears on no other.
+// NO FAQ HERE, on purpose. /faq's accordion answers the billing questions already and carries the
+// FAQPage markup (its own split off the landing page, same #169); repeating those answers here
+// would be the duplication this split exists to avoid. The prose below is written for this page
+// and appears on no other.
 
 import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'

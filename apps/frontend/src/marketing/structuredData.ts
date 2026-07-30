@@ -1,4 +1,4 @@
-// The landing page's own Schema.org markup: its FAQ.
+// The /faq page's own Schema.org markup.
 //
 // The site's IDENTITY — Organization, WebSite, SoftwareApplication — is NOT here. It is a static
 // block in index.html, because a crawler that does not execute JavaScript (most of the LLM ones)
@@ -17,6 +17,9 @@
 // The entries come from faq.ts — the same array the accordion renders — so the markup cannot drift
 // from the page. Nothing here states a price: the plan prices are resolved per region at runtime,
 // and an Offer frozen into a build is a wrong price the moment they move.
+//
+// Lives at /faq, not /, since #169 split the accordion off the landing page into its own route —
+// the FAQPage's `url` and `@id` follow it there so the markup names the page that actually shows it.
 
 import { useEffect } from 'react'
 import type { Lang } from '../types'
@@ -24,20 +27,20 @@ import { SITE_URL } from '../site'
 import { FAQ } from './faq'
 
 /**
- * The landing page's FAQ, as a Schema.org `FAQPage`.
+ * The /faq page's FAQ, as a Schema.org `FAQPage`.
  *
  * Identified against `SITE_URL` rather than the serving origin, so it hangs off the same
  * Organization node the static block in index.html declares — on a preview deployment too, where
  * the alternative would be a second, orphaned identity.
  */
-export function landingStructuredData(lang: Lang): object {
+export function faqStructuredData(lang: Lang): object {
   const pick = <T>(en: T, zh: T) => (lang === 'zh' ? zh : en)
 
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    '@id': `${SITE_URL}/#faq`,
-    url: `${SITE_URL}/`,
+    '@id': `${SITE_URL}/faq#faq`,
+    url: `${SITE_URL}/faq`,
     inLanguage: pick('en', 'zh'),
     isPartOf: { '@id': `${SITE_URL}/#website` },
     publisher: { '@id': `${SITE_URL}/#organization` },
@@ -53,19 +56,19 @@ export function landingStructuredData(lang: Lang): object {
 }
 
 /** The prerendered block, or the one a previous run of this effect left behind. */
-const SELECTOR = 'script[data-structured-data="landing-faq"]'
+const SELECTOR = 'script[data-structured-data="faq"]'
 
 /** Keeps exactly one `<script type="application/ld+json">` in `<head>` while the page is mounted. */
-export function useLandingStructuredData(lang: Lang): void {
+export function useFaqStructuredData(lang: Lang): void {
   useEffect(() => {
-    // ADOPT, do not append: the build prerenders this block into index.html (see
+    // ADOPT, do not append: the build prerenders this block into faq.html (see
     // scripts/prerender.tsx) so a crawler that runs no JavaScript still gets the FAQ. Appending a
     // second one would publish the same @id twice — and on a Chinese page, twice in two languages.
     const script =
       document.head.querySelector<HTMLScriptElement>(SELECTOR) ?? document.createElement('script')
     script.type = 'application/ld+json'
-    script.dataset.structuredData = 'landing-faq'
-    script.textContent = JSON.stringify(landingStructuredData(lang))
+    script.dataset.structuredData = 'faq'
+    script.textContent = JSON.stringify(faqStructuredData(lang))
     if (!script.isConnected) document.head.appendChild(script)
     // Removed on unmount — including when it was the prerendered one — so navigating to a
     // storefront does not leave this page's FAQ behind claiming to describe that shop.

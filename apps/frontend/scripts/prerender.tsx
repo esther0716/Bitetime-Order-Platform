@@ -41,7 +41,9 @@ import { SessionProvider } from '../src/SessionContext'
 import { TooltipProvider } from '../src/components/ui/tooltip'
 import Landing from '../src/marketing/Landing'
 import Pricing from '../src/marketing/Pricing'
-import { landingStructuredData } from '../src/marketing/structuredData'
+import FeaturesPage from '../src/marketing/FeaturesPage'
+import FaqPage from '../src/marketing/FaqPage'
+import { faqStructuredData } from '../src/marketing/structuredData'
 import { ROUTE_META } from '../src/routeMeta'
 import { SITE_URL } from '../src/site'
 
@@ -55,23 +57,26 @@ interface PrerenderRoute {
   file: string
   element: ReactElement
   /**
-   * Extra `<head>` markup this route owns. The FAQ block belongs to `/` alone: index.html is the
-   * one file served for exactly one path, and a FAQPage claiming to describe /pricing — or a
-   * storefront — is the same mistake as a hardcoded canonical tag. See structuredData.ts.
+   * Extra `<head>` markup this route owns. The FAQ block belongs to `/faq` alone: index.html is
+   * one of several files served for exactly one path each, and a FAQPage claiming to describe
+   * /pricing — or a storefront — is the same mistake as a hardcoded canonical tag. See
+   * structuredData.ts.
    */
   head?: string
 }
 
-// The FAQ markup the landing route otherwise injects from an effect, so a crawler that does not run
+// The FAQ markup the /faq route otherwise injects from an effect, so a crawler that does not run
 // JavaScript gets it too. English, because that is what an unswitched page renders; the effect in
 // structuredData.ts adopts this element and rewrites it if the visitor is reading Chinese.
 const faqLd =
-  `<script type="application/ld+json" data-structured-data="landing-faq">` +
-  `${JSON.stringify(landingStructuredData('en'))}</script>`
+  `<script type="application/ld+json" data-structured-data="faq">` +
+  `${JSON.stringify(faqStructuredData('en'))}</script>`
 
 const ROUTES: PrerenderRoute[] = [
-  { path: '/', file: 'index.html', element: <Landing />, head: faqLd },
+  { path: '/', file: 'index.html', element: <Landing /> },
   { path: '/pricing', file: 'pricing.html', element: <Pricing /> },
+  { path: '/features', file: 'features.html', element: <FeaturesPage /> },
+  { path: '/faq', file: 'faq.html', element: <FaqPage />, head: faqLd },
 ]
 
 const shell = readFileSync(path.join(dist, 'index.html'), 'utf8')

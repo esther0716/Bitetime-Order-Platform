@@ -23,8 +23,8 @@ export const FAQ: FaqEntry[] = [
       zh: '费用是多少？',
     },
     a: {
-      en: 'A flat subscription — monthly or yearly, with two months free if you pay yearly. The prices are in the table just above. We take no commission on your sales, so a busy month costs you exactly the same as a quiet one.',
-      zh: '固定订阅费——可选月付或年付，年付相当于免费两个月。价格见上方表格。我们不抽取任何销售佣金，因此生意旺季与淡季的费用完全相同。',
+      en: 'A flat subscription — monthly or yearly, with two months free if you pay yearly. See our pricing page for the full breakdown. We take no commission on your sales, so a busy month costs you exactly the same as a quiet one.',
+      zh: '固定订阅费——可选月付或年付，年付相当于免费两个月。完整价格请见我们的价格页面。我们不抽取任何销售佣金，因此生意旺季与淡季的费用完全相同。',
     },
   },
   {

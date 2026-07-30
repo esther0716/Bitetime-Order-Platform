@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { landingStructuredData } from './structuredData'
+import { faqStructuredData } from './structuredData'
 import { SITE_URL } from '../site'
 import { FAQ } from './faq'
 
@@ -9,34 +9,39 @@ import { FAQ } from './faq'
 // what the accordion says, in the language it says it in, and that it hangs off the identity the
 // static block in index.html declares rather than inventing a second one.
 
-describe('landingStructuredData', () => {
+describe('faqStructuredData', () => {
   it('is a FAQPage — identity lives in index.html, not here', () => {
-    const data = landingStructuredData('en') as Record<string, any>
+    const data = faqStructuredData('en') as Record<string, any>
     expect(data['@type']).toBe('FAQPage')
     expect(JSON.stringify(data)).not.toContain('"Organization"')
   })
 
+  it('names the /faq page it actually describes', () => {
+    const data = faqStructuredData('en') as Record<string, any>
+    expect(data.url).toBe(`${SITE_URL}/faq`)
+  })
+
   it('hangs off the identity nodes index.html declares', () => {
-    const data = landingStructuredData('en') as Record<string, any>
+    const data = faqStructuredData('en') as Record<string, any>
     expect(data.publisher['@id']).toBe(`${SITE_URL}/#organization`)
     expect(data.isPartOf['@id']).toBe(`${SITE_URL}/#website`)
   })
 
   it('carries every FAQ entry, in the same order the page renders them', () => {
-    const data = landingStructuredData('en') as Record<string, any>
+    const data = faqStructuredData('en') as Record<string, any>
     expect(data.mainEntity).toHaveLength(FAQ.length)
     expect(data.mainEntity.map((q: any) => q.name)).toEqual(FAQ.map(e => e.q.en))
     expect(data.mainEntity[0].acceptedAnswer.text).toBe(FAQ[0].a.en)
   })
 
   it('marks up the Chinese page in Chinese — markup that disagrees with the page is worse than none', () => {
-    const data = landingStructuredData('zh') as Record<string, any>
+    const data = faqStructuredData('zh') as Record<string, any>
     expect(data.inLanguage).toBe('zh')
     expect(data.mainEntity.map((q: any) => q.name)).toEqual(FAQ.map(e => e.q.zh))
   })
 
   it('states no price — the plan prices are resolved per region at runtime', () => {
-    const json = JSON.stringify(landingStructuredData('en'))
+    const json = JSON.stringify(faqStructuredData('en'))
     expect(json).not.toContain('"offers"')
     expect(json).not.toContain('"price"')
   })

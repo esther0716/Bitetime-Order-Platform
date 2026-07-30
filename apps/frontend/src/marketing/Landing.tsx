@@ -3,15 +3,12 @@ import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion'
-import { FAQ } from './faq'
 import { FEATURES } from './features'
 import { USE_CASES } from './useCases'
 import { VERTICALS } from './verticals'
 import { PRICING_TIERS } from './pricingTiers'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
-import { useLandingStructuredData } from './structuredData'
 import { ctaPrimary, ctaGhost, sectionTitle } from './ctaStyles'
 import {
   GrainOverlay,
@@ -30,9 +27,6 @@ const SAMPLE_SHOP_SLUG = 'bitetime-co'
 export default function Landing() {
   const { t, lang } = useSession()
   const { pricing } = usePlatformPricing()
-  // Schema.org markup for this page only, in the language it is currently showing. See
-  // structuredData.ts for why it is not a static block in index.html.
-  useLandingStructuredData(lang)
   useTopOnRouteChange()
 
   // The hero's rotating word, resolved to the showing language. Memoised so a new array identity
@@ -178,15 +172,17 @@ export default function Landing() {
       </section>
 
       {/* ── What you get ── */}
-      {/* Copy lives in features.ts as data, for the same reasons the FAQ does — and under the same
-          rule: every line has to be true of the product as shipped. */}
+      {/* A SUMMARY, and the full list now lives on /features (#169) — same argument as the pricing
+          section below: two pages both listing every feature would be two URLs answering
+          "what does TinyOrder do", competing for the same authority. The first three entries of
+          FEATURES.ts stay here as the hook; the rest is one click away. */}
       <section className="border-t border-clay-border px-8 py-16 max-w-[900px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className={sectionTitle}>
             {t('Everything you need to take orders online', '在线接单所需的一切')}
           </h2>
           <div className="grid [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))] gap-x-12 gap-y-9 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-7">
-            {FEATURES.map(f => (
+            {FEATURES.slice(0, 3).map(f => (
               <div key={f.id}>
                 <h3 className="font-heading text-[17px] font-semibold text-oxblood leading-[1.35] mb-2">
                   {t(f.title.en, f.title.zh)}
@@ -196,6 +192,11 @@ export default function Landing() {
                 </p>
               </div>
             ))}
+          </div>
+          <div className="mt-10 text-center">
+            <Link to="/features" className={ctaGhost}>
+              {t('See every feature', '查看全部功能')}
+            </Link>
           </div>
         </Reveal>
       </section>
@@ -328,9 +329,10 @@ export default function Landing() {
 
       {/* ── FAQ ── */}
       {/* After pricing and before the closing CTA: a reader who has just seen a price is
-          exactly the reader with objections. Answers live in faq.ts as data — every one of
-          them has to be true of the product as shipped, since these are pre-purchase promises. */}
-      <section id="faq" className="border-t border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
+          exactly the reader with objections. A SUMMARY, and the full accordion plus the FAQPage
+          structured data now live on /faq (#169) — the same two-URLs-one-answer argument as the
+          pricing and features sections above. */}
+      <section id="faq" className="border-t border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10 text-center">
         <Reveal>
           <h2 className="font-heading text-[26px] text-oxblood text-center mb-2 max-[600px]:text-[22px]">
             {t('Questions from shop owners, answered', '店主常见问题')}
@@ -341,28 +343,9 @@ export default function Landing() {
               '店主在注册前最常问我们的问题。',
             )}
           </p>
-          {/* First panel open by default. A collapsed accordion renders NO panel content at all —
-              not hidden text, no text — so every answer here was invisible to a crawler and to the
-              reader deciding whether to read on. Opening the first one puts a real answer on the
-              page and shows the rest are openable.
-
-              `hiddenUntilFound` is what gets the other eight into the HTML: the closed panels are
-              rendered with `hidden="until-found"` instead of not being rendered, so the words are
-              in the file a crawler downloads — which is the point on a page that is prerendered
-              for exactly that reason — and find-in-page opens the panel it matched instead of
-              scrolling past nothing. */}
-          <Accordion className="max-w-[640px] mx-auto" defaultValue={[FAQ[0].id]} hiddenUntilFound>
-            {FAQ.map(entry => (
-              <AccordionItem key={entry.id} value={entry.id} className="border-clay-border">
-                <AccordionTrigger className="font-heading text-[15px] text-ink text-left py-4">
-                  {t(entry.q.en, entry.q.zh)}
-                </AccordionTrigger>
-                <AccordionContent className="text-[14px] leading-[1.7] text-rose-muted pb-4">
-                  {t(entry.a.en, entry.a.zh)}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
+          <Link to="/faq" className={ctaGhost}>
+            {t('Read the full FAQ', '查看完整问答')}
+          </Link>
         </Reveal>
       </section>
 
