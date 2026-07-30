@@ -950,10 +950,9 @@ app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
 // promo shops. Writes an 'active' billing row with a far-future period end and no
 // trial, so the trial/past-due banners stay silent and nothing expires the shop.
 // The shop is decoupled from Stripe: it has no real subscription, so the
-// webhook-driven suspension path never touches it. Revoke by suspending in the
-// console (set-merchant-status → suspended). If the merchant already carries a
-// real Stripe subscription this overwrites its local status to active — don't comp
-// a paying shop.
+// webhook-driven suspension path never touches it. Revoke with
+// `/api/admin/uncomp-merchant`, which clears the flag and drops the shop to Basic
+// without touching its status — suspension is a separate decision.
 app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
   const { merchantId } = await c.req.json().catch(() => ({}))
   if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
@@ -961,6 +960,19 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
   const { data: merchant } = await admin
     .from('merchants').select('id').eq('id', merchantId).maybeSingle()
   if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  // Refuse a shop that is actually paying. Comping it would leave Stripe billing a card while
+  // the local row claims the shop is free — and the customer id this route clears is the only
+  // pointer back to that subscription. Cancel in Stripe first, then comp.
+  const { data: existingBilling } = await admin
+    .from('merchant_billing')
+    .select('stripe_subscription_id, status')
+    .eq('merchant_id', merchantId)
+    .maybeSingle()
+  if (existingBilling?.stripe_subscription_id
+      && LIVE_STATUSES.includes(existingBilling.status ?? '')) {
+    return c.json({ error: 'has_live_subscription' }, 409)
+  }
 
   // Activate + mark pro. Service role bypasses the guard_merchant_status trigger.
   const { error: mErr } = await admin
@@ -970,11 +982,16 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
     return c.json({ error: 'Comp failed' }, 500)
   }
 
-  // Silence billing banners: active status, far-future period end, no trial. Merge
-  // (upsert) so any existing stripe_customer_id survives, but the local state reads active.
+  // Mark the comp and silence the billing banners: active status, far-future period end, no
+  // trial. `stripe_customer_id` is cleared — on a comped shop it points at nothing we will ever
+  // call, and a stale one is exactly what sent a dead id to Stripe and answered 502.
+  // `stripe_subscription_id` is deliberately KEPT: canStartTrial reads it as the one-trial-ever
+  // record, and clearing it would hand a previously-subscribed shop a fresh trial.
   try {
     const farFuture = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString()
     await upsertBilling(merchantId, {
+      comped: true,
+      stripe_customer_id: null,
       status: 'active',
       trial_ends_at: null,
       current_period_end: farFuture,
@@ -982,6 +999,36 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
   } catch (err) {
     console.error('comp-merchant billing upsert failed:', err instanceof Error ? err.message : String(err))
     return c.json({ error: 'Comp failed' }, 500)
+  }
+
+  return c.json({ ok: true })
+})
+
+// ── Superadmin: revoke a comp ──────────────────────────────────────────────────
+// Clears the flag and drops the shop to Basic. Deliberately touches neither `merchants.status`
+// nor the billing row's far-future `current_period_end`: suspension is a separate decision, and
+// conflating the two is what makes a temporary suspension silently end a comp — or a later
+// reactivation silently hand free Pro back.
+app.post('/api/admin/uncomp-merchant', requireSuperadmin, async (c) => {
+  const { merchantId } = await c.req.json().catch(() => ({}))
+  if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
+
+  const { data: merchant } = await admin
+    .from('merchants').select('id').eq('id', merchantId).maybeSingle()
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  const { error: mErr } = await admin
+    .from('merchants').update({ plan: 'basic' }).eq('id', merchantId)
+  if (mErr) {
+    console.error('uncomp-merchant merchants update failed:', mErr.message)
+    return c.json({ error: 'Un-comp failed' }, 500)
+  }
+
+  try {
+    await upsertBilling(merchantId, { comped: false })
+  } catch (err) {
+    console.error('uncomp-merchant billing upsert failed:', err instanceof Error ? err.message : String(err))
+    return c.json({ error: 'Un-comp failed' }, 500)
   }
 
   return c.json({ ok: true })
