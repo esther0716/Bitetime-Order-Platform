@@ -262,8 +262,8 @@ function ShippingTab({ onDirtyChange }: TabProps) {
       // silently under a success toast — the origin is the routing origin AND the cache key.
       if ((fields.originAddress ?? '').trim() !== '' && !fields.originPlaceId) {
         toast.error(t(
-          'Pick your delivery origin from the suggestions — a typed address on its own cannot be saved.',
-          '请从建议列表中选择配送起点 — 仅输入文字无法保存。'
+          'Pick your express delivery from address from the suggestions — a typed address on its own cannot be saved.',
+          '请从建议列表中选择快速配送出发地 — 仅输入文字无法保存。'
         ))
         setBusy(false)
         return
@@ -273,8 +273,8 @@ function ShippingTab({ onDirtyChange }: TabProps) {
       // rule in the merchant's language while they still see the form.
       if (fields.expressEnabled && !fields.originPlaceId) {
         toast.error(t(
-          'Set your delivery origin before switching on express delivery.',
-          '请先设置配送起点，才能开启快速配送。'
+          'Set where express delivery starts before switching it on.',
+          '请先设置快速配送出发地，才能开启快速配送。'
         ))
         setBusy(false)
         return
@@ -378,8 +378,8 @@ function ShippingTab({ onDirtyChange }: TabProps) {
           </label>
           {fields.expressEnabled && !fields.originPlaceId && (
             <p className="text-[12px] text-oxblood leading-[1.5]">
-              {t('Express delivery needs a delivery origin. Pick one below to save.',
-                 '快速配送需要一个配送起点，请在下方选择后保存。')}
+              {t('Express delivery needs a delivery from address. Pick one below to save.',
+                 '快速配送需要一个出发地址，请在下方选择后保存。')}
             </p>
           )}
           <p className="text-[12px] text-rose-muted leading-[1.5]">
@@ -400,8 +400,33 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         </div>
       </div>
 
+      {/* Both rate cards can be on screen at once — a shop may post parcels at a flat rate AND run
+          a rider by the kilometre. Each names the method whose fee it sets. */}
+      {fields.deliveryEnabled && (
+        <div className={CARD}>
+          <h3 className={HEADING}>{t('Delivery rates', '送货费')}</h3>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="shop-wm">{t(`West Malaysia (${symbol})`, `西马运费 (${symbol})`)}</Label>
+              <Input id="shop-wm" type="number" step="0.01" value={fields.wm}
+                onChange={e => setFields(f => ({ ...f, wm: e.target.value }))} variant="compact" />
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="shop-em">{t(`East Malaysia (${symbol})`, `东马运费 (${symbol})`)}</Label>
+              <Input id="shop-em" type="number" step="0.01" value={fields.em}
+                onChange={e => setFields(f => ({ ...f, em: e.target.value }))} variant="compact" />
+              <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+                {t('Blank East Malaysia charges the same as West Malaysia. Enter 0 for free East Malaysia delivery.',
+                   '东马留空则按西马运费收取。填 0 表示东马免运费。')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fields.expressEnabled && (
       <div className={CARD}>
-        <h3 className={HEADING}>{t('Delivery origin', '配送起点')}</h3>
+        <h3 className={HEADING}>{t('Express delivery from', '快速配送出发地')}</h3>
         <AddressAutocomplete
           id="shop-origin"
           t={t}
@@ -432,29 +457,6 @@ function ShippingTab({ onDirtyChange }: TabProps) {
              '此地址与上方的自取地址不同 — 自取地址是纯文字，仅显示给自取顾客。')}
         </p>
       </div>
-
-      {/* Both rate cards can be on screen at once — a shop may post parcels at a flat rate AND run
-          a rider by the kilometre. Each names the method whose fee it sets. */}
-      {fields.deliveryEnabled && (
-        <div className={CARD}>
-          <h3 className={HEADING}>{t('Delivery rates', '送货费')}</h3>
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-col gap-[6px]">
-              <Label htmlFor="shop-wm">{t(`West Malaysia (${symbol})`, `西马运费 (${symbol})`)}</Label>
-              <Input id="shop-wm" type="number" step="0.01" value={fields.wm}
-                onChange={e => setFields(f => ({ ...f, wm: e.target.value }))} variant="compact" />
-            </div>
-            <div className="flex flex-col gap-[6px]">
-              <Label htmlFor="shop-em">{t(`East Malaysia (${symbol})`, `东马运费 (${symbol})`)}</Label>
-              <Input id="shop-em" type="number" step="0.01" value={fields.em}
-                onChange={e => setFields(f => ({ ...f, em: e.target.value }))} variant="compact" />
-              <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
-                {t('Blank East Malaysia charges the same as West Malaysia. Enter 0 for free East Malaysia delivery.',
-                   '东马留空则按西马运费收取。填 0 表示东马免运费。')}
-              </p>
-            </div>
-          </div>
-        </div>
       )}
 
       {fields.expressEnabled && (
