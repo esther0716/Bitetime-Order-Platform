@@ -171,7 +171,7 @@ app.post('/api/merchants', requireUser, async (c) => {
   // more than the retry), and return an `active` shop with no subscription behind it
   // (startCardlessTrial owns that ordering). A shop Stripe refused stays `pending` and the owner
   // retries from the dashboard via POST /api/merchants/:id/start-trial.
-  if ((data.plan ?? 'basic') === 'pro') return c.json({ ...data, trial: false })
+  if ((data.plan ?? 'basic') === 'pro') return c.json(data)
 
   // `null` billing is not a shortcut: a shop created milliseconds ago has no merchant_billing
   // row, so there is no customer id to reuse and nothing for canStartTrial to refuse.

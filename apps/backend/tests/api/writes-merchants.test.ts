@@ -137,9 +137,10 @@ describe('POST /api/merchants', () => {
     const res = await post('/api/merchants', { name: 'Pro Cafe', plan: 'pro', billing: 'monthly' }, token)
 
     expect(res.status).toBe(200)
-    const m = (await res.json()) as MerchantRow & { trial: boolean }
+    const m = (await res.json()) as MerchantRow & { trial?: boolean }
     expect(m.status).toBe('pending')
-    expect(m.trial).toBe(false)
+    // No trial field at all on this path — Pro never calls startCardlessTrial.
+    expect(m.trial).toBeUndefined()
 
     const { data: billing } = await serviceClient()
       .from('merchant_billing').select('merchant_id').eq('merchant_id', m.id).maybeSingle()
