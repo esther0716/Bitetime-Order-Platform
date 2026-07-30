@@ -193,11 +193,6 @@ export default function Landing() {
               </div>
             ))}
           </div>
-          <div className="mt-10 text-center">
-            <Link to="/features" className={ctaGhost}>
-              {t('See every feature', '查看全部功能')}
-            </Link>
-          </div>
         </Reveal>
       </section>
 
@@ -311,19 +306,12 @@ export default function Landing() {
             </div>
           ))}
         </dl>
-        {/* The click-through, and the section's real job now: descriptive anchor text pointing at
-            the page whose <title> a sitelink would be read out of. */}
-        <div className="mt-9 flex flex-col items-center gap-3">
-          <Link to="/pricing" className={ctaPrimary}>
-            {t('Compare Basic and Pro', '比较基础版与 Pro')}
-          </Link>
-          <p className="m-0 text-[13px] text-rose-muted">
-            {t(
-              'Two months free on yearly · cancel anytime — no contracts, no lock-in.',
-              '年付免费两个月 · 随时取消——无合约，不绑定。',
-            )}
-          </p>
-        </div>
+        <p className="mt-9 mb-0 text-[13px] text-rose-muted">
+          {t(
+            'Two months free on yearly · cancel anytime — no contracts, no lock-in.',
+            '年付免费两个月 · 随时取消——无合约，不绑定。',
+          )}
+        </p>
         </Reveal>
       </section>
 
@@ -337,15 +325,12 @@ export default function Landing() {
           <h2 className="font-heading text-[26px] text-oxblood text-center mb-2 max-[600px]:text-[22px]">
             {t('Questions from shop owners, answered', '店主常见问题')}
           </h2>
-          <p className="text-sm text-rose-muted text-center mb-9 max-w-[460px] mx-auto">
+          <p className="text-sm text-rose-muted text-center mb-0 max-w-[460px] mx-auto">
             {t(
-              'The things shop owners ask us before they sign up.',
-              '店主在注册前最常问我们的问题。',
+              'The things shop owners ask us before they sign up — see the full FAQ.',
+              '店主在注册前最常问我们的问题——查看完整问答。',
             )}
           </p>
-          <Link to="/faq" className={ctaGhost}>
-            {t('Read the full FAQ', '查看完整问答')}
-          </Link>
         </Reveal>
       </section>
 
