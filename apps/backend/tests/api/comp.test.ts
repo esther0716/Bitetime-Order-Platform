@@ -132,6 +132,45 @@ describe('comp / uncomp', () => {
     expect(await merchantRow(merchantId)).toMatchObject({ status: 'active', plan: 'basic' })
   })
 
+  // Un-comp must leave the shop ABLE TO PAY, and the billing status is what decides that.
+  // comp writes status 'active' to silence the banners; leaving it there after the comp ends
+  // strands the shop — /api/checkout refuses anything in LIVE_STATUSES with "this shop already
+  // has an active subscription", naming a subscription that does not exist. The checkout route
+  // itself is not driven here (past its guard it creates a Stripe customer, and this suite is
+  // network-free), so the property is asserted on the row the guard reads.
+  it('clears the billing status so an un-comped shop can subscribe', async () => {
+    await serviceClient().from('merchant_billing').upsert({
+      merchant_id: merchantId,
+      comped: true,
+      status: 'active',
+      stripe_subscription_id: null,
+    }, { onConflict: 'merchant_id' })
+
+    expect((await post('/api/admin/uncomp-merchant', { merchantId }, superToken)).status).toBe(200)
+    expect(await billingRow(merchantId)).toMatchObject({ comped: false, status: null })
+  })
+
+  // The round trip, which is where the stranded status bites twice. A shop comped after a
+  // CANCELLED subscription keeps its subscription id, so if un-comp left status 'active' the
+  // re-comp would trip the has_live_subscription precondition — and tell the superadmin to
+  // cancel in Stripe a subscription that was cancelled long ago.
+  it('re-comps a shop that was un-comped', async () => {
+    await serviceClient().from('merchant_billing').upsert({
+      merchant_id: merchantId,
+      comped: false,
+      status: 'canceled',
+      stripe_subscription_id: 'sub_long_dead',
+    }, { onConflict: 'merchant_id' })
+
+    expect((await post('/api/admin/comp-merchant', { merchantId }, superToken)).status).toBe(200)
+    expect((await post('/api/admin/uncomp-merchant', { merchantId }, superToken)).status).toBe(200)
+    expect((await post('/api/admin/comp-merchant', { merchantId }, superToken)).status).toBe(200)
+    expect(await billingRow(merchantId)).toMatchObject({
+      comped: true,
+      stripe_subscription_id: 'sub_long_dead',
+    })
+  })
+
   it('answers 404 for a merchant that does not exist', async () => {
     const res = await post(
       '/api/admin/uncomp-merchant',

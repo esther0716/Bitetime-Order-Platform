@@ -20,7 +20,7 @@ Checkout does, however, serve the shops the portal cannot: those with **no** liv
 
 **Immediate downgrades** (swap now, credit the unused time) were rejected in favour of scheduling at period end. The credit makes it defensible on the money, but it strips features someone has already paid for and would drop live vouchers under a customer mid-checkout. Scheduling costs no code: because the reconciliation reads the price *currently* on the subscription, a pending change does not register until it applies.
 
-**Letting each Pro lock open the billing portal directly** was the shape before this, and it dead-ends — `POST /api/billing/portal` 404s for a shop with no Stripe customer, which is exactly the comped and pre-checkout population the locks target. The CTAs route to Settings → Subscription instead, which can render that state as a sentence and can show the price before asking anyone to pay.
+**Letting each Pro lock open the billing portal directly** was the shape before this, and it dead-ends — `POST /api/billing/portal` refuses a shop with no Stripe customer, which is exactly the comped and pre-checkout population the locks target. (It answers 404 for the pre-checkout half and, since `merchant_billing.comped` exists, `409 shop_is_comped` for the comped half — a different code, the same dead end.) The CTAs route to Settings → Subscription instead, which can render that state as a sentence and can show the price before asking anyone to pay.
 
 ## Consequences
 

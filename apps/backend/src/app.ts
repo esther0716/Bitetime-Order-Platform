@@ -1010,10 +1010,17 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
 })
 
 // ── Superadmin: revoke a comp ──────────────────────────────────────────────────
-// Clears the flag and drops the shop to Basic. Deliberately touches neither `merchants.status`
-// nor the billing row's far-future `current_period_end`: suspension is a separate decision, and
-// conflating the two is what makes a temporary suspension silently end a comp — or a later
-// reactivation silently hand free Pro back.
+// Clears the flag and drops the shop to Basic. Deliberately does not touch `merchants.status`:
+// suspension is a separate decision, and conflating the two is what makes a temporary suspension
+// silently end a comp — or a later reactivation silently hand free Pro back.
+//
+// The billing row is wound back to "no subscription" (`status` and `current_period_end` null),
+// which is what leaves the shop ABLE TO PAY. Those two are comp's own writes, not Stripe's: a
+// comped row has no subscription behind it, so `status: 'active'` is a claim only this endpoint
+// ever made. Leaving it strands the shop twice over — `/api/checkout` refuses anything in
+// LIVE_STATUSES with "this shop already has an active subscription", naming a subscription that
+// does not exist, and a re-comp trips the has_live_subscription precondition whenever a dead
+// `stripe_subscription_id` survived the first comp.
 app.post('/api/admin/uncomp-merchant', requireSuperadmin, async (c) => {
   const { merchantId } = await c.req.json().catch(() => ({}))
   if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
@@ -1030,7 +1037,7 @@ app.post('/api/admin/uncomp-merchant', requireSuperadmin, async (c) => {
   }
 
   try {
-    await upsertBilling(merchantId, { comped: false })
+    await upsertBilling(merchantId, { comped: false, status: null, current_period_end: null })
   } catch (err) {
     console.error('uncomp-merchant billing upsert failed:', err instanceof Error ? err.message : String(err))
     return c.json({ error: 'Un-comp failed' }, 500)
