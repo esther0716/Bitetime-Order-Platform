@@ -153,7 +153,9 @@ const columns: ColumnDef<MerchantRow>[] = [
             <DropdownMenuContent align="end">
               {m.status === 'pending' && (
                 <>
-                  <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onApprove(m.id)}>{t('Approve', '批准')}</DropdownMenuItem>
+                  {/* Not an approval any more — signup provisions its own trial. This is the
+                      fallback for a shop whose provisioning failed and whose owner never retried. */}
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onApprove(m.id)}>{t('Start trial', '开始试用')}</DropdownMenuItem>
                   <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onReject(m.id)}>{t('Reject', '拒绝')}</DropdownMenuItem>
                 </>
               )}
@@ -214,7 +216,7 @@ export default function AdminMerchants() {
     setBusy(id)
     const r = await approveMerchant(id)
     if (r.ok) await load()
-    else toast.error(r.error.message || t('Approval failed', '批准失败'))
+    else toast.error(r.error.message || t('Could not start the trial', '无法开始试用'))
     setBusy(null)
   }
 
