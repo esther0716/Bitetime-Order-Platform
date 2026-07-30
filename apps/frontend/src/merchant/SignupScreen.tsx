@@ -81,8 +81,9 @@ export default function SignupScreen() {
       if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
       await refreshMerchant()
       if (plan === 'basic') {
-        // Cardless trial: no Checkout. The shop waits for platform approval,
-        // which is what starts the 7-day trial subscription.
+        // Cardless trial: no Checkout. The backend provisioned the trial and activated the shop
+        // during createMerchant, so this lands on the dashboard. If Stripe refused, the shop is
+        // still there at `pending` and MerchantHome shows the retry screen.
         // `replace`, not `assign`: the shop now exists, so Back must not return to a signup form
         // that would try to create it a second time.
         window.location.replace('/merchant')

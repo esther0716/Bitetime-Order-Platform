@@ -245,10 +245,17 @@ export async function fetchMyBilling(merchantId: string): Promise<Result<any | n
   return apiGet<any | null>(`/api/merchants/${merchantId}/billing`, { auth: true })
 }
 
-// Superadmin approval goes through the backend: it creates the Stripe customer
-// + cardless trialing subscription and flips the shop active in one step.
+// Superadmin fallback for a shop stuck at `pending` — signup provisions its own trial now, so
+// nobody waits on this. Creates the Stripe customer + cardless trialing subscription and
+// activates the shop in one step.
 export async function approveMerchant(merchantId: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/approve-merchant', 'POST', { merchantId }, { auth: 'required' })
+}
+
+// The owner's own retry when trial provisioning failed during signup. Same rule as the admin
+// fallback above, asked for by the merchant — who is the one actually looking at the screen.
+export async function startShopTrial(merchantId: string): Promise<Result<{ ok: true; trial: boolean }>> {
+  return apiSend<{ ok: true; trial: boolean }>(`/api/merchants/${merchantId}/start-trial`, 'POST', undefined, { auth: 'required' })
 }
 
 // Open the Stripe billing portal for the signed-in merchant (add/update card).

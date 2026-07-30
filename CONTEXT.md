@@ -239,10 +239,14 @@ straight from the browser and GoTrue's own default floor is 6.
 
 ## Billing lifecycle
 
-A merchant's platform-subscription journey. Basic signup is cardless and lands
-`pending`; **superadmin approval** creates the 7-day trialing Stripe
-subscription (the only place a trial is ever granted) and activates the shop —
-the trial clock starts at approval. While `trialing`, the dashboard shows a
+A merchant's platform-subscription journey. Basic signup is cardless and
+**provisions its own trial**: `POST /api/merchants` creates the 7-day trialing
+Stripe subscription via `startCardlessTrial` (`trialSubscription.ts` — the only
+place a trial is ever granted) and activates the shop, so the clock starts at
+signup. A shop stays `pending` only when that provisioning did not finish: its
+owner retries with `POST /api/merchants/:id/start-trial`, and
+`POST /api/admin/approve-merchant` is the admin-side fallback for one nobody
+retried. While `trialing`, the dashboard shows a
 persistent countdown banner (urgent inside 72h) whose CTA opens the Stripe
 billing portal; Stripe's `trial_will_end` webhook sends the 72h reminder email.
 Trial end with no card → Stripe cancels the subscription
@@ -349,11 +353,11 @@ custom-link edit UI, priority support — are gated when they are built, not
 before; a lock on an unreachable feature is dead code.
 
 **Upgrading is Stripe's job; we only listen — by one of two routes, decided by
-whether there is a subscription to change.** With one (the usual case: an approved
-shop on its cardless trial) the **Customer Portal** swaps the price; that is
+whether there is a subscription to change.** With one (the usual case: a shop on
+its cardless trial) the **Customer Portal** swaps the price; that is
 configured in the Stripe dashboard rather than in this repo, so a fresh Stripe
 environment without plan-switching configured makes upgrade silently do nothing.
-Without one — an active shop `approve-merchant` activated but did not re-trial
+Without one — an active shop that was activated but not re-trialled
 (`canStartTrial` false), or one whose subscription lapsed — **Checkout** sells a
 new subscription outright. The two can never both apply: `POST /api/checkout`
 refuses exactly `trialing`/`active`/`past_due`, the complement of the portal's

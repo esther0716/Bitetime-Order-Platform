@@ -14,6 +14,18 @@ export function canStartTrial(billing: BillingRow | null | undefined): boolean {
   return !billing?.stripe_subscription_id
 }
 
+/**
+ * Why a trial may NOT be started for this shop, as the `error` string to refuse with — or null
+ * when it may. The two questions here are the ones every caller asks identically; "has this shop
+ * already had a subscription" is deliberately NOT among them, because approval activates a shop
+ * it cannot re-trial while an owner's retry refuses it (see the routes in app.ts).
+ */
+export function trialStartRefusal(m: { status?: string | null; plan?: string | null }): string | null {
+  if (m.status !== 'pending') return 'Merchant is not pending'
+  if (m.plan === 'pro') return 'Pro shops activate via payment, not approval'
+  return null
+}
+
 export interface TrialReminderInput {
   shopName: string
   trialEndsAt: string // ISO timestamp
