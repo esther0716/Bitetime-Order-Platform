@@ -768,9 +768,14 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
   // Reuse an existing Stripe customer if we have one, else create and store it.
   const { data: existing } = await admin
     .from('merchant_billing')
-    .select('stripe_customer_id, status')
+    .select('stripe_customer_id, status, comped')
     .eq('merchant_id', merchant.id)
     .maybeSingle()
+
+  // Comp is terminal until a superadmin revokes it. Ahead of the live-subscription check on
+  // purpose: a comped row carries status 'active', so that check would fire first and tell the
+  // merchant they already have a subscription — which is the one thing they do not have.
+  if (existing?.comped) return c.json({ error: 'shop_is_comped' }, 409)
 
   // A live subscription means there is nothing to buy here — refuse rather
   // than create a second subscription (double-billing), e.g. for a shop an
@@ -1057,7 +1062,10 @@ function stripeFailed(c: Context<AppEnv>, where: string, err: unknown) {
 app.post('/api/billing/portal', requireOwnMerchant, async (c) => {
   const merchant = c.get('merchant')
   const { data: billing } = await admin
-    .from('merchant_billing').select('stripe_customer_id').eq('merchant_id', merchant.id).maybeSingle()
+    .from('merchant_billing').select('stripe_customer_id, comped').eq('merchant_id', merchant.id).maybeSingle()
+  // The bug this whole change exists for. A comped shop has no Stripe customer to open a portal
+  // against; before the flag existed it had a stale one, and this route sent it to Stripe.
+  if (billing?.comped) return c.json({ error: 'shop_is_comped' }, 409)
   if (!billing?.stripe_customer_id) return c.json({ error: 'No billing account yet' }, 404)
   try {
     const session = await stripe.billingPortal.sessions.create({
@@ -1096,8 +1104,13 @@ async function liveSubscription(c: Context<AppEnv>) {
   const merchant = c.get('merchant')
   const { data: billing } = await admin
     .from('merchant_billing')
-    .select('stripe_subscription_id, status')
+    .select('stripe_subscription_id, status, comped')
     .eq('merchant_id', merchant.id).maybeSingle()
+  // Ahead of the gate below, which a comped row passes on both terms: comp keeps
+  // stripe_subscription_id (canStartTrial's one-trial-ever record) and leaves status 'active'.
+  // Without this, cancel/downgrade/resume would act on an id that is dead or belongs to a real
+  // cancelled subscription.
+  if (billing?.comped) return { res: c.json({ error: 'shop_is_comped' }, 409) }
   // 409 rather than 404: the shop is fine, the request just does not apply to it. The
   // Subscription tab hides these buttons in that state, so this is the long-open-tab case.
   if (!billing?.stripe_subscription_id || !LIVE_STATUSES.includes(billing.status ?? '')) {

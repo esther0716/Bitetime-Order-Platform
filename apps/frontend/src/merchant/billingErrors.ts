@@ -25,6 +25,13 @@ export function billingErrorMessage(code: string | undefined, t: Translate): str
         'This shop no longer has a subscription to change. Reload the page.',
         '此店铺已无可更改的订阅。请刷新页面。',
       )
+    case 'shop_is_comped':
+      // Not folded into `no_live_subscription`: that one tells the merchant to reload, which is
+      // wrong advice for a state that will not change on reload. Only a superadmin can end it.
+      return t(
+        'This shop is on complimentary Pro. There is no billing to manage.',
+        '此店铺为赠送的 Pro 方案，无需管理账单。',
+      )
     default:
       return null
   }
