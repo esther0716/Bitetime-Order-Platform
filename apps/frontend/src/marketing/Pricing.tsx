@@ -105,7 +105,7 @@ export default function Pricing() {
 
       {/* ── How billing works ── */}
       {/* Prose, not cards: this is one explanation in four moves, and every claim here is enforced
-          somewhere real — the trial in the approval flow, the proration rule in the subscription
+          somewhere real — the trial in signup, the proration rule in the subscription
           handling, the currency in the platform pricing endpoint. */}
       <section className="border-t border-clay-border px-8 py-16 max-w-[720px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
@@ -115,8 +115,8 @@ export default function Pricing() {
           <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-soft">
             <p className="m-0">
               {t(
-                'Basic starts with seven free days and asks for no card. The clock starts when your shop is approved, not when you fill in the form, so the trial is seven days of actually taking orders rather than seven days of waiting. We remind you before it ends. If you decide not to continue, it stops on its own and you are never charged.',
-                '基础版有七天免费期，且无需绑定信用卡。计时从店铺通过审核那一刻开始，而不是从你填表时开始——所以这七天是真正在接单的七天，不是在等待的七天。结束前我们会提醒你。若决定不继续，试用期结束即自动停止，不会产生任何费用。',
+                'Basic starts with seven free days and asks for no card. The clock starts when you sign up, and your shop is open from that moment. We remind you before it ends. If you decide not to continue, it stops on its own and you are never charged.',
+                '基础版有七天免费期，且无需绑定信用卡。计时从你注册那一刻开始，店铺也同时开放。结束前我们会提醒你。若决定不继续，试用期结束即自动停止，不会产生任何费用。',
               )}
             </p>
             <p className="m-0">

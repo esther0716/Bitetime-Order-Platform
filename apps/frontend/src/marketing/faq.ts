@@ -56,8 +56,8 @@ export const FAQ: FaqEntry[] = [
       zh: '我需要自己的网站吗？',
     },
     a: {
-      en: 'No. Every shop gets its own order page with its own link, ready as soon as your shop is approved. Share that link on WhatsApp, Instagram or anywhere else — that is your storefront.',
-      zh: '不需要。每家店都有专属订单页面和专属链接，店铺通过审核后即可使用。把链接分享到 WhatsApp、Instagram 或任何地方——那就是你的店面。',
+      en: 'No. Every shop gets its own order page with its own link, ready the moment you sign up. Share that link on WhatsApp, Instagram or anywhere else — that is your storefront.',
+      zh: '不需要。每家店都有专属订单页面和专属链接，注册后即刻可用。把链接分享到 WhatsApp、Instagram 或任何地方——那就是你的店面。',
     },
   },
   {
@@ -111,8 +111,8 @@ export const FAQ: FaqEntry[] = [
       zh: '多快可以开始接单？',
     },
     a: {
-      en: 'Sign up, add your products, and we review your shop before it goes live — this is what keeps the platform clean for everyone on it. Once approved, your order page is open and your free trial starts.',
-      zh: '注册、添加产品，我们会先审核你的店铺再让它上线——这是为了维持平台对所有商家的品质。审核通过后，订单页面即开放，免费试用同时开始。',
+      en: 'Straight away. Your shop and its order page go live the moment you sign up, and your seven free days start there — nothing to wait for. Add your products and share your link. We suspend shops that misuse the platform, but nothing holds you up on the way in.',
+      zh: '马上就能开始。注册完成的那一刻，店铺和订单页面即刻上线，七天免费期同时开始——无需等待。添加产品、分享链接即可。若有店铺滥用平台，我们会将其暂停，但开店过程不会让你等。',
     },
   },
 ]
