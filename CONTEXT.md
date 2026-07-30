@@ -239,10 +239,14 @@ straight from the browser and GoTrue's own default floor is 6.
 
 ## Billing lifecycle
 
-A merchant's platform-subscription journey. Basic signup is cardless and lands
-`pending`; **superadmin approval** creates the 7-day trialing Stripe
-subscription (the only place a trial is ever granted) and activates the shop —
-the trial clock starts at approval. While `trialing`, the dashboard shows a
+A merchant's platform-subscription journey. Basic signup is cardless and
+**provisions its own trial**: `POST /api/merchants` creates the 7-day trialing
+Stripe subscription via `startCardlessTrial` (`trialSubscription.ts` — the only
+place a trial is ever granted) and activates the shop, so the clock starts at
+signup. A shop stays `pending` only when that provisioning did not finish: its
+owner retries with `POST /api/merchants/:id/start-trial`, and
+`POST /api/admin/approve-merchant` is the admin-side fallback for one nobody
+retried. While `trialing`, the dashboard shows a
 persistent countdown banner (urgent inside 72h) whose CTA opens the Stripe
 billing portal; Stripe's `trial_will_end` webhook sends the 72h reminder email.
 Trial end with no card → Stripe cancels the subscription
@@ -259,9 +263,10 @@ Which **features** a shop may use, as opposed to whether its subscription is
 *live* (that is *Billing lifecycle* above). Two tiers — `basic` and `pro` — and
 the entitlement signal is a single field, **`merchants.plan === 'pro'`**. It is
 trustworthy because it is the field, not a request: the browser holds no grant
-on `merchants`, and `plan` is written in exactly three places — signup (the
-owner's chosen tier, `POST /api/merchants`), superadmin `comp-merchant`, and the
-webhook reconciliation below. **An owner request never writes it** — the same
+on `merchants`, and `plan` is written in exactly four places — signup (the
+owner's chosen tier, `POST /api/merchants`), superadmin `comp-merchant`, its
+reverse `uncomp-merchant`, and the webhook reconciliation below.
+**An owner request never writes it** — the same
 rule that governs `orders.user_id` and `promo_sold`. A shop cannot self-upgrade
 to Pro; a paid Pro checkout or a comp is the only way the field becomes `'pro'`
 on a live shop.
@@ -308,6 +313,23 @@ shop that has scheduled a downgrade keeps every Pro feature until the period it
 paid for runs out, and nothing may gate on it. See
 [ADR 0005](docs/adr/0005-winding-down-happens-in-the-dashboard.md).
 
+**A comp is Pro with no Stripe behind it**, and `merchant_billing.comped` is that
+fact rather than an inference from a shape. Granted by superadmin
+`comp-merchant` (partners, staff, promo shops) and revoked by `uncomp-merchant`,
+which clears the flag and drops the shop to Basic. The column is deliberately
+apart from `status`: **`status` stays what Stripe says, `comped` stays what we
+say.** Everything a comped shop cannot do keys off it — the Subscription tab
+turns every billing action off (`subscriptionTabState`), and the backend refuses
+`/api/checkout`, `/api/billing/portal` and all three wind-down routes with
+`409 shop_is_comped` **before any Stripe call**. Two invariants earned the hard
+way: comp **clears `stripe_customer_id`** (a stale one is what sent a test-mode
+id to Stripe under a live key and answered 502) but **keeps
+`stripe_subscription_id`**, which `canStartTrial` reads as the one-trial-ever
+record; and un-comp winds `status`/`current_period_end` back to null, because
+those were comp's own writes and leaving them makes checkout refuse the shop for
+a subscription it never had. Comping a shop that really is paying is refused
+outright (`409 has_live_subscription`) — cancel in Stripe first.
+
 **Stepping down to Basic revokes the artifacts, once, at the transition.**
 `revokeProArtifacts` (called from `reconcileMerchantPlan` only when the tier
 actually moves `pro → basic`) sets `vouchers.active = false` in bulk and moves a
@@ -331,11 +353,11 @@ custom-link edit UI, priority support — are gated when they are built, not
 before; a lock on an unreachable feature is dead code.
 
 **Upgrading is Stripe's job; we only listen — by one of two routes, decided by
-whether there is a subscription to change.** With one (the usual case: an approved
-shop on its cardless trial) the **Customer Portal** swaps the price; that is
+whether there is a subscription to change.** With one (the usual case: a shop on
+its cardless trial) the **Customer Portal** swaps the price; that is
 configured in the Stripe dashboard rather than in this repo, so a fresh Stripe
 environment without plan-switching configured makes upgrade silently do nothing.
-Without one — an active shop `approve-merchant` activated but did not re-trial
+Without one — an active shop that was activated but not re-trialled
 (`canStartTrial` false), or one whose subscription lapsed — **Checkout** sells a
 new subscription outright. The two can never both apply: `POST /api/checkout`
 refuses exactly `trialing`/`active`/`past_due`, the complement of the portal's

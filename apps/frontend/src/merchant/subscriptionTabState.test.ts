@@ -152,6 +152,51 @@ describe('subscriptionTabState', () => {
     expect(subscriptionTabState({ status: 'canceled', stripe_customer_id: 'cus_1' }, 'basic', NOW))
       .toMatchObject({ kind: 'none', canManage: false })
   })
+
+  // A comped shop is entitled to Pro with no Stripe behind it. Every billing action is off:
+  // the portal has nothing to open, checkout is superadmin-only to reverse, and the wind-down
+  // actions have no subscription to wind down.
+  it('turns every billing action off for a comped shop', () => {
+    const state = subscriptionTabState(
+      { status: 'active', stripe_customer_id: null, comped: true, current_period_end: '2126-08-01T00:00:00Z' },
+      'pro',
+      NOW,
+    )
+    expect(state).toMatchObject({
+      kind: 'none',
+      plan: 'pro',
+      comped: true,
+      canManage: false,
+      canSubscribe: false,
+      canUpgrade: false,
+      canCancel: false,
+      canDowngrade: false,
+      canResume: false,
+    })
+  })
+
+  // The production 502, as a unit test. This row is what comp-merchant used to leave behind: a
+  // customer id from a test-mode key plus status 'active'. That pair read as a live subscription,
+  // rendered "Manage subscription", and sent a dead customer id to Stripe under a live key.
+  it('offers no portal to a comped shop that still carries a stale customer id', () => {
+    const state = subscriptionTabState(
+      { status: 'active', stripe_customer_id: 'cus_stale', comped: true },
+      'pro',
+      NOW,
+    )
+    expect(state).toMatchObject({ kind: 'none', comped: true, canManage: false, canSubscribe: false })
+  })
+
+  // The flag is the only thing that changed. Without it the same row is a paying shop, and every
+  // action stays available — this is what stops `comped` becoming a blanket off-switch.
+  it('leaves a paying shop untouched', () => {
+    const state = subscriptionTabState(
+      { status: 'active', stripe_customer_id: 'cus_1', comped: false, current_period_end: '2026-09-01T00:00:00Z' },
+      'pro',
+      NOW,
+    )
+    expect(state).toMatchObject({ kind: 'live', comped: false, canManage: true, canCancel: true })
+  })
 })
 
 // ── Winding down ───────────────────────────────────────────────────────────────

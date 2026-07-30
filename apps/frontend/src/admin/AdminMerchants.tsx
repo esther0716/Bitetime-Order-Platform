@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { MoreHorizontal } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { fetchAllMerchants, setMerchantStatus, approveMerchant, compMerchant, fetchAllBilling, type MerchantBilling } from '../store'
+import { fetchAllMerchants, setMerchantStatus, approveMerchant, compMerchant, uncompMerchant, fetchAllBilling, type MerchantBilling } from '../store'
 import { unwrap } from '../api'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
@@ -16,7 +16,7 @@ import {
 
 // Billing status is folded onto each row so the Subscription column can sort/filter
 // on it (accessorFn only sees the row, not table meta).
-type MerchantRow = Merchant & { billingStatus?: string | null }
+type MerchantRow = Merchant & { billingStatus?: string | null; comped?: boolean }
 
 // Handlers + language + in-flight id ride on table.options.meta so the column defs
 // stay stable (defined once) and never reset sorting when a row action refetches.
@@ -28,6 +28,7 @@ interface AdminTableMeta {
   onSuspend: (id: string) => void
   onReactivate: (id: string) => void
   onComp: (id: string) => void
+  onUncomp: (id: string) => void
 }
 
 const columns: ColumnDef<MerchantRow>[] = [
@@ -83,13 +84,17 @@ const columns: ColumnDef<MerchantRow>[] = [
         : m.plan === 'basic' ? t('Basic', '基础版') : null
       const sub = m.billingStatus
       if (!plan && !sub) return <span className="text-text-tertiary">—</span>
-      const subLabel = sub === 'active' ? t('active', '有效')
+      const subLabel = m.comped ? t('comped', '赠送')
+        : sub === 'active' ? t('active', '有效')
         : sub === 'trialing' ? t('trialing', '试用')
         : sub === 'past_due' ? t('past due', '逾期')
         : sub === 'canceled' ? t('canceled', '已取消')
         : sub === 'incomplete' ? t('incomplete', '未完成')
         : sub
-      const subCls = sub === 'active' ? 'text-success-deep'
+      // Neutral, not green: a comp is neither a healthy subscription nor a failing one, and
+      // colouring it `active` is what made comped and paying shops indistinguishable here.
+      const subCls = m.comped ? 'text-text-tertiary'
+        : sub === 'active' ? 'text-success-deep'
         : sub === 'trialing' ? 'text-warn-fg'
         : (sub === 'past_due' || sub === 'canceled' || sub === 'incomplete') ? 'text-danger-fg'
         : 'text-text-tertiary'
@@ -148,7 +153,9 @@ const columns: ColumnDef<MerchantRow>[] = [
             <DropdownMenuContent align="end">
               {m.status === 'pending' && (
                 <>
-                  <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onApprove(m.id)}>{t('Approve', '批准')}</DropdownMenuItem>
+                  {/* Not an approval any more — signup provisions its own trial. This is the
+                      fallback for a shop whose provisioning failed and whose owner never retried. */}
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onApprove(m.id)}>{t('Start trial', '开始试用')}</DropdownMenuItem>
                   <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onReject(m.id)}>{t('Reject', '拒绝')}</DropdownMenuItem>
                 </>
               )}
@@ -158,8 +165,14 @@ const columns: ColumnDef<MerchantRow>[] = [
               {m.status === 'suspended' && (
                 <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onReactivate(m.id)}>{t('Reactivate', '恢复')}</DropdownMenuItem>
               )}
-              {!(m.status === 'active' && m.plan === 'pro') && (
-                <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onComp(m.id)}>{t('Comp Pro', '赠送 Pro')}</DropdownMenuItem>
+              {m.comped ? (
+                <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onUncomp(m.id)}>
+                  {t('Un-comp', '取消赠送')}
+                </DropdownMenuItem>
+              ) : !(m.status === 'active' && m.plan === 'pro') && (
+                <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onComp(m.id)}>
+                  {t('Comp Pro', '赠送 Pro')}
+                </DropdownMenuItem>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -203,7 +216,7 @@ export default function AdminMerchants() {
     setBusy(id)
     const r = await approveMerchant(id)
     if (r.ok) await load()
-    else toast.error(r.error.message || t('Approval failed', '批准失败'))
+    else toast.error(r.error.message || t('Could not start the trial', '无法开始试用'))
     setBusy(null)
   }
 
@@ -211,12 +224,30 @@ export default function AdminMerchants() {
     setBusy(id)
     const r = await compMerchant(id)
     if (r.ok) { toast.success(t('Comped to Pro', '已赠送 Pro')); await load() }
+    // The one refusal a superadmin can act on: cancel the subscription in Stripe, then comp.
+    // Without this the toast reads `has_live_subscription`, which names the state but not the way out.
+    else if (r.error.code === 'has_live_subscription') {
+      toast.error(t('This shop has a live subscription. Cancel it in Stripe first.',
+        '此店铺有生效中的订阅，请先在 Stripe 中取消。'))
+    }
     else toast.error(r.error.message || t('Comp failed', '赠送失败'))
     setBusy(null)
   }
 
+  async function uncomp(id: string) {
+    setBusy(id)
+    const r = await uncompMerchant(id)
+    if (r.ok) { toast.success(t('Comp revoked', '已取消赠送')); await load() }
+    else toast.error(r.error.message || t('Un-comp failed', '取消赠送失败'))
+    setBusy(null)
+  }
+
   const data = useMemo<MerchantRow[]>(
-    () => (rows ?? []).map(m => ({ ...m, billingStatus: billing[m.id]?.status ?? null })),
+    () => (rows ?? []).map(m => ({
+      ...m,
+      billingStatus: billing[m.id]?.status ?? null,
+      comped: !!billing[m.id]?.comped,
+    })),
     [rows, billing],
   )
 
@@ -227,6 +258,7 @@ export default function AdminMerchants() {
     onSuspend: (id) => act(id, 'suspended'),
     onReactivate: (id) => act(id, 'active'),
     onComp: comp,
+    onUncomp: uncomp,
   }
 
   if (!rows) return (

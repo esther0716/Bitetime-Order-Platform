@@ -91,4 +91,28 @@ describe('billing wind-down routes', () => {
 
     await serviceClient().from('merchants').delete().eq('id', id)
   })
+
+  // A comped shop has nothing to wind down. This guard is load-bearing rather than belt-and-
+  // braces: comp KEEPS stripe_subscription_id (the one-trial-ever record) and leaves status
+  // 'active', so a comped row passes liveSubscription's `!subId || !LIVE_STATUSES` gate on both
+  // terms. Without the check, cancel would reach Stripe holding an id that is either dead or a
+  // real cancelled subscription. The tab never renders these buttons for a comped shop, which is
+  // exactly why the route has to refuse on its own.
+  it('refuses a comped shop', async () => {
+    const owner = await makeUser('comped-winddown@example.com', 'password123')
+    const { token, userId } = await sessionOf(owner)
+    const merchantId = await seedMerchant({ slug: 'comped-winddown-shop', owner_id: userId, plan: 'pro' })
+    await serviceClient().from('merchant_billing').upsert({
+      merchant_id: merchantId,
+      comped: true,
+      status: 'active',
+      stripe_subscription_id: 'sub_kept',
+    }, { onConflict: 'merchant_id' })
+
+    for (const route of ROUTES) {
+      const res = await post(route, token)
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ error: 'shop_is_comped' })
+    }
+  })
 })

@@ -18,7 +18,8 @@ import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, 
 import { stripe, priceFor, isValidPlan, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileMerchantPlan, LIVE_STATUSES } from './billing.js'
 import { downgradePhases, ScheduleError, type LivePhase } from './subscriptionSchedule.js'
-import { canStartTrial, buildTrialReminderEmail } from './billingLifecycle.js'
+import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
+import { startCardlessTrial } from './trialSubscription.js'
 import { resendSend } from './email.js'
 import { notifyOrderPlaced, telegramSend } from './notify.js'
 import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
@@ -164,7 +165,24 @@ app.post('/api/merchants', requireUser, async (c) => {
     .select()
     .single()
   if (error) return c.json({ error: 'Create failed' }, 500)
-  return c.json(data)
+
+  // Self-serve: the trial is provisioned HERE, not by an approval. Two things this must not do —
+  // fail the signup because Stripe did (the account, the slug and the form's answers are worth
+  // more than the retry), and return an `active` shop with no subscription behind it
+  // (startCardlessTrial owns that ordering). A shop Stripe refused stays `pending` and the owner
+  // retries from the dashboard via POST /api/merchants/:id/start-trial.
+  if ((data.plan ?? 'basic') === 'pro') return c.json(data)
+
+  // `null` billing is not a shortcut: a shop created milliseconds ago has no merchant_billing
+  // row, so there is no customer id to reuse and nothing for canStartTrial to refuse.
+  const outcome = await startCardlessTrial(data, null)
+  if (!outcome.ok) {
+    console.error('Trial provisioning failed at signup for', data.id, '—', outcome.error)
+    return c.json({ ...data, trial: false })
+  }
+  // `data` was read back before the claim flipped it, so say what is true now rather than making
+  // the client refetch to find out.
+  return c.json({ ...data, status: 'active', trial: outcome.trial })
 })
 
 // Owner-editable shop config. The update goes through `admin` (service_role), which bypasses
@@ -768,9 +786,14 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
   // Reuse an existing Stripe customer if we have one, else create and store it.
   const { data: existing } = await admin
     .from('merchant_billing')
-    .select('stripe_customer_id, status')
+    .select('stripe_customer_id, status, comped')
     .eq('merchant_id', merchant.id)
     .maybeSingle()
+
+  // Comp is terminal until a superadmin revokes it. Ahead of the live-subscription check on
+  // purpose: a comped row carries status 'active', so that check would fire first and tell the
+  // merchant they already have a subscription — which is the one thing they do not have.
+  if (existing?.comped) return c.json({ error: 'shop_is_comped' }, 409)
 
   // A live subscription means there is nothing to buy here — refuse rather
   // than create a second subscription (double-billing), e.g. for a shop an
@@ -810,12 +833,15 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
   return c.json({ url: session.url })
 })
 
-// ── Superadmin: approve a pending merchant → start its cardless trial ──────────
-// Approval (not signup) is the abuse gate: signup alone never puts a live shop
-// on the platform. The subscription is created with no payment method and
-// cancels itself at trial end (missing_payment_method: 'cancel'), which drives
-// the existing subscription.deleted → suspended webhook path. Trials are granted
-// here and only here — Checkout never grants one.
+// ── Superadmin: push a stuck merchant through to active ────────────────────────
+// Signup provisions its own trial now (POST /api/merchants), so this is no longer a gate
+// anybody waits at — it is the admin-side fallback for a shop parked at `pending` because
+// Stripe refused during signup and the merchant never retried. Same rule, different caller:
+// trialSubscription.ts holds it.
+//
+// Unlike the owner's retry below, this ACTIVATES a shop it cannot re-trial (`canStartTrial`
+// false → `{ ok: true, trial: false }`): an admin pushing a shop through means "open this shop",
+// and the one-trial-ever rule limits the trial, not the activation.
 app.post('/api/admin/approve-merchant', requireSuperadmin, async (c) => {
   const { merchantId } = await c.req.json().catch(() => ({}))
   if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
@@ -836,94 +862,56 @@ app.post('/api/admin/approve-merchant', requireSuperadmin, async (c) => {
   const { data: merchant, error } = merchantRes
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
-  if (merchant.status !== 'pending') return c.json({ error: 'Merchant is not pending' }, 409)
-  if (merchant.plan === 'pro') {
-    return c.json({ error: 'Pro shops activate via payment, not approval' }, 409)
-  }
 
-  const { data: billing } = billingRes
+  const refusal = trialStartRefusal(merchant)
+  if (refusal) return c.json({ error: refusal }, 409)
 
-  // Atomically claim the pending merchant so concurrent approvals can't both
-  // proceed (double-click, two admin tabs) — first caller wins, later ones 409.
-  const { data: claimed, error: claimErr } = await admin
-    .from('merchants')
-    .update({ status: 'active' })
-    .eq('id', merchant.id)
-    .eq('status', 'pending')
-    .select('id')
-    .maybeSingle()
-  if (claimErr) return c.json({ error: 'Claim failed' }, 500)
-  if (!claimed) return c.json({ error: 'Merchant is not pending' }, 409)
+  const outcome = await startCardlessTrial(merchant, billingRes.data)
+  if (!outcome.ok) return c.json({ error: outcome.error }, outcome.http)
+  return c.json({ ok: true, trial: outcome.trial })
+})
 
+// ── Owner: retry trial provisioning for a shop parked at `pending` ─────────────
+// The self-serve twin of approve-merchant above. `pending` means "provisioning did not finish"
+// now, which is a Stripe failure during signup — so the merchant, not an admin, is who should
+// be able to push it through.
+//
+// Every guard runs BEFORE the first Stripe call. That is what makes them assertable in
+// tests/api, which is network-free, and it is why one-trial-ever is checked HERE rather than
+// left to startCardlessTrial: that function deliberately activates a shop it cannot re-trial
+// (approval's semantics), which is not what an owner asking for a trial should be handed.
+app.post('/api/merchants/:id/start-trial', requireMerchantOwns, async (c) => {
+  const merchant = c.get('merchant') // loaded by the guard with select('*')
+
+  const refusal = trialStartRefusal(merchant)
+  if (refusal) return c.json({ error: refusal }, 409)
+
+  const { data: billing } = await admin
+    .from('merchant_billing').select('*').eq('merchant_id', merchant.id).maybeSingle()
   if (!canStartTrial(billing)) {
-    // Had a subscription once already — approval re-activates, but never re-trials.
-    return c.json({ ok: true, trial: false })
+    return c.json({ error: 'This shop has already used its free trial — subscribe to reopen it.' }, 409)
   }
 
-  // Owner email comes from Auth, not profiles — the profiles row may not exist
-  // (client-side profile upsert is currently RLS-blocked for new signups).
-  const { data: ownerUser } = await admin.auth.admin.getUserById(merchant.owner_id)
-  const ownerEmail = ownerUser?.user?.email
-
-  const plan = merchant.plan || 'basic'
-  const cycle = merchant.billing_cycle || 'monthly'
-
-  // Revert the pending→active claim; never throw from a failure path.
-  const revertClaim = async () => {
-    try {
-      await setMerchantStatus(merchant.id, 'pending')
-    } catch (e) {
-      console.error('Claim revert failed — merchant left active without a subscription:', e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  let customerId = billing?.stripe_customer_id
-  let sub
-  try {
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: ownerEmail || undefined,
-        name: merchant.name,
-        metadata: { merchant_id: merchant.id },
-      })
-      customerId = customer.id
-    }
-    sub = await stripe.subscriptions.create({
-      customer: customerId,
-      items: [{ price: priceFor(plan, cycle) }],
-      trial_period_days: 7,
-      trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
-      metadata: { merchant_id: merchant.id, plan, billing: cycle, region: 'MY' },
-    })
-  } catch (err) {
-    console.error('Trial subscription creation failed:', err instanceof Error ? err.message : String(err))
-    await revertClaim()
-    return c.json({ error: 'Subscription creation failed' }, 502)
-  }
-
-  try {
-    await upsertBilling(merchant.id, billingFromSubscription(sub))
-  } catch (err) {
-    // The subscription exists but wasn't persisted — cancel it so a retried
-    // approval can't mint a second trial against an orphaned live one.
-    console.error('Billing persist failed — canceling trial subscription', sub.id, err instanceof Error ? err.message : String(err))
-    try {
-      await stripe.subscriptions.cancel(sub.id)
-    } catch (cancelErr) {
-      console.error('Cancel failed — ORPHANED Stripe subscription', sub.id, cancelErr instanceof Error ? cancelErr.message : String(cancelErr))
-    }
-    await revertClaim()
-    return c.json({ error: 'Subscription creation failed' }, 502)
-  }
-
-  return c.json({ ok: true, trial: true })
+  // Named rather than spread: `c.get('merchant')` is the whole row as `Record<string, any>`, and
+  // listing the five columns the provisioning actually reads is what keeps that untyped bag from
+  // reaching it.
+  const outcome = await startCardlessTrial({
+    id: merchant.id,
+    name: merchant.name,
+    owner_id: merchant.owner_id,
+    plan: merchant.plan,
+    billing_cycle: merchant.billing_cycle,
+  }, billing)
+  if (!outcome.ok) return c.json({ error: outcome.error }, outcome.http)
+  return c.json({ ok: true, trial: outcome.trial })
 })
 
 // ── Superadmin: manual suspend / reject / reactivate ───────────────────────────
 // merchants.status is service_role-only at the DB layer (guard_merchant_status),
 // so the admin console can no longer flip it through PostgREST — these writes must
 // come through here. Covers Reject (pending→suspended), Suspend (active→suspended),
-// and Reactivate (suspended→active). Trial-granting stays in approve-merchant.
+// and Reactivate (suspended→active). Trial-granting stays in approve-merchant and its
+// owner-side twin.
 app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
   const { merchantId, status } = await c.req.json().catch(() => ({}))
   if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
@@ -950,10 +938,9 @@ app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
 // promo shops. Writes an 'active' billing row with a far-future period end and no
 // trial, so the trial/past-due banners stay silent and nothing expires the shop.
 // The shop is decoupled from Stripe: it has no real subscription, so the
-// webhook-driven suspension path never touches it. Revoke by suspending in the
-// console (set-merchant-status → suspended). If the merchant already carries a
-// real Stripe subscription this overwrites its local status to active — don't comp
-// a paying shop.
+// webhook-driven suspension path never touches it. Revoke with
+// `/api/admin/uncomp-merchant`, which clears the flag and drops the shop to Basic
+// without touching its status — suspension is a separate decision.
 app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
   const { merchantId } = await c.req.json().catch(() => ({}))
   if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
@@ -961,6 +948,19 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
   const { data: merchant } = await admin
     .from('merchants').select('id').eq('id', merchantId).maybeSingle()
   if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  // Refuse a shop that is actually paying. Comping it would leave Stripe billing a card while
+  // the local row claims the shop is free — and the customer id this route clears is the only
+  // pointer back to that subscription. Cancel in Stripe first, then comp.
+  const { data: existingBilling } = await admin
+    .from('merchant_billing')
+    .select('stripe_subscription_id, status')
+    .eq('merchant_id', merchantId)
+    .maybeSingle()
+  if (existingBilling?.stripe_subscription_id
+      && LIVE_STATUSES.includes(existingBilling.status ?? '')) {
+    return c.json({ error: 'has_live_subscription' }, 409)
+  }
 
   // Activate + mark pro. Service role bypasses the guard_merchant_status trigger.
   const { error: mErr } = await admin
@@ -970,11 +970,16 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
     return c.json({ error: 'Comp failed' }, 500)
   }
 
-  // Silence billing banners: active status, far-future period end, no trial. Merge
-  // (upsert) so any existing stripe_customer_id survives, but the local state reads active.
+  // Mark the comp and silence the billing banners: active status, far-future period end, no
+  // trial. `stripe_customer_id` is cleared — on a comped shop it points at nothing we will ever
+  // call, and a stale one is exactly what sent a dead id to Stripe and answered 502.
+  // `stripe_subscription_id` is deliberately KEPT: canStartTrial reads it as the one-trial-ever
+  // record, and clearing it would hand a previously-subscribed shop a fresh trial.
   try {
     const farFuture = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString()
     await upsertBilling(merchantId, {
+      comped: true,
+      stripe_customer_id: null,
       status: 'active',
       trial_ends_at: null,
       current_period_end: farFuture,
@@ -982,6 +987,43 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
   } catch (err) {
     console.error('comp-merchant billing upsert failed:', err instanceof Error ? err.message : String(err))
     return c.json({ error: 'Comp failed' }, 500)
+  }
+
+  return c.json({ ok: true })
+})
+
+// ── Superadmin: revoke a comp ──────────────────────────────────────────────────
+// Clears the flag and drops the shop to Basic. Deliberately does not touch `merchants.status`:
+// suspension is a separate decision, and conflating the two is what makes a temporary suspension
+// silently end a comp — or a later reactivation silently hand free Pro back.
+//
+// The billing row is wound back to "no subscription" (`status` and `current_period_end` null),
+// which is what leaves the shop ABLE TO PAY. Those two are comp's own writes, not Stripe's: a
+// comped row has no subscription behind it, so `status: 'active'` is a claim only this endpoint
+// ever made. Leaving it strands the shop twice over — `/api/checkout` refuses anything in
+// LIVE_STATUSES with "this shop already has an active subscription", naming a subscription that
+// does not exist, and a re-comp trips the has_live_subscription precondition whenever a dead
+// `stripe_subscription_id` survived the first comp.
+app.post('/api/admin/uncomp-merchant', requireSuperadmin, async (c) => {
+  const { merchantId } = await c.req.json().catch(() => ({}))
+  if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
+
+  const { data: merchant } = await admin
+    .from('merchants').select('id').eq('id', merchantId).maybeSingle()
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  const { error: mErr } = await admin
+    .from('merchants').update({ plan: 'basic' }).eq('id', merchantId)
+  if (mErr) {
+    console.error('uncomp-merchant merchants update failed:', mErr.message)
+    return c.json({ error: 'Un-comp failed' }, 500)
+  }
+
+  try {
+    await upsertBilling(merchantId, { comped: false, status: null, current_period_end: null })
+  } catch (err) {
+    console.error('uncomp-merchant billing upsert failed:', err instanceof Error ? err.message : String(err))
+    return c.json({ error: 'Un-comp failed' }, 500)
   }
 
   return c.json({ ok: true })
@@ -1010,7 +1052,10 @@ function stripeFailed(c: Context<AppEnv>, where: string, err: unknown) {
 app.post('/api/billing/portal', requireOwnMerchant, async (c) => {
   const merchant = c.get('merchant')
   const { data: billing } = await admin
-    .from('merchant_billing').select('stripe_customer_id').eq('merchant_id', merchant.id).maybeSingle()
+    .from('merchant_billing').select('stripe_customer_id, comped').eq('merchant_id', merchant.id).maybeSingle()
+  // The bug this whole change exists for. A comped shop has no Stripe customer to open a portal
+  // against; before the flag existed it had a stale one, and this route sent it to Stripe.
+  if (billing?.comped) return c.json({ error: 'shop_is_comped' }, 409)
   if (!billing?.stripe_customer_id) return c.json({ error: 'No billing account yet' }, 404)
   try {
     const session = await stripe.billingPortal.sessions.create({
@@ -1049,8 +1094,13 @@ async function liveSubscription(c: Context<AppEnv>) {
   const merchant = c.get('merchant')
   const { data: billing } = await admin
     .from('merchant_billing')
-    .select('stripe_subscription_id, status')
+    .select('stripe_subscription_id, status, comped')
     .eq('merchant_id', merchant.id).maybeSingle()
+  // Ahead of the gate below, which a comped row passes on both terms: comp keeps
+  // stripe_subscription_id (canStartTrial's one-trial-ever record) and leaves status 'active'.
+  // Without this, cancel/downgrade/resume would act on an id that is dead or belongs to a real
+  // cancelled subscription.
+  if (billing?.comped) return { res: c.json({ error: 'shop_is_comped' }, 409) }
   // 409 rather than 404: the shop is fine, the request just does not apply to it. The
   // Subscription tab hides these buttons in that state, so this is the long-open-tab case.
   if (!billing?.stripe_subscription_id || !LIVE_STATUSES.includes(billing.status ?? '')) {

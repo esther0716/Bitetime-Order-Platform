@@ -139,6 +139,12 @@ export async function compMerchant(id: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/comp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
 }
 
+// Superadmin: revoke a comp. Drops the shop to Basic and clears the flag; the shop's own
+// status is untouched, because suspending is a separate decision.
+export async function uncompMerchant(id: string): Promise<Result<any>> {
+  return apiSend<any>('/api/admin/uncomp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
+}
+
 // The "could not ask" vs "the answer is empty" distinction, now the shared Result:
 // `{ ok: false }` means the request itself never landed (network/CORS/5xx) and a caller that
 // would DROP something on that must not treat it as an answer; `{ ok: true, data: null }` is a
@@ -224,6 +230,8 @@ export interface MerchantBilling {
   status?: string | null
   trial_ends_at?: string | null
   current_period_end?: string | null
+  /** Complimentary tier — no Stripe subscription behind this shop. */
+  comped?: boolean | null
 }
 
 // Superadmin: read every merchant's billing row (RLS grants superadmins read on all).
@@ -237,10 +245,17 @@ export async function fetchMyBilling(merchantId: string): Promise<Result<any | n
   return apiGet<any | null>(`/api/merchants/${merchantId}/billing`, { auth: true })
 }
 
-// Superadmin approval goes through the backend: it creates the Stripe customer
-// + cardless trialing subscription and flips the shop active in one step.
+// Superadmin fallback for a shop stuck at `pending` — signup provisions its own trial now, so
+// nobody waits on this. Creates the Stripe customer + cardless trialing subscription and
+// activates the shop in one step.
 export async function approveMerchant(merchantId: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/approve-merchant', 'POST', { merchantId }, { auth: 'required' })
+}
+
+// The owner's own retry when trial provisioning failed during signup. Same rule as the admin
+// fallback above, asked for by the merchant — who is the one actually looking at the screen.
+export async function startShopTrial(merchantId: string): Promise<Result<{ ok: true; trial: boolean }>> {
+  return apiSend<{ ok: true; trial: boolean }>(`/api/merchants/${merchantId}/start-trial`, 'POST', undefined, { auth: 'required' })
 }
 
 // Open the Stripe billing portal for the signed-in merchant (add/update card).

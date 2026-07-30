@@ -97,7 +97,9 @@ Multi-merchant ordering SaaS. React 19 + Vite + React Router (`react-router-dom`
 
 ### Merchant onboarding & slugs (`src/slug.ts`)
 
-Sign up with a shop name → auto slug: pinyin transliteration for Chinese names, `shop-<id>` fallback, uniqueness suffix (`-2`), reserved platform segments blocked (`RESERVED_SLUGS`: `s`, `admin`, `api`, `merchant`, …). New shops start `pending` until a superadmin approves.
+Sign up with a shop name → auto slug: pinyin transliteration for Chinese names, `shop-<id>` fallback, uniqueness suffix (`-2`), reserved platform segments blocked (`RESERVED_SLUGS`: `s`, `admin`, `api`, `merchant`, …).
+
+New shops go live at **signup**: `POST /api/merchants` provisions the 7-day cardless trial itself (`startCardlessTrial` in `apps/backend/src/trialSubscription.ts`) and activates the shop. `pending` therefore means **provisioning did not finish** — a Pro shop waiting for Checkout, or a Basic shop whose Stripe call failed, which its owner retries via `POST /api/merchants/:id/start-trial`. `POST /api/admin/approve-merchant` survives as the admin-side fallback for a shop stuck there; it is no longer a gate anyone waits at, and moderation is reactive (suspend).
 
 ### Data layer (`src/store.ts`)
 

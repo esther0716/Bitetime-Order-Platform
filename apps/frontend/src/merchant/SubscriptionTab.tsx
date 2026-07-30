@@ -468,7 +468,11 @@ export default function SubscriptionTab() {
             </a>
           </div>
           <span className="font-heading text-[18px] text-oxblood whitespace-nowrap shrink-0">
-            {formatMoney(planPrice, pricing.currency)}<span className="text-[13px] text-text-secondary">{per}</span>
+            {/* A comped shop is Pro and pays nothing. Quoting the Pro price here — beside a Pro
+                badge, with no subscription behind it — reads as a bill. */}
+            {state.comped
+              ? t('Free', '免费')
+              : <>{formatMoney(planPrice, pricing.currency)}<span className="text-[13px] text-text-secondary">{per}</span></>}
           </span>
         </div>
 
@@ -492,8 +496,11 @@ export default function SubscriptionTab() {
                   ? (state.renewsAt
                       ? t(`Renews on ${fmtDate(state.renewsAt)}.`, `将于 ${fmtDate(state.renewsAt)} 续订。`)
                       : t('Active.', '有效。'))
-                  : t('No subscription on file for this shop yet.',
-                      '此店铺尚无订阅记录。')}
+                  : state.comped
+                    ? t('Complimentary Pro — no billing on this shop.',
+                        '赠送的 Pro 方案——此店铺无账单。')
+                    : t('No subscription on file for this shop yet.',
+                        '此店铺尚无订阅记录。')}
         </p>
 
         {/* A scheduled downgrade is NOT the same state as a cancellation — the shop stays open
