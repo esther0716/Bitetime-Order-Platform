@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // The Supabase client is only reached for the auth header; stub it so we can drive
 // "has a session" vs "no session" per test.
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }))
-vi.mock('./supabase', () => ({ supabase: { auth: { getSession } } }))
+vi.mock('./supabase', () => ({ auth: { getSession } }))
 
 import { apiGet, apiSend, unwrap } from './api'
 

@@ -6,7 +6,7 @@
 // escape hatch the migration plan allows — it keeps dynamic field access from
 // erroring without forcing a full generated-types pass.
 
-import type { User } from '@supabase/supabase-js'
+import type { User } from '@supabase/auth-js'
 import type { FeedbackCategory, FeedbackStatus } from '@bitetime/shared'
 
 export type Lang = 'en' | 'zh'

@@ -1,7 +1,7 @@
-import type { User } from '@supabase/supabase-js';
+import type { User } from '@supabase/auth-js';
 import { voucherFromRow, QUOTE_REFUSALS } from '@bitetime/shared';
 import type { FeedbackDraft, FeedbackStatus, MerchantStats, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
-import { supabase } from './supabase';
+import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
 import type { AddressParts, EarnedReward, FeedbackItem, Order, ReferredShop, ShopCustomer, ShopCustomerPage, ShopCustomerSort, Voucher } from './types';
@@ -16,7 +16,7 @@ import type { CartLine } from '@bitetime/shared'
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export async function signIn(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await auth.signInWithPassword({ email, password });
   if (error) throw error;
   return data.user;
 }
@@ -25,7 +25,7 @@ export async function signIn(email: string, password: string) {
 // so it outlives the confirmation round trip: with confirmations on, the sign-in that follows
 // this call fails and the shop is never created here. See pendingShop.ts.
 export async function signUp(name: string, email: string, password: string, shop?: PendingShop) {
-  const { data, error } = await supabase.auth.signUp({
+  const { data, error } = await auth.signUp({
     email,
     password,
     options: { data: { name, ...(shop ? pendingShopMetadata(shop) : {}) } },
@@ -45,7 +45,7 @@ export async function signUp(name: string, email: string, password: string, shop
   return data.user;
 }
 
-// Customer sign-up. Goes through the backend rather than supabase.auth.signUp because
+// Customer sign-up. Goes through the backend rather than auth.signUp because
 // email confirmation is on project-wide (it protects merchants, who own shops and Stripe
 // billing) — a client-side signUp would return no session and strand the customer in their
 // inbox holding a cart. The backend creates the account pre-confirmed with the service role;
@@ -310,7 +310,7 @@ export async function requestPasswordReset(email: string, shopSlug: string | nul
   // The cost is real and accepted: a genuine failure (network down) looks like success to the
   // customer, who waits for a mail that never comes. Enumeration is the worse of the two.
   try {
-    await supabase.auth.resetPasswordForEmail(email.trim(), {
+    await auth.resetPasswordForEmail(email.trim(), {
       redirectTo: resetRedirectUrl(window.location.origin, shopSlug),
     })
   } catch { /* swallowed on purpose — see above */ }
@@ -318,21 +318,21 @@ export async function requestPasswordReset(email: string, shopSlug: string | nul
 
 /** Set the new password for the session the recovery link just established. */
 export async function updatePassword(password: string) {
-  const { error } = await supabase.auth.updateUser({ password })
+  const { error } = await auth.updateUser({ password })
   if (error) throw error
 }
 
 export async function signOut() {
-  await supabase.auth.signOut();
+  await auth.signOut();
 }
 
 export async function getCurrentUser() {
-  const { data } = await supabase.auth.getUser();
+  const { data } = await auth.getUser();
   return data?.user ?? null;
 }
 
 export function onAuthChange(callback: (user: User | null, event?: string) => void) {
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+  const { data: { subscription } } = auth.onAuthStateChange((event, session) => {
     const user = session?.user ?? null;
     if (user && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {
       // Ensure profile exists and email_confirmed is up to date.
@@ -524,7 +524,7 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
   fulfilDate: string | null
 }): Promise<Result<{ orderNumber: string }, OrderError>> {
   // Optional: a guest has no session, and guest checkout is a first-class path.
-  const { data: { session } } = await supabase.auth.getSession()
+  const { data: { session } } = await auth.getSession()
   const token = session?.access_token
 
   // `fetch` REJECTS on a network or CORS failure rather than returning a non-ok response, so
@@ -867,7 +867,7 @@ export const PRODUCT_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 // Resolve a stored path to a public URL for rendering.
 export function productImageUrl(path: string): string {
-  return supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl
+  return storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl
 }
 
 // Validate + upload files under {merchantId}/{productId}/…; returns stored paths.
@@ -886,7 +886,7 @@ export async function uploadProductImages(
     }
     const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const path = `${merchantId}/${productId}/${crypto.randomUUID()}-${safe}`
-    const { error } = await supabase.storage
+    const { error } = await storage
       .from(PRODUCT_IMAGE_BUCKET)
       .upload(path, file, { contentType: file.type, upsert: true })
     if (error) throw error
@@ -897,7 +897,7 @@ export async function uploadProductImages(
 
 export async function deleteProductImages(paths: string[]): Promise<void> {
   if (!paths?.length) return
-  const { error } = await supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove(paths)
+  const { error } = await storage.from(PRODUCT_IMAGE_BUCKET).remove(paths)
   if (error) throw error
 }
 
@@ -911,7 +911,7 @@ export const MAX_PAYMENT_QR_BYTES = 2 * 1024 * 1024
 export const PAYMENT_QR_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 export function paymentQrUrl(path: string): string {
-  return supabase.storage.from(PAYMENT_QR_BUCKET).getPublicUrl(path).data.publicUrl
+  return storage.from(PAYMENT_QR_BUCKET).getPublicUrl(path).data.publicUrl
 }
 
 // Validate + upload; returns the stored path. Same shape as uploadProductImages, one file: the
@@ -928,7 +928,7 @@ export async function uploadPaymentQr(merchantId: string, file: File): Promise<s
   // file name is sanitised to the characters that check allows.
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
   const path = `${merchantId}/${crypto.randomUUID()}-${safe}`
-  const { error } = await supabase.storage
+  const { error } = await storage
     .from(PAYMENT_QR_BUCKET)
     .upload(path, file, { contentType: file.type, upsert: true })
   if (error) throw error
@@ -937,7 +937,7 @@ export async function uploadPaymentQr(merchantId: string, file: File): Promise<s
 
 export async function deletePaymentQr(path: string): Promise<void> {
   if (!path) return
-  const { error } = await supabase.storage.from(PAYMENT_QR_BUCKET).remove([path])
+  const { error } = await storage.from(PAYMENT_QR_BUCKET).remove([path])
   if (error) throw error
 }
 
