@@ -259,9 +259,10 @@ Which **features** a shop may use, as opposed to whether its subscription is
 *live* (that is *Billing lifecycle* above). Two tiers — `basic` and `pro` — and
 the entitlement signal is a single field, **`merchants.plan === 'pro'`**. It is
 trustworthy because it is the field, not a request: the browser holds no grant
-on `merchants`, and `plan` is written in exactly three places — signup (the
-owner's chosen tier, `POST /api/merchants`), superadmin `comp-merchant`, and the
-webhook reconciliation below. **An owner request never writes it** — the same
+on `merchants`, and `plan` is written in exactly four places — signup (the
+owner's chosen tier, `POST /api/merchants`), superadmin `comp-merchant`, its
+reverse `uncomp-merchant`, and the webhook reconciliation below.
+**An owner request never writes it** — the same
 rule that governs `orders.user_id` and `promo_sold`. A shop cannot self-upgrade
 to Pro; a paid Pro checkout or a comp is the only way the field becomes `'pro'`
 on a live shop.
@@ -307,6 +308,23 @@ shop was suspended on 1 Sep. `pending_plan` is **intent, never entitlement** —
 shop that has scheduled a downgrade keeps every Pro feature until the period it
 paid for runs out, and nothing may gate on it. See
 [ADR 0005](docs/adr/0005-winding-down-happens-in-the-dashboard.md).
+
+**A comp is Pro with no Stripe behind it**, and `merchant_billing.comped` is that
+fact rather than an inference from a shape. Granted by superadmin
+`comp-merchant` (partners, staff, promo shops) and revoked by `uncomp-merchant`,
+which clears the flag and drops the shop to Basic. The column is deliberately
+apart from `status`: **`status` stays what Stripe says, `comped` stays what we
+say.** Everything a comped shop cannot do keys off it — the Subscription tab
+turns every billing action off (`subscriptionTabState`), and the backend refuses
+`/api/checkout`, `/api/billing/portal` and all three wind-down routes with
+`409 shop_is_comped` **before any Stripe call**. Two invariants earned the hard
+way: comp **clears `stripe_customer_id`** (a stale one is what sent a test-mode
+id to Stripe under a live key and answered 502) but **keeps
+`stripe_subscription_id`**, which `canStartTrial` reads as the one-trial-ever
+record; and un-comp winds `status`/`current_period_end` back to null, because
+those were comp's own writes and leaving them makes checkout refuse the shop for
+a subscription it never had. Comping a shop that really is paying is refused
+outright (`409 has_live_subscription`) — cancel in Stripe first.
 
 **Stepping down to Basic revokes the artifacts, once, at the transition.**
 `revokeProArtifacts` (called from `reconcileMerchantPlan` only when the tier

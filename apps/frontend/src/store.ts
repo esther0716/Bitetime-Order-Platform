@@ -139,6 +139,12 @@ export async function compMerchant(id: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/comp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
 }
 
+// Superadmin: revoke a comp. Drops the shop to Basic and clears the flag; the shop's own
+// status is untouched, because suspending is a separate decision.
+export async function uncompMerchant(id: string): Promise<Result<any>> {
+  return apiSend<any>('/api/admin/uncomp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
+}
+
 // The "could not ask" vs "the answer is empty" distinction, now the shared Result:
 // `{ ok: false }` means the request itself never landed (network/CORS/5xx) and a caller that
 // would DROP something on that must not treat it as an answer; `{ ok: true, data: null }` is a
@@ -224,6 +230,8 @@ export interface MerchantBilling {
   status?: string | null
   trial_ends_at?: string | null
   current_period_end?: string | null
+  /** Complimentary tier — no Stripe subscription behind this shop. */
+  comped?: boolean | null
 }
 
 // Superadmin: read every merchant's billing row (RLS grants superadmins read on all).

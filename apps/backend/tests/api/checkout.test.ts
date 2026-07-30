@@ -10,7 +10,7 @@
 // against a stranger's account, and would write a stripe_customer_id onto their billing row.
 import { describe, it, expect } from 'vitest'
 import { app } from '../../src/app.js'
-import { makeUser, seedMerchant } from '../rls/helpers.js'
+import { makeUser, seedMerchant, serviceClient } from '../rls/helpers.js'
 
 function post(token?: string) {
   return app.request('/api/checkout', {
@@ -73,5 +73,23 @@ describe('POST /api/checkout', () => {
       body: JSON.stringify({ plan: 'enterprise', billing: 'monthly' }),
     })
     expect(res.status).toBe(400)
+  })
+
+  // Comp is terminal until a superadmin revokes it: a comped shop cannot buy its way out. The
+  // refusal comes before the Stripe customer is created, so a comped shop can never acquire a
+  // new customer id — the thing this whole change exists to stop accumulating.
+  it('refuses a comped shop', async () => {
+    const owner = await makeUser('comped-checkout@example.com', 'password123')
+    const { data } = await owner.auth.getSession()
+    const merchantId = await seedMerchant({ slug: 'comped-checkout-shop', owner_id: data.session!.user.id })
+    await serviceClient().from('merchant_billing').upsert({
+      merchant_id: merchantId,
+      comped: true,
+      status: 'active',
+    }, { onConflict: 'merchant_id' })
+
+    const res = await post(await tokenOf(owner))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ error: 'shop_is_comped' })
   })
 })
