@@ -133,7 +133,7 @@ export const PLAN_COMPARISON: ComparisonRow[] = [
     // NOT a Pro split. Distance pricing is `merchants.shipping_mode`, which carries no plan gate —
     // writing "by road distance" into the Pro column would sell a shop something Basic already has.
     id: 'delivery',
-    label: { en: 'Delivery fees — flat, by region, or by road distance', zh: '运费——统一、按地区，或按实际路程' },
+    label: { en: 'Delivery tracking — flat, by region, or by road distance', zh: '运费——统一、按地区，或按实际路程' },
     basic: { en: 'Included', zh: '包含' },
     pro: { en: 'Included', zh: '包含' },
   },
