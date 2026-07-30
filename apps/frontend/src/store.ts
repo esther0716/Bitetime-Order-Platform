@@ -739,38 +739,6 @@ export async function setOrderTracking(orderId: string, courier: string | null, 
 }
 
 /**
- * The guest's only way back to an order. Costs the order number AND the phone that placed it:
- * order numbers are a per-shop daily counter, so the number alone is guessable and the endpoint
- * behind this is unauthenticated. The phone is what makes a guess cost ~10^8 tries instead of one.
- *
- * A wrong phone, a wrong number and a failed request are all the same `null` — and the caller
- * must keep showing one message for all of them. Telling them apart would hand back the oracle
- * the phone exists to remove. That is also why nothing here reads a status code or an error body:
- * there is nothing in either to read.
- */
-export async function fetchOrderTracking(merchantId: string, orderNumber: string, phone: string) {
-  const trimmed = orderNumber.trim()
-  const trimmedPhone = phone.trim()
-  if (!merchantId || !trimmed || !trimmedPhone) return null
-  // `fetch` REJECTS on a network or CORS failure rather than returning a non-ok response, so
-  // without this catch the promised null becomes a throw the moment the backend is unreachable.
-  const res = await fetch(`${API_URL}/api/orders/track`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ merchantId, orderNumber: trimmed, phone: trimmedPhone }),
-  }).catch(() => null)
-  if (!res || !res.ok) return null
-  return (await res.json()) as {
-    status: string
-    mode: string
-    courier: string | null
-    awb: string | null
-    created_at: string
-    fulfil_date: string | null
-  } | null
-}
-
-/**
  * The shop's customers (#143), aggregated by the BACKEND.
  *
  * This used to fetch every order and group them here, on the raw `customer_wa` string. That was

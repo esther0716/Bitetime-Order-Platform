@@ -1,8 +1,8 @@
 // The phone-matching rule, deliberately alone in a module that touches nothing.
 //
-// It is the whole security of guest order tracking, and it is pure — so it lives apart from
-// the query that uses it, reachable by `pnpm test` with no database and no env. Fold it back
-// into orderTracking.ts and its tests need a running Supabase to assert string handling.
+// It is pure, so it lives apart from the queries that use it (shopCustomersDb.ts, orders.ts),
+// reachable by `pnpm test` with no database and no env. Fold it into one of those and its
+// tests need a running Supabase to assert string handling.
 
 /**
  * The digits of a phone, last eight — or null when it has none.
