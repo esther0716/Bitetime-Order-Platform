@@ -4,7 +4,7 @@ import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
-import { Images, Expand } from 'lucide-react'
+import { Images, Expand, X } from 'lucide-react'
 import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, paymentQrUrl, saveCustomerDetails } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { noticeText, type Notice } from './notice'
@@ -1481,7 +1481,7 @@ export default function Storefront() {
                           </span>
                         )}
                       </span>
-                      <span className="shrink-0 flex items-center gap-2">
+                      <span className="shrink-0 flex items-center gap-3">
                         <span className="text-right whitespace-nowrap">{formatMoney(item.price * item.qty, currency)}</span>
                         {/* The ONLY way out for a line with options: its card has an Add button
                             rather than a stepper, because there is no answer to which selection a
@@ -1493,8 +1493,17 @@ export default function Storefront() {
                             type="button"
                             onClick={() => removeLine(removableKey(item)!)}
                             aria-label={t(`Remove ${displayName}`, `移除 ${displayName}`)}
-                            className="text-rose-muted hover:text-oxblood cursor-pointer leading-none px-1 pointer-coarse:px-2"
-                          >×</button>
+                            title={t('Remove item', '移除商品')}
+                            /* Bordered circle, not a bare × glyph: customers read the glyph as
+                               decoration and did not try clicking it. The ring plus the fill on
+                               hover/press is the whole affordance. The circle stays 28px so it
+                               does not dominate a summary row; the `after` overlay is what makes
+                               the touch target 44px, so a coarse pointer gets the size without
+                               the visual weight. */
+                            className="relative grid place-items-center shrink-0 size-7 -my-1 rounded-full border border-rose-border bg-white/60 text-rose-muted cursor-pointer transition-colors hover:bg-danger hover:border-danger hover:text-white active:bg-danger active:border-danger active:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood after:absolute after:content-[''] after:-inset-2"
+                          >
+                            <X className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
+                          </button>
                         )}
                       </span>
                     </div>
