@@ -43,23 +43,12 @@ export const USE_CASES: UseCaseEntry[] = [
   {
     id: 'fulfilment',
     title: {
-      en: 'Pickup only, delivery only, or both',
-      zh: '只自取、只配送，或两者兼有',
+      en: 'Pickup, delivery, or priced by the road',
+      zh: '自取、配送，或按路程计费',
     },
     body: {
-      en: 'Turn pickup and delivery on independently — at least one stays on. Pickup is free at your address; delivery charges a flat rate that can differ by region.',
-      zh: '自取与配送可独立开关，至少保留一项。自取免费，显示你填写的地址；配送收统一运费，且可按地区分级。',
-    },
-  },
-  {
-    id: 'distance',
-    title: {
-      en: 'Delivery priced by the road, not by guesswork',
-      zh: '按实际路程计费，不靠估算',
-    },
-    body: {
-      en: 'Charge a base fee plus a rate per kilometre, worked out from the real road distance to the customer\'s address. Out-of-range or unreachable addresses are refused outright — never a fee that loses you money.',
-      zh: '设定基本费加每公里费率，依实际路程计算到顾客地址的运费。超出范围或无法送达的地址会直接拒绝——不会给出让你亏本的运费。',
+      en: 'Turn pickup and delivery on independently, and set delivery flat, by region, or by real road distance from your address — a base fee plus a rate per kilometre. Out-of-range addresses are refused outright, never priced at a loss.',
+      zh: '自取与配送可独立开关；配送可设为统一运费、按地区分级，或依实际路程计费——基本费加每公里费率。超出范围的地址会直接拒绝，绝不亏本报价。',
     },
   },
   {
