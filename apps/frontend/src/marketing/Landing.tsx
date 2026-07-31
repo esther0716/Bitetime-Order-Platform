@@ -6,7 +6,6 @@ import { formatMoney } from '../currency'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion'
 import { FAQ } from './faq'
 import { FEATURES } from './features'
-import { USE_CASES } from './useCases'
 import { VERTICALS } from './verticals'
 import { PRICING_TIERS } from './pricingTiers'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
@@ -197,46 +196,11 @@ export default function Landing() {
               </div>
             ))}
           </div>
-        </Reveal>
-      </section>
-
-      {/* ── Ways to sell ── */}
-      {/* Copy lives in useCases.ts as data, same as the FAQ and the feature list, and under the same
-          rule: every line has to be true of the product as shipped. This section answers the question
-          "does it fit the way *I* sell", which the feature list above deliberately does not.
-
-          An ACCORDION, not five always-open cards: five full paragraphs standing open by default was
-          the single biggest wall of text on the page, for a section most visitors read one entry of
-          (the one that matches how they sell) and skip the rest of. `hiddenUntilFound` keeps every
-          word in the prerendered HTML — nothing here is hidden from a crawler, only collapsed from a
-          first-time visitor — so this trims the page, not the content Google indexes. Same mechanism
-          the FAQ below already uses. */}
-      <section className="border-t border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
-        <Reveal>
-          <h2 className={sectionTitle}>
-            {t(
-              'Pre-orders, weekly drops, pickup or delivery — set it up your way',
-              '预订、每周上新、自取或配送——按你的方式设定',
-            )}
-          </h2>
-          <p className="-mt-6 mb-10 text-[15px] leading-[1.75] text-ink-soft text-center max-w-[620px] mx-auto">
-            {t(
-              'No two small businesses take orders the same way, so nothing here is fixed for you. Here is how the usual ones are set up — pick the parts that match how you already work.',
-              '没有两家小生意的接单方式是一样的，所以这里没有一条是替你决定好的。以下是几种常见的设定方式——挑出与你现有做法相符的部分即可。',
-            )}
+          <p className="mt-9 mb-0 text-center text-[13px] text-rose-muted">
+            <Link to="/features" className="underline underline-offset-4 hover:text-oxblood">
+              {t('See all features', '查看全部功能')}
+            </Link>
           </p>
-          <Accordion className="max-w-[640px] mx-auto" defaultValue={[USE_CASES[0].id]} hiddenUntilFound>
-            {USE_CASES.map(u => (
-              <AccordionItem key={u.id} value={u.id} className="border-clay-border">
-                <AccordionTrigger className="font-heading text-[15px] text-ink text-left py-4">
-                  {t(u.title.en, u.title.zh)}
-                </AccordionTrigger>
-                <AccordionContent className="text-[14px] leading-[1.7] text-rose-muted pb-4">
-                  {t(u.body.en, u.body.zh)}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
         </Reveal>
       </section>
 
