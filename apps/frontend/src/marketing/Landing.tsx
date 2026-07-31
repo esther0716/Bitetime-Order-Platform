@@ -245,6 +245,11 @@ export default function Landing() {
           ))}
         </dl>
         <p className="mt-9 mb-0 text-[13px] text-rose-muted">
+          <Link to="/pricing" className="underline underline-offset-4 hover:text-oxblood">
+            {t('Compare Basic and Pro', '比较基础版与 Pro')}
+          </Link>
+        </p>
+        <p className="mt-2 mb-0 text-[13px] text-rose-muted">
           {t(
             'Two months free on yearly · cancel anytime — no contracts, no lock-in.',
             '年付免费两个月 · 随时取消——无合约，不绑定。',
