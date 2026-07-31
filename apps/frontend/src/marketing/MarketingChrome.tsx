@@ -20,6 +20,7 @@ import LanguageSelect from '../components/LanguageSelect'
 import Wordmark from '../components/Wordmark'
 import { Button } from '../components/ui/button'
 import { REFUNDS_ANCHOR } from '../legal/anchors'
+import { cn } from '../lib/utils'
 
 // Shared nav-link style (Pricing + Merchant log in)
 const navLink =
@@ -59,10 +60,18 @@ export function MarketingNav() {
         <Wordmark className="h-7 max-[600px]:h-6" />
       </Link>
       <div className="flex items-center gap-5">
-        {/* A route, not the `#pricing` anchor it used to be: an anchor is one page to a crawler,
-            and the whole point of /pricing is being a second one. */}
+        {/* Routes, not the landing page's own anchors: an anchor is one page to a crawler, and the
+            whole point of splitting these off is being pages of their own (#169). Features and FAQ
+            hide below 600px so the bar does not compete with the account menu on a phone; both
+            still reach every visitor through the footer, which never hides a link. */}
+        <Link to="/features" className={cn(navLink, 'max-[600px]:hidden')}>
+          {t('Features', '功能')}
+        </Link>
         <Link to="/pricing" className={navLink}>
           {t('Pricing', '价格')}
+        </Link>
+        <Link to="/faq" className={cn(navLink, 'max-[600px]:hidden')}>
+          {t('FAQ', '常见问题')}
         </Link>
         <div className="flex justify-end gap-1.5">
           <LanguageSelect />
@@ -133,11 +142,18 @@ export function MarketingFooter() {
       {/* aria-hidden, and not clay-border: that colour fails AA on cream (DESIGN.md), so it is
           a stroke colour rather than a text one. */}
       <span aria-hidden="true">·</span>
-      {/* Second link to /pricing, and deliberately not a duplicate to be pruned: the nav and the
-          footer are the two places a crawler looks for a site's own structure, and this one is
-          inside the prerendered markup of every marketing page. */}
+      {/* Second links to /features, /pricing and /faq, and deliberately not duplicates to be
+          pruned: the nav and the footer are the two places a crawler looks for a site's own
+          structure, and these are inside the prerendered markup of every marketing page — the
+          footer never hides one behind the nav's max-[600px] rule. */}
+      <Link to="/features" className={footerLink}>
+        {t('Features', '功能')}
+      </Link>
       <Link to="/pricing" className={footerLink}>
         {t('Pricing', '价格')}
+      </Link>
+      <Link to="/faq" className={footerLink}>
+        {t('FAQ', '常见问题')}
       </Link>
       <Link to="/terms" className={footerLink}>
         {t('Terms', '服务条款')}

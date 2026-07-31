@@ -23,6 +23,10 @@ import Landing from './marketing/Landing'
 // visitor a spinner where a finished page already was. It shares nearly all of Landing's imports,
 // so the entry chunk grows by this file and not by a second copy of the marketing chrome.
 import Pricing from './marketing/Pricing'
+// Same rule again: /features and /faq are prerendered (dist/features.html, dist/faq.html), so
+// they stay out of the lazy() boundary too. See scripts/prerender.tsx.
+import FeaturesPage from './marketing/FeaturesPage'
+import FaqPage from './marketing/FaqPage'
 
 // Route-level code splitting: every OTHER surface ships its own chunk, so a storefront
 // customer never downloads merchant/admin/signup code (signup pulls in the heavy
@@ -173,6 +177,11 @@ function AnimatedRoutes() {
               crawler; this is a second page with its own <title> and description, which is what
               Google draws a sitelink label from (#169). Prerendered — see scripts/prerender.tsx. */}
           <Route path="/pricing" element={<Pricing />} />
+          {/* Same argument as /pricing: real pages of their own, not landing anchors, each with
+              its own <title> and description for Google to draw a sitelink from (#169).
+              Prerendered — see scripts/prerender.tsx. */}
+          <Route path="/features" element={<FeaturesPage />} />
+          <Route path="/faq" element={<FaqPage />} />
           {/* Top-level on purpose, NOT nested under /s/:slug: the storefront shell's status gate
               would swallow it, and a suspended shop must never lock a customer out of their own
               account. Role-blind — `?shop=` decides where they land afterwards. */}

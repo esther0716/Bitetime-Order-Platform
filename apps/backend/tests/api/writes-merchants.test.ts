@@ -43,7 +43,7 @@ describe('POST /api/merchants', () => {
     const client = await makeUser('create-shop@example.com', 'password123')
     const { token, userId } = await tokenOf(client)
 
-    const res = await post('/api/merchants', { name: 'Joe Coffee', plan: 'basic', billing: 'monthly', region: 'US' }, token)
+    const res = await post('/api/merchants', { name: 'Joe Coffee', plan: 'basic', billing: 'monthly', region: 'US', businessNature: 'bakery' }, token)
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow
@@ -64,6 +64,7 @@ describe('POST /api/merchants', () => {
       name: 'Evil Shop',
       status: 'active',
       owner_id: '00000000-0000-0000-0000-000000000000',
+      businessNature: 'bakery',
     }, token)
 
     expect(res.status).toBe(200)
@@ -83,7 +84,7 @@ describe('POST /api/merchants', () => {
     const client = await makeUser('create-dup@example.com', 'password123')
     const { token } = await tokenOf(client)
 
-    const res = await post('/api/merchants', { name: 'Taken Name' }, token)
+    const res = await post('/api/merchants', { name: 'Taken Name', businessNature: 'bakery' }, token)
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow
@@ -109,7 +110,7 @@ describe('POST /api/merchants', () => {
     const client = await makeUser('stripe-down@example.com', 'password123')
     const { token } = await tokenOf(client)
 
-    const res = await post('/api/merchants', { name: 'Stripe Down Cafe', plan: 'basic', billing: 'monthly' }, token)
+    const res = await post('/api/merchants', { name: 'Stripe Down Cafe', plan: 'basic', billing: 'monthly', businessNature: 'bakery' }, token)
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow & { trial: boolean }
@@ -134,7 +135,7 @@ describe('POST /api/merchants', () => {
     const client = await makeUser('pro-signup@example.com', 'password123')
     const { token } = await tokenOf(client)
 
-    const res = await post('/api/merchants', { name: 'Pro Cafe', plan: 'pro', billing: 'monthly' }, token)
+    const res = await post('/api/merchants', { name: 'Pro Cafe', plan: 'pro', billing: 'monthly', businessNature: 'bakery' }, token)
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow & { trial?: boolean }
@@ -167,22 +168,19 @@ describe('POST /api/merchants', () => {
     await serviceClient().from('merchants').delete().eq('id', m.id)
   })
 
-  // Shops that predate the field are a real state, so an absent one creates the shop with a
-  // NULL industry rather than refusing it.
-  it('creates the shop with no industry when none is sent', async () => {
+  // Business nature is now mandatory at signup (it is no longer editable afterwards, so an
+  // absent one would leave the shop stuck with an industry nobody can ever set).
+  it('400s when no business nature is sent, without creating a shop', async () => {
     await resetMerchant('natureless-shop')
     const client = await makeUser('create-natureless@example.com', 'password123')
     const { token } = await tokenOf(client)
 
     const res = await post('/api/merchants', { name: 'Natureless Shop' }, token)
 
-    expect(res.status).toBe(200)
-    const m = (await res.json()) as MerchantRow
-    const { data: row } = await serviceClient()
-      .from('merchants').select('business_nature').eq('id', m.id).single()
-    expect(row!.business_nature).toBeNull()
-
-    await serviceClient().from('merchants').delete().eq('id', m.id)
+    expect(res.status).toBe(400)
+    const { data: rows } = await serviceClient()
+      .from('merchants').select('id').eq('slug', 'natureless-shop')
+    expect(rows ?? []).toEqual([])
   })
 
   it('400s on an unknown business nature rather than creating a shop without one', async () => {
@@ -242,24 +240,21 @@ describe('PATCH /api/merchants/:id (config)', () => {
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 
-  // #161. A shop that signed up before the field existed fills its own industry in from the
-  // Shop tab; an unknown code is refused rather than dropped, so the merchant is told.
-  it('updates the business nature, and refuses an unknown one', async () => {
+  // business_nature is signup-only now: it is set once at creation (POST /api/merchants) and
+  // dropped from MERCHANT_CONFIG_FIELDS, so a PATCH naming it alone has no updatable field.
+  it('ignores business_nature in a PATCH — it is set at signup and never editable after', async () => {
     await resetMerchant('cfg-nature-shop')
     const client = await makeUser('cfg-nature@example.com', 'password123')
     const { token, userId } = await tokenOf(client)
     const id = await seedMerchant({ slug: 'cfg-nature-shop', owner_id: userId })
 
-    const ok = await patch(`/api/merchants/${id}`, { business_nature: 'florist' }, token)
-    expect(ok.status).toBe(200)
-    expect(((await ok.json()) as { business_nature: string }).business_nature).toBe('florist')
-
-    const bad = await patch(`/api/merchants/${id}`, { business_nature: 'flower stall' }, token)
-    expect(bad.status).toBe(400)
+    const res = await patch(`/api/merchants/${id}`, { business_nature: 'florist' }, token)
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toBe('No updatable fields')
 
     const { data: row } = await serviceClient()
       .from('merchants').select('business_nature').eq('id', id).single()
-    expect(row!.business_nature).toBe('florist')
+    expect(row!.business_nature).toBeNull()
 
     await serviceClient().from('merchants').delete().eq('id', id)
   })

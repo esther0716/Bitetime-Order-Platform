@@ -1,0 +1,6 @@
+# TinyOrder
+
+> TinyOrder lets home kitchens and small food businesses run their own online food ordering shop and keep every order in one place. Each shop gets its own storefront, menu, and order management — no commission on orders.
+
+- [Home](https://tinyorder.shop/): what TinyOrder is, who it's for
+- [Pricing](https://tinyorder.shop/pricing): Basic and Pro plans, free 7-day trial, no card required

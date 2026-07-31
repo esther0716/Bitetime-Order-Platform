@@ -2,7 +2,8 @@
 // can see which industries it actually serves.
 //
 // Shared for the reason `feedback.ts` is: both sides enforce the same closed list. The signup
-// form and Shop Settings render a dropdown from it, the backend refuses anything else, and the
+// form renders a dropdown from it (mandatory, and never editable afterwards — there is no
+// merchant-facing way to change it once set), the backend refuses anything else, and the
 // `merchants_business_nature_check` CHECK in
 // 20260729120000_merchant_business_nature.sql is the final authority. A free-text field was
 // considered and rejected — the whole point is a group-by, and 'bakery' / 'Bakery' / 'cake shop'

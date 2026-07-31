@@ -4,11 +4,9 @@ import { useSession } from '../SessionContext'
 import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, merchantHasOrders, deletePaymentQr } from '../store'
 import { shopRates, shopTax, shopDistance, shopMethods } from '@bitetime/shared'
 import { CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../currency'
-import BusinessNaturePicker from '../components/BusinessNaturePicker'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Textarea } from '../components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge'
@@ -24,7 +22,7 @@ import { useProAccess, isRequiresPro } from '../plan'
 import AddressAutocomplete from '../store/AddressAutocomplete'
 import PaymentQrPicker from './PaymentQrPicker'
 
-type TabKey = 'shop' | 'shipping' | 'fulfilment' | 'payment' | 'notifications' | 'subscription' | 'referral'
+type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'notifications' | 'subscription' | 'referral'
 
 // Tabbed Shop Settings (issue #19). A container renders a horizontal tab bar and
 // the active tab's form; each tab is its own form with its own Save. Only the
@@ -42,9 +40,6 @@ export default function ShopSettings() {
   const [dirtyTab, setDirtyTab] = useState<TabKey | null>(null)
 
   const TABS: { key: TabKey; label: string; tag?: string }[] = [
-    // What the shop IS, as opposed to how it charges or delivers. Holds the business nature
-    // (#161), which shops that signed up before the field existed fill in from here.
-    { key: 'shop', label: t('Shop', '店铺') },
     { key: 'shipping', label: t('Shipping', '运费') },
     { key: 'fulfilment', label: t('Fulfilment', '取货') },
     { key: 'payment', label: t('Payment', '付款') },
@@ -113,7 +108,6 @@ export default function ShopSettings() {
         </TabsList>
       </Tabs>
 
-      {tab === 'shop' && <ShopTab onDirtyChange={setDirty} />}
       {tab === 'shipping' && <ShippingTab onDirtyChange={setDirty} />}
       {tab === 'fulfilment' && <FulfilmentTab onDirtyChange={setDirty} />}
       {tab === 'payment' && <PaymentTab onDirtyChange={setDirty} />}
@@ -165,57 +159,6 @@ function SaveRow({ busy, label }: { busy: boolean; label: { idle: string; busy: 
   )
 }
 
-// What the shop IS (#161). One field today — the industry it operates in — and the home for
-// shop-identity settings that follow.
-function ShopTab({ onDirtyChange }: TabProps) {
-  const { t, merchant, refreshMerchant } = useSession()
-  // '' is "never said", which is what every shop that predates the field carries. It is NOT an
-  // option in the dropdown: the merchant can set an industry or leave it, but cannot pick
-  // "unspecified" back, so the empty state stays an artefact of history rather than a choice.
-  const [initial] = useState<SettingsFields>(() => ({ businessNature: merchant!.business_nature ?? '' }))
-  const [fields, setFields] = useState<SettingsFields>(initial)
-  const [busy, setBusy] = useState(false)
-  const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
-
-  const nature = fields.businessNature ?? ''
-
-  async function save(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault(); setBusy(true)
-    try {
-      // Only ever sent as a real code: the backend REFUSES a value outside the vocabulary, and
-      // '' is not one — a shop that has not picked yet simply saves nothing here.
-      if (!nature) { toast.error(t('Choose what you sell', '请选择你卖什么')); return }
-      const saved = await updateMerchantConfig(merchant!.id, { business_nature: nature })
-      if (!saved.ok) { toast.error(saved.error.message || t('Save failed', '保存失败')); return }
-      await refreshMerchant()
-      commit(fields)
-      toast.success(t('Shop saved', '店铺已保存'))
-    } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
-    finally { setBusy(false) }
-  }
-
-  return (
-    <form onSubmit={save}>
-      <div className={CARD}>
-        <h3 className={HEADING}>{t('Business type', '业务类型')}</h3>
-        <div className="flex flex-col gap-[6px]">
-          <BusinessNaturePicker
-            id="shop-nature"
-            value={nature}
-            onChange={(v) => setFields(f => ({ ...f, businessNature: v }))}
-            className="max-w-[280px]"
-          />
-          <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
-            {t('Helps us understand who we build for. Not shown to your customers.',
-               '帮助我们了解服务对象，顾客看不到。')}
-          </p>
-        </div>
-      </div>
-      <SaveRow busy={busy} label={{ idle: t('Save shop', '保存店铺'), busy: t('Saving…', '保存中…') }} />
-    </form>
-  )
-}
-
 function ShippingTab({ onDirtyChange }: TabProps) {
   const { t, merchant, refreshMerchant } = useSession()
   const [initial] = useState<ShippingFields>(() => {
@@ -262,8 +205,8 @@ function ShippingTab({ onDirtyChange }: TabProps) {
       // silently under a success toast — the origin is the routing origin AND the cache key.
       if ((fields.originAddress ?? '').trim() !== '' && !fields.originPlaceId) {
         toast.error(t(
-          'Pick your delivery origin from the suggestions — a typed address on its own cannot be saved.',
-          '请从建议列表中选择配送起点 — 仅输入文字无法保存。'
+          'Pick your express delivery from address from the suggestions — a typed address on its own cannot be saved.',
+          '请从建议列表中选择快速配送出发地 — 仅输入文字无法保存。'
         ))
         setBusy(false)
         return
@@ -273,8 +216,8 @@ function ShippingTab({ onDirtyChange }: TabProps) {
       // rule in the merchant's language while they still see the form.
       if (fields.expressEnabled && !fields.originPlaceId) {
         toast.error(t(
-          'Set your delivery origin before switching on express delivery.',
-          '请先设置配送起点，才能开启快速配送。'
+          'Set where express delivery starts before switching it on.',
+          '请先设置快速配送出发地，才能开启快速配送。'
         ))
         setBusy(false)
         return
@@ -378,8 +321,8 @@ function ShippingTab({ onDirtyChange }: TabProps) {
           </label>
           {fields.expressEnabled && !fields.originPlaceId && (
             <p className="text-[12px] text-oxblood leading-[1.5]">
-              {t('Express delivery needs a delivery origin. Pick one below to save.',
-                 '快速配送需要一个配送起点，请在下方选择后保存。')}
+              {t('Express delivery needs a delivery from address. Pick one below to save.',
+                 '快速配送需要一个出发地址，请在下方选择后保存。')}
             </p>
           )}
           <p className="text-[12px] text-rose-muted leading-[1.5]">
@@ -391,17 +334,46 @@ function ShippingTab({ onDirtyChange }: TabProps) {
 
       <div className={CARD}>
         <h3 className={HEADING}>{t('Pickup address', '自取地址')}</h3>
-        <div className="flex flex-col gap-[6px]">
-          <Label htmlFor="shop-pickup">{t('Shown to customers who choose pickup', '选择自取的顾客可见')}</Label>
-          <Textarea id="shop-pickup" value={fields.pickupAddress}
-            onChange={e => setFields(f => ({ ...f, pickupAddress: e.target.value }))}
-            rows={3} placeholder={t('e.g. 12 Jalan Example, 50000 Kuala Lumpur', '例如：吉隆坡某某路12号')}
-            className="resize-y min-h-[72px] max-w-[420px]" />
-        </div>
+        {/* Free text still lands in the same column — pickup is never routed, so there is no place
+            id to store — this only gives the merchant Google's suggestions instead of a blank box. */}
+        <AddressAutocomplete
+          id="shop-pickup"
+          t={t}
+          label={t('Shown to customers who choose pickup', '选择自取的顾客可见')}
+          value={fields.pickupAddress ?? ''}
+          placeholder={t('Start typing your shop address…', '输入店铺地址…')}
+          onTextChange={text => setFields(f => ({ ...f, pickupAddress: text }))}
+          onPick={d => setFields(f => ({ ...f, pickupAddress: d.formatted }))}
+        />
       </div>
 
+      {/* Both rate cards can be on screen at once — a shop may post parcels at a flat rate AND run
+          a rider by the kilometre. Each names the method whose fee it sets. */}
+      {fields.deliveryEnabled && (
+        <div className={CARD}>
+          <h3 className={HEADING}>{t('Delivery rates', '送货费')}</h3>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="shop-wm">{t(`West Malaysia (${symbol})`, `西马运费 (${symbol})`)}</Label>
+              <Input id="shop-wm" type="number" step="0.01" value={fields.wm}
+                onChange={e => setFields(f => ({ ...f, wm: e.target.value }))} variant="compact" />
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="shop-em">{t(`East Malaysia (${symbol})`, `东马运费 (${symbol})`)}</Label>
+              <Input id="shop-em" type="number" step="0.01" value={fields.em}
+                onChange={e => setFields(f => ({ ...f, em: e.target.value }))} variant="compact" />
+              <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+                {t('Blank East Malaysia charges the same as West Malaysia. Enter 0 for free East Malaysia delivery.',
+                   '东马留空则按西马运费收取。填 0 表示东马免运费。')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fields.expressEnabled && (
       <div className={CARD}>
-        <h3 className={HEADING}>{t('Delivery origin', '配送起点')}</h3>
+        <h3 className={HEADING}>{t('Express delivery from', '快速配送出发地')}</h3>
         <AddressAutocomplete
           id="shop-origin"
           t={t}
@@ -432,29 +404,6 @@ function ShippingTab({ onDirtyChange }: TabProps) {
              '此地址与上方的自取地址不同 — 自取地址是纯文字，仅显示给自取顾客。')}
         </p>
       </div>
-
-      {/* Both rate cards can be on screen at once — a shop may post parcels at a flat rate AND run
-          a rider by the kilometre. Each names the method whose fee it sets. */}
-      {fields.deliveryEnabled && (
-        <div className={CARD}>
-          <h3 className={HEADING}>{t('Delivery rates', '送货费')}</h3>
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-col gap-[6px]">
-              <Label htmlFor="shop-wm">{t(`West Malaysia (${symbol})`, `西马运费 (${symbol})`)}</Label>
-              <Input id="shop-wm" type="number" step="0.01" value={fields.wm}
-                onChange={e => setFields(f => ({ ...f, wm: e.target.value }))} variant="compact" />
-            </div>
-            <div className="flex flex-col gap-[6px]">
-              <Label htmlFor="shop-em">{t(`East Malaysia (${symbol})`, `东马运费 (${symbol})`)}</Label>
-              <Input id="shop-em" type="number" step="0.01" value={fields.em}
-                onChange={e => setFields(f => ({ ...f, em: e.target.value }))} variant="compact" />
-              <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
-                {t('Blank East Malaysia charges the same as West Malaysia. Enter 0 for free East Malaysia delivery.',
-                   '东马留空则按西马运费收取。填 0 表示东马免运费。')}
-              </p>
-            </div>
-          </div>
-        </div>
       )}
 
       {fields.expressEnabled && (

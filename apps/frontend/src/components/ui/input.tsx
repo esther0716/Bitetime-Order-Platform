@@ -15,6 +15,7 @@ function Input({
   className,
   type,
   variant,
+  onWheel,
   ...props
 }: React.ComponentProps<"input"> & { variant?: "default" | "compact" }) {
   return (
@@ -22,6 +23,9 @@ function Input({
       type={type}
       data-slot="input"
       data-variant={variant}
+      // number inputs: scroll-to-change is a mouse-wheel trap on desktop — blur
+      // before the wheel event reaches the input so it scrolls the page instead.
+      onWheel={type === "number" ? (e => { e.currentTarget.blur(); onWheel?.(e) }) : onWheel}
       className={cn(
         // .field input — full-width, 13px H-pad, raised bg, clay border, md radius
         "w-full min-w-0 rounded-md border border-clay-border bg-surface-raised px-[13px] py-2.5 text-[16px] text-ink transition-colors outline-none",

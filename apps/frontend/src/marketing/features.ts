@@ -11,6 +11,9 @@ export interface FeatureEntry {
   id: string
   title: { en: string; zh: string }
   body: { en: string; zh: string }
+  /** Short landing-page-only blurb. Optional: only the entries the landing page's hook section
+      shows (its first three) need one — /features always renders the full `body`. */
+  teaser?: { en: string; zh: string }
 }
 
 export const FEATURES: FeatureEntry[] = [
@@ -24,6 +27,10 @@ export const FEATURES: FeatureEntry[] = [
       en: 'Add each product with photos, a price and the unit you actually sell in — per box, per kilo, per tray — plus a name and description in English, Chinese or both. Change a price, reorder your products or add tomorrow\'s special yourself, in seconds, without waiting on anyone.',
       zh: '每件产品都可上传照片、设定价格，并选择你真正的销售单位——每盒、每公斤、每盘——再加上中英文名称与说明。改价格、调整产品顺序、加上明天的特选，几秒钟自己就能完成，不必等任何人。',
     },
+    teaser: {
+      en: 'Add products with photos, prices and your own units — edit anytime, no waiting.',
+      zh: '上传照片、设定价格与单位——随时修改，无需等待。',
+    },
   },
   {
     id: 'delivery',
@@ -35,6 +42,10 @@ export const FEATURES: FeatureEntry[] = [
       en: 'Charge one flat fee, a different fee by region, or a fee that follows the real road distance from your address — a base fee plus a rate per kilometre, worked out from the address the customer picks at checkout. Offer pickup, delivery or both.',
       zh: '可收取统一运费、按地区分级的运费，或依据从你所在地址出发的实际路程计费——基本费加每公里费率，按顾客结账时选定的地址计算。自取、配送，或两者兼有，由你决定。',
     },
+    teaser: {
+      en: 'Flat, regional or by-the-kilometre — priced however you actually deliver.',
+      zh: '统一、分区或按公里计费——依你实际配送方式定价。',
+    },
   },
   {
     id: 'orders',
@@ -45,6 +56,10 @@ export const FEATURES: FeatureEntry[] = [
     body: {
       en: 'Every order gets its own number and lands in one list with the customer\'s name and WhatsApp number, what they ordered, the date they want it and the total. Mark it preparing, ready or done as you work. Customers can look up their own order by its number, so nobody has to message you to ask where it is.',
       zh: '每笔订单都有专属编号，集中显示在同一份列表中，包含顾客姓名与 WhatsApp 号码、订购内容、指定日期和总额。处理过程中可标记为准备中、可取货或已完成。顾客也能凭编号自行查询订单，不必再私讯问你进度。',
+    },
+    teaser: {
+      en: 'Every order numbered, in one list, trackable by your customer without messaging you.',
+      zh: '订单编号齐全、集中列表，顾客免讯息即可自行查询。',
     },
   },
   {
