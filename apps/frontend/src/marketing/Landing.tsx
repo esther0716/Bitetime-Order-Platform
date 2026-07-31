@@ -150,24 +150,24 @@ export default function Landing() {
         <h2 className={sectionTitle}>
           {t('Built for small businesses that sell direct', '专为直接面向顾客的小生意打造')}
         </h2>
-        <p className="-mt-6 mb-10 text-[15px] leading-[1.75] text-ink-soft text-center max-w-[620px] mx-auto">
+        <p className="-mt-6 mb-10 text-[15px] leading-[1.75] text-ink-soft text-center max-w-[560px] mx-auto">
           {t(
-            'TinyOrder is for people who make and sell their own things: home bakers taking weekend pre-orders, makers running a weekly drop, small shops that have outgrown a spreadsheet and a chat group. You do not need a website, a designer or a developer — if you can share a link, you can take orders online.',
-            'TinyOrder 是为自己做、自己卖的人打造的：接周末预订的家庭烘焙师、每周上新的手作卖家，以及已经用不下去表格和聊天群的小店。你不需要网站、设计师或工程师——只要会分享链接，就能在线接单。',
+            'TinyOrder is for people who make and sell their own things — no website, designer or developer needed. If you can share a link, you can take orders online.',
+            'TinyOrder 是为自己做、自己卖的人打造的——不需要网站、设计师或工程师，只要会分享链接，就能在线接单。',
           )}
         </p>
         <dl className="grid [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] gap-x-12 gap-y-10 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-8">
           <div>
             <dt className="font-heading text-[19px] font-semibold text-oxblood leading-[1.3] mb-2.5">{t('Keep what you earn', '赚的钱，都是你的')}</dt>
-            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Your own link, your own customers — no marketplace cut, nobody undercutting you next to your listing.', '专属链接，专属顾客——没有平台抽成，也没有人在你旁边抢单。')}</dd>
+            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Your own link, your own customers — no marketplace cut, no competitor beside your listing.', '专属链接，专属顾客——没有平台抽成，也没有人在你旁边抢单。')}</dd>
           </div>
           <div>
             <dt className="font-heading text-[19px] font-semibold text-oxblood leading-[1.3] mb-2.5">{t('Nothing slips through', '一单都不会漏')}</dt>
-            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Every order in one list. Mark it done or send a tracking number in one tap — no scrolling back through chats.', '所有订单集中一处。一键标记完成或发送物流号，不必再翻聊天记录。')}</dd>
+            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Every order in one list. Mark it done in one tap — no scrolling through chats.', '所有订单集中一处。一键标记完成，不必再翻聊天记录。')}</dd>
           </div>
           <div>
             <dt className="font-heading text-[19px] font-semibold text-oxblood leading-[1.3] mb-2.5">{t('Your customers read it in their own language', '顾客用自己的语言下单')}</dt>
-            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Your shop shows up in English or Chinese, whichever your customer prefers. You only write it once.', '店铺自动以中文或英文呈现，顾客看得懂，你只需写一次。')}</dd>
+            <dd className="text-sm leading-[1.65] text-ink-soft m-0">{t('Your shop shows in English or Chinese, whichever your customer prefers — write it once.', '店铺自动以中文或英文呈现，你只需写一次。')}</dd>
           </div>
         </dl>
         </Reveal>
@@ -177,7 +177,9 @@ export default function Landing() {
       {/* A SUMMARY, and the full list now lives on /features (#169) — same argument as the pricing
           section below: two pages both listing every feature would be two URLs answering
           "what does TinyOrder do", competing for the same authority. The first three entries of
-          FEATURES.ts stay here as the hook; the rest is one click away. */}
+          FEATURES.ts stay here as the hook; the rest is one click away. Each uses its short
+          `teaser`, not the full `body` /features renders — the hook is meant to be read at a
+          glance, not to duplicate the detail page. */}
       <section className="border-t border-clay-border px-8 py-16 max-w-[900px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className={sectionTitle}>
@@ -190,7 +192,7 @@ export default function Landing() {
                   {t(f.title.en, f.title.zh)}
                 </h3>
                 <p className="text-sm leading-[1.7] text-ink-soft m-0">
-                  {t(f.body.en, f.body.zh)}
+                  {t(f.teaser!.en, f.teaser!.zh)}
                 </p>
               </div>
             ))}
@@ -265,20 +267,20 @@ export default function Landing() {
                 <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-soft">
                   <p className="m-0">
                     {t(
-                      'Most small shops start in a chat group, because it costs nothing and it works — until it does not. Orders arrive in the middle of conversations, half of them missing a quantity or a date. You add the total up by hand, twice, because the first one was wrong. Someone asks where their order is and you scroll back through three days to find out. Nothing is lost dramatically; it leaks, one order at a time.',
-                      '大多数小生意都是从聊天群开始的，因为不花钱、而且有用——直到有一天不再管用。订单夹在对话中间陆续进来，有一半没写数量或日期。总价你要手算，还得算两次，因为第一次算错了。有人问「我的单到哪了」，你就得往回翻三天的记录。订单不会一次全丢，而是一笔一笔慢慢漏掉。',
+                      'Most small shops start in a chat group — it\'s free, until it isn\'t. Orders arrive mid-conversation, half missing a quantity or date. You total them by hand, twice. Someone asks where their order is and you scroll back three days to find out.',
+                      '大多数小生意都从聊天群开始——免费，直到不再管用。订单夹在对话中间，一半没写数量或日期。总价你手算两次。有人问「我的单到哪了」，你得翻回三天前的记录。',
                     )}
                   </p>
                   <p className="m-0">
                     {t(
-                      'A form and a spreadsheet fix the collecting and stop there. A form does not know your delivery rates, so shipping is still worked out by hand. It does not number an order, so you and your customer have nothing to call it. It does not tell anyone the order is ready. TinyOrder gives every order its own number, prices the delivery from the address the customer picked, and lets them look the order up themselves — which is most of the messages you answer today.',
-                      '表单加试算表只解决了「收集」这一段，然后就没有了。表单不知道你的运费规则，所以运费还是要自己算。它不会给订单编号，你和顾客之间就没有一个共同的称呼。它也不会通知谁订单已经好了。TinyOrder 会为每笔订单生成专属编号，依顾客选定的地址计算运费，顾客还能自己查询进度——那正是你今天要回覆的大部分讯息。',
+                      'A form and spreadsheet fix collecting orders, and stop there — shipping\'s still worked out by hand, orders have no number to call them by, and no one gets told when it\'s ready. TinyOrder numbers every order, prices delivery from the address picked, and lets customers look it up themselves.',
+                      '表单加试算表只解决了收集，运费仍要手算，订单没有编号可称呼，也没人被告知订单已备妥。TinyOrder 为每笔订单编号、依选定地址计算运费，并让顾客自行查询进度。',
                     )}
                   </p>
                   <p className="m-0">
                     {t(
-                      'A marketplace brings you traffic and charges for it, on every order, forever — and it lists a competitor beside you while doing it. The customer belongs to the platform, not to you. TinyOrder is the other trade: you bring your own customers, from the places you already post, and you keep the whole of what they spend. We charge one flat subscription and take no commission, so the month your shop does well is the month you keep the difference.',
-                      '外卖平台替你带来流量，代价是每一笔订单都要抽成，永远如此——而且在你旁边同时列出竞争对手。顾客属于平台，不属于你。TinyOrder 是另一种交换：顾客由你自己从既有的社群管道带来，他们花的每一分钱都是你的。我们只收固定订阅费，不抽任何佣金——生意好的那个月，多出来的部分全归你。',
+                      'A marketplace charges commission on every order, forever, and lists a competitor right beside you. The customer belongs to the platform, not you. TinyOrder charges one flat subscription instead — no commission, ever — so your best month is entirely yours.',
+                      '外卖平台每笔订单都抽成，永远如此，还在你旁边列出竞争对手。顾客属于平台，不属于你。TinyOrder 只收固定订阅费——永不抽成——生意最好的那个月，全归你。',
                     )}
                   </p>
                 </div>
