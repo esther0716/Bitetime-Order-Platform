@@ -240,56 +240,6 @@ export default function Landing() {
         </Reveal>
       </section>
 
-      {/* ── What it replaces ── */}
-      {/* Prose, not data: this is one argument in three moves, and splitting it into title/body cards
-          would break the sequence that makes it read. Every claim about TinyOrder here is stated
-          elsewhere on the page too; nothing about a named competitor is stated at all.
-
-          Collapsed behind ONE disclosure rather than three (or left open): the three paragraphs are
-          a single argument, so opening them one at a time would strand a reader mid-sequence. The
-          whole thing sits behind a single `hiddenUntilFound` panel instead — full text still in the
-          prerendered HTML for a crawler, just not three paragraphs of default-visible page height for
-          a visitor who has not asked to read the case against a chat group yet. */}
-      <section className="border-t border-clay-border px-8 py-16 max-w-[720px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
-        <Reveal>
-          <h2 className={sectionTitle}>
-            {t(
-              'What it replaces: the chat group, the spreadsheet, the marketplace',
-              '它取代了什么：聊天群、表格、外卖平台',
-            )}
-          </h2>
-          <Accordion className="max-w-[640px] mx-auto" defaultValue={[]} hiddenUntilFound>
-            <AccordionItem value="replaces" className="border-none">
-              <AccordionTrigger className="font-heading text-[15px] text-ink text-left py-4">
-                {t('Why not just a chat group or a marketplace?', '为什么不直接用聊天群或外卖平台？')}
-              </AccordionTrigger>
-              <AccordionContent className="pt-2">
-                <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-soft">
-                  <p className="m-0">
-                    {t(
-                      'Most small shops start in a chat group — it\'s free, until it isn\'t. Orders arrive mid-conversation, half missing a quantity or date. You total them by hand, twice. Someone asks where their order is and you scroll back three days to find out.',
-                      '大多数小生意都从聊天群开始——免费，直到不再管用。订单夹在对话中间，一半没写数量或日期。总价你手算两次。有人问「我的单到哪了」，你得翻回三天前的记录。',
-                    )}
-                  </p>
-                  <p className="m-0">
-                    {t(
-                      'A form and spreadsheet fix collecting orders, and stop there — shipping\'s still worked out by hand, orders have no number to call them by, and no one gets told when it\'s ready. TinyOrder numbers every order, prices delivery from the address picked, and lets customers look it up themselves.',
-                      '表单加试算表只解决了收集，运费仍要手算，订单没有编号可称呼，也没人被告知订单已备妥。TinyOrder 为每笔订单编号、依选定地址计算运费，并让顾客自行查询进度。',
-                    )}
-                  </p>
-                  <p className="m-0">
-                    {t(
-                      'A marketplace charges commission on every order, forever, and lists a competitor right beside you. The customer belongs to the platform, not you. TinyOrder charges one flat subscription instead — no commission, ever — so your best month is entirely yours.',
-                      '外卖平台每笔订单都抽成，永远如此，还在你旁边列出竞争对手。顾客属于平台，不属于你。TinyOrder 只收固定订阅费——永不抽成——生意最好的那个月，全归你。',
-                    )}
-                  </p>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        </Reveal>
-      </section>
-
       {/* ── Pricing summary ── */}
       {/* A SUMMARY, and the cards it used to hold now live on /pricing (#169). Both pages showing
           the same tier cards would be two URLs answering "what does TinyOrder cost" — they compete
