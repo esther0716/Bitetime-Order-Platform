@@ -178,7 +178,7 @@ export const TERMS: LegalDocument = {
       id: 'contact-terms',
       heading: '14. Contact',
       body: [
-        `Questions about these terms go to ${email}`,
+        `Questions about these terms go to ${email}.`,
       ],
     },
   ],
