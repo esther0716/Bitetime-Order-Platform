@@ -166,6 +166,14 @@ export function MarketingFooter() {
       <Link to="/privacy" className={footerLink}>
         {t('Privacy', '隐私政策')}
       </Link>
+      <a
+        href="https://www.facebook.com/profile.php?id=61592788340403"
+        target="_blank"
+        rel="noopener noreferrer"
+        className={footerLink}
+      >
+        {t('Facebook', '脸书')}
+      </a>
       {/* Maker's credit, not a policy link — separated by a dot so it doesn't read as one more
           legal page, and carrying ?ref=tinyorder so Praxor can attribute the visit. */}
       <span aria-hidden="true">·</span>
