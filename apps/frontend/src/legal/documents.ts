@@ -30,7 +30,7 @@ export interface LegalDocument {
   sections: LegalSection[]
 }
 
-const { name, registration, address, email } = LEGAL_ENTITY
+const { name, registration, email } = LEGAL_ENTITY
 
 // How the operator identifies itself, composed from what is actually known rather than from a
 // fixed sentence with holes in it.
@@ -43,14 +43,14 @@ const { name, registration, address, email } = LEGAL_ENTITY
 // to the company wording with no further edit.
 // Reads after "TinyOrder is operated by …", so it must not repeat that it operates TinyOrder.
 const OPERATOR_DESCRIPTION = isRegisteredEntity(LEGAL_ENTITY)
-  ? `${name} (registration number ${registration}), a company registered in Malaysia with its registered address at ${address}`
-  : `${name}, of ${address}`
+  ? `${name} (registration number ${registration}), a company registered in Malaysia`
+  : `${name}`
 
 // Stands on its own as the opening of the privacy notice, so here the reader DOES need telling
 // what Praxor Studio is — they may never have read the Terms.
 const DATA_USER_DESCRIPTION = isRegisteredEntity(LEGAL_ENTITY)
-  ? `${name} (registration number ${registration}), of ${address}`
-  : `${name}, the business that operates TinyOrder, of ${address}`
+  ? `${name} (registration number ${registration})`
+  : `${name}, the business that operates TinyOrder`
 
 // One sentence, both documents. It has to appear in each of them — a reader of the Privacy
 // Policy has not necessarily read the Terms — but it must not be two sentences that can drift.
@@ -178,7 +178,7 @@ export const TERMS: LegalDocument = {
       id: 'contact-terms',
       heading: '14. Contact',
       body: [
-        `Questions about these terms go to ${email}, or by post to ${name}, ${address}.`,
+        `Questions about these terms go to ${email}`,
       ],
     },
   ],
@@ -283,7 +283,7 @@ export const PRIVACY: LegalDocument = {
       id: 'contact-privacy',
       heading: '11. Contact',
       body: [
-        `Questions, requests or complaints about your personal data go to ${email}, or by post to ${name}, ${address}.`,
+        `Questions, requests or complaints about your personal data go to ${email}.`,
       ],
     },
   ],
