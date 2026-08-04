@@ -964,6 +964,27 @@ app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
   return c.json({ ok: true, status })
 })
 
+// ── Superadmin: flag/unflag a merchant for the landing-page sample-shops carousel (#107) ──────
+// Pure flag flip — no billing/status side effects, unlike comp/uncomp. GET /api/merchants/samples
+// is what actually reads it.
+app.post('/api/admin/set-merchant-sample', requireSuperadmin, async (c) => {
+  const { merchantId, isSample } = await c.req.json().catch(() => ({}))
+  if (!merchantId || typeof isSample !== 'boolean') {
+    return c.json({ error: 'Missing merchantId or isSample' }, 400)
+  }
+
+  const { data: merchant } = await admin
+    .from('merchants').select('id').eq('id', merchantId).maybeSingle()
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  const { error } = await admin.from('merchants').update({ is_sample: isSample }).eq('id', merchantId)
+  if (error) {
+    console.error('set-merchant-sample failed:', error.message)
+    return c.json({ error: 'Update failed' }, 500)
+  }
+  return c.json({ ok: true, isSample })
+})
+
 // ── Superadmin: comp a merchant to free Pro (no Stripe payment) ────────────────
 // Grants active + pro without any Stripe subscription — for partners, staff, and
 // promo shops. Writes an 'active' billing row with a far-future period end and no
