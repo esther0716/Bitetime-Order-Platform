@@ -24,7 +24,7 @@ export default function SampleShopsCarousel({ shops }: { shops: SampleShop[] }) 
     <Carousel opts={{ align: 'start' }} className="max-w-[900px] mx-auto">
       <CarouselContent>
         {shops.map((shop) => (
-          <CarouselItem key={shop.id} className="basis-[260px] max-w-[260px]">
+          <CarouselItem key={shop.id} className="basis-1/3">
             <div className="h-full rounded-2xl border-[1.5px] border-clay-border bg-surface-raised p-5 text-left shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
               <div className="flex items-center gap-3 pb-4 border-b border-divider">
                 {shop.products[0]?.imagePath ? (
