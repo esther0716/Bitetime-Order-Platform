@@ -28,7 +28,11 @@ create index if not exists trial_feedback_responded_idx
 alter table public.trial_feedback enable row level security;
 
 revoke all on table public.trial_feedback from anon, authenticated;
-grant select, insert, update on table public.trial_feedback to service_role;
+-- DELETE is here (unlike merchant_feedback, which never removes a row): releaseSend in
+-- trialFeedback.ts deletes the claim row when a send fails, so the next sweep retries it —
+-- without this grant that delete silently no-ops (permission denied, swallowed and logged)
+-- and a failed send's claim is stuck forever, never retried.
+grant select, insert, update, delete on table public.trial_feedback to service_role;
 
 -- Backfill exclusion (#155 scope decision: only trials ending AFTER this feature ships are
 -- surveyed). Every merchant whose trial had already ended by the time this migration ran

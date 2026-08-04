@@ -10,6 +10,7 @@
 // without a Stripe key is worse than one that refuses to), and it is why vitest.db.config.ts
 // has to stub the Stripe keys before a test can import this module. Keep it to that — no
 // connections, no timers, no reads at import time.
+import { timingSafeEqual } from 'node:crypto'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { env } from './env.js'
@@ -1420,6 +1421,60 @@ app.post('/api/trial-feedback/skip', requireOwnMerchant, async (c) => {
   return c.json(result.row)
 })
 
+app.get('/api/admin/trial-feedback', requireSuperadmin, async (c) => {
+  return c.json(await listTrialFeedbackForAdmin())
+})
+
+// Constant-time compare, guarding the length check first (a mismatched length would
+// otherwise throw inside timingSafeEqual rather than answer false).
+function safeEqualSecret(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+// Not user-authenticated — called by a GitHub Actions schedule (see
+// .github/workflows/trial-feedback-sweep.yml), gated by a shared secret header instead.
+// Fails CLOSED (503) when the secret is unset, matching the house rule that an optional,
+// unset credential means a refusal, never an open door.
+app.post('/api/internal/trial-feedback-sweep', async (c) => {
+  if (!env.trialFeedbackSweepSecret) return c.json({ error: 'Sweep disabled' }, 503)
+  const provided = c.req.header('x-sweep-secret') || ''
+  if (!safeEqualSecret(provided, env.trialFeedbackSweepSecret)) return c.json({ error: 'Forbidden' }, 403)
+
+  const due = await findDueTrials(new Date())
+  let sentCount = 0
+  for (const trial of due) {
+    const claimed = await claimSend(trial.merchantId)
+    if (!claimed) continue // a concurrent run already has it
+
+    const { data: ownerUser } = await admin.auth.admin.getUserById(trial.ownerId)
+    const ownerEmail = ownerUser?.user?.email
+    if (!ownerEmail) {
+      console.error(`trial-feedback sweep: no email for merchant ${trial.merchantId}, releasing claim`)
+      await releaseSend(trial.merchantId)
+      continue
+    }
+
+    try {
+      const { subject, text } = buildTrialFeedbackEmail({
+        shopName: trial.shopName,
+        dashboardUrl: `${env.frontendUrl}/merchant`,
+      })
+      await trialFeedbackDeps.email(ownerEmail, subject, { text })
+      sentCount++
+    } catch (err) {
+      console.error(
+        `trial-feedback sweep: send failed for merchant ${trial.merchantId}, releasing claim:`,
+        err instanceof Error ? err.message : String(err),
+      )
+      await releaseSend(trial.merchantId)
+    }
+  }
+
+  return c.json({ due: due.length, sent: sentCount })
+})
+
 app.post('/api/customer/signup', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}))
   // Anything else the body carries — a role, a merchant_id — is ignored: only email and
@@ -1597,6 +1652,10 @@ export const notifyDeps: { telegram: typeof telegramSend; email: typeof resendSe
   telegram: telegramSend,
   email: resendSend,
 }
+
+// Same seam as notifyDeps/githubDeps: production sends real email, tests capture what would
+// have been sent.
+export const trialFeedbackDeps: { email: typeof resendSend } = { email: resendSend }
 
 // ── Order notification — fans out to three recipients ──────────────────────────
 // The customer is anonymous; abuse is bounded by requiring a real order and by the
