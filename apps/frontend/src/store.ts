@@ -4,7 +4,7 @@ import type { FeedbackDraft, FeedbackStatus, MerchantStats, OrderRefusal, QuoteR
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
-import type { AddressParts, EarnedReward, FeedbackItem, Order, ReferredShop, ShopCustomer, ShopCustomerPage, ShopCustomerSort, Voucher } from './types';
+import type { AddressParts, EarnedReward, FeedbackItem, Order, ReferredShop, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { pendingShopMetadata } from './merchant/pendingShop';
@@ -946,4 +946,23 @@ export async function fetchAdminFeedback(status?: FeedbackStatus): Promise<Resul
 // FeedbackItem — the spread in AdminFeedback is correct, not merely harmless.
 export async function setFeedbackStatus(id: string, status: FeedbackStatus): Promise<Result<FeedbackItem>> {
   return apiSend<FeedbackItem>(`/api/admin/feedback/${id}`, 'PATCH', { status }, { auth: true })
+}
+
+// ── Trial feedback (#155) ───────────────────────────────────────────────────────
+// One-time, platform-initiated survey — see CONTEXT.md → Trial feedback. Scoped to the
+// caller's own shop by the backend (requireOwnMerchant), so there is no merchantId to pass.
+export async function fetchTrialFeedback(): Promise<Result<TrialFeedbackOwn | null>> {
+  return apiGet<TrialFeedbackOwn | null>('/api/trial-feedback', { auth: true })
+}
+
+export async function respondTrialFeedback(rating: number, comment: string | null): Promise<Result<TrialFeedbackOwn>> {
+  return apiSend<TrialFeedbackOwn>('/api/trial-feedback/respond', 'POST', { rating, comment }, { auth: true })
+}
+
+export async function skipTrialFeedback(): Promise<Result<TrialFeedbackOwn>> {
+  return apiSend<TrialFeedbackOwn>('/api/trial-feedback/skip', 'POST', undefined, { auth: true })
+}
+
+export async function fetchAdminTrialFeedback(): Promise<Result<TrialFeedbackAdminItem[]>> {
+  return apiGet<TrialFeedbackAdminItem[]>('/api/admin/trial-feedback', { auth: true })
 }

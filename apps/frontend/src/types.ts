@@ -273,3 +273,20 @@ export interface FeedbackItem {
   github_issue_number: number | null
   github_issue_url: string | null
 }
+
+// One row of the one-time trial-experience survey (#155). `null` from `fetchTrialFeedback`
+// means no survey has been sent yet — the trial hasn't ended. A non-null row with neither
+// responded_at nor skipped_at is a pending prompt still waiting on the merchant.
+export interface TrialFeedbackOwn {
+  merchant_id: string
+  sent_at: string
+  rating: number | null
+  comment: string | null
+  responded_at: string | null
+  skipped_at: string | null
+}
+
+export interface TrialFeedbackAdminItem extends TrialFeedbackOwn {
+  shop_name: string | null
+  shop_slug: string | null
+}
