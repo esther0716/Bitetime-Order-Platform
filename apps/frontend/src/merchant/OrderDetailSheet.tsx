@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession } from '../SessionContext'
-import { setOrderStatus, setOrderNote, setOrderTracking } from '../store'
+import { setOrderStatus, setOrderNote, setOrderTracking, fetchPaymentProof } from '../store'
 import { formatMoney } from '../currency'
 import { formatAddress } from '../address'
 import { formatCalendarDate } from '../orderDate'
@@ -67,6 +67,28 @@ export default function OrderDetailSheet({
   const [courierDraft, setCourierDraft] = useState('')
   const [awbDraft, setAwbDraft] = useState('')
   const [savingTrack, setSavingTrack] = useState(false)
+  const [proofUrl, setProofUrl] = useState<string | null>(null)
+
+  // Lazy: only fetched when the sheet is open for an order that actually has one, not on every
+  // dashboard list render. Revoked on the way out so a merchant clicking through ten orders in a
+  // row doesn't leak ten object URLs.
+  useEffect(() => {
+    if (!order?.payment_proof || !merchant) {
+      setProofUrl(null)
+      return
+    }
+    let cancelled = false
+    let url: string | null = null
+    fetchPaymentProof(merchant.id, order.id).then((r) => {
+      if (cancelled || !r.ok) return
+      url = URL.createObjectURL(r.data)
+      setProofUrl(url)
+    })
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [order?.id, order?.payment_proof, merchant])
 
   const statusItems = ORDER_STATUSES.map(s => ({
     value: s,
@@ -143,6 +165,23 @@ export default function OrderDetailSheet({
                   <span className="text-[13px] w-fit"><WaLink wa={order.customer_wa} /></span>
                 )}
               </Section>
+
+              {/* Payment proof — the customer's own screenshot, if they uploaded one */}
+              {order.payment_proof && (
+                <Section title={t('Payment proof', '付款凭证')}>
+                  {proofUrl ? (
+                    <a href={proofUrl} target="_blank" rel="noopener noreferrer" className="block w-full max-w-[200px]">
+                      <img
+                        src={proofUrl}
+                        alt={t('Payment proof', '付款凭证')}
+                        className="w-full h-auto object-contain rounded-md border border-clay-border"
+                      />
+                    </a>
+                  ) : (
+                    <span className="text-[13px] text-rose-muted">{t('Loading…', '加载中…')}</span>
+                  )}
+                </Section>
+              )}
 
               {/* Items + totals */}
               <Section title={t('Items', '商品')}>
