@@ -1,0 +1,33 @@
+# Daily trigger for the trial-feedback survey (#155) — the first scheduled (rather than
+# webhook- or request-driven) job in this repo. See
+# docs/adr/0011-trial-feedback-is-a-cron-sweep-not-a-webhook.md for why: no single Stripe
+# event covers every way a trial can end (converted, still trialing untouched, suspended),
+# so nothing webhook-driven can fire this reliably for all of them.
+#
+# TWO REPO SECRETS ARE REQUIRED and are NOT set by this file:
+#   BACKEND_URL                 — the deployed backend's base URL (Railway)
+#   TRIAL_FEEDBACK_SWEEP_SECRET — must equal the backend's TRIAL_FEEDBACK_SWEEP_SECRET env var
+# Without both, the sweep 403s/503s harmlessly — see apps/backend/src/env.ts's
+# trialFeedbackSweepSecret and the route's fail-closed check.
+name: trial-feedback-sweep
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call the sweep endpoint
+        run: |
+          status=$(curl -sS -o /tmp/body -w '%{http_code}' \
+            -X POST "${{ secrets.BACKEND_URL }}/api/internal/trial-feedback-sweep" \
+            -H "x-sweep-secret: ${{ secrets.TRIAL_FEEDBACK_SWEEP_SECRET }}")
+          cat /tmp/body
+          if [ "$status" -ge 300 ]; then
+            echo "Sweep failed with HTTP $status"
+            exit 1
+          fi
