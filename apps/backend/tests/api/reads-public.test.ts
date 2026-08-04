@@ -117,4 +117,11 @@ describe('GET /api/merchants/samples', () => {
     expect(shop.products[0]).toHaveProperty('nameZh')
     expect(shop.products[0]).toHaveProperty('imagePath')
   })
+
+  it('returns null screenshotPath for a shop with no capture yet', async () => {
+    const res = await get('/api/merchants/samples')
+    const rows = (await res.json()) as Array<{ id: string; screenshotPath: string | null }>
+    const shop = rows.find(r => r.id === sampleShopId)!
+    expect(shop.screenshotPath).toBeNull()
+  })
 })

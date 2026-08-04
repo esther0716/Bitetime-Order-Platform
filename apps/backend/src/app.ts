@@ -628,7 +628,7 @@ app.get('/api/merchants/:id/my-orders', requireUser, async (c) => {
 app.get('/api/merchants/samples', async (c) => {
   const { data: merchants, error } = await admin
     .from('merchants')
-    .select('id, slug, name, currency')
+    .select('id, slug, name, currency, sample_screenshot_path')
     .eq('is_sample', true)
     .eq('status', 'active')
   if (error) return c.json({ error: 'Lookup failed' }, 500)
@@ -655,6 +655,7 @@ app.get('/api/merchants/samples', async (c) => {
     slug: m.slug,
     name: m.name,
     currency: m.currency,
+    screenshotPath: m.sample_screenshot_path,
     products: (byMerchant.get(m.id) ?? []).map((p) => ({
       id: p.id,
       name: p.name,
