@@ -93,108 +93,144 @@ export const PRICING_TIERS: PricingTier[] = [
  * The plan comparison, line by line — the detail the landing page's summary deliberately does not
  * carry, and the reason /pricing is a page of its own rather than a second copy of the tier cards.
  *
- * `basic` / `pro` are what the row says about each plan, NOT a tick and a cross: "delivery fees by
- * region" and "…by region or road distance" is a real difference a ✓/✗ pair would flatten into a
- * lie. Where a row is genuinely present-or-absent, the string says so in words.
+ * `basic` / `pro` are either a plain boolean (row renders as a ✓/– icon — use this ONLY where the
+ * row is genuinely a yes/no, so a plan that disagrees with `requirePro` is a wrong icon, not a
+ * misleading sentence) or translated text (row renders the words verbatim — use this wherever the
+ * two plans differ in KIND, not just presence: "delivery fees by region" vs "…by region or road
+ * distance" is a real difference a ✓/✗ pair would flatten into a lie).
  */
+export type ComparisonValue = boolean | { en: string; zh: string }
+
 export interface ComparisonRow {
   id: string
   label: { en: string; zh: string }
-  basic: { en: string; zh: string }
-  pro: { en: string; zh: string }
+  basic: ComparisonValue
+  pro: ComparisonValue
 }
 
-export const PLAN_COMPARISON: ComparisonRow[] = [
+/** A section of the table (Take App's "Orders & catalog" / "Delivery" / … pattern) — a label row
+ *  plus the rows it groups, so a long flat list reads as a handful of short ones. */
+export interface ComparisonGroup {
+  id: string
+  label: { en: string; zh: string }
+  rows: ComparisonRow[]
+}
+
+export const PLAN_COMPARISON_GROUPS: ComparisonGroup[] = [
   {
     id: 'storefront',
-    label: { en: 'Your own storefront link', zh: '专属店铺链接' },
-    basic: { en: 'Included', zh: '包含' },
-    pro: { en: 'Included', zh: '包含' },
-  },
-  {
-    id: 'products',
-    label: { en: 'Products on your menu', zh: '菜单上的产品' },
-    basic: { en: 'Unlimited', zh: '无限制' },
-    pro: { en: 'Unlimited', zh: '无限制' },
+    label: { en: 'Storefront & catalog', zh: '店铺与商品' },
+    rows: [
+      {
+        id: 'storefront',
+        label: { en: 'Your own storefront link', zh: '专属店铺链接' },
+        basic: true,
+        pro: true,
+      },
+      {
+        id: 'products',
+        label: { en: 'Products on your menu', zh: '菜单上的产品' },
+        basic: { en: 'Unlimited', zh: '无限制' },
+        pro: { en: 'Unlimited', zh: '无限制' },
+      },
+      {
+        id: 'languages',
+        label: { en: 'Bilingual shop (English + Chinese)', zh: '双语店铺（中文＋英文）' },
+        basic: true,
+        pro: true,
+      },
+      {
+        id: 'options',
+        label: { en: 'Choices on an item (size, add-ons, notes)', zh: '商品选项（规格、加料、备注）' },
+        basic: false,
+        pro: true,
+      },
+    ],
   },
   {
     id: 'orders',
-    label: { en: 'Orders a month', zh: '每月订单数' },
-    basic: { en: 'Unlimited — no commission', zh: '无限制——不抽佣金' },
-    pro: { en: 'Unlimited — no commission', zh: '无限制——不抽佣金' },
-  },
-  {
-    id: 'languages',
-    label: { en: 'Bilingual shop (English + Chinese)', zh: '双语店铺（中文＋英文）' },
-    basic: { en: 'Included', zh: '包含' },
-    pro: { en: 'Included', zh: '包含' },
-  },
-  {
-    // NOT a Pro split. Distance pricing is `merchants.shipping_mode`, which carries no plan gate —
-    // writing "by road distance" into the Pro column would sell a shop something Basic already has.
-    id: 'delivery',
-    label: { en: 'Delivery tracking — flat, by region, or by road distance', zh: '运费——统一、按地区，或按实际路程' },
-    basic: { en: 'Included', zh: '包含' },
-    pro: { en: 'Included', zh: '包含' },
-  },
-  {
-    id: 'tracking',
-    label: { en: 'Customers look up their own order', zh: '顾客自助查询订单' },
-    basic: { en: 'Included', zh: '包含' },
-    pro: { en: 'Included', zh: '包含' },
+    label: { en: 'Orders & delivery', zh: '订单与配送' },
+    rows: [
+      {
+        id: 'orders',
+        label: { en: 'Orders a month', zh: '每月订单数' },
+        basic: { en: 'Unlimited — no commission', zh: '无限制——不抽佣金' },
+        pro: { en: 'Unlimited — no commission', zh: '无限制——不抽佣金' },
+      },
+      {
+        // NOT a Pro split. Distance pricing is `merchants.shipping_mode`, which carries no plan
+        // gate — splitting this row by plan would sell a shop something Basic already has.
+        id: 'delivery',
+        label: { en: 'Delivery tracking — flat, by region, or by road distance', zh: '运费——统一、按地区，或按实际路程' },
+        basic: true,
+        pro: true,
+      },
+      {
+        id: 'tracking',
+        label: { en: 'Customers look up their own order', zh: '顾客自助查询订单' },
+        basic: true,
+        pro: true,
+      },
+      {
+        id: 'export',
+        label: { en: 'Download your orders as a spreadsheet', zh: '订单导出为表格' },
+        basic: false,
+        pro: true,
+      },
+    ],
   },
   {
     id: 'customers',
-    label: { en: 'Your customer list', zh: '顾客名单' },
-    basic: { en: 'Included', zh: '包含' },
-    pro: { en: 'Included, plus sorting and tag filters', zh: '包含，另可排序与标签筛选' },
+    label: { en: 'Customers & marketing', zh: '顾客与营销' },
+    rows: [
+      {
+        id: 'customers',
+        label: { en: 'Your customer list', zh: '顾客名单' },
+        basic: { en: 'Included', zh: '包含' },
+        pro: { en: 'Included, plus sorting and tag filters', zh: '包含，另可排序与标签筛选' },
+      },
+      {
+        id: 'notes',
+        label: { en: 'Notes and tags on a customer', zh: '顾客备注与标签' },
+        basic: false,
+        pro: true,
+      },
+      {
+        id: 'vouchers',
+        label: { en: 'Vouchers', zh: '优惠券' },
+        basic: false,
+        pro: true,
+      },
+      {
+        id: 'promos',
+        label: { en: 'Sale prices on your products', zh: '产品促销价' },
+        basic: false,
+        pro: true,
+      },
+    ],
   },
   {
-    id: 'telegram',
-    label: { en: 'Instant Telegram order alerts', zh: 'Telegram 即时订单通知' },
-    basic: { en: 'Not included', zh: '不包含' },
-    pro: { en: 'Included', zh: '包含' },
-  },
-  {
-    id: 'vouchers',
-    label: { en: 'Vouchers', zh: '优惠券' },
-    basic: { en: 'Not included', zh: '不包含' },
-    pro: { en: 'Included', zh: '包含' },
-  },
-  {
-    id: 'promos',
-    label: { en: 'Sale prices on your products', zh: '产品促销价' },
-    basic: { en: 'Not included', zh: '不包含' },
-    pro: { en: 'Included', zh: '包含' },
-  },
-  {
-    id: 'options',
-    label: { en: 'Choices on an item (size, add-ons, notes)', zh: '商品选项（规格、加料、备注）' },
-    basic: { en: 'Not included', zh: '不包含' },
-    pro: { en: 'Included', zh: '包含' },
-  },
-  {
-    id: 'export',
-    label: { en: 'Download your orders as a spreadsheet', zh: '订单导出为表格' },
-    basic: { en: 'Not included', zh: '不包含' },
-    pro: { en: 'Included', zh: '包含' },
-  },
-  {
-    id: 'notes',
-    label: { en: 'Notes and tags on a customer', zh: '顾客备注与标签' },
-    basic: { en: 'Not included', zh: '不包含' },
-    pro: { en: 'Included', zh: '包含' },
-  },
-  {
-    id: 'support',
-    label: { en: 'Support', zh: '客户支持' },
-    basic: { en: 'Standard', zh: '标准' },
-    pro: { en: 'Priority — your questions jump the queue', zh: '优先——你的问题优先处理' },
-  },
-  {
-    id: 'trial',
-    label: { en: 'Free trial', zh: '免费试用' },
-    basic: { en: '7 days, no card', zh: '7 天，无需信用卡' },
-    pro: { en: 'Start free on Basic, upgrade anytime', zh: '先免费试用基础版，随时升级' },
+    id: 'account',
+    label: { en: 'Alerts & support', zh: '通知与支持' },
+    rows: [
+      {
+        id: 'telegram',
+        label: { en: 'Instant Telegram order alerts', zh: 'Telegram 即时订单通知' },
+        basic: false,
+        pro: true,
+      },
+      {
+        id: 'support',
+        label: { en: 'Support', zh: '客户支持' },
+        basic: { en: 'Standard', zh: '标准' },
+        pro: { en: 'Priority — your questions jump the queue', zh: '优先——你的问题优先处理' },
+      },
+      {
+        id: 'trial',
+        label: { en: 'Free trial', zh: '免费试用' },
+        basic: { en: '7 days, no card', zh: '7 天，无需信用卡' },
+        pro: { en: 'Start free on Basic, upgrade anytime', zh: '先免费试用基础版，随时升级' },
+      },
+    ],
   },
 ]
