@@ -14,7 +14,8 @@
     "test:db": "vitest run --config vitest.db.config.ts",
     "db:migrate": "supabase migration up",
     "db:push": "supabase db push",
-    "db:seed:superadmin": "./scripts/seed-superadmin.sh"
+    "db:seed:superadmin": "./scripts/seed-superadmin.sh",
+    "screenshot:sweep": "node --import jiti/register scripts/captureSampleShopScreenshots.ts"
   },
   "dependencies": {
     "@bitetime/shared": "workspace:*",
@@ -33,6 +34,7 @@
     "eslint": "^10.3.0",
     "globals": "^17.6.0",
     "jiti": "^2.7.0",
+    "playwright": "^1.62.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.0",
     "vitest": "^3.2.6"
