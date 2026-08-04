@@ -120,7 +120,7 @@ export async function placeOrder(
   input: PlaceOrderInput,
   now = new Date(),
   distanceDeps: DistanceDeps = liveDistanceDeps,
-): Promise<{ orderNumber: string }> {
+): Promise<{ orderNumber: string; id: string }> {
   // THE ROUTING CALL HAPPENS HERE, OUTSIDE THE TRANSACTION, and that placement is the whole
   // reason this function is no longer a bare `withTransaction(...)`. Inside, the transaction
   // holds this shop's single `order_counters` row lock, which serialises every checkout at that
@@ -284,7 +284,7 @@ export async function placeOrder(
     const distanceBase = distanceKm === null ? null : merchant.distance.base
     const distanceRate = distanceKm === null ? null : merchant.distance.ratePerKm
 
-    await tx`
+    const [{ id }] = await tx<{ id: string }[]>`
       insert into orders (
         merchant_id, user_id, customer_name, customer_wa, customer_phone_key, mode, address,
         shipping_fee, items, total, currency, discount, tax, tax_rate, voucher_code, fulfil_date, order_number, status,
@@ -324,9 +324,10 @@ export async function placeOrder(
         ${distanceBase},
         ${distanceRate}
       )
+      returning id
     `
 
-    return { orderNumber }
+    return { orderNumber, id }
   })
 }
 
