@@ -104,6 +104,9 @@ import {
   fetchMerchantSecret,
   upsertMerchantSecret,
   placeOrder,
+  uploadPaymentProof,
+  fetchPaymentProof,
+  MAX_PAYMENT_PROOF_BYTES,
   fetchMerchantOrders,
   fetchOrderCount,
   fetchMyOrdersAtShop,
@@ -694,7 +697,7 @@ describe('placeOrder', () => {
 
   it('POSTs the order to the backend and returns the number it assigns', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
-    const fetchMock = fetchOk({ orderNumber: 'BT-260714-0050' })
+    const fetchMock = fetchOk({ orderNumber: 'BT-260714-0050', id: 'order-uuid-1' })
 
     const result = await placeOrder({
       merchantId: 'm1',
@@ -717,7 +720,17 @@ describe('placeOrder', () => {
       quotedTotal: 24,
       fulfilDate: '2026-07-21',
     })
-    expect(result).toEqual({ ok: true, data: { orderNumber: 'BT-260714-0050' } })
+    expect(result).toEqual({ ok: true, data: { orderNumber: 'BT-260714-0050', id: 'order-uuid-1' } })
+  })
+
+  it('surfaces the order id from the response', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
+    fetchOk({ orderNumber: 'BT-1', id: 'abc-123' })
+
+    const r = await placeOrder({ merchantId: 'm1', cart: { p1: 1 }, quotedTotal: 0 } as any)
+
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.data.id).toBe('abc-123')
   })
 
   it('sends a signed-in customer’s bearer token, so the backend can attribute the order', async () => {
@@ -793,6 +806,67 @@ describe('placeOrder', () => {
       expect(r.error.code).toBe('price_changed')
       expect(r.error.now).toBe('2026-07-25T00:00:00Z')
     }
+  })
+})
+
+describe('uploadPaymentProof', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('rejects an unsupported type without calling fetch', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const file = new File(['x'], 'proof.gif', { type: 'image/gif' })
+
+    const r = await uploadPaymentProof('order-1', file)
+
+    expect(r.ok).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects an oversized file without calling fetch', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const big = new Uint8Array(MAX_PAYMENT_PROOF_BYTES + 1)
+    const file = new File([big], 'proof.png', { type: 'image/png' })
+
+    const r = await uploadPaymentProof('order-1', file)
+
+    expect(r.ok).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('posts a valid file to /api/orders/:orderId/payment-proof', async () => {
+    // No auth: unlike fetchPaymentProof, this is the guest checkout path — it never calls
+    // getSession at all (apiSendFile is called with no `auth` option).
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, text: async () => '' })
+    vi.stubGlobal('fetch', fetchMock)
+    const file = new File(['x'], 'proof.png', { type: 'image/png' })
+
+    const r = await uploadPaymentProof('order-1', file)
+
+    expect(r.ok).toBe(true)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/orders\/order-1\/payment-proof$/)
+    expect(init.body).toBe(file)
+  })
+})
+
+describe('fetchPaymentProof', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('GETs /api/merchants/:merchantId/orders/:orderId/payment-proof and unwraps to the blob', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200, headers: new Headers(), blob: async () => blob,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const r = await fetchPaymentProof('m1', 'order-1')
+
+    expect(r).toEqual({ ok: true, data: blob })
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/merchants\/m1\/orders\/order-1\/payment-proof$/)
   })
 })
 
