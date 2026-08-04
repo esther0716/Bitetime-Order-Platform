@@ -49,6 +49,17 @@ function post(orderId: string, body: Uint8Array | string, contentType: string) {
   })
 }
 
+async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
+  const { data } = await client.auth.getSession()
+  return { token: data.session!.access_token, userId: data.session!.user.id }
+}
+
+function get(path: string, token?: string) {
+  return app.request(path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
 const written: string[] = []
 afterAll(async () => {
   if (written.length) await serviceClient().storage.from(BUCKET).remove(written)
@@ -119,5 +130,43 @@ describe('POST /api/orders/:orderId/payment-proof', () => {
   it('404s for an order id that does not exist', async () => {
     const res = await post('00000000-0000-0000-0000-000000000000', PNG_1X1, 'image/png')
     expect(res.status).toBe(404)
+  })
+})
+
+// Same ownership chain as PATCH /api/merchants/:id/orders/:orderId (requireMerchantOwns +
+// requireOwnsChild('orders', ...)) — 401/403/cross-tenant-404 are already exhaustively proven for
+// that chain in tests/api/writes-orders.test.ts. These cases cover only what's new here:
+// streaming the image back, and 404 when there's nothing to stream.
+describe('GET /api/merchants/:id/orders/:orderId/payment-proof', () => {
+  it('streams the image back to the owner after an upload', async () => {
+    await resetMerchant('pp-read-shop')
+    const owner = await makeUser('pp-read-owner@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const merchantId = await seedMerchant({ slug: 'pp-read-shop', owner_id: userId })
+    const orderId = await seedOrder(merchantId)
+    written.push(`${merchantId}/${orderId}.png`)
+
+    await post(orderId, PNG_1X1, 'image/png')
+    const res = await get(`/api/merchants/${merchantId}/orders/${orderId}/payment-proof`, token)
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('image/png')
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    expect(bytes.length).toBe(PNG_1X1.byteLength)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('404s when the order has no proof uploaded', async () => {
+    await resetMerchant('pp-none-shop')
+    const owner = await makeUser('pp-none-owner@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const merchantId = await seedMerchant({ slug: 'pp-none-shop', owner_id: userId })
+    const orderId = await seedOrder(merchantId)
+
+    const res = await get(`/api/merchants/${merchantId}/orders/${orderId}/payment-proof`, token)
+    expect(res.status).toBe(404)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
   })
 })

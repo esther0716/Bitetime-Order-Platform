@@ -779,6 +779,30 @@ app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, requireOwns
   return c.json(data)
 })
 
+// The image itself, for the merchant dashboard. Same ownership chain as the PATCH above — see
+// its own comment for why requireOwnsChild is what actually proves :orderId belongs to :id, not
+// just requireMerchantOwns. `child` here is the order row requireOwnsChild already loaded; no
+// second query.
+app.get(
+  '/api/merchants/:id/orders/:orderId/payment-proof',
+  requireMerchantOwns,
+  requireOwnsChild('orders', 'orderId'),
+  async (c) => {
+    const order = c.get('child')
+    const path = order?.payment_proof as string | null | undefined
+    if (!path) return c.json({ error: 'not_found' }, 404)
+
+    const { data, error } = await admin.storage.from('payment-proof').download(path)
+    if (error || !data) return c.json({ error: 'download_failed' }, 500)
+
+    const buffer = await data.arrayBuffer()
+    return new Response(buffer, {
+      status: 200,
+      headers: { 'Content-Type': data.type || 'application/octet-stream' },
+    })
+  },
+)
+
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
 app.post('/api/checkout', requireOwnMerchant, async (c) => {
   const body = await c.req.json().catch(() => ({}))
