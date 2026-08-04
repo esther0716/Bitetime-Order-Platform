@@ -1,17 +1,19 @@
 import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { useDashboardSection } from '../useDashboardSection'
-import { LayoutDashboard, Store, MessageSquare } from 'lucide-react'
+import { LayoutDashboard, Store, MessageSquare, Star } from 'lucide-react'
 import DashboardShell, { type NavItem } from '../components/DashboardShell'
 import AdminOverview from './AdminOverview'
 import AdminMerchants from './AdminMerchants'
 import AdminFeedback from './AdminFeedback'
+import AdminTrialFeedback from './AdminTrialFeedback'
 
 const ICON = { size: 18, strokeWidth: 1.75 }
 const SECTIONS = [
   { key: 'overview',  en: 'Overview',  zh: '概览', icon: <LayoutDashboard {...ICON} /> },
   { key: 'merchants', en: 'Merchants', zh: '商家', icon: <Store {...ICON} /> },
   { key: 'feedback',  en: 'Feedback',  zh: '反馈', icon: <MessageSquare {...ICON} /> },
+  { key: 'trial-feedback', en: 'Trial feedback', zh: '试用反馈', icon: <Star {...ICON} /> },
 ]
 
 export default function AdminHome() {
@@ -33,6 +35,7 @@ export default function AdminHome() {
         {section === 'overview'  && <AdminOverview />}
         {section === 'merchants' && <AdminMerchants />}
         {section === 'feedback'  && <AdminFeedback />}
+        {section === 'trial-feedback' && <AdminTrialFeedback />}
       </div>
     </DashboardShell>
   )
