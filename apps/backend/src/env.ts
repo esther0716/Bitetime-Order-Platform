@@ -35,6 +35,12 @@ export const env = {
   // failing closed is the house rule.
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
 
+  // GitHub (auto-files merchant feedback as issues on leongcheefai/Bitetime-Order-Platform,
+  // see github.ts). Optional, same posture as googleMapsApiKey: unset means issue creation
+  // is skipped and logged, never a startup error — the feedback table is the source of
+  // truth regardless of whether GitHub has heard about a row.
+  githubToken: process.env.GITHUB_TOKEN || '',
+
   // Stripe Price IDs (MYR), keyed by `${plan}_${cycle}`. We charge MYR for every
   // subscription, so there is one set and all four are required. Point these at
   // your MYR Prices.
