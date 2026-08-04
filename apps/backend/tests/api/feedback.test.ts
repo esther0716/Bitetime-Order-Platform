@@ -6,8 +6,8 @@
 // a body carrying merchant_id / user_id / status must not be believed. admin is RLS-exempt,
 // so requireMerchantOwns and the field-by-field build in validateFeedback are the ONLY
 // things standing between a merchant and another shop's record. See CLAUDE.md → Backend.
-import { describe, it, expect, beforeAll } from 'vitest'
-import { app, feedbackWindow } from '../../src/app.js'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { app, feedbackWindow, githubDeps } from '../../src/app.js'
 import { makeUser, seedMerchant, serviceClient, resetMerchant } from '../rls/helpers.js'
 
 async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
@@ -46,6 +46,16 @@ describe('merchant feedback', () => {
   let ownShopId: string
   let strangerShopId: string
   let superToken: string
+
+  const origCreateIssue = githubDeps.createIssue
+  const origCloseIssue = githubDeps.closeIssue
+  const origReopenIssue = githubDeps.reopenIssue
+
+  afterAll(() => {
+    githubDeps.createIssue = origCreateIssue
+    githubDeps.closeIssue = origCloseIssue
+    githubDeps.reopenIssue = origReopenIssue
+  })
 
   beforeAll(async () => {
     await resetMerchant('feedback-own-shop')
@@ -240,5 +250,44 @@ describe('merchant feedback', () => {
     const stillAllowed = await post(`/api/merchants/${otherShopId}/feedback`,
       { category: 'other', message: 'a different user, a fresh budget' }, otherIds.token)
     expect(stillAllowed.status).toBe(201)
+  })
+
+  it('links a created GitHub issue back onto the feedback row', async () => {
+    githubDeps.createIssue = async (_token, input) => {
+      expect(input.labels).toEqual(['needs-triage', 'bug'])
+      expect(input.title).toBe('[Feedback] bug: feedback-own-shop')
+      return { number: 999, html_url: 'https://github.com/leongcheefai/Bitetime-Order-Platform/issues/999' }
+    }
+
+    const created = await post(`/api/merchants/${ownShopId}/feedback`,
+      { category: 'bug', message: 'github link-back check' }, ownerToken)
+    const { id } = (await created.json()) as FeedbackRow
+
+    const list = await get('/api/admin/feedback', superToken)
+    const rows = (await list.json()) as Array<FeedbackRow & { github_issue_number: number | null; github_issue_url: string | null }>
+    const row = rows.find(r => r.id === id)
+    expect(row?.github_issue_number).toBe(999)
+    expect(row?.github_issue_url).toBe('https://github.com/leongcheefai/Bitetime-Order-Platform/issues/999')
+  })
+
+  it('closes and reopens the linked GitHub issue when admin resolves/reopens', async () => {
+    githubDeps.createIssue = async () => ({
+      number: 1001, html_url: 'https://github.com/leongcheefai/Bitetime-Order-Platform/issues/1001',
+    })
+    const calls: Array<{ action: 'close' | 'reopen'; issueNumber: number }> = []
+    githubDeps.closeIssue = async (_token, issueNumber) => { calls.push({ action: 'close', issueNumber }) }
+    githubDeps.reopenIssue = async (_token, issueNumber) => { calls.push({ action: 'reopen', issueNumber }) }
+
+    const created = await post(`/api/merchants/${ownShopId}/feedback`,
+      { category: 'other', message: 'resolve/reopen sync check' }, ownerToken)
+    const { id } = (await created.json()) as FeedbackRow
+
+    await patch(`/api/admin/feedback/${id}`, { status: 'resolved' }, superToken)
+    await patch(`/api/admin/feedback/${id}`, { status: 'open' }, superToken)
+
+    expect(calls).toEqual([
+      { action: 'close', issueNumber: 1001 },
+      { action: 'reopen', issueNumber: 1001 },
+    ])
   })
 })
