@@ -120,6 +120,25 @@ export async function apiGetFile(
   }
 }
 
+/**
+ * A POST whose body is a FILE, not JSON — the upload-side twin of `apiGetFile`. No multipart:
+ * the body IS the file, and `Content-Type` names what it is (never `application/json`, unlike
+ * `apiSend`). Same Result convention and the same guest-tolerant `auth` option as every other
+ * call here.
+ */
+export async function apiSendFile<T>(path: string, file: File, opts?: Opts): Promise<Result<T>> {
+  const h = await resolveHeaders({ 'Content-Type': file.type }, opts?.auth)
+  if ('fail' in h) return { ok: false, error: h.fail }
+  try {
+    const res = await fetch(`${API_URL}${path}`, { method: 'POST', headers: h.headers, body: file })
+    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    const text = await res.text()
+    return { ok: true, data: (text ? JSON.parse(text) : null) as T }
+  } catch {
+    return { ok: false, error: NETWORK_ERROR }
+  }
+}
+
 type Method = 'POST' | 'PATCH' | 'PUT' | 'DELETE'
 
 export async function apiSend<T>(path: string, method: Method, body?: unknown, opts?: Opts): Promise<Result<T>> {
