@@ -67,28 +67,31 @@ export default function OrderDetailSheet({
   const [courierDraft, setCourierDraft] = useState('')
   const [awbDraft, setAwbDraft] = useState('')
   const [savingTrack, setSavingTrack] = useState(false)
-  const [proofUrl, setProofUrl] = useState<string | null>(null)
+  // `orderId` on the record is what proves a fetched url still belongs to the order on screen —
+  // switching to a different order (or one with no proof) must not keep showing the last one's
+  // image while its own fetch is still in flight.
+  const [proof, setProof] = useState<{ orderId: string; url: string } | null>(null)
 
   // Lazy: only fetched when the sheet is open for an order that actually has one, not on every
-  // dashboard list render. Revoked on the way out so a merchant clicking through ten orders in a
-  // row doesn't leak ten object URLs.
+  // dashboard list render.
   useEffect(() => {
-    if (!order?.payment_proof || !merchant) {
-      setProofUrl(null)
-      return
-    }
+    if (!order?.payment_proof || !merchant) return
+    const orderId = order.id!
     let cancelled = false
-    let url: string | null = null
-    fetchPaymentProof(merchant.id, order.id).then((r) => {
+    fetchPaymentProof(merchant.id, orderId).then((r) => {
       if (cancelled || !r.ok) return
-      url = URL.createObjectURL(r.data)
-      setProofUrl(url)
+      setProof({ orderId, url: URL.createObjectURL(r.data) })
     })
-    return () => {
-      cancelled = true
-      if (url) URL.revokeObjectURL(url)
-    }
+    return () => { cancelled = true }
   }, [order?.id, order?.payment_proof, merchant])
+
+  // Revoked on the way out — a new url landing, or the sheet unmounting — so a merchant clicking
+  // through ten orders in a row doesn't leak ten object URLs.
+  useEffect(() => {
+    return () => { if (proof) URL.revokeObjectURL(proof.url) }
+  }, [proof])
+
+  const proofUrl = proof && proof.orderId === order?.id ? proof.url : null
 
   const statusItems = ORDER_STATUSES.map(s => ({
     value: s,
