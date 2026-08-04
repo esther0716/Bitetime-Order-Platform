@@ -45,11 +45,16 @@ import { processReferralReward } from './referralRewardGrant.js'
 import { placeOrder, OrderError } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue } from './feedback.js'
 import {
+  findDueTrials, claimSend, releaseSend,
+  getOwnTrialFeedback, respondTrialFeedback, skipTrialFeedback, listTrialFeedbackForAdmin,
+} from './trialFeedback.js'
+import { buildTrialFeedbackEmail } from './trialFeedbackEmail.js'
+import {
   createGithubIssue, closeGithubIssue, reopenGithubIssue,
   buildIssueTitle, buildIssueBody, categoryToLabel,
   type CreateGithubIssue, type GithubIssueAction,
 } from './github.js'
-import { isCart, isBusinessNature, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
@@ -1387,6 +1392,32 @@ app.patch('/api/admin/feedback/:feedbackId', requireSuperadmin, async (c) => {
   }
 
   return c.json(row)
+})
+
+// ── Trial feedback (#155) ───────────────────────────────────────────────────────
+// One-time, platform-initiated survey — see CONTEXT.md → Trial feedback. requireOwnMerchant
+// scopes every route to the caller's own shop; there is no :id to name a different one.
+
+app.get('/api/trial-feedback', requireOwnMerchant, async (c) => {
+  const merchant = c.get('merchant')
+  return c.json(await getOwnTrialFeedback(merchant.id))
+})
+
+app.post('/api/trial-feedback/respond', requireOwnMerchant, async (c) => {
+  const merchant = c.get('merchant')
+  const parsed = validateTrialFeedback(await c.req.json().catch(() => ({})))
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+
+  const result = await respondTrialFeedback(merchant.id, parsed.value)
+  if (!result.ok) return c.json({ error: result.reason }, result.reason === 'not_found' ? 404 : 409)
+  return c.json(result.row)
+})
+
+app.post('/api/trial-feedback/skip', requireOwnMerchant, async (c) => {
+  const merchant = c.get('merchant')
+  const result = await skipTrialFeedback(merchant.id)
+  if (!result.ok) return c.json({ error: result.reason }, result.reason === 'not_found' ? 404 : 409)
+  return c.json(result.row)
 })
 
 app.post('/api/customer/signup', async (c) => {
