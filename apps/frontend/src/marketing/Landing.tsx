@@ -9,6 +9,7 @@ import { FEATURES } from './features'
 import { VERTICALS } from './verticals'
 import { PRICING_TIERS } from './pricingTiers'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
+import SampleShopsCarousel from './SampleShopsCarousel'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
 import { ctaPrimary, sectionTitle } from './ctaStyles'
 import {
@@ -103,6 +104,8 @@ export default function Landing() {
           </HeroItem>
         </HeroStagger>
       </section>
+
+      <SampleShopsCarousel />
 
       {/* ── How it works ── */}
       <section className="bg-surface-raised border-y border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
