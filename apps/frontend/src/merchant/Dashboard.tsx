@@ -5,6 +5,7 @@ import { useEnterTransition } from '../motion'
 import { LayoutDashboard, ReceiptText, Cake, Ticket, Users, Settings } from 'lucide-react'
 import DashboardShell, { type NavItem } from '../components/DashboardShell'
 import BillingBanner from './BillingBanner'
+import TrialFeedbackPrompt from './TrialFeedbackPrompt'
 import DeactivatedVouchers from './DeactivatedVouchers'
 import Overview from './Overview'
 import OnboardingChecklist from './OnboardingChecklist'
@@ -101,6 +102,7 @@ function DashboardInner() {
       backTo={role === 'superadmin' ? { href: '/admin/merchants', label: t('Back to admin', '返回管理') } : undefined}
     >
       <BillingBanner />
+      <TrialFeedbackPrompt />
       <OnboardingChecklist section={section} onNavigate={selectSection} />
       <div key={section} {...enter}>
         {section === 'overview'  && <Overview />}

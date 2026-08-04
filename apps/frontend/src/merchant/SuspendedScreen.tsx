@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useSession } from '../SessionContext'
 import { startCheckout } from '../store'
 import OrdersView from './OrdersView'
+import TrialFeedbackPrompt from './TrialFeedbackPrompt'
 import { Button } from '@/components/ui/button'
 
 // Suspended = the subscription lapsed (trial ended unpaid, dunning exhausted)
@@ -46,6 +47,7 @@ export default function SuspendedScreen() {
           {busy ? t('Redirecting…', '跳转中…') : t('Reactivate — pay now', '恢复营业——立即付款')}
         </Button>
       </div>
+      <TrialFeedbackPrompt />
       {err && (
         <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-4 leading-[1.5]">
           {err}
