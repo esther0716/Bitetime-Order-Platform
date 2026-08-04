@@ -145,6 +145,12 @@ export async function uncompMerchant(id: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/uncomp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
 }
 
+// Superadmin: flag/unflag a merchant for the landing-page sample-shops carousel (#107).
+// Pure flag flip, no billing/status side effect — see set-merchant-sample in app.ts.
+export async function setMerchantSample(id: string, isSample: boolean): Promise<Result<any>> {
+  return apiSend<any>('/api/admin/set-merchant-sample', 'POST', { merchantId: id, isSample }, { auth: 'required' })
+}
+
 // The "could not ask" vs "the answer is empty" distinction, now the shared Result:
 // `{ ok: false }` means the request itself never landed (network/CORS/5xx) and a caller that
 // would DROP something on that must not treat it as an answer; `{ ok: true, data: null }` is a
@@ -196,6 +202,28 @@ export interface PlatformPricing {
     pro: { monthly: number; yearly: number }
   }
   estimate: { currency: string; rate: number } | null
+}
+
+// A shop shown in the landing-page sample-shops carousel (#107). `imagePath` is a Storage PATH
+// in the public `product-images` bucket, never a URL — resolve with productImageUrl() below.
+export interface SampleShopProduct {
+  id: string
+  name: string
+  nameZh: string | null
+  price: number
+  imagePath: string | null
+}
+
+export interface SampleShop {
+  id: string
+  slug: string
+  name: string
+  currency: string
+  products: SampleShopProduct[]
+}
+
+export async function fetchSampleShops(): Promise<Result<SampleShop[]>> {
+  return apiGet<SampleShop[]>('/api/merchants/samples')
 }
 
 export async function fetchPlatformPricing(country?: string): Promise<Result<PlatformPricing>> {

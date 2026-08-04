@@ -30,6 +30,8 @@ export interface Merchant {
   config?: Record<string, unknown>
   timezone?: string
   created_at?: string
+  /** Landing-page sample-shops carousel flag (#107). Toggled only from /admin/merchants. */
+  is_sample?: boolean
   /** Whether this shop charges tax. See `shopTax` — never read this without it. */
   tax_enabled?: boolean
   /** A PERCENTAGE: 6 means 6%. PostgREST sends a number; read via `shopTax`. */
