@@ -219,11 +219,21 @@ export interface SampleShop {
   slug: string
   name: string
   currency: string
+  /** Storage path in the public `sample-shop-screenshots` bucket, or null if not yet captured
+   *  (or never will be — capture is a weekly cron, not guaranteed). Resolve with
+   *  sampleShopScreenshotUrl() below. Never render this as a URL directly. */
+  screenshotPath: string | null
   products: SampleShopProduct[]
 }
 
 export async function fetchSampleShops(): Promise<Result<SampleShop[]>> {
   return apiGet<SampleShop[]>('/api/merchants/samples')
+}
+
+export const SAMPLE_SCREENSHOT_BUCKET = 'sample-shop-screenshots'
+
+export function sampleShopScreenshotUrl(path: string): string {
+  return storage.from(SAMPLE_SCREENSHOT_BUCKET).getPublicUrl(path).data.publicUrl
 }
 
 export async function fetchPlatformPricing(country?: string): Promise<Result<PlatformPricing>> {
