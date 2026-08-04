@@ -1,6 +1,6 @@
 import { useSession } from '../SessionContext'
 import { formatMoney } from '../currency'
-import { productImageUrl, type SampleShop } from '../store'
+import { productImageUrl, sampleShopScreenshotUrl, type SampleShop } from '../store'
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from '../components/ui/carousel'
 
 function initials(name: string): string {
@@ -25,38 +25,50 @@ export default function SampleShopsCarousel({ shops }: { shops: SampleShop[] }) 
       <CarouselContent>
         {shops.map((shop) => (
           <CarouselItem key={shop.id} className="basis-1/3">
-            <div className="h-full rounded-2xl border-[1.5px] border-clay-border bg-surface-raised p-5 text-left shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
-              <div className="flex items-center gap-3 pb-4 border-b border-divider">
-                {shop.products[0]?.imagePath ? (
-                  <img
-                    src={productImageUrl(shop.products[0].imagePath)}
-                    alt=""
-                    className="h-10 w-10 rounded-round object-cover shrink-0"
-                  />
-                ) : (
-                  <span className="grid h-10 w-10 place-items-center rounded-round bg-oxblood-tint font-heading text-[15px] font-medium text-oxblood shrink-0">
-                    {initials(shop.name)}
-                  </span>
-                )}
-                <p className="min-w-0 truncate font-heading text-[15px] font-medium text-ink leading-tight">
-                  {shop.name}
-                </p>
+            {shop.screenshotPath ? (
+              // Replaces the avatar+product-list block ENTIRELY — one card, one representation
+              // of the shop, never both. A static <img>, same as every other card: no <a>/<Link>.
+              <div className="h-full overflow-hidden rounded-2xl border-[1.5px] border-clay-border bg-surface-raised shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
+                <img
+                  src={sampleShopScreenshotUrl(shop.screenshotPath)}
+                  alt={shop.name}
+                  className="block w-full h-full object-cover object-top"
+                />
               </div>
-              {shop.products.length > 0 && (
-                <ul className="list-none m-0 p-0 flex flex-col divide-y divide-divider">
-                  {shop.products.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between gap-3 py-3">
-                      <span className="text-[13.5px] text-ink truncate">
-                        {lang === 'zh' && p.nameZh ? p.nameZh : p.name}
-                      </span>
-                      <span className="font-heading text-[13.5px] font-medium text-oxblood shrink-0">
-                        {formatMoney(p.price, shop.currency)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            ) : (
+              <div className="h-full rounded-2xl border-[1.5px] border-clay-border bg-surface-raised p-5 text-left shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
+                <div className="flex items-center gap-3 pb-4 border-b border-divider">
+                  {shop.products[0]?.imagePath ? (
+                    <img
+                      src={productImageUrl(shop.products[0].imagePath)}
+                      alt=""
+                      className="h-10 w-10 rounded-round object-cover shrink-0"
+                    />
+                  ) : (
+                    <span className="grid h-10 w-10 place-items-center rounded-round bg-oxblood-tint font-heading text-[15px] font-medium text-oxblood shrink-0">
+                      {initials(shop.name)}
+                    </span>
+                  )}
+                  <p className="min-w-0 truncate font-heading text-[15px] font-medium text-ink leading-tight">
+                    {shop.name}
+                  </p>
+                </div>
+                {shop.products.length > 0 && (
+                  <ul className="list-none m-0 p-0 flex flex-col divide-y divide-divider">
+                    {shop.products.map((p) => (
+                      <li key={p.id} className="flex items-center justify-between gap-3 py-3">
+                        <span className="text-[13.5px] text-ink truncate">
+                          {lang === 'zh' && p.nameZh ? p.nameZh : p.name}
+                        </span>
+                        <span className="font-heading text-[13.5px] font-medium text-oxblood shrink-0">
+                          {formatMoney(p.price, shop.currency)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </CarouselItem>
         ))}
       </CarouselContent>
