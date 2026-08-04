@@ -48,7 +48,7 @@
 **Interfaces:**
 - Produces: `merchant_feedback.github_issue_number bigint null`, `merchant_feedback.github_issue_url text null`. Every later task that touches `merchant_feedback` reads or writes these.
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 Create `apps/backend/supabase/migrations/20260804120000_merchant_feedback_github_issue.sql`:
 
@@ -66,12 +66,12 @@ alter table public.merchant_feedback
   add column if not exists github_issue_url text;
 ```
 
-- [ ] **Step 2: Apply it locally**
+- [x] **Step 2: Apply it locally**
 
 Run: `pnpm --filter @bitetime/backend db:migrate`
 Expected: migration applies with no error (needs local Supabase running — `supabase start` from `apps/backend` if it isn't).
 
-- [ ] **Step 3: Verify the columns exist**
+- [x] **Step 3: Verify the columns exist**
 
 Run:
 ```bash
@@ -83,7 +83,7 @@ psql "<that DB_URL>" -c "\d public.merchant_feedback" | grep github_issue
 ```
 Expected: both `github_issue_number` (bigint) and `github_issue_url` (text) listed, both nullable.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/backend/supabase/migrations/20260804120000_merchant_feedback_github_issue.sql
@@ -112,7 +112,7 @@ git commit -m "feat(backend): add github issue link-back columns to merchant_fee
   - `closeGithubIssue: GithubIssueAction`
   - `reopenGithubIssue: GithubIssueAction`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `apps/backend/tests/unit/github.test.ts`:
 
@@ -261,12 +261,12 @@ describe('closeGithubIssue / reopenGithubIssue', () => {
 })
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @bitetime/backend test -- github.test.ts`
 Expected: FAIL — `Cannot find module '../../src/github.js'`.
 
-- [ ] **Step 3: Write `github.ts`**
+- [x] **Step 3: Write `github.ts`**
 
 Create `apps/backend/src/github.ts`:
 
@@ -403,17 +403,17 @@ export const reopenGithubIssue: GithubIssueAction = (token, issueNumber) =>
   setIssueState(token, issueNumber, 'open')
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm --filter @bitetime/backend test -- github.test.ts`
 Expected: PASS, all cases.
 
-- [ ] **Step 5: Typecheck**
+- [x] **Step 5: Typecheck**
 
 Run: `pnpm --filter @bitetime/backend typecheck`
 Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/backend/src/github.ts apps/backend/tests/unit/github.test.ts
@@ -431,7 +431,7 @@ git commit -m "feat(backend): add github.ts issue-filing adapter"
 **Interfaces:**
 - Produces: `env.githubToken: string` (empty string when unset). Task 4 reads this and passes it into the `github.ts` adapters.
 
-- [ ] **Step 1: Add the optional var to `env.ts`**
+- [x] **Step 1: Add the optional var to `env.ts`**
 
 In `apps/backend/src/env.ts`, after the `googleMapsApiKey` block (currently ends at line 36):
 
@@ -443,7 +443,7 @@ In `apps/backend/src/env.ts`, after the `googleMapsApiKey` block (currently ends
   githubToken: process.env.GITHUB_TOKEN || '',
 ```
 
-- [ ] **Step 2: Add it to `.env.example`**
+- [x] **Step 2: Add it to `.env.example`**
 
 In `apps/backend/.env.example`, after the `GOOGLE_MAPS_API_KEY=` line:
 
@@ -454,12 +454,12 @@ In `apps/backend/.env.example`, after the `GOOGLE_MAPS_API_KEY=` line:
 GITHUB_TOKEN=
 ```
 
-- [ ] **Step 3: Typecheck**
+- [x] **Step 3: Typecheck**
 
 Run: `pnpm --filter @bitetime/backend typecheck`
 Expected: no errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/backend/src/env.ts apps/backend/.env.example
@@ -477,7 +477,7 @@ git commit -m "feat(backend): add optional GITHUB_TOKEN env var"
 - Consumes: nothing new.
 - Produces (consumed by Task 5): `FeedbackRow.github_issue_number: number | null`, `FeedbackRow.github_issue_url: string | null`; `updateFeedbackGithubIssue(id: string, issue: { number: number; html_url: string }): Promise<void>`.
 
-- [ ] **Step 1: Extend `FeedbackRow`**
+- [x] **Step 1: Extend `FeedbackRow`**
 
 In `apps/backend/src/feedback.ts`, change the interface at lines 10-19:
 
@@ -498,7 +498,7 @@ export interface FeedbackRow {
 
 (`FeedbackWithShop extends FeedbackRow`, so it picks these up automatically — no change needed there.)
 
-- [ ] **Step 2: Add `updateFeedbackGithubIssue`**
+- [x] **Step 2: Add `updateFeedbackGithubIssue`**
 
 At the end of `apps/backend/src/feedback.ts`, after `updateFeedbackStatus`:
 
@@ -518,12 +518,12 @@ export async function updateFeedbackGithubIssue(
 }
 ```
 
-- [ ] **Step 3: Typecheck**
+- [x] **Step 3: Typecheck**
 
 Run: `pnpm --filter @bitetime/backend typecheck`
 Expected: no errors. (`insertFeedback`'s `data as FeedbackRow` cast still holds — the DB row already carries the two new nullable columns via `select('*')`.)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/backend/src/feedback.ts
@@ -542,7 +542,7 @@ git commit -m "feat(backend): add github issue fields and link-back write to fee
 - Consumes: everything produced in Tasks 2-4 (`github.ts` exports, `env.githubToken`, `feedback.ts`'s new field and `updateFeedbackGithubIssue`).
 - Produces: `githubDeps: { createIssue: CreateGithubIssue; closeIssue: GithubIssueAction; reopenIssue: GithubIssueAction }`, exported from `app.ts` — the DI seam Task tests use, mirroring the existing `notifyDeps`.
 
-- [ ] **Step 1: Import the new pieces**
+- [x] **Step 1: Import the new pieces**
 
 In `apps/backend/src/app.ts`, change line 46 from:
 
@@ -566,7 +566,7 @@ import {
 } from './github.js'
 ```
 
-- [ ] **Step 2: Add `githubDeps`**
+- [x] **Step 2: Add `githubDeps`**
 
 In `apps/backend/src/app.ts`, immediately before the `// ── Merchant platform feedback (#89) ──` comment (currently line 1304), insert:
 
@@ -585,7 +585,7 @@ export const githubDeps: {
 
 ```
 
-- [ ] **Step 3: Wire the submit route**
+- [x] **Step 3: Wire the submit route**
 
 In `apps/backend/src/app.ts`, replace the body of `app.post('/api/merchants/:id/feedback', ...)` (currently lines 1318-1333):
 
@@ -624,7 +624,7 @@ app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
 })
 ```
 
-- [ ] **Step 4: Wire the resolve/reopen route**
+- [x] **Step 4: Wire the resolve/reopen route**
 
 In `apps/backend/src/app.ts`, replace the body of `app.patch('/api/admin/feedback/:feedbackId', ...)` (currently lines 1343-1350):
 
@@ -646,12 +646,12 @@ app.patch('/api/admin/feedback/:feedbackId', requireSuperadmin, async (c) => {
 })
 ```
 
-- [ ] **Step 5: Typecheck**
+- [x] **Step 5: Typecheck**
 
 Run: `pnpm --filter @bitetime/backend typecheck`
 Expected: no errors.
 
-- [ ] **Step 6: Write the new API tests**
+- [x] **Step 6: Write the new API tests**
 
 In `apps/backend/tests/api/feedback.test.ts`, add the `githubDeps` import to the existing import line:
 
@@ -724,14 +724,14 @@ Then add two new `it` blocks at the end of the `describe('merchant feedback', ..
 
 The title assertion `[Feedback] bug: feedback-own-shop` relies on `seedMerchant`'s default (`tests/rls/helpers.ts:124`: `name: fields.name ?? fields.slug`) — `ownShopId` was seeded earlier in this suite with `seedMerchant({ slug: 'feedback-own-shop', owner_id: ownerId })`, no `name` passed, so its `name` column is `'feedback-own-shop'`.
 
-- [ ] **Step 7: Run the DB-backed tests**
+- [x] **Step 7: Run the DB-backed tests**
 
 Requires local Supabase running (`supabase start` from `apps/backend`, if not already up).
 
 Run: `pnpm --filter @bitetime/backend test:db -- feedback.test.ts`
 Expected: PASS, including the two new tests and every existing one (existing tests run with `githubDeps` at its real, token-less default — `env.githubToken` is `''` in the test env, so `createGithubIssue` returns `null` immediately and every existing assertion is unaffected).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/backend/src/app.ts apps/backend/tests/api/feedback.test.ts
@@ -749,7 +749,7 @@ git commit -m "feat(backend): file and sync GitHub issues from the feedback rout
 **Interfaces:**
 - Consumes: `FeedbackItem` (extended).
 
-- [ ] **Step 1: Extend `FeedbackItem`**
+- [x] **Step 1: Extend `FeedbackItem`**
 
 In `apps/frontend/src/types.ts`, change the interface at lines 262-273:
 
@@ -770,7 +770,7 @@ export interface FeedbackItem {
 }
 ```
 
-- [ ] **Step 2: Render the link**
+- [x] **Step 2: Render the link**
 
 In `apps/frontend/src/admin/AdminFeedback.tsx`, in the `Card` block (currently lines 94-118), add the link after the existing badges row and before the message paragraph:
 
@@ -790,17 +790,17 @@ In `apps/frontend/src/admin/AdminFeedback.tsx`, in the `Card` block (currently l
 
 (Placed as its own line between the badges `<div>` (closing at what is currently line 109) and the `<p>` message paragraph (currently line 111).)
 
-- [ ] **Step 3: Typecheck**
+- [x] **Step 3: Typecheck**
 
 Run: `pnpm --filter @bitetime/frontend typecheck`
 Expected: no errors.
 
-- [ ] **Step 4: Lint**
+- [x] **Step 4: Lint**
 
 Run: `pnpm --filter @bitetime/frontend lint`
 Expected: no errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/frontend/src/types.ts apps/frontend/src/admin/AdminFeedback.tsx
@@ -813,7 +813,7 @@ git commit -m "feat(frontend): show linked GitHub issue in the admin feedback in
 
 **Files:** none (verification only).
 
-- [ ] **Step 1: Full backend unit + DB suites**
+- [x] **Step 1: Full backend unit + DB suites**
 
 Run: `pnpm --filter @bitetime/backend test`
 Expected: PASS (includes `github.test.ts`).
@@ -821,12 +821,12 @@ Expected: PASS (includes `github.test.ts`).
 Run: `pnpm --filter @bitetime/backend test:db` (local Supabase must be running)
 Expected: PASS (includes the two new `feedback.test.ts` cases and all pre-existing ones).
 
-- [ ] **Step 2: Repo-wide lint, typecheck, build**
+- [x] **Step 2: Repo-wide lint, typecheck, build**
 
 Run: `pnpm lint && pnpm typecheck && pnpm build`
 Expected: all pass. `pnpm build` in particular proves the backend esbuild bundle still succeeds with no new `--external:` flag needed (`github.ts` has no runtime dependency beyond global `fetch`).
 
-- [ ] **Step 3: Run-and-verify the fail-open path (no `GITHUB_TOKEN` set locally)**
+- [x] **Step 3: Run-and-verify the fail-open path (no `GITHUB_TOKEN` set locally)**
 
 With local Supabase running, start the app (`pnpm dev` from repo root; no `stripe listen` needed — nothing here touches billing). In the browser:
 1. Sign in as a merchant, open the dashboard, submit feedback via the FAB.
