@@ -619,6 +619,52 @@ app.get('/api/merchants/:id/my-orders', requireUser, async (c) => {
   return c.json(data ?? [])
 })
 
+// ── Public: landing-page sample-shops carousel (#107) ──────────────────────────────────────────
+// Registered BEFORE /api/merchants/:slug so the literal path "samples" is never captured as a
+// slug. Unauthenticated, like /api/merchants/:slug and /api/merchants/:id/products below — same
+// trust level, no tenant scoping needed. Deliberately does NOT reuse productFromRow/PricedProduct
+// from @bitetime/shared: this response has no promo/pricing-engine fields, because it prices
+// nothing — see docs/superpowers/specs/2026-08-04-sample-shops-carousel-design.md.
+app.get('/api/merchants/samples', async (c) => {
+  const { data: merchants, error } = await admin
+    .from('merchants')
+    .select('id, slug, name, currency')
+    .eq('is_sample', true)
+    .eq('status', 'active')
+  if (error) return c.json({ error: 'Lookup failed' }, 500)
+  if (!merchants?.length) return c.json([])
+
+  const { data: products, error: pErr } = await admin
+    .from('products')
+    .select('id, merchant_id, name, name_zh, price, image_urls')
+    .in('merchant_id', merchants.map((m) => m.id))
+    .eq('active', true)
+    .order('sort', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (pErr) return c.json({ error: 'Lookup failed' }, 500)
+
+  const byMerchant = new Map<string, typeof products>()
+  for (const p of products ?? []) {
+    const list = byMerchant.get(p.merchant_id) ?? []
+    if (list.length < 3) list.push(p)
+    byMerchant.set(p.merchant_id, list)
+  }
+
+  return c.json(merchants.map((m) => ({
+    id: m.id,
+    slug: m.slug,
+    name: m.name,
+    currency: m.currency,
+    products: (byMerchant.get(m.id) ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      nameZh: p.name_zh,
+      price: p.price,
+      imagePath: p.image_urls?.[0] ?? null,
+    })),
+  })))
+})
+
 // ── Public reads (no auth — storefront) ───────────────────────────────────────
 // Shaped: strip internal columns before returning to an unauthenticated caller.
 app.get('/api/merchants/:slug', async (c) => {

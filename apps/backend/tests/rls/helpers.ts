@@ -114,6 +114,8 @@ export async function seedMerchant(fields: {
   delivery_rate_per_km?: number
   delivery_max_km?: number | null
   origin_place_id?: string
+  /** Landing-page sample-shops carousel flag (#107). Omitted leaves the column default (false). */
+  is_sample?: boolean
 }) {
   await resetMerchant(fields.slug)
   const { data, error } = await serviceClient()
@@ -134,6 +136,7 @@ export async function seedMerchant(fields: {
       ...(fields.delivery_rate_per_km !== undefined ? { delivery_rate_per_km: fields.delivery_rate_per_km } : {}),
       ...(fields.delivery_max_km !== undefined ? { delivery_max_km: fields.delivery_max_km } : {}),
       ...(fields.origin_place_id !== undefined ? { origin_place_id: fields.origin_place_id } : {}),
+      ...(fields.is_sample !== undefined ? { is_sample: fields.is_sample } : {}),
     })
     .select('id')
     .single()
@@ -156,6 +159,8 @@ export async function seedProduct(fields: {
   // Omitted when not passed, for the same reason the promo columns are: the column's own
   // default (`'[]'`) is what a product that asks nothing should have.
   option_groups?: unknown
+  /** Display order within a shop (products.sort). Omitted leaves the column default (0). */
+  sort?: number
 }) {
   const { data, error } = await serviceClient()
     .from('products')
@@ -168,6 +173,7 @@ export async function seedProduct(fields: {
       ...(fields.promo_limit !== undefined ? { promo_limit: fields.promo_limit } : {}),
       ...(fields.promo_end !== undefined ? { promo_end: fields.promo_end } : {}),
       ...(fields.option_groups !== undefined ? { option_groups: fields.option_groups } : {}),
+      ...(fields.sort !== undefined ? { sort: fields.sort } : {}),
     })
     .select('id')
     .single()
