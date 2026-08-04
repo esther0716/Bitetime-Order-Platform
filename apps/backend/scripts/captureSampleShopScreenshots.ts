@@ -1,6 +1,9 @@
 // CI-only. Never imported by src/app.ts, never bundled by the esbuild build — playwright stays
-// a devDependency, not a runtime one. Run via `pnpm --filter @bitetime/backend screenshot:sweep`,
-// scheduled weekly by .github/workflows/sample-shop-screenshot-sweep.yml.
+// a devDependency, not a runtime one. Run via `pnpm --filter @bitetime/backend screenshot:sweep`
+// (plain `node --experimental-strip-types`, NOT the `--import jiti/register` the rest of the
+// backend uses for dev — jiti's module transform breaks playwright-core's bundled `node:os`
+// interop, throwing `Cannot read properties of undefined (reading 'join')` on import), scheduled
+// weekly by .github/workflows/sample-shop-screenshot-sweep.yml.
 import { chromium } from 'playwright'
 
 const FRONTEND_URL = process.env.FRONTEND_URL
