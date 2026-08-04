@@ -1566,6 +1566,40 @@ app.post('/api/internal/trial-feedback-sweep', async (c) => {
   return c.json({ due: due.length, sent: sentCount })
 })
 
+const SAMPLE_SCREENSHOT_BUCKET = 'sample-shop-screenshots'
+const MAX_SAMPLE_SCREENSHOT_BYTES = 3 * 1024 * 1024 // 3 MiB — same ceiling as the migration's file_size_limit
+
+// Not user-authenticated — called by a GitHub Actions schedule (see
+// .github/workflows/sample-shop-screenshot-sweep.yml), gated by a shared secret header instead.
+// Fails CLOSED (503) when the secret is unset, matching trial-feedback-sweep's house rule.
+app.post('/api/internal/sample-shop-screenshot/:merchantId', async (c) => {
+  if (!env.sampleShopScreenshotSweepSecret) return c.json({ error: 'Sweep disabled' }, 503)
+  const provided = c.req.header('x-sweep-secret') || ''
+  if (!safeEqualSecret(provided, env.sampleShopScreenshotSweepSecret)) return c.json({ error: 'Forbidden' }, 403)
+
+  const merchantId = c.req.param('merchantId')
+  if (c.req.header('Content-Type') !== 'image/png') return c.json({ error: 'unsupported_type' }, 400)
+
+  const buffer = await c.req.arrayBuffer()
+  if (buffer.byteLength === 0) return c.json({ error: 'invalid_body' }, 400)
+  if (buffer.byteLength > MAX_SAMPLE_SCREENSHOT_BYTES) return c.json({ error: 'too_large' }, 400)
+
+  const { data: merchant } = await admin.from('merchants').select('id').eq('id', merchantId).maybeSingle()
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  const path = `${merchantId}.png`
+  const { error } = await admin.storage
+    .from(SAMPLE_SCREENSHOT_BUCKET)
+    .upload(path, buffer, { contentType: 'image/png', upsert: true })
+  if (error) {
+    console.error('Sample shot upload failed:', error.message)
+    return c.json({ error: 'upload_failed' }, 500)
+  }
+
+  await admin.from('merchants').update({ sample_screenshot_path: path }).eq('id', merchantId)
+  return c.json({ ok: true })
+})
+
 app.post('/api/customer/signup', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}))
   // Anything else the body carries — a role, a merchant_id — is ignored: only email and
