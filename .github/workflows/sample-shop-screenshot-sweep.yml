@@ -1,0 +1,26 @@
+# Weekly capture of each sample shop's live storefront for the /sample-shops carousel (#107).
+# THREE REPO SECRETS ARE REQUIRED and are NOT set by this file:
+#   FRONTEND_URL                        — the deployed frontend's base URL (Vercel)
+#   BACKEND_URL                         — the deployed backend's base URL (Railway)
+#   SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET — must equal the backend's own env var of the same name
+# Without all three the script exits 1 immediately — see captureSampleShopScreenshots.ts.
+name: sample-shop-screenshot-sweep
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @bitetime/backend exec playwright install --with-deps chromium
+      - run: pnpm --filter @bitetime/backend screenshot:sweep
+        env:
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET: ${{ secrets.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET }}
