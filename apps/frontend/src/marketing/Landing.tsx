@@ -10,7 +10,7 @@ import { VERTICALS } from './verticals'
 import { PRICING_TIERS } from './pricingTiers'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
-import { ctaPrimary, sectionTitle } from './ctaStyles'
+import { ctaPrimary, ctaGhost, sectionTitle } from './ctaStyles'
 import {
   GrainOverlay,
   Reveal,
@@ -91,6 +91,12 @@ export default function Landing() {
               <MagneticButton to="/merchant/signup" className={ctaPrimary}>
                 {t('Start your shop', '开始建店')}
               </MagneticButton>
+              {/* Points at a dedicated preview page (/sample-shops), never at a live storefront —
+                  the old version of this button linked straight into `/s/bitetime-co` and
+                  customers placed real orders on it (fcd0a57). See SampleShopsPage.tsx. */}
+              <Link to="/sample-shops" className={ctaGhost}>
+                {t('See sample shops', '看看示例店铺')}
+              </Link>
             </div>
           </HeroItem>
           <HeroItem>

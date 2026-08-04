@@ -619,6 +619,53 @@ app.get('/api/merchants/:id/my-orders', requireUser, async (c) => {
   return c.json(data ?? [])
 })
 
+// ── Public: landing-page sample-shops carousel (#107) ──────────────────────────────────────────
+// Registered BEFORE /api/merchants/:slug so the literal path "samples" is never captured as a
+// slug. Unauthenticated, like /api/merchants/:slug and /api/merchants/:id/products below — same
+// trust level, no tenant scoping needed. Deliberately does NOT reuse productFromRow/PricedProduct
+// from @bitetime/shared: this response has no promo/pricing-engine fields, because it prices
+// nothing — see docs/superpowers/specs/2026-08-04-sample-shops-carousel-design.md.
+app.get('/api/merchants/samples', async (c) => {
+  const { data: merchants, error } = await admin
+    .from('merchants')
+    .select('id, slug, name, currency, sample_screenshot_path')
+    .eq('is_sample', true)
+    .eq('status', 'active')
+  if (error) return c.json({ error: 'Lookup failed' }, 500)
+  if (!merchants?.length) return c.json([])
+
+  const { data: products, error: pErr } = await admin
+    .from('products')
+    .select('id, merchant_id, name, name_zh, price, image_urls')
+    .in('merchant_id', merchants.map((m) => m.id))
+    .eq('active', true)
+    .order('sort', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (pErr) return c.json({ error: 'Lookup failed' }, 500)
+
+  const byMerchant = new Map<string, typeof products>()
+  for (const p of products ?? []) {
+    const list = byMerchant.get(p.merchant_id) ?? []
+    if (list.length < 3) list.push(p)
+    byMerchant.set(p.merchant_id, list)
+  }
+
+  return c.json(merchants.map((m) => ({
+    id: m.id,
+    slug: m.slug,
+    name: m.name,
+    currency: m.currency,
+    screenshotPath: m.sample_screenshot_path,
+    products: (byMerchant.get(m.id) ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      nameZh: p.name_zh,
+      price: p.price,
+      imagePath: p.image_urls?.[0] ?? null,
+    })),
+  })))
+})
+
 // ── Public reads (no auth — storefront) ───────────────────────────────────────
 // Shaped: strip internal columns before returning to an unauthenticated caller.
 app.get('/api/merchants/:slug', async (c) => {
@@ -962,6 +1009,27 @@ app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
     return c.json({ error: 'Status update failed' }, 500)
   }
   return c.json({ ok: true, status })
+})
+
+// ── Superadmin: flag/unflag a merchant for the landing-page sample-shops carousel (#107) ──────
+// Pure flag flip — no billing/status side effects, unlike comp/uncomp. GET /api/merchants/samples
+// is what actually reads it.
+app.post('/api/admin/set-merchant-sample', requireSuperadmin, async (c) => {
+  const { merchantId, isSample } = await c.req.json().catch(() => ({}))
+  if (!merchantId || typeof isSample !== 'boolean') {
+    return c.json({ error: 'Missing merchantId or isSample' }, 400)
+  }
+
+  const { data: merchant } = await admin
+    .from('merchants').select('id').eq('id', merchantId).maybeSingle()
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  const { error } = await admin.from('merchants').update({ is_sample: isSample }).eq('id', merchantId)
+  if (error) {
+    console.error('set-merchant-sample failed:', error.message)
+    return c.json({ error: 'Update failed' }, 500)
+  }
+  return c.json({ ok: true, isSample })
 })
 
 // ── Superadmin: comp a merchant to free Pro (no Stripe payment) ────────────────
@@ -1497,6 +1565,40 @@ app.post('/api/internal/trial-feedback-sweep', async (c) => {
   }
 
   return c.json({ due: due.length, sent: sentCount })
+})
+
+const SAMPLE_SCREENSHOT_BUCKET = 'sample-shop-screenshots'
+const MAX_SAMPLE_SCREENSHOT_BYTES = 3 * 1024 * 1024 // 3 MiB — same ceiling as the migration's file_size_limit
+
+// Not user-authenticated — called by a GitHub Actions schedule (see
+// .github/workflows/sample-shop-screenshot-sweep.yml), gated by a shared secret header instead.
+// Fails CLOSED (503) when the secret is unset, matching trial-feedback-sweep's house rule.
+app.post('/api/internal/sample-shop-screenshot/:merchantId', async (c) => {
+  if (!env.sampleShopScreenshotSweepSecret) return c.json({ error: 'Sweep disabled' }, 503)
+  const provided = c.req.header('x-sweep-secret') || ''
+  if (!safeEqualSecret(provided, env.sampleShopScreenshotSweepSecret)) return c.json({ error: 'Forbidden' }, 403)
+
+  const merchantId = c.req.param('merchantId')
+  if (c.req.header('Content-Type') !== 'image/png') return c.json({ error: 'unsupported_type' }, 400)
+
+  const buffer = await c.req.arrayBuffer()
+  if (buffer.byteLength === 0) return c.json({ error: 'invalid_body' }, 400)
+  if (buffer.byteLength > MAX_SAMPLE_SCREENSHOT_BYTES) return c.json({ error: 'too_large' }, 400)
+
+  const { data: merchant } = await admin.from('merchants').select('id').eq('id', merchantId).maybeSingle()
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  const path = `${merchantId}.png`
+  const { error } = await admin.storage
+    .from(SAMPLE_SCREENSHOT_BUCKET)
+    .upload(path, buffer, { contentType: 'image/png', upsert: true })
+  if (error) {
+    console.error('Sample shot upload failed:', error.message)
+    return c.json({ error: 'upload_failed' }, 500)
+  }
+
+  await admin.from('merchants').update({ sample_screenshot_path: path }).eq('id', merchantId)
+  return c.json({ ok: true })
 })
 
 app.post('/api/customer/signup', async (c) => {

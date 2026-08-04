@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { MoreHorizontal } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { fetchAllMerchants, setMerchantStatus, approveMerchant, compMerchant, uncompMerchant, fetchAllBilling, type MerchantBilling } from '../store'
+import { fetchAllMerchants, setMerchantStatus, approveMerchant, compMerchant, uncompMerchant, setMerchantSample, fetchAllBilling, type MerchantBilling } from '../store'
 import { unwrap } from '../api'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
@@ -29,6 +29,7 @@ interface AdminTableMeta {
   onReactivate: (id: string) => void
   onComp: (id: string) => void
   onUncomp: (id: string) => void
+  onToggleSample: (id: string, isSample: boolean) => void
 }
 
 const columns: ColumnDef<MerchantRow>[] = [
@@ -174,6 +175,15 @@ const columns: ColumnDef<MerchantRow>[] = [
                   {t('Comp Pro', '赠送 Pro')}
                 </DropdownMenuItem>
               )}
+              {m.is_sample ? (
+                <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onToggleSample(m.id, false)}>
+                  {t('Remove from samples', '取消示例店铺')}
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onToggleSample(m.id, true)}>
+                  {t('Mark as sample shop', '设为示例店铺')}
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -242,6 +252,18 @@ export default function AdminMerchants() {
     setBusy(null)
   }
 
+  async function toggleSample(id: string, isSample: boolean) {
+    setBusy(id)
+    const r = await setMerchantSample(id, isSample)
+    if (r.ok) {
+      toast.success(isSample ? t('Marked as sample shop', '已设为示例店铺') : t('Removed from samples', '已取消示例店铺'))
+      await load()
+    } else {
+      toast.error(r.error.message || t('Could not update', '无法更新'))
+    }
+    setBusy(null)
+  }
+
   const data = useMemo<MerchantRow[]>(
     () => (rows ?? []).map(m => ({
       ...m,
@@ -259,6 +281,7 @@ export default function AdminMerchants() {
     onReactivate: (id) => act(id, 'active'),
     onComp: comp,
     onUncomp: uncomp,
+    onToggleSample: toggleSample,
   }
 
   if (!rows) return (

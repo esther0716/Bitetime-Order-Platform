@@ -38,6 +38,7 @@ const MerchantHome = lazy(() => import('./merchant/MerchantHome'))
 const Storefront = lazy(() => import('./store/Storefront'))
 const OrderHistory = lazy(() => import('./store/OrderHistory'))
 const ResetPasswordPage = lazy(() => import('./ResetPasswordPage'))
+const SampleShopsPage = lazy(() => import('./marketing/SampleShopsPage'))
 const TermsPage = lazy(() => import('./legal/TermsPage'))
 const PrivacyPage = lazy(() => import('./legal/PrivacyPage'))
 const Toaster = lazy(() => import('./components/ui/sonner').then(m => ({ default: m.Toaster })))
@@ -182,6 +183,10 @@ function AnimatedRoutes() {
               Prerendered — see scripts/prerender.tsx. */}
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/faq" element={<FaqPage />} />
+          {/* NOT prerendered, unlike the three routes above — the shop list is fetched
+              client-side with no fallback data, so a prerendered shell would just be empty
+              markup. See SampleShopsPage.tsx. */}
+          <Route path="/sample-shops" element={<SampleShopsPage />} />
           {/* Top-level on purpose, NOT nested under /s/:slug: the storefront shell's status gate
               would swallow it, and a suspended shop must never lock a customer out of their own
               account. Role-blind — `?shop=` decides where they land afterwards. */}
