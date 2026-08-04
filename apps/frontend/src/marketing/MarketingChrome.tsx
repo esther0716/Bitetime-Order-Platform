@@ -12,7 +12,7 @@
 //     and they must be in the PRERENDERED html, because a crawler that runs no JavaScript is the
 //     entire reason that build step exists.
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import { signOut } from '../store'
@@ -31,6 +31,18 @@ const menuItem =
   'block w-full box-border text-left py-[9px] px-3 border-0 rounded-sm bg-transparent text-rose-muted text-[13px] font-sans font-medium no-underline cursor-pointer [transition:all_0.15s] hover:bg-oxblood-tint hover:text-oxblood'
 
 const footerLink = 'hover:text-oxblood underline underline-offset-4'
+
+const footerColumnHeading = 'text-[11px] font-medium uppercase tracking-[0.09em] text-ink-soft mb-3'
+const footerColumnLink = 'block py-1 text-text-tertiary no-underline [transition:color_0.15s] hover:text-oxblood'
+
+function FooterColumn({ heading, children }: { heading: string; children: ReactNode }) {
+  return (
+    <div className="min-w-[120px]">
+      <div className={footerColumnHeading}>{heading}</div>
+      {children}
+    </div>
+  )
+}
 
 export function MarketingNav() {
   const { t, account, role, loading, merchantUnknown } = useSession()
@@ -135,48 +147,62 @@ export function MarketingFooter() {
   const { t } = useSession()
 
   return (
-    <footer className="mt-auto px-8 py-6 border-t border-clay-border flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-text-tertiary">
-      <Wordmark className="h-[18px]" />
-      <span className="text-clay-border">·</span>
-      <span>{t('Built for small businesses', '专为小生意打造')}</span>
-      {/* aria-hidden, and not clay-border: that colour fails AA on cream (DESIGN.md), so it is
-          a stroke colour rather than a text one. */}
-      <span aria-hidden="true">·</span>
-      {/* Second links to /features, /pricing and /faq, and deliberately not duplicates to be
-          pruned: the nav and the footer are the two places a crawler looks for a site's own
-          structure, and these are inside the prerendered markup of every marketing page — the
-          footer never hides one behind the nav's max-[600px] rule. */}
-      <Link to="/features" className={footerLink}>
-        {t('Features', '功能')}
-      </Link>
-      <Link to="/pricing" className={footerLink}>
-        {t('Pricing', '价格')}
-      </Link>
-      <Link to="/faq" className={footerLink}>
-        {t('FAQ', '常见问题')}
-      </Link>
-      <Link to="/terms" className={footerLink}>
-        {t('Terms', '服务条款')}
-      </Link>
-      {/* Straight to the anchor: a refund policy has to be findable without reading the whole
-          document — Stripe expects that of a business taking subscription payments. */}
-      <Link to={`/terms#${REFUNDS_ANCHOR}`} className={footerLink}>
-        {t('Refunds', '退款政策')}
-      </Link>
-      <Link to="/privacy" className={footerLink}>
-        {t('Privacy', '隐私政策')}
-      </Link>
-      {/* Maker's credit, not a policy link — separated by a dot so it doesn't read as one more
-          legal page, and carrying ?ref=tinyorder so Praxor can attribute the visit. */}
-      <span aria-hidden="true">·</span>
-      <a
-        href="https://www.praxor.dev?ref=tinyorder"
-        target="_blank"
-        rel="noopener noreferrer"
-        className={footerLink}
-      >
-        {t('Built by Praxor', '由 Praxor 打造')}
-      </a>
+    <footer className="mt-auto border-t border-clay-border">
+      {/* Grouped columns, not a single wrapped row: same links as before, same crawler-visible
+          structure (still Link/`<a>` in the prerendered markup), just organised so a visitor
+          scanning the footer can find "the legal stuff" or "the product stuff" at a glance. */}
+      <div className="max-w-[900px] mx-auto px-8 py-10 flex flex-wrap gap-x-16 gap-y-8 text-[13px] max-[600px]:px-5 max-[600px]:py-8 max-[600px]:gap-x-10">
+        <FooterColumn heading={t('Product', '产品')}>
+          <Link to="/features" className={footerColumnLink}>
+            {t('Features', '功能')}
+          </Link>
+          <Link to="/pricing" className={footerColumnLink}>
+            {t('Pricing', '价格')}
+          </Link>
+          <Link to="/faq" className={footerColumnLink}>
+            {t('FAQ', '常见问题')}
+          </Link>
+        </FooterColumn>
+        <FooterColumn heading={t('Legal', '法律')}>
+          <Link to="/terms" className={footerColumnLink}>
+            {t('Terms', '服务条款')}
+          </Link>
+          {/* Straight to the anchor: a refund policy has to be findable without reading the
+              whole document — Stripe expects that of a business taking subscription payments. */}
+          <Link to={`/terms#${REFUNDS_ANCHOR}`} className={footerColumnLink}>
+            {t('Refunds', '退款政策')}
+          </Link>
+          <Link to="/privacy" className={footerColumnLink}>
+            {t('Privacy', '隐私政策')}
+          </Link>
+        </FooterColumn>
+        <FooterColumn heading={t('Connect', '关注我们')}>
+          <a
+            href="https://www.facebook.com/profile.php?id=61592788340403"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={footerColumnLink}
+          >
+            {t('Facebook', '脸书')}
+          </a>
+        </FooterColumn>
+      </div>
+      <div className="px-8 py-5 border-t border-clay-border flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-text-tertiary max-[600px]:px-5">
+        <Wordmark className="h-[18px]" />
+        <span className="text-clay-border">·</span>
+        <span>{t('Built for small businesses', '专为小生意打造')}</span>
+        {/* Maker's credit, not a policy link — separated by a dot so it doesn't read as one more
+            legal page, and carrying ?ref=tinyorder so Praxor can attribute the visit. */}
+        <span aria-hidden="true">·</span>
+        <a
+          href="https://www.praxor.dev?ref=tinyorder"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={footerLink}
+        >
+          {t('Built by Praxor', '由 Praxor 打造')}
+        </a>
+      </div>
     </footer>
   )
 }

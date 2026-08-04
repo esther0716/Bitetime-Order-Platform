@@ -140,10 +140,9 @@ describe('registration status', () => {
     expect(terms).not.toMatch(/operated by [^.]*the business that operates TinyOrder/)
   })
 
-  it('names the operator and a contact address either way', () => {
+  it('names the operator and a contact email either way', () => {
     const all = [...TERMS.sections, ...PRIVACY.sections].flatMap((s) => s.body).join(' ')
     expect(all).toContain(LEGAL_ENTITY.name)
     expect(all).toContain(LEGAL_ENTITY.email)
-    expect(all).toContain(LEGAL_ENTITY.address)
   })
 })

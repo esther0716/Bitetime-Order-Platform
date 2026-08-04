@@ -16,6 +16,8 @@ export interface FeedbackRow {
   status: FeedbackStatus
   created_at: string
   resolved_at: string | null
+  github_issue_number: number | null
+  github_issue_url: string | null
 }
 
 export interface FeedbackWithShop extends FeedbackRow {
@@ -77,4 +79,18 @@ export async function updateFeedbackStatus(
   if (!data) return null
   const { merchants, ...rest } = data as any
   return { ...rest, shop_name: merchants?.name ?? null, shop_slug: merchants?.slug ?? null }
+}
+
+// Best-effort link-back after a successful createGithubIssue call (github.ts). Failure
+// here is logged, never thrown: GitHub already has the issue at this point, so losing the
+// link means the admin dashboard doesn't show it, not that the issue is missing.
+export async function updateFeedbackGithubIssue(
+  id: string,
+  issue: { number: number; html_url: string },
+): Promise<void> {
+  const { error } = await admin
+    .from('merchant_feedback')
+    .update({ github_issue_number: issue.number, github_issue_url: issue.html_url })
+    .eq('id', id)
+  if (error) console.error(`feedback ${id}: failed to link GitHub issue #${issue.number}:`, error.message)
 }

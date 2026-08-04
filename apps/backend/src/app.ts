@@ -43,7 +43,12 @@ import { estimateFor } from './fx.js'
 import { listReferredShops, listEarnedRewards } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
 import { placeOrder, OrderError } from './orders.js'
-import { insertFeedback, listFeedback, updateFeedbackStatus } from './feedback.js'
+import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue } from './feedback.js'
+import {
+  createGithubIssue, closeGithubIssue, reopenGithubIssue,
+  buildIssueTitle, buildIssueBody, categoryToLabel,
+  type CreateGithubIssue, type GithubIssueAction,
+} from './github.js'
 import { isCart, isBusinessNature, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
@@ -1301,6 +1306,18 @@ app.get('/api/referrals/rewards', requireUser, async (c) => {
   return c.json(await listEarnedRewards(user.id))
 })
 
+// The GitHub adapter, held mutable so tests can capture what would be sent without a live
+// network — same pattern as notifyDeps below. Production uses the real fetch adapters.
+export const githubDeps: {
+  createIssue: CreateGithubIssue
+  closeIssue: GithubIssueAction
+  reopenIssue: GithubIssueAction
+} = {
+  createIssue: createGithubIssue,
+  closeIssue: closeGithubIssue,
+  reopenIssue: reopenGithubIssue,
+}
+
 // ── Merchant platform feedback (#89) ────────────────────────────────────────────
 // Per-user, not per-IP: the route is authenticated, so the user id is the real actor and
 // is not spoofable behind a shared NAT the way an IP is. The check runs BEFORE validation
@@ -1329,6 +1346,22 @@ app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
   // merchant.id comes from the route the middleware already verified; user.id from the
   // JWT. Neither is ever read from the body — see tests/api/feedback.test.ts.
   const row = await insertFeedback({ merchantId: merchant.id, userId: user.id, draft: parsed.value })
+
+  // Best-effort (github.ts). Never changes what the merchant gets back — the row below is
+  // the same whether or not this succeeds.
+  const issue = await githubDeps.createIssue(env.githubToken, {
+    title: buildIssueTitle(parsed.value.category, merchant.name),
+    body: buildIssueBody({
+      message: parsed.value.message,
+      shopName: merchant.name,
+      shopSlug: merchant.slug,
+      feedbackId: row.id,
+      createdAt: row.created_at,
+    }),
+    labels: ['needs-triage', categoryToLabel(parsed.value.category)],
+  })
+  if (issue) await updateFeedbackGithubIssue(row.id, issue)
+
   return c.json(row, 201)
 })
 
@@ -1346,6 +1379,13 @@ app.patch('/api/admin/feedback/:feedbackId', requireSuperadmin, async (c) => {
 
   const row = await updateFeedbackStatus(c.req.param('feedbackId'), body.status)
   if (!row) return c.json({ error: 'Feedback not found' }, 404)
+
+  // Best-effort keep-in-sync (github.ts). The dashboard's status is authoritative either way.
+  if (row.github_issue_number) {
+    const action = body.status === 'resolved' ? githubDeps.closeIssue : githubDeps.reopenIssue
+    await action(env.githubToken, row.github_issue_number)
+  }
+
   return c.json(row)
 })
 

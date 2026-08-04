@@ -23,7 +23,7 @@ export const LEGAL_ENTITY: LegalEntity = {
   // Inventing a number here would be a false statement in a document whose entire purpose is to
   // be relied upon. While this stays bracketed, `hasUnfilledEntityDetails` reports true and both
   // documents render their draft notice — which is the correct state of the world.
-  registration: '1234567890',
+  registration: 'SA0656426-A',
   address: '360, Jalan Ayer Tasek, Setapak, 53200 Kuala Lumpur',
   email: 'enquiry@support.tinyorder.shop',
 }
