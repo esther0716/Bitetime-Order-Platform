@@ -332,6 +332,29 @@ export async function placeOrder(
 }
 
 /**
+ * The shop an order belongs to — the one thing the payment-proof upload needs before it can
+ * accept a file, and the one thing it must never take from the caller. An order id names its
+ * own shop; a client-supplied merchantId would let anyone attach a proof image into any shop's
+ * folder. `null` for a missing OR malformed id — the caller only ever needs to know "not found",
+ * and a hand-typed id in the URL is the same failure as a real one that was never placed.
+ */
+export async function orderMerchantId(orderId: string): Promise<string | null> {
+  try {
+    const rows = await sql<{ merchant_id: string }[]>`
+      select merchant_id from orders where id = ${orderId}
+    `
+    return rows[0]?.merchant_id ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Stamps the storage path onto the order row. No return value — the caller already knows the path. */
+export async function setOrderPaymentProof(orderId: string, path: string): Promise<void> {
+  await sql`update orders set payment_proof = ${path} where id = ${orderId}`
+}
+
+/**
  * The routed distance for this order, or a refusal. `null` for any mode that is not `express`
  * — pickup and flat-rate delivery price by their own rules and never route.
  *

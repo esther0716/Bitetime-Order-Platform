@@ -43,7 +43,7 @@ import { fetchBasePricing, createPricingCache, planFromPriceId, type PricingPayl
 import { estimateFor } from './fx.js'
 import { listReferredShops, listEarnedRewards } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
-import { placeOrder, OrderError } from './orders.js'
+import { placeOrder, OrderError, orderMerchantId, setOrderPaymentProof } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue } from './feedback.js'
 import {
   findDueTrials, claimSend, releaseSend,
@@ -1644,6 +1644,45 @@ app.post('/api/orders', async (c) => {
     console.error('Order intake failed:', err instanceof Error ? err.message : String(err))
     return c.json({ error: 'order_failed' }, 500)
   }
+})
+
+// ── Payment proof — the customer's own screenshot of a completed transfer ─────────────────────
+// Unauthenticated, exactly like POST /api/orders itself: guest checkout has no token to scope an
+// RLS write against, and an order id is not a secret a client-side policy could gate on either —
+// so this goes through the service-role client, the same shape order intake already uses. See
+// docs/superpowers/specs/2026-08-04-payment-proof-upload-design.md.
+const PAYMENT_PROOF_BUCKET = 'payment-proof'
+const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024
+const PAYMENT_PROOF_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
+
+app.post('/api/orders/:orderId/payment-proof', async (c) => {
+  const orderId = c.req.param('orderId')
+  const contentType = c.req.header('Content-Type') ?? ''
+  const ext = PAYMENT_PROOF_EXT[contentType]
+  if (!ext) return c.json({ error: 'unsupported_type' }, 400)
+
+  const buffer = await c.req.arrayBuffer()
+  if (buffer.byteLength === 0) return c.json({ error: 'invalid_body' }, 400)
+  if (buffer.byteLength > MAX_PAYMENT_PROOF_BYTES) return c.json({ error: 'too_large' }, 400)
+
+  const merchantId = await orderMerchantId(orderId)
+  if (!merchantId) return c.json({ error: 'not_found' }, 404)
+
+  const path = `${merchantId}/${orderId}.${ext}`
+  const { error } = await admin.storage
+    .from(PAYMENT_PROOF_BUCKET)
+    .upload(path, buffer, { contentType, upsert: true })
+  if (error) {
+    console.error('Payment proof upload failed:', error.message)
+    return c.json({ error: 'upload_failed' }, 500)
+  }
+
+  await setOrderPaymentProof(orderId, path)
+  return c.json({ ok: true })
 })
 
 // The two outbound adapters, held in a mutable object so tests can capture what
