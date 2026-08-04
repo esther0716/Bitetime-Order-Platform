@@ -67,6 +67,13 @@ function loadSupabaseEnv() {
   // per call. Everything distance-related in tests/api is exercised through SEEDED CACHE ROWS.
   process.env.GOOGLE_MAPS_API_KEY = ''
 
+  // Same argument, and arguably sharper: most of tests/api/feedback.test.ts posts real feedback
+  // without swapping githubDeps, so a real GITHUB_TOKEN in a developer's shell (common for gh
+  // CLI users) would silently file real, public issues on leongcheefai/Bitetime-Order-Platform
+  // on every `test:db` run. The tests that DO want to exercise the create/close/reopen path
+  // swap `githubDeps` directly (see feedback.test.ts) — that path never touches env.githubToken.
+  process.env.GITHUB_TOKEN = ''
+
   const missing = Object.keys(FROM_CLI).filter(name => !process.env[name])
   if (missing.length === 0) return
 
