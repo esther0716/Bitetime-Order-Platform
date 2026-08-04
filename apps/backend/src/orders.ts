@@ -337,6 +337,12 @@ export async function placeOrder(
  * own shop; a client-supplied merchantId would let anyone attach a proof image into any shop's
  * folder. `null` for a missing OR malformed id — the caller only ever needs to know "not found",
  * and a hand-typed id in the URL is the same failure as a real one that was never placed.
+ *
+ * A malformed id is the ONLY error swallowed into that `null` — Postgres's own `22P02` (invalid
+ * input syntax for uuid). Anything else is a real database failure and must not present as a
+ * plain 404: that would fail OPEN exactly where `requireOwnsChild` (mw.ts) deliberately fails
+ * closed for the sibling case ("A FAILED QUERY IS NOT 'no such row'"). Rethrown, so the caller's
+ * catch turns it into a 500.
  */
 export async function orderMerchantId(orderId: string): Promise<string | null> {
   try {
@@ -344,8 +350,9 @@ export async function orderMerchantId(orderId: string): Promise<string | null> {
       select merchant_id from orders where id = ${orderId}
     `
     return rows[0]?.merchant_id ?? null
-  } catch {
-    return null
+  } catch (err) {
+    if (err && typeof err === 'object' && (err as { code?: string }).code === '22P02') return null
+    throw err
   }
 }
 

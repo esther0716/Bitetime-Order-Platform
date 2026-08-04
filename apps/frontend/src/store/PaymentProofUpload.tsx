@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { uploadPaymentProof, MAX_PAYMENT_PROOF_BYTES, PAYMENT_PROOF_TYPES } from '../store'
+import { uploadPaymentProof, PAYMENT_PROOF_TYPES } from '../store'
 
 type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error'
 
@@ -10,6 +10,9 @@ type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error'
  * order-placed screen. No gating anywhere: the customer can skip it, upload later (outside the
  * app), or replace what they already sent — this widget has no memory of a page reload, matching
  * the QR block it sits under, which is also never shown anywhere else.
+ *
+ * Type/size checks live once, in `uploadPaymentProof` itself — not repeated here, matching
+ * `PaymentQrPicker`'s sibling shape (a single call, one branch on the Result).
  */
 export default function PaymentProofUpload({ orderId }: { orderId: string }) {
   const { t } = useSession()
@@ -17,14 +20,6 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
 
   async function handleFile(file: File | undefined) {
     if (!file) return
-    if (!PAYMENT_PROOF_TYPES.includes(file.type)) {
-      toast.error(t('Unsupported image type', '不支持的图片格式'))
-      return
-    }
-    if (file.size > MAX_PAYMENT_PROOF_BYTES) {
-      toast.error(t('Image too large (max 2MB)', '图片过大（最大 2MB）'))
-      return
-    }
     setState('uploading')
     const r = await uploadPaymentProof(orderId, file)
     if (r.ok) {
@@ -32,7 +27,7 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
       toast.success(t('Payment proof uploaded', '付款凭证已上传'))
     } else {
       setState('error')
-      toast.error(t('Could not upload — try again', '上传失败，请重试'))
+      toast.error(r.error.message || t('Could not upload — try again', '上传失败，请重试'))
     }
   }
 

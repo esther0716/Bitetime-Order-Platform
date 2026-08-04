@@ -131,6 +131,14 @@ describe('POST /api/orders/:orderId/payment-proof', () => {
     const res = await post('00000000-0000-0000-0000-000000000000', PNG_1X1, 'image/png')
     expect(res.status).toBe(404)
   })
+
+  // orderMerchantId swallows exactly one error into "not found": Postgres's own 22P02 for an id
+  // that isn't a UUID at all. A hand-typed id in the URL is the same failure as a real one that
+  // was never placed — this is not the "fail closed on a real DB error" case.
+  it('404s for a malformed (non-UUID) order id, same as a missing one', async () => {
+    const res = await post('not-a-uuid', PNG_1X1, 'image/png')
+    expect(res.status).toBe(404)
+  })
 })
 
 // Same ownership chain as PATCH /api/merchants/:id/orders/:orderId (requireMerchantOwns +

@@ -1676,6 +1676,9 @@ app.post('/api/orders', async (c) => {
 // so this goes through the service-role client, the same shape order intake already uses. See
 // docs/superpowers/specs/2026-08-04-payment-proof-upload-design.md.
 const PAYMENT_PROOF_BUCKET = 'payment-proof'
+// Same ceiling as MAX_PAYMENT_PROOF_BYTES/PAYMENT_PROOF_TYPES in store.ts and the migration's
+// bucket config (20260804160000) — three copies by CLAUDE.md's rule (no shared build step across
+// browser/server), one number.
 const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024
 const PAYMENT_PROOF_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -1693,7 +1696,13 @@ app.post('/api/orders/:orderId/payment-proof', async (c) => {
   if (buffer.byteLength === 0) return c.json({ error: 'invalid_body' }, 400)
   if (buffer.byteLength > MAX_PAYMENT_PROOF_BYTES) return c.json({ error: 'too_large' }, 400)
 
-  const merchantId = await orderMerchantId(orderId)
+  let merchantId: string | null
+  try {
+    merchantId = await orderMerchantId(orderId)
+  } catch (err) {
+    console.error('Payment proof lookup failed:', err instanceof Error ? err.message : String(err))
+    return c.json({ error: 'lookup_failed' }, 500)
+  }
   if (!merchantId) return c.json({ error: 'not_found' }, 404)
 
   const path = `${merchantId}/${orderId}.${ext}`
