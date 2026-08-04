@@ -833,9 +833,11 @@ With local Supabase running, start the app (`pnpm dev` from repo root; no `strip
 2. Confirm it submits successfully (no error toast) — this proves the fail-open path: with no local `GITHUB_TOKEN`, `createGithubIssue` logs `GitHub issue skipped: no token configured` in the backend terminal and returns `null`, and the feedback row still saves.
 3. Sign in as superadmin, open Admin → Feedback, confirm the row appears with no issue link (none was created) and that Resolve/Reopen still works.
 
-- [ ] **Step 4: Flag live-issue verification to the user — do not do this step autonomously**
+- [x] **Step 4: Flag live-issue verification to the user — do not do this step autonomously**
 
 Actually creating a real GitHub issue requires a real `GITHUB_TOKEN` and will file a visible, public issue on `leongcheefai/Bitetime-Order-Platform`. That is an action visible to others on a shared system — per this project's operating rules, it needs the human's explicit go-ahead, not an agent's unilateral decision. When this task is reached, stop and ask the user: do they want to supply a test `GITHUB_TOKEN` (or point at a scratch repo) to verify the live create/close/reopen path end-to-end before considering the feature done, or is the mocked `tests/api` coverage from Task 5 sufficient? Do not set `GITHUB_TOKEN` or submit feedback against a live token without that answer.
+
+Asked 2026-08-04 — user chose to skip live verification; the mocked `tests/api` coverage (Task 5) plus the run-and-verified fail-open path (Step 3 above) were accepted as sufficient.
 
 ---
 
