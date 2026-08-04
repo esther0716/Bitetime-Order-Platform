@@ -30,6 +30,8 @@ export interface Merchant {
   config?: Record<string, unknown>
   timezone?: string
   created_at?: string
+  /** Landing-page sample-shops carousel flag (#107). Toggled only from /admin/merchants. */
+  is_sample?: boolean
   /** Whether this shop charges tax. See `shopTax` — never read this without it. */
   tax_enabled?: boolean
   /** A PERCENTAGE: 6 means 6%. PostgREST sends a number; read via `shopTax`. */
@@ -165,6 +167,9 @@ export interface Order {
   fulfil_date?: string | null
   /** Routed km this order was charged for. Null for region-priced orders and everything before #101. */
   delivery_distance_km?: number | null
+  /** Storage path in the private `payment-proof` bucket, or null/absent. Never render this
+   *  directly as a URL — fetch it through `fetchPaymentProof`, which is auth-gated. */
+  payment_proof?: string | null
   [key: string]: any
 }
 
@@ -272,4 +277,21 @@ export interface FeedbackItem {
   shop_slug: string | null
   github_issue_number: number | null
   github_issue_url: string | null
+}
+
+// One row of the one-time trial-experience survey (#155). `null` from `fetchTrialFeedback`
+// means no survey has been sent yet — the trial hasn't ended. A non-null row with neither
+// responded_at nor skipped_at is a pending prompt still waiting on the merchant.
+export interface TrialFeedbackOwn {
+  merchant_id: string
+  sent_at: string
+  rating: number | null
+  comment: string | null
+  responded_at: string | null
+  skipped_at: string | null
+}
+
+export interface TrialFeedbackAdminItem extends TrialFeedbackOwn {
+  shop_name: string | null
+  shop_slug: string | null
 }

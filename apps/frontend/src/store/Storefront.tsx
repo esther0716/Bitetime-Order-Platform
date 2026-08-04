@@ -32,6 +32,7 @@ import CheckoutGate, { GuestStrip } from './CheckoutGate'
 import FulfilDatePicker from './FulfilDatePicker'
 import AddressAutocomplete from './AddressAutocomplete'
 import MoneyLine from './MoneyLine'
+import PaymentProofUpload from './PaymentProofUpload'
 import { checkoutStep, readGuestChoice, rememberGuestChoice } from '../checkoutGate'
 import { cn } from '@/lib/utils'
 import { formatCalendarDate } from '../orderDate'
@@ -68,6 +69,7 @@ interface ReceiptLine {
 }
 
 interface SuccessState {
+  orderId: string
   orderNumber: string
   items: ReceiptLine[]
   subtotal: number
@@ -752,6 +754,7 @@ export default function Storefront() {
       // Best-effort server-side Telegram notify; never blocks a placed order (Result ignored).
       await notifyOrderPlacedRemote(merchant.id, result.data.orderNumber, lang)
       setSuccess({
+        orderId: result.data.id,
         orderNumber: result.data.orderNumber, items: cartItems, subtotal, fee, discount, taxAmount, taxRate, total,
         // The SAME value the summary just labelled the fee with — a non-null `quote` is what
         // gated submission in the first place (`submitGate`'s `quoted`), so at this point it can
@@ -916,6 +919,10 @@ export default function Storefront() {
                     </span>
                   </div>
                 )}
+
+                {/* Optional, additive: same guard as the block itself — a shop with no payment
+                    info configured has nothing to prove payment of. */}
+                <PaymentProofUpload orderId={success.orderId} />
               </div>
             )}
 

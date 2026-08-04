@@ -74,6 +74,17 @@ function loadSupabaseEnv() {
   // swap `githubDeps` directly (see feedback.test.ts) — that path never touches env.githubToken.
   process.env.GITHUB_TOKEN = ''
 
+  // Same reasoning as the Stripe stubs: importing the app must be possible without a real
+  // secret, and this one carries no live-network risk (it only gates an internal endpoint),
+  // so a plain default — not a forced-empty like GOOGLE_MAPS_API_KEY — is enough.
+  if (!process.env.TRIAL_FEEDBACK_SWEEP_SECRET) process.env.TRIAL_FEEDBACK_SWEEP_SECRET = 'test-sweep-secret-stub'
+
+  // Same reasoning as the TRIAL_FEEDBACK_SWEEP_SECRET stub just above: it only gates an
+  // internal endpoint, no live-network risk, so a plain default is enough.
+  if (!process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET) {
+    process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET = 'test-screenshot-sweep-secret-stub'
+  }
+
   const missing = Object.keys(FROM_CLI).filter(name => !process.env[name])
   if (missing.length === 0) return
 

@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession } from '../SessionContext'
-import { setOrderStatus, setOrderNote, setOrderTracking } from '../store'
+import { setOrderStatus, setOrderNote, setOrderTracking, fetchPaymentProof } from '../store'
 import { formatMoney } from '../currency'
 import { formatAddress } from '../address'
 import { formatCalendarDate } from '../orderDate'
@@ -67,6 +67,32 @@ export default function OrderDetailSheet({
   const [courierDraft, setCourierDraft] = useState('')
   const [awbDraft, setAwbDraft] = useState('')
   const [savingTrack, setSavingTrack] = useState(false)
+  // `orderId` on the record is what proves a fetched url still belongs to the order on screen —
+  // switching to a different order (proof or not) must not keep showing the last one's image
+  // while its own fetch is still in flight.
+  const [proof, setProof] = useState<{ orderId: string; url: string } | null>(null)
+
+  // Lazy: only fetched when the sheet is open for an order that actually has one, not on every
+  // dashboard list render. ONE effect owns the whole lifecycle of one fetched image — it revokes
+  // the url ITS OWN fetch created, in ITS OWN cleanup — so switching to a DIFFERENT order (proof
+  // or not) or unmounting always revokes, not just "a new proof landed".
+  useEffect(() => {
+    if (!order?.payment_proof || !merchant) return
+    const orderId = order.id!
+    let cancelled = false
+    let url: string | null = null
+    fetchPaymentProof(merchant.id, orderId).then((r) => {
+      if (cancelled || !r.ok) return
+      url = URL.createObjectURL(r.data)
+      setProof({ orderId, url })
+    })
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [order?.id, order?.payment_proof, merchant])
+
+  const proofUrl = proof && proof.orderId === order?.id ? proof.url : null
 
   const statusItems = ORDER_STATUSES.map(s => ({
     value: s,
@@ -143,6 +169,23 @@ export default function OrderDetailSheet({
                   <span className="text-[13px] w-fit"><WaLink wa={order.customer_wa} /></span>
                 )}
               </Section>
+
+              {/* Payment proof — the customer's own screenshot, if they uploaded one */}
+              {order.payment_proof && (
+                <Section title={t('Payment proof', '付款凭证')}>
+                  {proofUrl ? (
+                    <a href={proofUrl} target="_blank" rel="noopener noreferrer" className="block w-full max-w-[200px]">
+                      <img
+                        src={proofUrl}
+                        alt={t('Payment proof', '付款凭证')}
+                        className="w-full h-auto object-contain rounded-md border border-clay-border"
+                      />
+                    </a>
+                  ) : (
+                    <span className="text-[13px] text-rose-muted">{t('Loading…', '加载中…')}</span>
+                  )}
+                </Section>
+              )}
 
               {/* Items + totals */}
               <Section title={t('Items', '商品')}>

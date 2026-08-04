@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }))
 vi.mock('./supabase', () => ({ auth: { getSession } }))
 
-import { apiGet, apiSend, unwrap } from './api'
+import { apiGet, apiSend, apiSendFile, unwrap } from './api'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -71,6 +71,57 @@ describe('apiSend', () => {
     expect(init.method).toBe('PATCH')
     expect(init.headers['Content-Type']).toBe('application/json')
     expect(JSON.parse(init.body)).toEqual({ a: 2 })
+  })
+})
+
+describe('apiSendFile', () => {
+  function file(bytes = 'x', type = 'image/png') {
+    return new File([bytes], 'proof.png', { type })
+  }
+
+  it('200 → { ok: true, data }', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) }))
+    const r = await apiSendFile<{ ok: boolean }>('/x', file())
+    expect(r).toEqual({ ok: true, data: { ok: true } })
+  })
+
+  it('empty 200 body → { ok: true, data: null }', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, status: 200, text: async () => '' }))
+    const r = await apiSendFile('/x', file())
+    expect(r).toEqual({ ok: true, data: null })
+  })
+
+  it('non-2xx → { ok: false, error }', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ error: 'unsupported_type' }) }))
+    const r = await apiSendFile('/x', file())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.message).toBe('unsupported_type')
+  })
+
+  it('sends the file as the raw body with its own content-type, no auth header by default', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, text: async () => '' })
+    vi.stubGlobal('fetch', fetchMock)
+    const f = file('bytes', 'image/webp')
+    await apiSendFile('/x', f)
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.method).toBe('POST')
+    expect(init.headers['Content-Type']).toBe('image/webp')
+    expect(init.headers.Authorization).toBeUndefined()
+    expect(init.body).toBe(f)
+  })
+
+  it('auth:true attaches the token when a session exists', async () => {
+    getSession.mockResolvedValue({ data: { session: { access_token: 'tok' } } })
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, text: async () => '' })
+    vi.stubGlobal('fetch', fetchMock)
+    await apiSendFile('/x', file(), { auth: true })
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer tok')
+  })
+
+  it('fetch rejection → { ok: false }', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch')))
+    const r = await apiSendFile('/x', file())
+    expect(r.ok).toBe(false)
   })
 })
 

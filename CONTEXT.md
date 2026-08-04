@@ -257,6 +257,26 @@ renewals go `past_due` (red banner) and ride Stripe dunning. Stripe is the
 single source of billing truth; `merchant_billing` mirrors it. Pure seams:
 `billingLifecycle` (backend) and `billingBannerState` (frontend).
 
+## Trial feedback
+
+A one-time, platform-initiated survey — not to be confused with the
+merchant-initiated, open-ended complaint box behind the dashboard's feedback
+button (`merchant_feedback` table, categories bug/feature/billing/other).
+Once a shop's
+`trial_ends_at` has passed, a daily sweep (a GitHub Actions cron, the first
+scheduled — as opposed to webhook- or request-driven — job in this backend;
+see `docs/adr/0011-trial-feedback-is-a-cron-sweep-not-a-webhook.md`) emails
+the merchant once, asking about the trial itself, independent of whether it
+converted, is still trialing, or ended in suspension. The email links to the
+dashboard (login required, same as the existing trial reminder) where a
+1–5 star rating (required) plus an optional comment can be given from
+whichever shell the shop's status routes the merchant to — `Dashboard` or
+`SuspendedScreen`. Declining is permanent: dismissing the prompt marks it
+skipped and it never reappears. Only trials ending after this feature ships
+are surveyed; no backfill for trials that already ended. Superadmins read
+responses on their own admin page, separate from `AdminFeedback`'s complaint
+inbox.
+
 ## Plan entitlement
 
 Which **features** a shop may use, as opposed to whether its subscription is

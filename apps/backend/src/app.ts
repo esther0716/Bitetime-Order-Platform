@@ -10,6 +10,7 @@
 // without a Stripe key is worse than one that refuses to), and it is why vitest.db.config.ts
 // has to stub the Stripe keys before a test can import this module. Keep it to that — no
 // connections, no timers, no reads at import time.
+import { timingSafeEqual } from 'node:crypto'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { env } from './env.js'
@@ -42,14 +43,19 @@ import { fetchBasePricing, createPricingCache, planFromPriceId, type PricingPayl
 import { estimateFor } from './fx.js'
 import { listReferredShops, listEarnedRewards } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
-import { placeOrder, OrderError } from './orders.js'
+import { placeOrder, OrderError, orderMerchantId, setOrderPaymentProof } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue } from './feedback.js'
+import {
+  findDueTrials, claimSend, releaseSend,
+  getOwnTrialFeedback, respondTrialFeedback, skipTrialFeedback, listTrialFeedbackForAdmin,
+} from './trialFeedback.js'
+import { buildTrialFeedbackEmail } from './trialFeedbackEmail.js'
 import {
   createGithubIssue, closeGithubIssue, reopenGithubIssue,
   buildIssueTitle, buildIssueBody, categoryToLabel,
   type CreateGithubIssue, type GithubIssueAction,
 } from './github.js'
-import { isCart, isBusinessNature, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
@@ -613,6 +619,53 @@ app.get('/api/merchants/:id/my-orders', requireUser, async (c) => {
   return c.json(data ?? [])
 })
 
+// ── Public: landing-page sample-shops carousel (#107) ──────────────────────────────────────────
+// Registered BEFORE /api/merchants/:slug so the literal path "samples" is never captured as a
+// slug. Unauthenticated, like /api/merchants/:slug and /api/merchants/:id/products below — same
+// trust level, no tenant scoping needed. Deliberately does NOT reuse productFromRow/PricedProduct
+// from @bitetime/shared: this response has no promo/pricing-engine fields, because it prices
+// nothing — see docs/superpowers/specs/2026-08-04-sample-shops-carousel-design.md.
+app.get('/api/merchants/samples', async (c) => {
+  const { data: merchants, error } = await admin
+    .from('merchants')
+    .select('id, slug, name, currency, sample_screenshot_path')
+    .eq('is_sample', true)
+    .eq('status', 'active')
+  if (error) return c.json({ error: 'Lookup failed' }, 500)
+  if (!merchants?.length) return c.json([])
+
+  const { data: products, error: pErr } = await admin
+    .from('products')
+    .select('id, merchant_id, name, name_zh, price, image_urls')
+    .in('merchant_id', merchants.map((m) => m.id))
+    .eq('active', true)
+    .order('sort', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (pErr) return c.json({ error: 'Lookup failed' }, 500)
+
+  const byMerchant = new Map<string, typeof products>()
+  for (const p of products ?? []) {
+    const list = byMerchant.get(p.merchant_id) ?? []
+    if (list.length < 3) list.push(p)
+    byMerchant.set(p.merchant_id, list)
+  }
+
+  return c.json(merchants.map((m) => ({
+    id: m.id,
+    slug: m.slug,
+    name: m.name,
+    currency: m.currency,
+    screenshotPath: m.sample_screenshot_path,
+    products: (byMerchant.get(m.id) ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      nameZh: p.name_zh,
+      price: p.price,
+      imagePath: p.image_urls?.[0] ?? null,
+    })),
+  })))
+})
+
 // ── Public reads (no auth — storefront) ───────────────────────────────────────
 // Shaped: strip internal columns before returning to an unauthenticated caller.
 app.get('/api/merchants/:slug', async (c) => {
@@ -773,6 +826,30 @@ app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, requireOwns
   return c.json(data)
 })
 
+// The image itself, for the merchant dashboard. Same ownership chain as the PATCH above — see
+// its own comment for why requireOwnsChild is what actually proves :orderId belongs to :id, not
+// just requireMerchantOwns. `child` here is the order row requireOwnsChild already loaded; no
+// second query.
+app.get(
+  '/api/merchants/:id/orders/:orderId/payment-proof',
+  requireMerchantOwns,
+  requireOwnsChild('orders', 'orderId'),
+  async (c) => {
+    const order = c.get('child')
+    const path = order?.payment_proof as string | null | undefined
+    if (!path) return c.json({ error: 'not_found' }, 404)
+
+    const { data, error } = await admin.storage.from('payment-proof').download(path)
+    if (error || !data) return c.json({ error: 'download_failed' }, 500)
+
+    const buffer = await data.arrayBuffer()
+    return new Response(buffer, {
+      status: 200,
+      headers: { 'Content-Type': data.type || 'application/octet-stream' },
+    })
+  },
+)
+
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
 app.post('/api/checkout', requireOwnMerchant, async (c) => {
   const body = await c.req.json().catch(() => ({}))
@@ -932,6 +1009,27 @@ app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
     return c.json({ error: 'Status update failed' }, 500)
   }
   return c.json({ ok: true, status })
+})
+
+// ── Superadmin: flag/unflag a merchant for the landing-page sample-shops carousel (#107) ──────
+// Pure flag flip — no billing/status side effects, unlike comp/uncomp. GET /api/merchants/samples
+// is what actually reads it.
+app.post('/api/admin/set-merchant-sample', requireSuperadmin, async (c) => {
+  const { merchantId, isSample } = await c.req.json().catch(() => ({}))
+  if (!merchantId || typeof isSample !== 'boolean') {
+    return c.json({ error: 'Missing merchantId or isSample' }, 400)
+  }
+
+  const { data: merchant } = await admin
+    .from('merchants').select('id').eq('id', merchantId).maybeSingle()
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  const { error } = await admin.from('merchants').update({ is_sample: isSample }).eq('id', merchantId)
+  if (error) {
+    console.error('set-merchant-sample failed:', error.message)
+    return c.json({ error: 'Update failed' }, 500)
+  }
+  return c.json({ ok: true, isSample })
 })
 
 // ── Superadmin: comp a merchant to free Pro (no Stripe payment) ────────────────
@@ -1389,6 +1487,120 @@ app.patch('/api/admin/feedback/:feedbackId', requireSuperadmin, async (c) => {
   return c.json(row)
 })
 
+// ── Trial feedback (#155) ───────────────────────────────────────────────────────
+// One-time, platform-initiated survey — see CONTEXT.md → Trial feedback. requireOwnMerchant
+// scopes every route to the caller's own shop; there is no :id to name a different one.
+
+app.get('/api/trial-feedback', requireOwnMerchant, async (c) => {
+  const merchant = c.get('merchant')
+  return c.json(await getOwnTrialFeedback(merchant.id))
+})
+
+app.post('/api/trial-feedback/respond', requireOwnMerchant, async (c) => {
+  const merchant = c.get('merchant')
+  const parsed = validateTrialFeedback(await c.req.json().catch(() => ({})))
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+
+  const result = await respondTrialFeedback(merchant.id, parsed.value)
+  if (!result.ok) return c.json({ error: result.reason }, result.reason === 'not_found' ? 404 : 409)
+  return c.json(result.row)
+})
+
+app.post('/api/trial-feedback/skip', requireOwnMerchant, async (c) => {
+  const merchant = c.get('merchant')
+  const result = await skipTrialFeedback(merchant.id)
+  if (!result.ok) return c.json({ error: result.reason }, result.reason === 'not_found' ? 404 : 409)
+  return c.json(result.row)
+})
+
+app.get('/api/admin/trial-feedback', requireSuperadmin, async (c) => {
+  return c.json(await listTrialFeedbackForAdmin())
+})
+
+// Constant-time compare, guarding the length check first (a mismatched length would
+// otherwise throw inside timingSafeEqual rather than answer false).
+function safeEqualSecret(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+// Not user-authenticated — called by a GitHub Actions schedule (see
+// .github/workflows/trial-feedback-sweep.yml), gated by a shared secret header instead.
+// Fails CLOSED (503) when the secret is unset, matching the house rule that an optional,
+// unset credential means a refusal, never an open door.
+app.post('/api/internal/trial-feedback-sweep', async (c) => {
+  if (!env.trialFeedbackSweepSecret) return c.json({ error: 'Sweep disabled' }, 503)
+  const provided = c.req.header('x-sweep-secret') || ''
+  if (!safeEqualSecret(provided, env.trialFeedbackSweepSecret)) return c.json({ error: 'Forbidden' }, 403)
+
+  const due = await findDueTrials(new Date())
+  let sentCount = 0
+  for (const trial of due) {
+    const claimed = await claimSend(trial.merchantId)
+    if (!claimed) continue // a concurrent run already has it
+
+    const { data: ownerUser } = await admin.auth.admin.getUserById(trial.ownerId)
+    const ownerEmail = ownerUser?.user?.email
+    if (!ownerEmail) {
+      console.error(`trial-feedback sweep: no email for merchant ${trial.merchantId}, releasing claim`)
+      await releaseSend(trial.merchantId)
+      continue
+    }
+
+    try {
+      const { subject, text } = buildTrialFeedbackEmail({
+        shopName: trial.shopName,
+        dashboardUrl: `${env.frontendUrl}/merchant`,
+      })
+      await trialFeedbackDeps.email(ownerEmail, subject, { text })
+      sentCount++
+    } catch (err) {
+      console.error(
+        `trial-feedback sweep: send failed for merchant ${trial.merchantId}, releasing claim:`,
+        err instanceof Error ? err.message : String(err),
+      )
+      await releaseSend(trial.merchantId)
+    }
+  }
+
+  return c.json({ due: due.length, sent: sentCount })
+})
+
+const SAMPLE_SCREENSHOT_BUCKET = 'sample-shop-screenshots'
+const MAX_SAMPLE_SCREENSHOT_BYTES = 3 * 1024 * 1024 // 3 MiB — same ceiling as the migration's file_size_limit
+
+// Not user-authenticated — called by a GitHub Actions schedule (see
+// .github/workflows/sample-shop-screenshot-sweep.yml), gated by a shared secret header instead.
+// Fails CLOSED (503) when the secret is unset, matching trial-feedback-sweep's house rule.
+app.post('/api/internal/sample-shop-screenshot/:merchantId', async (c) => {
+  if (!env.sampleShopScreenshotSweepSecret) return c.json({ error: 'Sweep disabled' }, 503)
+  const provided = c.req.header('x-sweep-secret') || ''
+  if (!safeEqualSecret(provided, env.sampleShopScreenshotSweepSecret)) return c.json({ error: 'Forbidden' }, 403)
+
+  const merchantId = c.req.param('merchantId')
+  if (c.req.header('Content-Type') !== 'image/png') return c.json({ error: 'unsupported_type' }, 400)
+
+  const buffer = await c.req.arrayBuffer()
+  if (buffer.byteLength === 0) return c.json({ error: 'invalid_body' }, 400)
+  if (buffer.byteLength > MAX_SAMPLE_SCREENSHOT_BYTES) return c.json({ error: 'too_large' }, 400)
+
+  const { data: merchant } = await admin.from('merchants').select('id').eq('id', merchantId).maybeSingle()
+  if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
+
+  const path = `${merchantId}.png`
+  const { error } = await admin.storage
+    .from(SAMPLE_SCREENSHOT_BUCKET)
+    .upload(path, buffer, { contentType: 'image/png', upsert: true })
+  if (error) {
+    console.error('Sample shot upload failed:', error.message)
+    return c.json({ error: 'upload_failed' }, 500)
+  }
+
+  await admin.from('merchants').update({ sample_screenshot_path: path }).eq('id', merchantId)
+  return c.json({ ok: true })
+})
+
 app.post('/api/customer/signup', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}))
   // Anything else the body carries — a role, a merchant_id — is ignored: only email and
@@ -1560,12 +1772,64 @@ app.post('/api/orders', async (c) => {
   }
 })
 
+// ── Payment proof — the customer's own screenshot of a completed transfer ─────────────────────
+// Unauthenticated, exactly like POST /api/orders itself: guest checkout has no token to scope an
+// RLS write against, and an order id is not a secret a client-side policy could gate on either —
+// so this goes through the service-role client, the same shape order intake already uses. See
+// docs/superpowers/specs/2026-08-04-payment-proof-upload-design.md.
+const PAYMENT_PROOF_BUCKET = 'payment-proof'
+// Same ceiling as MAX_PAYMENT_PROOF_BYTES/PAYMENT_PROOF_TYPES in store.ts and the migration's
+// bucket config (20260804160000) — three copies by CLAUDE.md's rule (no shared build step across
+// browser/server), one number.
+const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024
+const PAYMENT_PROOF_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
+
+app.post('/api/orders/:orderId/payment-proof', async (c) => {
+  const orderId = c.req.param('orderId')
+  const contentType = c.req.header('Content-Type') ?? ''
+  const ext = PAYMENT_PROOF_EXT[contentType]
+  if (!ext) return c.json({ error: 'unsupported_type' }, 400)
+
+  const buffer = await c.req.arrayBuffer()
+  if (buffer.byteLength === 0) return c.json({ error: 'invalid_body' }, 400)
+  if (buffer.byteLength > MAX_PAYMENT_PROOF_BYTES) return c.json({ error: 'too_large' }, 400)
+
+  let merchantId: string | null
+  try {
+    merchantId = await orderMerchantId(orderId)
+  } catch (err) {
+    console.error('Payment proof lookup failed:', err instanceof Error ? err.message : String(err))
+    return c.json({ error: 'lookup_failed' }, 500)
+  }
+  if (!merchantId) return c.json({ error: 'not_found' }, 404)
+
+  const path = `${merchantId}/${orderId}.${ext}`
+  const { error } = await admin.storage
+    .from(PAYMENT_PROOF_BUCKET)
+    .upload(path, buffer, { contentType, upsert: true })
+  if (error) {
+    console.error('Payment proof upload failed:', error.message)
+    return c.json({ error: 'upload_failed' }, 500)
+  }
+
+  await setOrderPaymentProof(orderId, path)
+  return c.json({ ok: true })
+})
+
 // The two outbound adapters, held in a mutable object so tests can capture what
 // would be sent without a live network. Production uses the real fetch adapters.
 export const notifyDeps: { telegram: typeof telegramSend; email: typeof resendSend } = {
   telegram: telegramSend,
   email: resendSend,
 }
+
+// Same seam as notifyDeps/githubDeps: production sends real email, tests capture what would
+// have been sent.
+export const trialFeedbackDeps: { email: typeof resendSend } = { email: resendSend }
 
 // ── Order notification — fans out to three recipients ──────────────────────────
 // The customer is anonymous; abuse is bounded by requiring a real order and by the

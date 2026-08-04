@@ -4,12 +4,12 @@ import type { FeedbackDraft, FeedbackStatus, MerchantStats, OrderRefusal, QuoteR
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
-import type { AddressParts, EarnedReward, FeedbackItem, Order, ReferredShop, ShopCustomer, ShopCustomerPage, ShopCustomerSort, Voucher } from './types';
+import type { AddressParts, EarnedReward, FeedbackItem, Order, ReferredShop, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { pendingShopMetadata } from './merchant/pendingShop';
 import type { PendingShop } from './merchant/pendingShop';
-import { API_URL, apiGet, apiGetFile, apiSend, mapOk, toVoid } from './api'
+import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, mapOk, toVoid } from './api'
 import type { Result } from './api'
 import type { CartLine } from '@bitetime/shared'
 
@@ -145,6 +145,12 @@ export async function uncompMerchant(id: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/uncomp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
 }
 
+// Superadmin: flag/unflag a merchant for the landing-page sample-shops carousel (#107).
+// Pure flag flip, no billing/status side effect — see set-merchant-sample in app.ts.
+export async function setMerchantSample(id: string, isSample: boolean): Promise<Result<any>> {
+  return apiSend<any>('/api/admin/set-merchant-sample', 'POST', { merchantId: id, isSample }, { auth: 'required' })
+}
+
 // The "could not ask" vs "the answer is empty" distinction, now the shared Result:
 // `{ ok: false }` means the request itself never landed (network/CORS/5xx) and a caller that
 // would DROP something on that must not treat it as an answer; `{ ok: true, data: null }` is a
@@ -196,6 +202,38 @@ export interface PlatformPricing {
     pro: { monthly: number; yearly: number }
   }
   estimate: { currency: string; rate: number } | null
+}
+
+// A shop shown in the landing-page sample-shops carousel (#107). `imagePath` is a Storage PATH
+// in the public `product-images` bucket, never a URL — resolve with productImageUrl() below.
+export interface SampleShopProduct {
+  id: string
+  name: string
+  nameZh: string | null
+  price: number
+  imagePath: string | null
+}
+
+export interface SampleShop {
+  id: string
+  slug: string
+  name: string
+  currency: string
+  /** Storage path in the public `sample-shop-screenshots` bucket, or null if not yet captured
+   *  (or never will be — capture is a weekly cron, not guaranteed). Resolve with
+   *  sampleShopScreenshotUrl() below. Never render this as a URL directly. */
+  screenshotPath: string | null
+  products: SampleShopProduct[]
+}
+
+export async function fetchSampleShops(): Promise<Result<SampleShop[]>> {
+  return apiGet<SampleShop[]>('/api/merchants/samples')
+}
+
+export const SAMPLE_SCREENSHOT_BUCKET = 'sample-shop-screenshots'
+
+export function sampleShopScreenshotUrl(path: string): string {
+  return storage.from(SAMPLE_SCREENSHOT_BUCKET).getPublicUrl(path).data.publicUrl
 }
 
 export async function fetchPlatformPricing(country?: string): Promise<Result<PlatformPricing>> {
@@ -522,7 +560,7 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
   voucherCode?: string | null
   /** `YYYY-MM-DD` on the shop's clock. The backend re-checks it against the shop's window. */
   fulfilDate: string | null
-}): Promise<Result<{ orderNumber: string }, OrderError>> {
+}): Promise<Result<{ orderNumber: string; id: string }, OrderError>> {
   // Optional: a guest has no session, and guest checkout is a first-class path.
   const { data: { session } } = await auth.getSession()
   const token = session?.access_token
@@ -549,7 +587,7 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
     const payload = await res.json().catch(() => ({}))
     return { ok: false, error: new OrderError(payload?.error ?? 'order_failed', typeof payload?.now === 'string' ? payload.now : undefined) }
   }
-  return { ok: true, data: (await res.json()) as { orderNumber: string } }
+  return { ok: true, data: (await res.json()) as { orderNumber: string; id: string } }
 }
 
 /**
@@ -909,6 +947,32 @@ export async function deletePaymentQr(path: string): Promise<void> {
   if (error) throw error
 }
 
+// ── Payment proof (Supabase Storage: private `payment-proof` bucket, via the backend) ─────────
+// The customer's own screenshot of a completed transfer, attached to the order they just placed
+// (optional). Unlike payment-qr, the browser never touches this bucket directly: a guest
+// checkout has no token to scope an RLS write against, so the upload goes through the backend's
+// service-role client instead — see docs/superpowers/specs/2026-08-04-payment-proof-upload-design.md.
+
+export const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024
+export const PAYMENT_PROOF_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+
+/** Validates client-side (same limits the bucket itself enforces), then posts the raw file. */
+export async function uploadPaymentProof(orderId: string, file: File): Promise<Result<void>> {
+  if (!PAYMENT_PROOF_TYPES.includes(file.type)) {
+    return { ok: false, error: { message: `Unsupported image type: ${file.name}` } }
+  }
+  if (file.size > MAX_PAYMENT_PROOF_BYTES) {
+    return { ok: false, error: { message: `Image too large (max 2MB): ${file.name}` } }
+  }
+  return toVoid(await apiSendFile(`/api/orders/${orderId}/payment-proof`, file))
+}
+
+/** For the merchant dashboard only — `auth: 'required'`, a signed-out caller has no shop to view. */
+export async function fetchPaymentProof(merchantId: string, orderId: string): Promise<Result<Blob>> {
+  const r = await apiGetFile(`/api/merchants/${merchantId}/orders/${orderId}/payment-proof`, { auth: 'required' })
+  return mapOk(r, d => d.blob)
+}
+
 // ── Merchant config & secrets ─────────────────────────────────────────────────
 
 export async function updateMerchantConfig(id: string, patch: any): Promise<Result<any>> {
@@ -946,4 +1010,23 @@ export async function fetchAdminFeedback(status?: FeedbackStatus): Promise<Resul
 // FeedbackItem — the spread in AdminFeedback is correct, not merely harmless.
 export async function setFeedbackStatus(id: string, status: FeedbackStatus): Promise<Result<FeedbackItem>> {
   return apiSend<FeedbackItem>(`/api/admin/feedback/${id}`, 'PATCH', { status }, { auth: true })
+}
+
+// ── Trial feedback (#155) ───────────────────────────────────────────────────────
+// One-time, platform-initiated survey — see CONTEXT.md → Trial feedback. Scoped to the
+// caller's own shop by the backend (requireOwnMerchant), so there is no merchantId to pass.
+export async function fetchTrialFeedback(): Promise<Result<TrialFeedbackOwn | null>> {
+  return apiGet<TrialFeedbackOwn | null>('/api/trial-feedback', { auth: true })
+}
+
+export async function respondTrialFeedback(rating: number, comment: string | null): Promise<Result<TrialFeedbackOwn>> {
+  return apiSend<TrialFeedbackOwn>('/api/trial-feedback/respond', 'POST', { rating, comment }, { auth: true })
+}
+
+export async function skipTrialFeedback(): Promise<Result<TrialFeedbackOwn>> {
+  return apiSend<TrialFeedbackOwn>('/api/trial-feedback/skip', 'POST', undefined, { auth: true })
+}
+
+export async function fetchAdminTrialFeedback(): Promise<Result<TrialFeedbackAdminItem[]>> {
+  return apiGet<TrialFeedbackAdminItem[]>('/api/admin/trial-feedback', { auth: true })
 }

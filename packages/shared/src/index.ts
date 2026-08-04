@@ -13,6 +13,11 @@ export type {
   FeedbackCategory, FeedbackStatus, FeedbackDraft, FeedbackValidation,
 } from './feedback.js'
 export {
+  validateTrialFeedback,
+  TRIAL_FEEDBACK_RATING_MIN, TRIAL_FEEDBACK_RATING_MAX, TRIAL_FEEDBACK_COMMENT_MAX_LENGTH,
+} from './trialFeedback.js'
+export type { TrialFeedbackDraft, TrialFeedbackValidation } from './trialFeedback.js'
+export {
   priceOrder, voucherError, shippingFee, voucherFromRow, shopRates, shopTax,
   promoState, promoClaims, productFromRow, optionGroupsFromRow,
   shopDistance, routedKm, distanceFee, exceedsMaxKm,

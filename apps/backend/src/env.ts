@@ -41,6 +41,18 @@ export const env = {
   // truth regardless of whether GitHub has heard about a row.
   githubToken: process.env.GITHUB_TOKEN || '',
 
+  // Shared secret for the trial-feedback cron sweep (POST /api/internal/trial-feedback-sweep,
+  // called by a GitHub Actions schedule — see .github/workflows/trial-feedback-sweep.yml).
+  // Optional, same posture as googleMapsApiKey: unset means the endpoint always refuses (503)
+  // rather than running unauthenticated.
+  trialFeedbackSweepSecret: process.env.TRIAL_FEEDBACK_SWEEP_SECRET || '',
+
+  // Shared secret for the sample-shop screenshot cron sweep
+  // (POST /api/internal/sample-shop-screenshot/:merchantId, called by a GitHub Actions
+  // schedule — see .github/workflows/sample-shop-screenshot-sweep.yml). Same posture as
+  // trialFeedbackSweepSecret: unset means the endpoint always refuses (503).
+  sampleShopScreenshotSweepSecret: process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET || '',
+
   // Stripe Price IDs (MYR), keyed by `${plan}_${cycle}`. We charge MYR for every
   // subscription, so there is one set and all four are required. Point these at
   // your MYR Prices.

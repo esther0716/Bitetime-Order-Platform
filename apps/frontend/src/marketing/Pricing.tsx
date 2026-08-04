@@ -11,14 +11,36 @@
 // would be the duplication this split exists to avoid. The prose below is written for this page
 // and appears on no other.
 
+import { Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
 import PricingCards from './PricingCards'
-import { PLAN_COMPARISON } from './pricingTiers'
+import { PLAN_COMPARISON_GROUPS, type ComparisonValue } from './pricingTiers'
 import { ctaPrimary, sectionTitle } from './ctaStyles'
 import { GrainOverlay, Reveal } from './LandingMotion'
+import { cn } from '../lib/utils'
+
+/**
+ * One comparison cell. A boolean row renders as a ✓ (oxblood — the brand's one accent, not a
+ * second green/red pair) or a plain – for "not included"; the icon is `aria-hidden` and paired
+ * with a screen-reader-only word, since a bare glyph in a table cell reads as nothing to a screen
+ * reader. A text row (the two plans differ in kind, not just presence) renders the words as-is.
+ */
+function ComparisonCell({ value, t }: { value: ComparisonValue; t: (en: string, zh: string) => string }) {
+  if (typeof value === 'boolean') {
+    return (
+      <span className="flex items-center justify-center">
+        <span aria-hidden="true" className={value ? 'text-oxblood text-base font-semibold' : 'text-text-tertiary text-base'}>
+          {value ? '✓' : '–'}
+        </span>
+        <span className="sr-only">{value ? t('Included', '包含') : t('Not included', '不包含')}</span>
+      </span>
+    )
+  }
+  return <>{t(value.en, value.zh)}</>
+}
 
 export default function Pricing() {
   const { t } = useSession()
@@ -76,28 +98,67 @@ export default function Pricing() {
                   <th scope="col" className="py-3 pr-4 font-heading text-[15px] font-medium text-ink">
                     {t('Feature', '功能')}
                   </th>
-                  <th scope="col" className="py-3 px-4 font-heading text-[15px] font-medium text-ink">
+                  <th scope="col" className="py-3 px-4 text-center font-heading text-[15px] font-medium text-ink">
                     {t('Basic', '基础版')}
                   </th>
-                  <th scope="col" className="py-3 pl-4 font-heading text-[15px] font-medium text-oxblood">
+                  {/* The tint wash carries down every Pro cell below, turning the column into the
+                      same "this one's highlighted" read the Pro card gets in PricingCards. */}
+                  <th scope="col" className="py-3 px-4 text-center font-heading text-[15px] font-medium text-oxblood bg-oxblood-tint rounded-t-lg">
                     Pro
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {PLAN_COMPARISON.map(row => (
-                  <tr key={row.id} className="border-b border-clay-border align-top">
-                    <th scope="row" className="py-3 pr-4 font-normal text-ink leading-[1.55]">
-                      {t(row.label.en, row.label.zh)}
-                    </th>
-                    <td className="py-3 px-4 text-ink-soft leading-[1.55]">
-                      {t(row.basic.en, row.basic.zh)}
-                    </td>
-                    <td className="py-3 pl-4 text-ink-soft leading-[1.55]">
-                      {t(row.pro.en, row.pro.zh)}
-                    </td>
-                  </tr>
-                ))}
+                {PLAN_COMPARISON_GROUPS.map((group, gi) => {
+                  const isFirstGroup = gi === 0
+                  const isLastGroup = gi === PLAN_COMPARISON_GROUPS.length - 1
+                  return (
+                    <Fragment key={group.id}>
+                      {/* The label sits in the Feature column only — the Basic/Pro cells stay
+                          empty so the Pro tint runs unbroken top to bottom, one column, not one
+                          rounded chip per section. */}
+                      <tr>
+                        <th
+                          scope="colgroup"
+                          className={cn(
+                            'pb-1 font-sans text-[11px] font-semibold uppercase tracking-[0.08em] text-rose-muted text-left',
+                            isFirstGroup ? 'pt-3' : 'pt-7',
+                          )}
+                        >
+                          {t(group.label.en, group.label.zh)}
+                        </th>
+                        <td className={cn('pb-1', isFirstGroup ? 'pt-3' : 'pt-7')} />
+                        <td
+                          className={cn(
+                            'pb-1 bg-oxblood-tint-soft',
+                            isFirstGroup ? 'pt-3' : 'pt-7',
+                          )}
+                        />
+                      </tr>
+                      {group.rows.map((row, ri) => {
+                        const isLastRow = isLastGroup && ri === group.rows.length - 1
+                        return (
+                          <tr key={row.id} className="border-b border-clay-border align-middle">
+                            <th scope="row" className="py-3 pr-4 font-normal text-ink leading-[1.55] text-left">
+                              {t(row.label.en, row.label.zh)}
+                            </th>
+                            <td className="py-3 px-4 text-center text-ink-soft leading-[1.55]">
+                              <ComparisonCell value={row.basic} t={t} />
+                            </td>
+                            <td
+                              className={cn(
+                                'py-3 px-4 text-center text-ink-soft leading-[1.55] bg-oxblood-tint-soft',
+                                isLastRow && 'rounded-b-lg',
+                              )}
+                            >
+                              <ComparisonCell value={row.pro} t={t} />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>

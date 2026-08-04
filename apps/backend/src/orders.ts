@@ -120,7 +120,7 @@ export async function placeOrder(
   input: PlaceOrderInput,
   now = new Date(),
   distanceDeps: DistanceDeps = liveDistanceDeps,
-): Promise<{ orderNumber: string }> {
+): Promise<{ orderNumber: string; id: string }> {
   // THE ROUTING CALL HAPPENS HERE, OUTSIDE THE TRANSACTION, and that placement is the whole
   // reason this function is no longer a bare `withTransaction(...)`. Inside, the transaction
   // holds this shop's single `order_counters` row lock, which serialises every checkout at that
@@ -284,7 +284,7 @@ export async function placeOrder(
     const distanceBase = distanceKm === null ? null : merchant.distance.base
     const distanceRate = distanceKm === null ? null : merchant.distance.ratePerKm
 
-    await tx`
+    const [{ id }] = await tx<{ id: string }[]>`
       insert into orders (
         merchant_id, user_id, customer_name, customer_wa, customer_phone_key, mode, address,
         shipping_fee, items, total, currency, discount, tax, tax_rate, voucher_code, fulfil_date, order_number, status,
@@ -324,10 +324,41 @@ export async function placeOrder(
         ${distanceBase},
         ${distanceRate}
       )
+      returning id
     `
 
-    return { orderNumber }
+    return { orderNumber, id }
   })
+}
+
+/**
+ * The shop an order belongs to — the one thing the payment-proof upload needs before it can
+ * accept a file, and the one thing it must never take from the caller. An order id names its
+ * own shop; a client-supplied merchantId would let anyone attach a proof image into any shop's
+ * folder. `null` for a missing OR malformed id — the caller only ever needs to know "not found",
+ * and a hand-typed id in the URL is the same failure as a real one that was never placed.
+ *
+ * A malformed id is the ONLY error swallowed into that `null` — Postgres's own `22P02` (invalid
+ * input syntax for uuid). Anything else is a real database failure and must not present as a
+ * plain 404: that would fail OPEN exactly where `requireOwnsChild` (mw.ts) deliberately fails
+ * closed for the sibling case ("A FAILED QUERY IS NOT 'no such row'"). Rethrown, so the caller's
+ * catch turns it into a 500.
+ */
+export async function orderMerchantId(orderId: string): Promise<string | null> {
+  try {
+    const rows = await sql<{ merchant_id: string }[]>`
+      select merchant_id from orders where id = ${orderId}
+    `
+    return rows[0]?.merchant_id ?? null
+  } catch (err) {
+    if (err && typeof err === 'object' && (err as { code?: string }).code === '22P02') return null
+    throw err
+  }
+}
+
+/** Stamps the storage path onto the order row. No return value — the caller already knows the path. */
+export async function setOrderPaymentProof(orderId: string, path: string): Promise<void> {
+  await sql`update orders set payment_proof = ${path} where id = ${orderId}`
 }
 
 /**
