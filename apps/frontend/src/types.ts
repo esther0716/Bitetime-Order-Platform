@@ -165,6 +165,9 @@ export interface Order {
   fulfil_date?: string | null
   /** Routed km this order was charged for. Null for region-priced orders and everything before #101. */
   delivery_distance_km?: number | null
+  /** Storage path in the private `payment-proof` bucket, or null/absent. Never render this
+   *  directly as a URL — fetch it through `fetchPaymentProof`, which is auth-gated. */
+  payment_proof?: string | null
   [key: string]: any
 }
 
