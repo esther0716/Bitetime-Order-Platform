@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import { uploadPaymentProof, PAYMENT_PROOF_TYPES } from '../store'
@@ -13,16 +13,37 @@ type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error'
  *
  * Type/size checks live once, in `uploadPaymentProof` itself — not repeated here, matching
  * `PaymentQrPicker`'s sibling shape (a single call, one branch on the Result).
+ *
+ * The thumbnail is the FILE the customer just picked, previewed locally with an object URL —
+ * never a re-fetch from the backend. The bucket is private and unauthenticated, so there is
+ * nothing for a guest checkout to re-fetch from; the browser already holds the only copy that
+ * matters to it.
  */
 export default function PaymentProofUpload({ orderId }: { orderId: string }) {
   const { t } = useSession()
   const [state, setState] = useState<UploadState>('idle')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const previewUrlRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    previewUrlRef.current = previewUrl
+  }, [previewUrl])
+
+  // Revoke whatever's left on unmount — a replace mid-lifetime is revoked at the point of
+  // replacement (handleFile), not here; this only covers the final one.
+  useEffect(() => () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+  }, [])
 
   async function handleFile(file: File | undefined) {
     if (!file) return
     setState('uploading')
     const r = await uploadPaymentProof(orderId, file)
     if (r.ok) {
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return URL.createObjectURL(file)
+      })
       setState('uploaded')
       toast.success(t('Payment proof uploaded', '付款凭证已上传'))
     } else {
@@ -35,6 +56,20 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
 
   return (
     <div className="mt-3 flex flex-col items-center gap-1.5">
+      {state === 'uploaded' && previewUrl && (
+        <a
+          href={previewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block w-full max-w-[160px] rounded-md bg-white p-1.5 border border-divider"
+        >
+          <img
+            src={previewUrl}
+            alt={t('Payment proof', '付款凭证')}
+            className="w-full h-auto object-contain"
+          />
+        </a>
+      )}
       <label
         htmlFor={inputId}
         className="text-[13px] font-medium text-oxblood underline cursor-pointer"
@@ -58,7 +93,9 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
         <span className="text-[12px] text-rose-muted">{t('Uploading…', '上传中…')}</span>
       )}
       {state === 'uploaded' && (
-        <span className="text-[12px] text-rose-muted">{t('Uploaded ✓', '已上传 ✓')}</span>
+        <span className="text-[12px] text-rose-muted">
+          {t('Uploaded ✓ · tap to enlarge', '已上传 ✓ · 点击放大')}
+        </span>
       )}
     </div>
   )
