@@ -108,6 +108,17 @@ export default function AdminFeedback() {
             <span className="ml-auto text-[12px] text-text-tertiary">{formatDate(item.created_at)}</span>
           </div>
 
+          {item.github_issue_url && (
+            <a
+              href={item.github_issue_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[12px] text-oxblood underline w-fit"
+            >
+              {t('View issue', '查看 Issue')} #{item.github_issue_number} ↗
+            </a>
+          )}
+
           <p className="text-[14px] text-ink whitespace-pre-wrap">{item.message}</p>
 
           <div>

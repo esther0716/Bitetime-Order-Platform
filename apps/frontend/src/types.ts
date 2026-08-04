@@ -270,4 +270,6 @@ export interface FeedbackItem {
   resolved_at: string | null
   shop_name: string | null
   shop_slug: string | null
+  github_issue_number: number | null
+  github_issue_url: string | null
 }
