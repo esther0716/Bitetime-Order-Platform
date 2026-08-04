@@ -9,9 +9,8 @@ import { FEATURES } from './features'
 import { VERTICALS } from './verticals'
 import { PRICING_TIERS } from './pricingTiers'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
-import SampleShopsCarousel from './SampleShopsCarousel'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
-import { ctaPrimary, sectionTitle } from './ctaStyles'
+import { ctaPrimary, ctaGhost, sectionTitle } from './ctaStyles'
 import {
   GrainOverlay,
   Reveal,
@@ -92,6 +91,12 @@ export default function Landing() {
               <MagneticButton to="/merchant/signup" className={ctaPrimary}>
                 {t('Start your shop', '开始建店')}
               </MagneticButton>
+              {/* Points at a dedicated preview page (/sample-shops), never at a live storefront —
+                  the old version of this button linked straight into `/s/bitetime-co` and
+                  customers placed real orders on it (fcd0a57). See SampleShopsPage.tsx. */}
+              <Link to="/sample-shops" className={ctaGhost}>
+                {t('See sample shops', '看看示例店铺')}
+              </Link>
             </div>
           </HeroItem>
           <HeroItem>
@@ -104,8 +109,6 @@ export default function Landing() {
           </HeroItem>
         </HeroStagger>
       </section>
-
-      <SampleShopsCarousel />
 
       {/* ── How it works ── */}
       <section className="bg-surface-raised border-y border-clay-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
