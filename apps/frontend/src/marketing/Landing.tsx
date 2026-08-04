@@ -10,7 +10,7 @@ import { VERTICALS } from './verticals'
 import { PRICING_TIERS } from './pricingTiers'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
-import { ctaPrimary, ctaGhost, sectionTitle } from './ctaStyles'
+import { ctaPrimary, sectionTitle } from './ctaStyles'
 import {
   GrainOverlay,
   Reveal,
@@ -20,10 +20,6 @@ import {
   RotatingWord,
   StorefrontPreview,
 } from './LandingMotion'
-
-// Transitional (low-commitment) CTA target: a real storefront a hesitant
-// merchant can preview before signing up. Swap the slug to change the demo shop.
-const SAMPLE_SHOP_SLUG = 'bitetime-co'
 
 export default function Landing() {
   const { t, lang } = useSession()
@@ -95,9 +91,6 @@ export default function Landing() {
               <MagneticButton to="/merchant/signup" className={ctaPrimary}>
                 {t('Start your shop', '开始建店')}
               </MagneticButton>
-              <Link to={`/s/${SAMPLE_SHOP_SLUG}`} className={ctaGhost}>
-                {t('See a sample shop', '看看示例店铺')}
-              </Link>
             </div>
           </HeroItem>
           <HeroItem>
