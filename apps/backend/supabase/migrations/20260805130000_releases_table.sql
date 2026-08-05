@@ -26,3 +26,8 @@ create index releases_status_published_at_idx
 alter table public.releases enable row level security;
 -- No policies: RLS enabled + zero policies denies every role but service_role (which bypasses
 -- RLS entirely). tests/rls/releases-grant.test.ts is the proof anon/authenticated get neither.
+
+-- RLS bypass and table-level privilege are separate layers — service_role still needs an
+-- explicit grant to touch a new table at all, the same way trial_feedback's migration does it.
+revoke all on table public.releases from anon, authenticated;
+grant select, insert, update, delete on table public.releases to service_role;
