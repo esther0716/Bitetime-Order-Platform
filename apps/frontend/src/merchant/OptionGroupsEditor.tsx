@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Trash2, Power, PowerOff, Plus, ArrowUp, ArrowDown } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -125,8 +126,15 @@ export default function OptionGroupsEditor({
       </div>
 
       {value.map((group, gi) => (
-        <div key={group.id} className="flex flex-col gap-2 border-t border-divider pt-3 first:border-t-0 first:pt-0 min-w-0">
-          <div className="flex items-end gap-2 flex-wrap min-w-0">
+        <div key={group.id} className="relative flex flex-col gap-2 border-t border-divider pt-3 first:border-t-0 first:pt-0 min-w-0">
+          <Button
+            type="button" variant="ghost" size="iconRound"
+            className="absolute top-2 right-0 text-text-tertiary hover:text-danger"
+            onClick={() => setPendingDelete({ kind: 'group', gi })}
+            aria-label={t('Remove question', '删除问题')}
+            title={t('Remove question', '删除问题')}
+          ><Trash2 size={16} /></Button>
+          <div className="flex items-end gap-2 flex-wrap min-w-0 pr-10">
             <div className="flex-1 basis-[180px] min-w-0">
               <Label className="text-[12px]">{t('Question', '问题')}</Label>
               <Input
@@ -215,47 +223,51 @@ export default function OptionGroupsEditor({
                     inactive was a Pro downgrade. */}
                 <div className="flex items-center gap-1 shrink-0 ml-auto">
                 <Button
-                  type="button" variant={option.active ? 'soft' : 'outline'} size="sm"
+                  type="button" variant={option.active ? 'soft' : 'outline'} size="iconRound"
                   onClick={() => patchOption(gi, oi, { active: !option.active })}
                   aria-pressed={!option.active}
-                  aria-label={t(`Mark ${option.name || 'choice'} unavailable`, `将 ${option.name || '选项'} 设为不可选`)}
-                  title={t('Sold out today', '今日售罄')}
-                >{option.active ? t('Available', '可选') : t('Sold out', '售罄')}</Button>
+                  aria-label={option.active
+                    ? t(`Mark ${option.name || 'choice'} unavailable`, `将 ${option.name || '选项'} 设为不可选`)
+                    : t(`Mark ${option.name || 'choice'} available`, `将 ${option.name || '选项'} 设为可选`)}
+                  title={option.active ? t('Sold out today', '今日售罄') : t('Available', '可选')}
+                >{option.active ? <Power size={14} /> : <PowerOff size={14} />}</Button>
                 <Button
-                  type="button" variant="ghost" size="sm"
+                  type="button" variant="ghost" size="iconRound"
+                  className="text-text-tertiary hover:text-danger"
                   onClick={() => setPendingDelete({ kind: 'option', gi, oi })}
                   aria-label={t('Remove choice', '删除选项')}
-                >×</Button>
+                  title={t('Remove choice', '删除选项')}
+                ><Trash2 size={14} /></Button>
                 </div>
               </div>
             ))}
-            <div className="flex flex-wrap gap-2 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
               <Button
                 type="button" variant="outline" size="sm"
                 disabled={group.options.length >= MAX_OPTIONS_PER_GROUP}
                 onClick={() => patchGroup(gi, { options: [...group.options, blankOption(group.options.length + 1)] })}
-              >{t('Add choice', '添加选项')}</Button>
+              ><Plus size={12} />{t('Choice', '选项')}</Button>
               <Button
-                type="button" variant="ghost" size="sm"
+                type="button" variant="ghost" size="iconRound"
                 onClick={() => onChange(move(value, gi, gi - 1))}
                 disabled={gi === 0}
                 aria-label={t('Move up', '上移')}
-              >↑</Button>
+                title={t('Move up', '上移')}
+              ><ArrowUp size={14} /></Button>
               <Button
-                type="button" variant="ghost" size="sm"
+                type="button" variant="ghost" size="iconRound"
                 onClick={() => onChange(move(value, gi, gi + 1))}
                 disabled={gi === value.length - 1}
                 aria-label={t('Move down', '下移')}
-              >↓</Button>
+                title={t('Move down', '下移')}
+              ><ArrowDown size={14} /></Button>
               <Button
-                type="button" variant={group.active ? 'ghost' : 'outline'} size="sm"
+                type="button" variant={group.active ? 'ghost' : 'outline'} size="iconRound"
                 onClick={() => patchGroup(gi, { active: !group.active })}
                 aria-pressed={!group.active}
-              >{group.active ? t('Switch off', '停用') : t('Switched off', '已停用')}</Button>
-              <Button
-                type="button" variant="ghost" size="sm"
-                onClick={() => setPendingDelete({ kind: 'group', gi })}
-              >{t('Remove question', '删除问题')}</Button>
+                aria-label={group.active ? t('Switch off', '停用') : t('Switched on', '已启用')}
+                title={group.active ? t('Switch off', '停用') : t('Switched off', '已停用')}
+              >{group.active ? <Power size={14} /> : <PowerOff size={14} />}</Button>
             </div>
           </div>
         </div>
@@ -266,7 +278,7 @@ export default function OptionGroupsEditor({
           type="button" variant="outline" size="sm"
           disabled={value.length >= MAX_GROUPS_PER_PRODUCT}
           onClick={() => onChange([...value, blankGroup(value.length + 1)])}
-        >{t('Add a question', '添加问题')}</Button>
+        ><Plus size={12} />{t('Question', '问题')}</Button>
         {/* The same verdict the write endpoint refuses on, shown while the merchant is still
             here. Without the SQL constraints ADR 0008 gave up, this is where they find out. */}
         {problem && <span className="text-[12px] text-danger">{configMessage(problem, t)}</span>}
