@@ -4,13 +4,15 @@ import { signUp, signIn, createMerchant, startCheckout } from '../store'
 import { toSlugBase } from '../slug'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
-import { formatMoney } from '../currency'
+import { formatMoney, CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../currency'
+import type { CurrencyCode } from '../currency'
 import BusinessNaturePicker from '../components/BusinessNaturePicker'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 import Wordmark from '../components/Wordmark'
 
 const PLANS = ['basic', 'pro']
@@ -45,6 +47,10 @@ export default function SignupScreen() {
   // never opened the dropdown, on the one field that exists to be counted. Submit stays disabled
   // until they pick.
   const [businessNature, setBusinessNature] = useState('')
+  // Chosen once, here, and never editable again (Shop Settings only displays it) — so unlike
+  // businessNature this one DOES default, to MYR: it isn't a field the platform needs an honest
+  // "never chose" signal on, just a sane starting price unit most shops won't touch.
+  const [currency, setCurrency] = useState<CurrencyCode>(DEFAULT_CURRENCY)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -69,7 +75,7 @@ export default function SignupScreen() {
       // The shop details ride along on the auth user. With email confirmation on, the sign-in
       // below fails and `createMerchant` never runs — parked, the shop is created for them the
       // moment they confirm and log in, instead of dying with this page. See pendingShop.ts.
-      await signUp(name, email, password, { name, businessNature, plan: plan as 'basic' | 'pro', billing: billing as 'monthly' | 'yearly', ref })
+      await signUp(name, email, password, { name, businessNature, currency, plan: plan as 'basic' | 'pro', billing: billing as 'monthly' | 'yearly', ref })
       try {
         await signIn(email, password)
       } catch {
@@ -77,7 +83,7 @@ export default function SignupScreen() {
                  '账号已创建。请查收邮件确认后登录，我们会为你完成店铺设置。'))
         setBusy(false); return
       }
-      const created = await createMerchant({ name, plan, billing, referredByCode: ref, businessNature })
+      const created = await createMerchant({ name, plan, billing, referredByCode: ref, businessNature, currency })
       if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
       await refreshMerchant()
       if (plan === 'basic') {
@@ -100,14 +106,14 @@ export default function SignupScreen() {
   }
 
   return (
-    <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
-      <div className="text-center mb-10">
+    <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-6">
+      <div className="text-center mb-6">
         <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
-      <Card className="rounded-pill px-8 pt-8 pb-7 gap-0">
+      <Card className="rounded-pill px-8 pt-7 pb-6 gap-0">
         <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">{t('Start your shop', '开店')}</h2>
-        <p className="text-[13px] text-rose-muted mb-6">{t('Create your merchant account to get started.', '创建商家账号以开始使用。')}</p>
+        <p className="text-[13px] text-rose-muted mb-5">{t('Create your merchant account to get started.', '创建商家账号以开始使用。')}</p>
 
         {/* Plan banner: oxblood-tint bg, rose-border, md radius */}
         <div className="flex items-baseline flex-wrap gap-2 px-[13px] py-[10px] mb-[14px] bg-oxblood-tint border border-rose-border rounded-md">
@@ -135,18 +141,44 @@ export default function SignupScreen() {
           </div>
         )}
         <form onSubmit={onSubmit}>
-          <div className="flex flex-col gap-3 mb-5">
+          <div className="flex flex-col gap-2.5 mb-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="signup-1">{t('Shop name', '店铺名称')}</Label>
               <Input id="signup-1" value={name} onChange={e => setName(e.target.value)} required placeholder={t('e.g. Sunny Bakes', '如：阳光烘焙')} />
+              {/* Folded into a plain caption under the field it describes, rather than its own
+                  boxed row — same information, one line instead of a whole extra block. */}
+              <p className="text-[12px] text-rose-muted font-mono tracking-[0.3px] leading-[1.4]">
+                /s/{slugPreview}
+              </p>
             </div>
-            {/* Store-URL preview: sunken bg, monospace, sm radius */}
-            <p className="text-[12px] text-rose-muted px-[10px] py-[5px] bg-surface-sunken rounded-sm font-mono tracking-[0.3px] leading-[1.5]">
-              {t('Your store URL', '店铺网址')}: /s/{slugPreview}
+            {/* Business nature and currency are both chosen once here and never editable again
+                (Shop Settings only displays either) — paired in one row with one shared caption
+                below, rather than each carrying its own full-height block. */}
+            <div className="flex gap-2.5">
+              <div className="flex-1 min-w-0">
+                <BusinessNaturePicker id="signup-nature" value={businessNature} onChange={setBusinessNature} />
+              </div>
+              <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                <Label htmlFor="signup-currency">{t('Base currency', '基础货币')}</Label>
+                <Select value={currency} onValueChange={(v) => setCurrency((v as CurrencyCode) ?? currency)}>
+                  <SelectTrigger id="signup-currency" className="w-full" aria-label={t('Base currency', '基础货币')}>
+                    <span className="truncate">
+                      {currencyDef(currency).code} — {currencyDef(currency).symbol}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CURRENCY_CODES.map(code => (
+                      <SelectItem key={code} value={code}>
+                        {CURRENCIES[code].code} — {CURRENCIES[code].symbol} · {CURRENCIES[code].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <p className="text-[12px] text-rose-muted leading-[1.4] -mt-1">
+              {t("Can't be changed after signup.", '设置后无法更改。')}
             </p>
-            {/* Sits with the shop name, not below the credentials: both describe the SHOP, and
-                the email/password pair below is about the account. */}
-            <BusinessNaturePicker id="signup-nature" value={businessNature} onChange={setBusinessNature} />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="signup-2">{t('Email', '邮箱')}</Label>
               <Input id="signup-2" type="email" value={email} onChange={e => setEmail(e.target.value)} required />

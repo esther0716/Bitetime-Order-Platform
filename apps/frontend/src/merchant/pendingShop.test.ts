@@ -7,12 +7,14 @@ describe('pendingShopMetadata', () => {
     expect(pendingShopMetadata({
       name: 'Sunny Bakes',
       businessNature: 'bakery',
+      currency: 'SGD',
       plan: 'pro',
       billing: 'yearly',
       ref: 'ABC123',
     })).toEqual({
       shop_name: 'Sunny Bakes',
       shop_business_nature: 'bakery',
+      shop_currency: 'SGD',
       shop_plan: 'pro',
       shop_billing: 'yearly',
       shop_ref: 'ABC123',
@@ -20,14 +22,14 @@ describe('pendingShopMetadata', () => {
   })
 
   it('omits an absent referral rather than writing undefined', () => {
-    const meta = pendingShopMetadata({ name: 'S', businessNature: 'other', plan: 'basic', billing: 'monthly' })
+    const meta = pendingShopMetadata({ name: 'S', businessNature: 'other', currency: 'MYR', plan: 'basic', billing: 'monthly' })
     expect('shop_ref' in meta).toBe(false)
   })
 })
 
 describe('pendingShopFromMetadata', () => {
   it('reads back what pendingShopMetadata wrote', () => {
-    const input: PendingShop = { name: 'Sunny Bakes', businessNature: 'bakery', plan: 'pro', billing: 'yearly', ref: 'ABC123' }
+    const input: PendingShop = { name: 'Sunny Bakes', businessNature: 'bakery', currency: 'SGD', plan: 'pro', billing: 'yearly', ref: 'ABC123' }
     expect(pendingShopFromMetadata(pendingShopMetadata(input))).toEqual(input)
   })
 
@@ -42,7 +44,11 @@ describe('pendingShopFromMetadata', () => {
   // read back here is untrusted input, not something this app wrote.
   it('falls back to the signup form defaults on junk plan/billing', () => {
     expect(pendingShopFromMetadata({ shop_name: 'S', shop_plan: 'enterprise', shop_billing: 'weekly' }))
-      .toEqual({ name: 'S', businessNature: '', plan: 'basic', billing: 'monthly', ref: undefined })
+      .toEqual({ name: 'S', businessNature: '', currency: 'MYR', plan: 'basic', billing: 'monthly', ref: undefined })
+  })
+
+  it('falls back to MYR on an unknown currency', () => {
+    expect(pendingShopFromMetadata({ shop_name: 'S', shop_currency: 'XXX' })?.currency).toBe('MYR')
   })
 
   it('drops an unknown business nature instead of sending one the backend refuses', () => {

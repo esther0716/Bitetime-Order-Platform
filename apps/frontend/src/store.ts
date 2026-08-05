@@ -180,8 +180,8 @@ export async function lookupMyMerchant(userId: string): Promise<Result<any | nul
   return apiGet<any | null>('/api/me/merchant', { auth: true })
 }
 
-export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode, businessNature }: { name: string; plan?: string; billing?: string; referredByCode?: string; businessNature?: string }): Promise<Result<any>> {
-  return apiSend<any>('/api/merchants', 'POST', { name, plan, billing, referredByCode, businessNature }, { auth: true })
+export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode, businessNature, currency }: { name: string; plan?: string; billing?: string; referredByCode?: string; businessNature?: string; currency?: string }): Promise<Result<any>> {
+  return apiSend<any>('/api/merchants', 'POST', { name, plan, billing, referredByCode, businessNature, currency }, { auth: true })
 }
 
 // ── Billing (Stripe via the Hono backend) ──────────────────────────────────────
@@ -755,12 +755,6 @@ export async function downloadRevenueReport(
     `/api/merchants/${merchantId}/report.xlsx?days=${window.days}&granularity=${window.granularity}`,
     { auth: 'required' },
   )
-}
-
-// True once the merchant has ≥1 order — used to lock the currency selector so
-// past orders and dashboard aggregates never silently re-denominate.
-export async function merchantHasOrders(merchantId: string): Promise<Result<boolean>> {
-  return mapOk(await fetchOrderCount(merchantId), (n) => n > 0)
 }
 
 export async function setOrderStatus(orderId: string, status: string, merchantId: string): Promise<Result<any>> {

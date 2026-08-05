@@ -10,13 +10,15 @@ export const ORDER_STATUSES = ['pending_payment', 'new', 'preparing', 'ready', '
 // Mirrors what the browser could safely write under the old RLS+trigger regime. This is the
 // union of every updateMerchantConfig call site: ShopSettings.tsx Shipping tab writes
 // { shipping, pickup_address, method flags, distance pricing, origin_*, onboarding_shipping_set };
-// the Payment tab writes { currency?, payment_bank, payment_note, tax_enabled, tax_rate }; the
+// the Payment tab writes { payment_bank, payment_note, tax_enabled, tax_rate }; the
 // Fulfilment tab writes { config, timezone }; and the onboarding checklist (#102) writes
 // { onboarding_link_shared } (ShareStorefront) and { onboarding_dismissed } (OnboardingChecklist).
-// `shipping` is a jsonb column (shopRates output); `currency` is dropped client-side once locked,
-// but allowlist it anyway — the lock is a UI concern, and the currency column is not a privilege.
+// `shipping` is a jsonb column (shopRates output). `currency` is deliberately NOT here, same as
+// `business_nature`: mandatory at signup (app.ts), never editable afterwards — Shop Settings only
+// displays it. Re-adding it here would let a direct PATCH re-denominate a shop's past totals,
+// which is exactly what the signup-time lock exists to prevent.
 const MERCHANT_CONFIG_FIELDS = [
-  'currency', 'shipping', 'pickup_address', 'payment_bank', 'payment_note', 'config', 'timezone',
+  'shipping', 'pickup_address', 'payment_bank', 'payment_note', 'config', 'timezone',
   'tax_enabled', 'tax_rate',
   // Distance pricing (#101). `pickup_address` deliberately stays a SEPARATE, free-text field:
   // it is the merchant's own directions for pickup customers and is never routed, so an

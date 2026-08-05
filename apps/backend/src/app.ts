@@ -55,7 +55,7 @@ import {
   buildIssueTitle, buildIssueBody, categoryToLabel,
   type CreateGithubIssue, type GithubIssueAction,
 } from './github.js'
-import { isCart, isBusinessNature, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
@@ -152,6 +152,14 @@ app.post('/api/merchants', requireUser, async (c) => {
     return c.json({ error: 'Missing or unknown business nature' }, 400)
   }
 
+  // Chosen at signup, never editable afterwards (see writes.ts) — so unlike businessNature this
+  // one has a sane default rather than forcing a choice: a caller that sends nothing gets the
+  // column's own default, MYR.
+  const currency = body?.currency === undefined ? DEFAULT_CURRENCY : body.currency
+  if (!isCurrencyCode(currency)) {
+    return c.json({ error: 'Unknown currency' }, 400)
+  }
+
   const { data: rows } = await admin.from('merchants').select('slug')
   const slug = await resolveSlug(name, { taken: (rows ?? []).map((r) => r.slug), id: user.id })
 
@@ -167,6 +175,7 @@ app.post('/api/merchants', requireUser, async (c) => {
       billing_cycle: body?.billing ?? 'monthly',
       billing_region: 'MY', // everyone is charged MYR
       business_nature: businessNature,
+      currency,
       referred_by_code: resolveReferredByCode(body?.referredByCode, referralCodeOf(user.id)),
     })
     .select()

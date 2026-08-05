@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, merchantHasOrders, deletePaymentQr } from '../store'
+import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, deletePaymentQr } from '../store'
 import { shopRates, shopTax, shopDistance, shopMethods } from '@bitetime/shared'
 import { CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../currency'
 import { Button } from '../components/ui/button'
@@ -467,26 +467,13 @@ function PaymentTab({ onDirtyChange }: TabProps) {
   // which is the value at mount. The replaced object is deleted only AFTER the row that pointed
   // at it saved, so a failed save leaves a live QR live.
   const savedQr = useRef(initial.qr ?? '')
-  // Currency locks after the first order so past orders/aggregates never
-  // re-denominate. Assume locked until the check clears, so it can't flip open.
-  const [currencyLocked, setCurrencyLocked] = useState(true)
   const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
-
-  useEffect(() => {
-    let active = true
-    // Fail CLOSED: a could-not-ask keeps the currency selector locked, so a dropped packet can
-    // never open the door to re-denominating a shop that may already have orders.
-    merchantHasOrders(merchant!.id).then(r => { if (active) setCurrencyLocked(r.ok ? r.data : true) })
-    return () => { active = false }
-  }, [merchant!.id])
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true)
     try {
       const saved = await updateMerchantConfig(merchant!.id, {
-        // Guard against a stale locked value slipping through: only persist the
-        // currency when it is still editable.
-        ...(currencyLocked ? {} : { currency: fields.currency }),
+        // Currency is chosen at signup and never editable here — omitted from the payload.
         payment_bank: fields.bank,
         payment_note: fields.note,
         // '' is how this form says "no QR"; the backend reads it as null (writes.ts).
@@ -526,11 +513,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
         <h3 className={HEADING}>{t('Currency', '货币')}</h3>
         <div className="flex flex-col gap-[6px]">
           <Label htmlFor="shop-currency">{t('Base currency', '基础货币')}</Label>
-          <Select
-            value={fields.currency}
-            onValueChange={(v) => setFields(f => ({ ...f, currency: v ?? f.currency }))}
-            disabled={currencyLocked}
-          >
+          <Select value={fields.currency} onValueChange={() => {}} disabled>
             <SelectTrigger id="shop-currency" className="w-full max-w-[280px]" aria-label={t('Base currency', '基础货币')}>
               <span className="truncate">
                 {currencyDef(fields.currency).code} — {currencyDef(fields.currency).symbol}
@@ -545,11 +528,8 @@ function PaymentTab({ onDirtyChange }: TabProps) {
             </SelectContent>
           </Select>
           <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
-            {currencyLocked
-              ? t('Currency is locked because your shop has orders — changing it would re-denominate past totals.',
-                  '因店铺已有订单，货币已锁定 — 更改会重新换算历史金额。')
-              : t('The unit for your prices and what customers see. Locked once your first order is placed.',
-                  '您的价格和顾客看到的金额单位。首笔订单后将锁定。')}
+            {t('The unit for your prices and what customers see. Chosen when you signed up.',
+                '您的价格和顾客看到的金额单位。注册时选定。')}
           </p>
         </div>
       </div>
