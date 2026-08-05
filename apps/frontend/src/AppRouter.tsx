@@ -39,6 +39,7 @@ const Storefront = lazy(() => import('./store/Storefront'))
 const OrderHistory = lazy(() => import('./store/OrderHistory'))
 const ResetPasswordPage = lazy(() => import('./ResetPasswordPage'))
 const SampleShopsPage = lazy(() => import('./marketing/SampleShopsPage'))
+const ReleaseNotes = lazy(() => import('./marketing/ReleaseNotes'))
 const TermsPage = lazy(() => import('./legal/TermsPage'))
 const PrivacyPage = lazy(() => import('./legal/PrivacyPage'))
 const Toaster = lazy(() => import('./components/ui/sonner').then(m => ({ default: m.Toaster })))
@@ -187,6 +188,10 @@ function AnimatedRoutes() {
               client-side with no fallback data, so a prerendered shell would just be empty
               markup. See SampleShopsPage.tsx. */}
           <Route path="/sample-shops" element={<SampleShopsPage />} />
+          {/* Public, no guard, opened in a new tab from the dashboard's "what's new" bell — the
+              Claude-rewritten counterpart to a raw github.com release page. See
+              docs/superpowers/specs/2026-08-05-github-release-notes-design.md. */}
+          <Route path="/releases/:tag" element={<ReleaseNotes />} />
           {/* Top-level on purpose, NOT nested under /s/:slug: the storefront shell's status gate
               would swallow it, and a suspended shop must never lock a customer out of their own
               account. Role-blind — `?shop=` decides where they land afterwards. */}
