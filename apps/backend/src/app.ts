@@ -51,10 +51,16 @@ import {
 } from './trialFeedback.js'
 import { buildTrialFeedbackEmail } from './trialFeedbackEmail.js'
 import {
-  createGithubIssue, closeGithubIssue, reopenGithubIssue,
+  createGithubIssue, closeGithubIssue, reopenGithubIssue, listGithubReleases,
   buildIssueTitle, buildIssueBody, categoryToLabel,
-  type CreateGithubIssue, type GithubIssueAction,
+  type CreateGithubIssue, type GithubIssueAction, type ListGithubReleases,
 } from './github.js'
+import { humanizeRelease, type HumanizeRelease } from './releases.js'
+import {
+  listReleaseTags, insertDraftRelease, listAllReleases, getReleaseById,
+  updateReleaseStatus, updateReleaseHumanization,
+  listPublishedReleases, getPublishedReleaseByTag,
+} from './releasesDb.js'
 import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
@@ -1518,6 +1524,89 @@ app.patch('/api/admin/feedback/:feedbackId', requireSuperadmin, async (c) => {
     await action(env.githubToken, row.github_issue_number)
   }
 
+  return c.json(row)
+})
+
+// Same pattern as githubDeps: held mutable so tests can capture what would be sent to GitHub
+// and Claude without a live network call. Production uses the real fetch/SDK adapters.
+export const releaseDeps: {
+  listReleases: ListGithubReleases
+  humanize: HumanizeRelease
+} = {
+  listReleases: listGithubReleases,
+  humanize: humanizeRelease,
+}
+
+// ── Release notes (#163) ────────────────────────────────────────────────────
+// Superadmin-triggered pull, not a live fetch or a cron sweep — pulling humanizes via Claude and
+// stores drafts; a release only reaches merchants once explicitly published. See
+// docs/superpowers/specs/2026-08-05-github-release-notes-design.md.
+
+// Shared by /pull and /regenerate: best-effort, like every other call through releaseDeps.humanize
+// — a missing key or a Claude outage is recorded as humanize_error, never a failed request.
+async function humanizeAndStore(row: { id: string; tag: string; name: string; raw_body: string }) {
+  const humanized = await releaseDeps.humanize(env.anthropicApiKey, {
+    tag: row.tag,
+    name: row.name,
+    body: row.raw_body,
+  })
+  if (humanized) await updateReleaseHumanization(row.id, humanized)
+  else await updateReleaseHumanization(row.id, { error: 'Claude could not summarize this release' })
+}
+
+app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
+  const fetched = await releaseDeps.listReleases(env.githubToken, 10)
+  if (fetched === null) return c.json({ error: 'Could not reach GitHub' }, 502)
+
+  const existingTags = new Set(await listReleaseTags())
+  const toPull = fetched.filter((r) => !existingTags.has(r.tag_name))
+
+  let pulled = 0
+  for (const release of toPull) {
+    const row = await insertDraftRelease({
+      tag: release.tag_name,
+      name: release.name,
+      htmlUrl: release.html_url,
+      rawBody: release.body,
+      publishedAt: release.published_at,
+    })
+    await humanizeAndStore(row)
+    pulled++
+  }
+
+  return c.json({ pulled })
+})
+
+app.get('/api/admin/releases', requireSuperadmin, async (c) => {
+  return c.json(await listAllReleases())
+})
+
+app.patch('/api/admin/releases/:id', requireSuperadmin, async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { status?: unknown }
+  if (body.status !== 'draft' && body.status !== 'published') {
+    return c.json({ error: 'Unknown release status' }, 400)
+  }
+  const row = await updateReleaseStatus(c.req.param('id'), body.status)
+  if (!row) return c.json({ error: 'Release not found' }, 404)
+  return c.json(row)
+})
+
+app.post('/api/admin/releases/:id/regenerate', requireSuperadmin, async (c) => {
+  const row = await getReleaseById(c.req.param('id'))
+  if (!row) return c.json({ error: 'Release not found' }, 404)
+
+  await humanizeAndStore(row)
+
+  return c.json(await getReleaseById(row.id))
+})
+
+app.get('/api/releases', async (c) => {
+  return c.json(await listPublishedReleases(10))
+})
+
+app.get('/api/releases/:tag', async (c) => {
+  const row = await getPublishedReleaseByTag(c.req.param('tag'))
+  if (!row) return c.json({ error: 'Release not found' }, 404)
   return c.json(row)
 })
 

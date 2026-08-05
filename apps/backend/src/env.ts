@@ -41,6 +41,12 @@ export const env = {
   // truth regardless of whether GitHub has heard about a row.
   githubToken: process.env.GITHUB_TOKEN || '',
 
+  // Anthropic (Claude API — rewrites raw GitHub release bodies into merchant-facing copy for
+  // the "what's new" bell, see releases.ts). Optional, same posture as githubToken: unset
+  // means humanizeRelease logs and returns null, and the pulled release is stored with
+  // humanize_error set rather than a title/summary — the pull itself never fails.
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+
   // Shared secret for the trial-feedback cron sweep (POST /api/internal/trial-feedback-sweep,
   // called by a GitHub Actions schedule — see .github/workflows/trial-feedback-sweep.yml).
   // Optional, same posture as googleMapsApiKey: unset means the endpoint always refuses (503)

@@ -4,6 +4,7 @@ import { ArrowLeft, Menu, X } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { signOut } from '../store'
 import LanguageSelect from './LanguageSelect'
+import ReleasesBell from './ReleasesBell'
 import Wordmark from './Wordmark'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -196,9 +197,10 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
 
         {/* Footer — language selector, sign-out */}
         <div className="px-5 pt-4 pb-6 border-t border-divider">
-          {/* Language select */}
-          <div className="mb-2">
-            <LanguageSelect className="w-full" />
+          {/* Language select + what's-new bell */}
+          <div className="mb-2 flex items-center gap-2">
+            <LanguageSelect className="flex-1" />
+            <ReleasesBell />
           </div>
           {/* Sign out */}
           <button

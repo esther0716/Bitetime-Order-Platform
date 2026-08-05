@@ -4,7 +4,7 @@ import type { FeedbackDraft, FeedbackStatus, MerchantStats, OrderRefusal, QuoteR
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
-import type { AddressParts, EarnedReward, FeedbackItem, Order, ReferredShop, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher } from './types';
+import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { pendingShopMetadata } from './merchant/pendingShop';
@@ -1031,4 +1031,33 @@ export async function skipTrialFeedback(): Promise<Result<TrialFeedbackOwn>> {
 
 export async function fetchAdminTrialFeedback(): Promise<Result<TrialFeedbackAdminItem[]>> {
   return apiGet<TrialFeedbackAdminItem[]>('/api/admin/trial-feedback', { auth: true })
+}
+
+// ── Release notes (#163) ────────────────────────────────────────────────────
+
+export async function listPublishedReleases(): Promise<Result<PublicRelease[]>> {
+  return apiGet<PublicRelease[]>('/api/releases')
+}
+
+export async function getReleaseByTag(tag: string): Promise<Result<ReleaseDetail>> {
+  return apiGet<ReleaseDetail>(`/api/releases/${encodeURIComponent(tag)}`)
+}
+
+export async function adminPullReleases(): Promise<Result<{ pulled: number }>> {
+  return apiSend<{ pulled: number }>('/api/admin/releases/pull', 'POST', undefined, { auth: 'required' })
+}
+
+export async function adminListReleases(): Promise<Result<AdminRelease[]>> {
+  return apiGet<AdminRelease[]>('/api/admin/releases', { auth: 'required' })
+}
+
+export async function adminSetReleaseStatus(
+  id: string,
+  status: 'draft' | 'published',
+): Promise<Result<AdminRelease>> {
+  return apiSend<AdminRelease>(`/api/admin/releases/${id}`, 'PATCH', { status }, { auth: 'required' })
+}
+
+export async function adminRegenerateRelease(id: string): Promise<Result<AdminRelease>> {
+  return apiSend<AdminRelease>(`/api/admin/releases/${id}/regenerate`, 'POST', undefined, { auth: 'required' })
 }

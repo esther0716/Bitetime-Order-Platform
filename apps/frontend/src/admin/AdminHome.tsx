@@ -1,12 +1,13 @@
 import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { useDashboardSection } from '../useDashboardSection'
-import { LayoutDashboard, Store, MessageSquare, Star } from 'lucide-react'
+import { LayoutDashboard, Store, MessageSquare, Star, Megaphone } from 'lucide-react'
 import DashboardShell, { type NavItem } from '../components/DashboardShell'
 import AdminOverview from './AdminOverview'
 import AdminMerchants from './AdminMerchants'
 import AdminFeedback from './AdminFeedback'
 import AdminTrialFeedback from './AdminTrialFeedback'
+import AdminReleases from './AdminReleases'
 
 const ICON = { size: 18, strokeWidth: 1.75 }
 const SECTIONS = [
@@ -14,6 +15,7 @@ const SECTIONS = [
   { key: 'merchants', en: 'Merchants', zh: '商家', icon: <Store {...ICON} /> },
   { key: 'feedback',  en: 'Feedback',  zh: '反馈', icon: <MessageSquare {...ICON} /> },
   { key: 'trial-feedback', en: 'Trial feedback', zh: '试用反馈', icon: <Star {...ICON} /> },
+  { key: 'releases', en: 'Releases', zh: '更新日志', icon: <Megaphone {...ICON} /> },
 ]
 
 export default function AdminHome() {
@@ -36,6 +38,7 @@ export default function AdminHome() {
         {section === 'merchants' && <AdminMerchants />}
         {section === 'feedback'  && <AdminFeedback />}
         {section === 'trial-feedback' && <AdminTrialFeedback />}
+        {section === 'releases' && <AdminReleases />}
       </div>
     </DashboardShell>
   )

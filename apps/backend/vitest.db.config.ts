@@ -74,6 +74,12 @@ function loadSupabaseEnv() {
   // swap `githubDeps` directly (see feedback.test.ts) — that path never touches env.githubToken.
   process.env.GITHUB_TOKEN = ''
 
+  // Same argument, stronger still: a real key here is billed per call. tests/api/releases.test.ts
+  // swaps releaseDeps.humanize directly for the cases that exercise the pull/regenerate path
+  // (see feedback.test.ts's githubDeps swap for the precedent) — that path never touches
+  // env.anthropicApiKey.
+  process.env.ANTHROPIC_API_KEY = ''
+
   // Same reasoning as the Stripe stubs: importing the app must be possible without a real
   // secret, and this one carries no live-network risk (it only gates an internal endpoint),
   // so a plain default — not a forced-empty like GOOGLE_MAPS_API_KEY — is enough.
