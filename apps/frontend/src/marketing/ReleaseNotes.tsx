@@ -6,25 +6,29 @@ import { Spinner } from '../components/Loaders'
 import Wordmark from '../components/Wordmark'
 import type { ReleaseDetail } from '../types'
 
+type Loaded =
+  | { tag: string; state: 'found'; release: ReleaseDetail }
+  | { tag: string; state: 'not-found' }
+
 export default function ReleaseNotes() {
   const { tag } = useParams<{ tag: string }>()
   const { t } = useSession()
-  const [release, setRelease] = useState<ReleaseDetail | null>(null)
-  const [notFound, setNotFound] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState<Loaded | null>(null)
 
   useEffect(() => {
     if (!tag) return
-    setLoading(true)
-    setNotFound(false)
+    let live = true
     getReleaseByTag(tag).then((r) => {
-      if (r.ok) setRelease(r.data)
-      else setNotFound(true)
-      setLoading(false)
+      if (!live) return
+      setLoaded(r.ok ? { tag, state: 'found', release: r.data } : { tag, state: 'not-found' })
     })
+    return () => { live = false }
   }, [tag])
 
-  if (loading) {
+  // Guards against a stale response landing after the tag param has already changed.
+  const mine = loaded && loaded.tag === tag ? loaded : null
+
+  if (!mine) {
     return (
       <div className="w-full min-h-[50vh] flex items-center justify-center">
         <Spinner label={t('Loading…', '加载中…')} />
@@ -32,7 +36,7 @@ export default function ReleaseNotes() {
     )
   }
 
-  if (notFound || !release) {
+  if (mine.state === 'not-found') {
     return (
       <div className="form-wrap text-center pt-8 pb-12">
         <div className="text-center mb-10">
@@ -48,6 +52,7 @@ export default function ReleaseNotes() {
     )
   }
 
+  const { release } = mine
   return (
     <div className="max-w-2xl mx-auto px-6 py-16">
       <div className="mb-2">

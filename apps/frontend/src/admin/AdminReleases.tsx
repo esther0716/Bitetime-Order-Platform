@@ -18,7 +18,9 @@ export default function AdminReleases() {
   async function load() {
     setRows(unwrap(await adminListReleases()))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    adminListReleases().then((r) => setRows(unwrap(r)))
+  }, [])
 
   async function pull() {
     setPulling(true)
