@@ -193,7 +193,10 @@ The whole app changes appearance; the diff stays small and revertible.
 - `index.html` — font link swap
 - `cjkFont.ts` — `Noto Serif SC` dropped
 - mechanical: `border-[1.5px]` → `border-[0.5px]`, 81 occurrences
-- `marketing/LandingMotion.tsx` — deleted (paper-grain overlay, `mix-blend-multiply`)
+- `marketing/LandingMotion.tsx` — the `GrainOverlay` export deleted, plus its 5 call sites
+  (`Landing`, `Pricing`, `FaqPage`, `FeaturesPage`, `SampleShopsPage`) and the `.grain-overlay`
+  rule. The rest of the file (`Reveal`, `HeroStagger`, `MagneticButton`, `StorefrontPreview`,
+  `RotatingWord`) is motion, not warm identity, and stays.
 - `orderStatus.tsx` — four tones, solid/subtle split
 - **`DESIGN.md` rewritten** — it is canonical, and every §6 Don't now describes what shipped
 - **New ADR** under `docs/adr/` — why the warm identity was retired, that token names lie
