@@ -10,6 +10,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { useNavGuard } from './NavGuard'
 import { isDirty, type SettingsFields } from './settingsDirty'
 import { useSaved } from './useSaved'
@@ -622,6 +623,7 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
   const initial: SettingsFields = { tgToken: '', tgChat: '' }
   const [fields, setFields] = useState<SettingsFields>(initial)
   const [busy, setBusy] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
   const loaded = useRef(false)
   const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
 
@@ -658,7 +660,16 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
     <form onSubmit={save}>
       <div className={CARD}>
         <h3 className={HEADING}>{t('Order notifications', '订单通知')}</h3>
-        <p className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-3">Telegram</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em]">Telegram</p>
+          <button
+            type="button"
+            onClick={() => setGuideOpen(true)}
+            className="text-[12px] font-medium text-oxblood underline underline-offset-2 hover:text-ink"
+          >
+            {t('How to set this up', '如何设置')}
+          </button>
+        </div>
         <div className="flex flex-col gap-2">
           <div className="flex flex-col gap-[6px]">
             <Label htmlFor="shop-tgtoken">{t('Bot token', '机器人令牌')}</Label>
@@ -673,6 +684,69 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
         </div>
       </div>
       <SaveRow busy={busy} label={{ idle: t('Save notifications', '保存通知'), busy: t('Saving…', '保存中…') }} />
+      <TelegramSetupGuide open={guideOpen} onOpenChange={setGuideOpen} />
     </form>
+  )
+}
+
+// Static how-to: creating a Telegram bot and finding the token/chat id it takes to fill in
+// the two fields above. No backend call — Telegram's own APIs are what surface both values,
+// and `getUpdates` is the simplest route to a chat id without a second bot in the loop.
+function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useSession()
+  const stepClass = 'flex gap-3'
+  const numClass = 'shrink-0 w-5 h-5 rounded-full bg-oxblood text-cream text-[11px] font-medium flex items-center justify-center'
+  const textClass = 'text-[13px] text-ink leading-[1.5]'
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t('Set up Telegram notifications', '设置 Telegram 通知')}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className={stepClass}>
+            <span className={numClass}>1</span>
+            <p className={textClass}>
+              {t('In Telegram, open a chat with ', '在 Telegram 中，打开与 ')}
+              <a href="https://t.me/BotFather" target="_blank" rel="noopener" className="underline underline-offset-2 font-medium text-oxblood">@BotFather</a>
+              {t(' and send /newbot. Follow the prompts to name your bot.',
+                ' 的对话并发送 /newbot，按提示为机器人命名。')}
+            </p>
+          </div>
+          <div className={stepClass}>
+            <span className={numClass}>2</span>
+            <p className={textClass}>
+              {t('BotFather replies with a token — copy it into "Bot token" below.',
+                'BotFather 会回复一个令牌 — 复制到下方"机器人令牌"字段。')}
+            </p>
+          </div>
+          <div className={stepClass}>
+            <span className={numClass}>3</span>
+            <p className={textClass}>
+              {t('Add your new bot to the Telegram group or DM where you want order alerts, and send it any message there.',
+                '把新机器人加入您想接收订单通知的 Telegram 群组或私聊，并在那里发送任意一条消息。')}
+            </p>
+          </div>
+          <div className={stepClass}>
+            <span className={numClass}>4</span>
+            <p className={textClass}>
+              {t('Then open this URL in a browser, with your token in place of <TOKEN>:',
+                '然后在浏览器打开以下链接，把 <TOKEN> 换成您的令牌：')}
+            </p>
+          </div>
+          <p className="font-mono text-[12px] break-all rounded-lg border-[1.5px] border-clay-border bg-surface-sunken px-3 py-2 text-ink -mt-2 ml-8">
+            https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
+          </p>
+          <div className={stepClass}>
+            <span className={numClass}>5</span>
+            <p className={textClass}>
+              {t('Find "chat":{"id": ...} in the reply and copy that number into "Chat ID" below.',
+                '在返回内容中找到 "chat":{"id": ...}，把该数字复制到下方"聊天 ID"字段。')}
+            </p>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
