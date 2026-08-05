@@ -25,13 +25,13 @@ async function shopWithOwner(slug: string): Promise<string> {
   return seedMerchant({ slug, owner_id: session.session!.user.id })
 }
 
-async function seedOrder(merchantId: string) {
+async function seedOrder(merchantId: string, status: string = 'new') {
   const { data, error } = await serviceClient()
     .from('orders')
     .insert({
       merchant_id: merchantId,
       order_number: `PP-${crypto.randomUUID().slice(0, 8)}`,
-      status: 'new',
+      status,
       customer_name: 'Ah Meng',
       customer_wa: '60123456789',
     })
@@ -97,6 +97,34 @@ describe('POST /api/orders/:orderId/payment-proof', () => {
     const { data: order } = await serviceClient().from('orders').select('payment_proof').eq('id', orderId).single()
     const { data: file } = await serviceClient().storage.from(BUCKET).download(order!.payment_proof)
     expect(file!.size).toBe(SECOND.byteLength)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('flips a pending_payment order to new on a successful upload', async () => {
+    const merchantId = await shopWithOwner('pp-flip-shop')
+    const orderId = await seedOrder(merchantId, 'pending_payment')
+    written.push(`${merchantId}/${orderId}.png`)
+
+    const res = await post(orderId, PNG_1X1, 'image/png')
+    expect(res.status).toBe(200)
+
+    const { data: order } = await serviceClient().from('orders').select('status').eq('id', orderId).single()
+    expect(order!.status).toBe('new')
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('leaves a cancelled order cancelled — an upload cannot resurrect it', async () => {
+    const merchantId = await shopWithOwner('pp-cancelled-shop')
+    const orderId = await seedOrder(merchantId, 'cancelled')
+    written.push(`${merchantId}/${orderId}.png`)
+
+    const res = await post(orderId, PNG_1X1, 'image/png')
+    expect(res.status).toBe(200)
+
+    const { data: order } = await serviceClient().from('orders').select('status').eq('id', orderId).single()
+    expect(order!.status).toBe('cancelled')
 
     await serviceClient().from('merchants').delete().eq('id', merchantId)
   })

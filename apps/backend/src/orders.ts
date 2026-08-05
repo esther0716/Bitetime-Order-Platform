@@ -356,9 +356,20 @@ export async function orderMerchantId(orderId: string): Promise<string | null> {
   }
 }
 
-/** Stamps the storage path onto the order row. No return value — the caller already knows the path. */
+/**
+ * Stamps the storage path onto the order row, and advances a pending order past the payment
+ * gate (#182) in the same statement — a successful upload is the ONLY thing that turns
+ * pending_payment into new. The CASE guard is deliberate: it moves an order OUT of
+ * pending_payment and never overwrites any other status, so a proof landing after a merchant
+ * already cancelled (or completed) the order leaves that decision alone.
+ */
 export async function setOrderPaymentProof(orderId: string, path: string): Promise<void> {
-  await sql`update orders set payment_proof = ${path} where id = ${orderId}`
+  await sql`
+    update orders
+    set payment_proof = ${path},
+        status = case when status = 'pending_payment' then 'new' else status end
+    where id = ${orderId}
+  `
 }
 
 /**
