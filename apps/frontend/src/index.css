@@ -141,14 +141,18 @@
   --shadow-elev-1: var(--elev-1);
   --shadow-elev-2: var(--elev-2);
   --shadow-elev-3: var(--elev-3);
+  --shadow-elev-rail: var(--elev-rail);
 
   /* Motion → ease-* utilities */
   --ease-out: var(--ease-out);
   --ease-in-out: var(--ease-in-out);
   --ease-in: var(--ease-in);
 
-  /* Primitives exposed for new code. The --color-* entries above this block are the
-     legacy alias names; anything written from here on uses these. */
+  /* Primitives, exposed as utilities for the cases the semantic layer does not name --
+     chart series, status tints, a one-off wash. Reach for a SEMANTIC token first
+     (DESIGN.md section 6); needing the same primitive repeatedly means a semantic token
+     is missing, and the fix is to add one, not to spread the primitive.
+     The --color-* entries above this block are the legacy alias names. */
   --color-ink-50: var(--ink-50);
   --color-ink-100: var(--ink-100);
   --color-ink-200: var(--ink-200);
@@ -254,8 +258,8 @@ html { scroll-behavior: smooth; }
   }
 }
 
-body { font-family: 'Poppins', 'Poppins Fallback', 'Noto Sans SC', system-ui, sans-serif; background: var(--color-cream); color: var(--color-ink); min-height: 100vh; padding: 2rem 1rem 4rem; display: flex; flex-direction: column; align-items: center; scrollbar-gutter: stable; overflow-x: hidden; }
-/* AA-passing placeholder (browser default fails contrast on cream) */
+body { font-family: 'Poppins', 'Poppins Fallback', 'Noto Sans SC', system-ui, sans-serif; background: var(--color-bg); color: var(--color-text); min-height: 100vh; padding: 2rem 1rem 4rem; display: flex; flex-direction: column; align-items: center; scrollbar-gutter: stable; overflow-x: hidden; }
+/* AA-passing placeholder (the browser default fails contrast on the page background) */
 input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); opacity: 1; }
 .form-wrap { max-width: 600px; width: calc(100vw - 2rem); }
 .form-wrap--wide { max-width: 900px; }
@@ -341,7 +345,40 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-.dark { --background: oklch(0.145 0 0); --foreground: oklch(0.985 0 0); --card: oklch(0.205 0 0); --card-foreground: oklch(0.985 0 0); --popover: oklch(0.205 0 0); --popover-foreground: oklch(0.985 0 0); --primary: oklch(0.922 0 0); --primary-foreground: oklch(0.205 0 0); --secondary: oklch(0.269 0 0); --secondary-foreground: oklch(0.985 0 0); --muted: oklch(0.269 0 0); --muted-foreground: oklch(0.708 0 0); --accent: oklch(0.269 0 0); --accent-foreground: oklch(0.985 0 0); --destructive: oklch(0.704 0.191 22.216); --border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 15%); --ring: oklch(0.556 0 0); --chart-1: oklch(0.87 0 0); --chart-2: oklch(0.556 0 0); --chart-3: oklch(0.439 0 0); --chart-4: oklch(0.371 0 0); --chart-5: oklch(0.269 0 0); --sidebar: oklch(0.205 0 0); --sidebar-foreground: oklch(0.985 0 0); --sidebar-primary: oklch(0.488 0.243 264.376); --sidebar-primary-foreground: oklch(0.985 0 0); --sidebar-accent: oklch(0.269 0 0); --sidebar-accent-foreground: oklch(0.985 0 0); --sidebar-border: oklch(1 0 0 / 10%); --sidebar-ring: oklch(0.556 0 0); }
+/* The shadcn bridge under `.dark`. This block used to be stock shadcn's neutral oklch
+   greys, which silently won over the semantic dark map in tokens.css — `--primary`
+   resolved to a light grey rather than the brand accent, so nothing the reskin wired
+   for dark actually reached a shadcn component. It now mirrors the `:root` bridge and
+   inherits whatever tokens.css's `.dark` remapped.
+   STILL UNVERIFIED, like the rest of dark mode: no dark UI ships and no dark QA ran. */
+.dark {
+  --background: var(--color-bg);
+  --foreground: var(--color-text);
+  --card: var(--color-bg-surface);
+  --card-foreground: var(--color-text);
+  --popover: var(--color-bg-surface);
+  --popover-foreground: var(--color-text);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--ink-950);
+  --secondary: var(--color-bg-muted);
+  --secondary-foreground: var(--color-text-muted);
+  --muted: var(--color-bg-muted);
+  --muted-foreground: var(--color-text-muted);
+  --accent: var(--color-bg-muted);
+  --accent-foreground: var(--color-text);
+  --destructive: var(--danger-500);
+  --destructive-foreground: var(--white);
+  --border: var(--color-border);
+  --input: var(--color-border);
+  --ring: var(--color-accent);
+  /* Chart + sidebar tokens have no brand counterpart; stock shadcn values retained. */
+  --chart-1: oklch(0.87 0 0); --chart-2: oklch(0.556 0 0); --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0); --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0); --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376); --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0); --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%); --sidebar-ring: oklch(0.556 0 0);
+}
 
 /* ─── Printing a receipt ──────────────────────────────────────────────────────
    The receipt dialog is the only thing in this app that is meant to reach paper.

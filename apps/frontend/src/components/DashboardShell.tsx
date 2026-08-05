@@ -84,8 +84,8 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
         'flex flex-col flex-shrink-0 sticky top-0 h-screen overflow-hidden',
         'w-[210px]',
         'bg-surface-sunken',
-        // Right-only 1.5px border (flush layout — no radius)
-        'border-0 [border-right:1.5px_solid_var(--color-clay-border)]',
+        // Right-only hairline border (flush layout — no radius)
+        'border-0 [border-right:0.5px_solid_var(--color-clay-border)]',
         'shadow-[2px_0_12px_rgba(122,16,40,0.06)]',
         // Mobile: fixed drawer that slides in from the left
         'max-sm:fixed max-sm:z-50 max-sm:w-[248px] max-sm:max-w-[82vw]',

@@ -11,7 +11,11 @@ export const STATUS_LABELS: Record<string, { en: string; zh: string }> = {
   cancelled: { en: 'Cancelled', zh: '已取消' },
 }
 
-type BadgeConfig = { variant?: 'infoBlue' | 'warn' | 'danger'; className?: string }
+type BadgeConfig = { className: string }
+
+/* An unrecognised status is not a colour decision — it is a status this file has not been
+   taught. It renders neutral, which is also `completed`'s treatment. */
+const NEUTRAL = 'bg-neutral-100 text-neutral-fg border-transparent'
 
 /* Four tone families, six statuses. `new` and `preparing` share the info hue and are
    separated by FILL WEIGHT — solid vs subtle — rather than by a fifth colour. A merchant
@@ -22,14 +26,14 @@ export const STATUS_BADGE: Record<string, BadgeConfig> = {
   new:             { className: 'bg-info-fg text-white border-transparent' },
   preparing:       { className: 'bg-info-bg text-info-fg border-transparent' },
   ready:           { className: 'bg-success-bg text-success-fg border-transparent' },
-  completed:       { className: 'bg-neutral-100 text-neutral-fg border-transparent' },
+  completed:       { className: NEUTRAL },
   cancelled:       { className: 'bg-danger-bg text-danger-fg border-transparent' },
 }
 
 export function StatusBadge({ status, t }: { status: string; t: (en: string, zh: string) => string }) {
-  const badge = STATUS_BADGE[status] ?? { className: 'bg-neutral-100 text-neutral-fg border-transparent' }
+  const badge = STATUS_BADGE[status] ?? { className: NEUTRAL }
   return (
-    <Badge variant={badge.variant} className={badge.className}>
+    <Badge className={badge.className}>
       {t(STATUS_LABELS[status]?.en ?? status, STATUS_LABELS[status]?.zh ?? status)}
     </Badge>
   )

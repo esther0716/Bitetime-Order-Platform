@@ -24,7 +24,7 @@ import WaLink from './WaLink'
 const PANEL = 'bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border'
 
 // Table header cell — pixel-match of .mm-customers-table th
-const TH = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-oxblood px-[14px] py-[10px] border-b-[1.5px] border-rose-border text-left whitespace-nowrap'
+const TH = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-oxblood px-[14px] py-[10px] border-b-[0.5px] border-rose-border text-left whitespace-nowrap'
 
 // Table data cell (base) — pixel-match of .mm-customers-table td + hover
 const TD = 'px-[14px] py-[12px] border-b border-surface-warm-alt text-ink align-middle group-hover:bg-oxblood-tint'

@@ -50,7 +50,7 @@ const buttonVariants = cva(
         pill:
           "px-[14px] py-[7px] text-[13px] rounded-pill",
         // .hamburger-btn / .notif-bell — 36×36 px square, md radius (dimension only)
-        // Pair with variant="outline" for the 1.5px clay border + hover surface-sunken appearance
+        // Pair with variant="outline" for the hairline border + hover muted-surface appearance
         icon:
           "size-9 rounded-md",
         // .qty-btn / .del-btn — 26×26 px round icon button (dimension only)

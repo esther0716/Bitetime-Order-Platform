@@ -132,7 +132,7 @@ components:
 
 TinyOrder is engineered geometry with one vibrant accent and a lot of neutral around it. Corners are tight (4px on most surfaces), borders are half-pixel hairlines, and depth comes from a cool zinc ladder — page `#FAFAFA`, surfaces pure white, muted rails `#F4F4F5` — rather than from shadow or ornament. The signature colour is oxblood (`#7A1028`), a deep wine-red that earns attention by being rare: it is the only accent on any screen, and everything it does not touch is grey. The whole system reads as a tool that was built rather than decorated.
 
-Two token layers, and the split is the point. **Primitives** (`--ink-*`, `--brand-*`, the four status ramps) are the raw palette and are never referenced by product code. **Semantic tokens** (`--color-bg`, `--color-text-muted`, `--color-border`, `--color-accent`) are what components consume. Changing a surface colour is one edit to the semantic layer, and the dark theme is nothing but a remapping of that same layer with the primitives untouched.
+Two token layers, and the split is the point. **Primitives** (`--ink-*`, `--brand-*`, the four status ramps) are the raw palette. **Semantic tokens** (`--color-bg`, `--color-text-muted`, `--color-border`, `--color-accent`) are what components consume by default. Primitives are exposed as utilities too, for the cases the semantic layer does not name — chart series, status tints, a one-off wash — but reaching for one repeatedly means a semantic token is missing, and the fix is to add it rather than spread the primitive. Changing a surface colour is one edit to the semantic layer, and the dark theme is nothing but a remapping of that same layer with the primitives untouched.
 
 Bilingual by design: every surface holds equally in English and 中文, so layouts breathe at both string lengths.
 
@@ -227,12 +227,21 @@ Flat by default. Depth comes from the surface ladder (`--ink-100` muted → `--i
 
 ### Shadow Vocabulary
 
-- **`--elev-1`** (`0 1px 2px rgba(24,24,27,0.05)`): the faintest lift.
-- **`--elev-2`** (`0 4px 12px rgba(24,24,27,0.08)`): popovers, dropdowns, notification panel.
-- **`--elev-3`** (`0 12px 32px rgba(24,24,27,0.12)`): modals, drawers.
+Reach for the utility (`shadow-elev-2`), never a hand-written `shadow-[…]` literal.
+
+- **`--elev-1`** (`0 1px 2px rgba(24,24,27,0.05)`): the faintest lift, for a resting surface the ladder alone does not separate.
+- **`--elev-2`** (`0 8px 24px rgba(24,24,27,0.16)`): popovers, dropdowns, tooltips, dialogs.
+- **`--elev-3`** (`0 16px 40px -18px rgba(24,24,27,0.22)`): the largest float — hero cards, lifted panels.
+- **`--elev-rail`** (`6px 0 32px rgba(24,24,27,0.12)`): the slide-in rail. **Horizontal**, so it is not a step on the ramp and deliberately has its own name rather than being forced onto one.
 - **`--focus-ring`** (`0 0 0 2px rgba(122,16,40,0.40)`): every focused control. The oxblood ring is the standard focus affordance and is always on — never removed for aesthetics.
 
+`--elev-2` and `--elev-3` carry this app's real shadows rather than Voltage's nominal ramp. They were already spread across ten hand-written literals, and matching the token to the usage is what let those collapse without changing a pixel.
+
 The old **Flat-Rest Rule** — which forbade any shadow on a resting card — is **retired**. `--elev-1` is permitted on a resting surface where the surface ladder alone does not separate it. The ladder is still the first tool; the shadow is the second, not a substitute.
+
+## 4a. Scales carried but not yet used
+
+`tokens.css` also defines `--space-*` (4px base), `--icon-sm|md|lg|xl` (14/16/20/24px), `--dur-fast|base|slow|slower` (120/200/320/480ms) and `--ease-out|in-out|in`. They are the rest of the ported system and are **deliberately unconsumed today** — existing code sizes, times and eases with Tailwind utilities and `motion.tsx`. They are here so new work has one place to reach for these values instead of inventing a number; if a scale is still unused when the token rename lands, delete it rather than let it accumulate.
 
 ## 5. Components
 
@@ -266,7 +275,7 @@ The mono order number (`PREFIX-YYMMDD-XXXX`) is the brand's receipt stamp — th
 
 ### Do:
 - **Do** keep oxblood (`#7A1028`) as the single brand voice; hover to `#550A1A`, never a second resting accent (The One Voice Rule).
-- **Do** consume the **semantic** tokens (`--color-bg`, `--color-text-muted`, `--color-border`) in product code. Primitives (`--ink-*`, `--brand-*`) belong to the system.
+- **Do** reach for a **semantic** token first (`--color-bg`, `--color-text-muted`, `--color-border`). Primitives (`--ink-*`, `--brand-*`) are available for what the semantic layer does not name; if you need the same primitive in three places, add the semantic token instead.
 - **Do** build depth from the zinc ladder (`--ink-100` → `--ink-50` → `#FFFFFF`) plus `0.5px` hairlines before reaching for a shadow.
 - **Do** keep body copy on `--color-text` and secondary copy on `--color-text-muted` — both clear AA. `--ink-400` is borders and icons only (The Subtle-Is-Not-Text Rule).
 - **Do** run `pnpm --filter @bitetime/frontend test -- tokens` after touching a colour. The contrast contract is executable.

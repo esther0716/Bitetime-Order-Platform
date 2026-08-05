@@ -93,7 +93,7 @@ export default function Pricing() {
                 )}
               </caption>
               <thead>
-                <tr className="border-b-[1.5px] border-clay-border">
+                <tr className="border-b-[0.5px] border-clay-border">
                   <th scope="col" className="py-3 pr-4 font-heading text-[15px] font-medium text-ink">
                     {t('Feature', '功能')}
                   </th>

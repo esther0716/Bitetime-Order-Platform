@@ -89,12 +89,19 @@ Voltage's names, verbatim:
 
 | Status | Tone | Fill |
 |---|---|---|
-| `pending_payment` | warning | solid |
-| `new` | info | solid |
+| `pending_payment` | warning | subtle |
+| `new` | info | **solid** |
 | `preparing` | info | subtle |
-| `ready` | success | solid |
+| `ready` | success | subtle |
 | `completed` | neutral | subtle |
-| `cancelled` | danger | solid |
+| `cancelled` | danger | subtle |
+
+**Amended during implementation.** This table originally marked `pending_payment`, `ready`
+and `cancelled` solid as well. Solid fills exist here for exactly one reason — to separate
+`new` from `preparing`, which share a hue — and spending them on three statuses that
+already own a hue made the table read as four shouting chips rather than one. Verified in
+the running dashboard with all six rendered at once. `DESIGN.md` §2 carries the shipped
+table.
 
 Single seam: `apps/frontend/src/orderStatus.tsx` (34 lines).
 
