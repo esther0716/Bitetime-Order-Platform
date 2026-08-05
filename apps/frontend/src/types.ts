@@ -296,3 +296,30 @@ export interface TrialFeedbackAdminItem extends TrialFeedbackOwn {
   shop_name: string | null
   shop_slug: string | null
 }
+
+// GitHub releases pulled and rewritten into merchant-facing copy by Claude (#163). See
+// docs/superpowers/specs/2026-08-05-github-release-notes-design.md.
+export interface PublicRelease {
+  tag: string
+  title: string
+  published_at: string
+}
+
+export interface ReleaseDetail extends PublicRelease {
+  summary: string
+}
+
+export interface AdminRelease {
+  id: string
+  tag: string
+  name: string
+  html_url: string
+  raw_body: string
+  published_at: string
+  title: string | null
+  summary: string | null
+  humanize_error: string | null
+  status: 'draft' | 'published'
+  created_at: string
+  updated_at: string
+}
