@@ -92,13 +92,6 @@
   --color-clay-warm: var(--color-clay-warm);
   --color-clay-pale: var(--color-clay-pale);
 
-  /* Gold (tracking/AWB) */
-  --color-gold-accent: var(--color-gold-accent);
-  --color-gold-deep: var(--color-gold-deep);
-  --color-gold-deeper: var(--color-gold-deeper);
-  --color-gold-border: var(--color-gold-border);
-  --color-gold-bg: var(--color-gold-bg);
-
   /* Status: success / info / prep / warn / done / danger */
   --color-success-fg: var(--color-success-fg);
   --color-success-bg: var(--color-success-bg);

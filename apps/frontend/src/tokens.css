@@ -1,105 +1,214 @@
 /* ──────────────────────────────────────────────────────────────────────────
-   BiteTime design tokens — "The Hand-Lettered Shopfront"
-   Canonical source: DESIGN.md (frontmatter). Edit there first, mirror here.
-   All values are the exact literals extracted from index.css — no visual change.
+   TinyOrder design tokens — Voltage UI Kit
+   Canonical source: DESIGN.md. Edit there first, mirror here.
+   Contract enforced by src/tokens.test.ts — every colour pair below clears AA.
+
+   NAMING, READ THIS FIRST: the `--color-cream` / `--color-oxblood` / `--color-clay-*`
+   names in the ALIAS block at the bottom are historical. They no longer describe their
+   values (`--color-cream` is zinc `#FAFAFA`, not cream). They exist only so this reskin
+   could land without editing 896 call sites, and they are deleted in the follow-up rename.
+   Do NOT add a new alias. New code uses the primitives and semantics above.
    ────────────────────────────────────────────────────────────────────────── */
 :root {
-  /* ── Primary: oxblood ──────────────────────────────────────────────────── */
-  --color-oxblood: #7A1028;          /* brand voice: buttons, headings, active nav, badges */
-  --color-oxblood-deep: #550A1A;     /* hover/pressed on oxblood fills */
-  --color-oxblood-deeper: #5C0C1E;   /* voucher-apply pressed */
-  --color-oxblood-light: #8B2030;    /* lighter oxblood accent */
-  --color-oxblood-tint: #F5E6E8;     /* active/selected row wash (accent @ ~8%) */
-  --color-oxblood-tint-soft: #FDF0F2;/* faintest oxblood wash */
+  color-scheme: light;
 
-  /* ── Ink / text ────────────────────────────────────────────────────────── */
-  --color-ink: #2B0A10;              /* primary text (maroon near-black) */
-  --color-ink-soft: #4A2530;         /* sidebar nav labels, recessed body */
-  --color-ink-faint: #5A3A40;        /* faint maroon text */
+  /* ── Colour primitives — never referenced by product code ──────────────── */
+  --ink-50:  #FAFAFA;
+  --ink-100: #F4F4F5;
+  --ink-200: #E4E4E7;
+  --ink-300: #D4D4D8;
+  --ink-400: #A1A1AA;  /* borders + decorative icons ONLY — fails AA as text */
+  --ink-500: #71717A;
+  --ink-700: #3F3F46;
+  --ink-900: #18181B;
+  --ink-950: #09090B;
+  --white:   #FFFFFF;
 
-  /* ── Rose / clay: muted text + borders ─────────────────────────────────── */
-  --color-rose-muted: #7A4F55;       /* secondary text, labels (AA on cream) */
-  --color-rose-deep: #7A4A55;        /* rose-muted variant */
-  --color-clay-muted: #A07070;       /* borders + icons ONLY — fails AA as text (3.49:1 on cream) */
-  --color-text-tertiary: #8A5550;    /* tertiary TEXT (dates, stat labels, captions) — AA ≥4.5:1 on cream/raised/sunken */
-  --color-clay-border: #C9A090;      /* default 1.5px stroke (signature edge) */
-  --color-rose-border: #C9A0A8;      /* admin panel / delete-affordance border */
-  --color-rose-tint: #F0DDE0;        /* pale rose tint */
-  --color-rose-pale: #FDE8E8;        /* pale pink-red tint */
-  --color-rose-hover: #EAC8CC;       /* delete-button hover */
-  --color-clay-rose: #B86B6B;        /* warm clay-rose */
-  --color-clay-faint: #B89090;       /* faint clay */
-  --color-clay-warm: #B09080;        /* warm clay */
-  --color-clay-pale: #C9B8B0;        /* pale clay */
+  /* Oxblood, in Voltage's seven-step shape. -500 is the brand and is fixed. */
+  --brand-50:  #FDF0F2;
+  --brand-100: #F5E6E8;
+  --brand-200: #EBCDD3;
+  --brand-400: #D4708A;  /* dark-theme accent — must stay LIGHTER than -500 */
+  --brand-500: #7A1028;  /* the accent. Does not change. */
+  --brand-600: #550A1A;
+  --brand-700: #3F0713;
 
-  /* ── Surfaces: warm-neutral ladder ─────────────────────────────────────── */
-  --color-cream: #F2EAE0;            /* body bg + input fills (the base) */
-  --color-surface-raised: #FBF6F0;   /* panels, cards, form wraps */
-  --color-surface-high: #FFFDF9;     /* floating UI (popovers) — highest step */
-  --color-surface-sunken: #EDE4D8;   /* sidebar, recessed rails */
-  --color-surface-sunken-hover: #DDD0C4; /* nav hover on sunken rail */
-  --color-surface-warm: #E8D8D0;     /* warm surface tint */
-  --color-surface-warm-alt: #E8D5C8; /* warm surface tint (drawer dividers) */
-  --color-surface-cream-soft: #FAF3EE;/* soft cream surface */
-  --color-divider: #D9C8BC;          /* hairline rules in panels/sidebar */
-  --color-white: #fff;               /* pure white (gold-context inputs only) */
+  /* ── Status — four tones. `info` is blue, deliberately not the brand: a
+     status colour that equals the accent makes "new" indistinguishable from
+     every primary button on the screen. ─────────────────────────────────── */
+  /* One token per line, deliberately: tokens.test.ts anchors its lookup to the start
+     of a line so a packed declaration cannot hide from the contrast gate. */
+  /* success-500 is emerald-600, NOT Voltage's #10B981: white on #10B981 is 2.54:1
+     and fails even the large-text floor. */
+  --success-100: #D1FAE5;
+  --success-500: #059669;
+  --success-fg:  #065F46;
+  --warning-100: #FEF3C7;
+  --warning-500: #F59E0B;
+  --warning-fg:  #92400E;
+  --danger-100:  #FEE2E2;
+  --danger-500:  #EF4444;
+  --danger-fg:   #991B1B;
+  --info-100:    #DBEAFE;
+  --info-500:    #2563EB;
+  --info-fg:     #1E40AF;
+  --neutral-100: #F4F4F5;
+  --neutral-fg:  #3F3F46;
 
-  /* ── Secondary: tracking gold (shipment/AWB only) ──────────────────────── */
-  --color-gold-accent: #C9A030;      /* AWB save / focus */
-  --color-gold-deep: #A07820;        /* deeper gold */
-  --color-gold-deeper: #7A5810;      /* deepest gold text */
-  --color-gold-border: #E8C96A;      /* AWB field border */
-  --color-gold-bg: #FFF8E6;          /* AWB wash */
+  /* ── Semantic colour ───────────────────────────────────────────────────── */
+  --color-bg:            var(--ink-50);
+  --color-bg-surface:    var(--white);
+  --color-bg-muted:      var(--ink-100);
+  --color-bg-hover:      var(--ink-100);
+  --color-border:        var(--ink-200);
+  --color-border-strong: var(--ink-300);
+  --color-text:          var(--ink-900);
+  --color-text-muted:    var(--ink-500);
+  --color-text-subtle:   var(--ink-400);
+  --color-accent:        var(--brand-500);
+  --color-accent-hover:  var(--brand-600);
+  --color-focus-ring:    rgba(122, 16, 40, 0.40);
 
-  /* ── Semantic: order status ────────────────────────────────────────────── */
-  /* success (green) */
-  --color-success-fg: #155724;
-  --color-success-bg: #C3E6CB;
-  --color-success-strong: #1A7A3A;   /* inline "applied" text */
-  --color-success-deep: #166534;
-  --color-success-border: #A8D8B5;
-  --color-success-bg-soft: #D1FADF;
-  --color-success-bg-alt: #DFF5E8;
-  /* info (teal/blue) */
-  --color-info-fg: #0C5460;
-  --color-info-bg: #D1ECF1;
-  --color-info-blue-fg: #1E40AF;
-  --color-info-blue-bg: #DBEAFE;
-  /* preparing (plum/purple) */
-  --color-prep-fg: #5A1A7A;
-  --color-prep-bg: #E8D5F5;
-  --color-prep-fg-alt: #5B21B6;
-  --color-prep-bg-alt: #E9D5FF;
-  /* ready / warn (amber) */
-  --color-warn-fg: #856404;
-  --color-warn-bg: #FFF3CD;
-  --color-warn-fg-alt: #92400E;
-  --color-warn-bg-alt: #FEF3C7;
-  /* completed / done (taupe) */
-  --color-status-done-fg: #4A3020;
-  /* cancelled / danger (red) */
-  --color-danger-fg: #721C24;
-  --color-danger-bg: #F8D7DA;
-  --color-danger: #C0392B;
-  --color-danger-border: #F5C6CB;
+  /* ── Spacing (4px base) ────────────────────────────────────────────────── */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
 
-  /* ── Z-index: semantic stacking scale (values preserve existing order) ──── */
-  --z-notif-panel: 50;     /* notification dropdown */
-  --z-sticky: 90;          /* sticky mobile checkout bar */
-  --z-dropdown: 100;       /* date picker, autocomplete */
-  --z-overlay: 199;        /* drawer / modal backdrop */
-  --z-drawer: 200;         /* slide-in drawer */
-  --z-modal: 300;          /* modal dialog */
-  --z-modal-popover: 400;  /* dropdown rendered above a modal */
-  --z-toast: 500;          /* transient toast cues, above all overlays */
-
-  /* ── Radii: soft & hospitable geometry ─────────────────────────────────── */
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 14px;
-  --radius-2xl: 16px;
-  --radius-pill: 20px;
+  /* ── Radii — sharp. Names kept from the warm system; values are Voltage's. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --radius-2xl: 12px;
+  --radius-pill: 9999px;
   --radius-round: 50%;
+
+  /* ── Elevation ─────────────────────────────────────────────────────────── */
+  --elev-0: none;
+  --elev-1: 0 1px 2px rgba(24, 24, 27, 0.05);
+  --elev-2: 0 4px 12px rgba(24, 24, 27, 0.08);
+  --elev-3: 0 12px 32px rgba(24, 24, 27, 0.12);
+  --focus-ring: 0 0 0 2px rgba(122, 16, 40, 0.40);
+
+  /* ── Motion ────────────────────────────────────────────────────────────── */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-in:     cubic-bezier(0.4, 0, 1, 1);
+  --dur-fast:   120ms;
+  --dur-base:   200ms;
+  --dur-slow:   320ms;
+  --dur-slower: 480ms;
+
+  /* ── Icon sizes ────────────────────────────────────────────────────────── */
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+  --icon-xl: 24px;
+
+  /* ── Z-index (unchanged — ordering, not appearance) ────────────────────── */
+  --z-notif-panel: 50;
+  --z-sticky: 90;
+  --z-dropdown: 100;
+  --z-overlay: 199;
+  --z-drawer: 200;
+  --z-modal: 300;
+  --z-modal-popover: 400;
+  --z-toast: 500;
+
+  /* ══ ALIAS BLOCK — deleted by the follow-up rename. See the header note. ══
+     These names are what 896 call sites already say. Pointing them at Voltage
+     values is what reskins the app without touching a component. */
+  --color-cream:              var(--ink-50);
+  --color-white:              var(--white);
+  --color-surface-raised:     var(--white);
+  --color-surface-high:       var(--white);
+  --color-surface-sunken:     var(--ink-100);
+  --color-surface-sunken-hover: var(--ink-200);
+  --color-surface-warm:       var(--ink-100);
+  --color-surface-warm-alt:   var(--ink-100);
+  --color-surface-cream-soft: var(--ink-50);
+  --color-divider:            var(--ink-200);
+
+  --color-ink:            var(--ink-900);
+  --color-ink-soft:       var(--ink-700);
+  --color-ink-faint:      var(--ink-500);
+  --color-text-tertiary:  var(--ink-500);
+
+  --color-oxblood:         var(--brand-500);
+  --color-oxblood-deep:    var(--brand-600);
+  --color-oxblood-deeper:  var(--brand-700);
+  --color-oxblood-light:   var(--brand-400);
+  --color-oxblood-tint:    var(--brand-100);
+  --color-oxblood-tint-soft: var(--brand-50);
+
+  --color-rose-muted:  var(--ink-500);
+  --color-rose-deep:   var(--ink-700);
+  --color-rose-border: var(--ink-200);
+  --color-rose-tint:   var(--ink-100);
+  --color-rose-pale:   var(--danger-100);
+  --color-rose-hover:  var(--ink-200);
+  --color-clay-muted:  var(--ink-400);
+  --color-clay-border: var(--ink-200);
+  --color-clay-rose:   var(--ink-400);
+  --color-clay-faint:  var(--ink-300);
+  --color-clay-warm:   var(--ink-300);
+  --color-clay-pale:   var(--ink-200);
+
+  --color-success-fg:       var(--success-fg);
+  --color-success-bg:       var(--success-100);
+  --color-success-strong:   var(--success-fg);
+  --color-success-deep:     var(--success-fg);
+  --color-success-border:   var(--success-500);
+  --color-success-bg-soft:  var(--success-100);
+  --color-success-bg-alt:   var(--success-100);
+  --color-info-fg:          var(--info-fg);
+  --color-info-bg:          var(--info-100);
+  --color-info-blue-fg:     var(--info-fg);
+  --color-info-blue-bg:     var(--info-100);
+  --color-prep-fg:          var(--info-fg);
+  --color-prep-bg:          var(--info-100);
+  --color-prep-fg-alt:      var(--info-fg);
+  --color-prep-bg-alt:      var(--info-100);
+  --color-warn-fg:          var(--warning-fg);
+  --color-warn-bg:          var(--warning-100);
+  --color-warn-fg-alt:      var(--warning-fg);
+  --color-warn-bg-alt:      var(--warning-100);
+  --color-status-done-fg:   var(--neutral-fg);
+  --color-danger-fg:        var(--danger-fg);
+  --color-danger-bg:        var(--danger-100);
+  --color-danger:           var(--danger-500);
+  --color-danger-border:    var(--danger-500);
+}
+
+/* ── Dark theme: semantic remap only, primitives untouched.
+   Attached to `.dark` because index.css declares
+   `@custom-variant dark (&:is(.dark *))`. Voltage's [data-theme] selector
+   would be dead CSS here.
+   THESE VALUES ARE UNVERIFIED — no dark UI ships, and no dark QA pass ran.
+   Treat them as a starting point, not as tested output. ─────────────────── */
+.dark {
+  color-scheme: dark;
+
+  --color-bg:            var(--ink-950);
+  --color-bg-surface:    #111114;
+  --color-bg-muted:      #1C1C20;
+  --color-bg-hover:      #27272A;
+  --color-border:        #2A2A2E;
+  --color-border-strong: var(--ink-700);
+  --color-text:          var(--ink-50);
+  --color-text-muted:    var(--ink-400);
+  --color-text-subtle:   var(--ink-500);
+  --color-accent:        var(--brand-400);
+  --color-accent-hover:  var(--brand-500);
+  --color-focus-ring:    rgba(212, 112, 138, 0.50);
 }
