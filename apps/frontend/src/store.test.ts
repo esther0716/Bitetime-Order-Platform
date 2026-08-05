@@ -1141,8 +1141,8 @@ describe('setOrderStatus', () => {
     expect(result).toEqual({ ok: true, data: row })
   })
 
-  it('accepts all five valid statuses: new, preparing, ready, completed, cancelled', async () => {
-    for (const status of ['new', 'preparing', 'ready', 'completed', 'cancelled']) {
+  it('accepts all six valid statuses: pending_payment, new, preparing, ready, completed, cancelled', async () => {
+    for (const status of ['pending_payment', 'new', 'preparing', 'ready', 'completed', 'cancelled']) {
       __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
       const row = { id: 'ord-1', status }
       vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
