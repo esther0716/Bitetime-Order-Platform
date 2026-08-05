@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge'
 export const ORDER_STATUSES = ['pending_payment', 'new', 'preparing', 'ready', 'completed', 'cancelled']
 
 export const STATUS_LABELS: Record<string, { en: string; zh: string }> = {
-  pending_payment: { en: 'Pending payment', zh: '待付款' },
+  pending_payment: { en: 'Pending Payment', zh: '待付款' },
   new:       { en: 'New',       zh: '新订单' },
   preparing: { en: 'Preparing', zh: '备料中' },
   ready:     { en: 'Ready',     zh: '已备好' },

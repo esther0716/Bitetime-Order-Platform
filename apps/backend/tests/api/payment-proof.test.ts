@@ -25,7 +25,7 @@ async function shopWithOwner(slug: string): Promise<string> {
   return seedMerchant({ slug, owner_id: session.session!.user.id })
 }
 
-async function seedOrder(merchantId: string, status: string = 'new') {
+async function seedOrder(merchantId: string, status: string = 'new', userId?: string) {
   const { data, error } = await serviceClient()
     .from('orders')
     .insert({
@@ -34,6 +34,7 @@ async function seedOrder(merchantId: string, status: string = 'new') {
       status,
       customer_name: 'Ah Meng',
       customer_wa: '60123456789',
+      ...(userId ? { user_id: userId } : {}),
     })
     .select('id')
     .single()
@@ -220,5 +221,75 @@ describe('GET /api/merchants/:id/orders/:orderId/payment-proof', () => {
     expect(res.status).toBe(404)
 
     await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+})
+
+// The customer-facing twin of the merchant route above — same bytes, scoped by the order's
+// user_id instead of merchant ownership. No requireOwnsChild here (that middleware proves
+// MERCHANT ownership of a child row); the check is inline in the handler.
+describe('GET /api/orders/:orderId/payment-proof (customer)', () => {
+  it('streams the image back to the customer who placed the order', async () => {
+    const merchantId = await shopWithOwner('pp-cust-read-shop')
+    const customer = await makeUser('pp-cust-read-customer@example.com', 'password123')
+    const { token, userId } = await tokenOf(customer)
+    const orderId = await seedOrder(merchantId, 'new', userId)
+    written.push(`${merchantId}/${orderId}.png`)
+
+    await post(orderId, PNG_1X1, 'image/png')
+    const res = await get(`/api/orders/${orderId}/payment-proof`, token)
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('image/png')
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    expect(bytes.length).toBe(PNG_1X1.byteLength)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('404s for a stranger — the order exists but belongs to someone else', async () => {
+    const merchantId = await shopWithOwner('pp-cust-stranger-shop')
+    const owner = await makeUser('pp-cust-owner2@example.com', 'password123')
+    const { userId: ownerUserId } = await tokenOf(owner)
+    const orderId = await seedOrder(merchantId, 'new', ownerUserId)
+    await post(orderId, PNG_1X1, 'image/png')
+    written.push(`${merchantId}/${orderId}.png`)
+
+    const stranger = await makeUser('pp-cust-stranger@example.com', 'password123')
+    const { token: strangerToken } = await tokenOf(stranger)
+    const res = await get(`/api/orders/${orderId}/payment-proof`, strangerToken)
+    expect(res.status).toBe(404)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('404s for a guest order — no user_id to match against at all', async () => {
+    const merchantId = await shopWithOwner('pp-cust-guest-shop')
+    const orderId = await seedOrder(merchantId, 'new')
+    await post(orderId, PNG_1X1, 'image/png')
+    written.push(`${merchantId}/${orderId}.png`)
+
+    const customer = await makeUser('pp-cust-guest-customer@example.com', 'password123')
+    const { token } = await tokenOf(customer)
+    const res = await get(`/api/orders/${orderId}/payment-proof`, token)
+    expect(res.status).toBe(404)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('404s when the order has no proof uploaded', async () => {
+    const merchantId = await shopWithOwner('pp-cust-none-shop')
+    const customer = await makeUser('pp-cust-none-customer@example.com', 'password123')
+    const { token, userId } = await tokenOf(customer)
+    const orderId = await seedOrder(merchantId, 'new', userId)
+
+    const res = await get(`/api/orders/${orderId}/payment-proof`, token)
+    expect(res.status).toBe(404)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('401 without a token', async () => {
+    const res = await get('/api/orders/00000000-0000-0000-0000-000000000000/payment-proof')
+    expect(res.status).toBe(401)
   })
 })

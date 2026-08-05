@@ -106,6 +106,7 @@ import {
   placeOrder,
   uploadPaymentProof,
   fetchPaymentProof,
+  fetchMyPaymentProof,
   MAX_PAYMENT_PROOF_BYTES,
   fetchMerchantOrders,
   fetchOrderCount,
@@ -867,6 +868,25 @@ describe('fetchPaymentProof', () => {
     expect(r).toEqual({ ok: true, data: blob })
     const [url] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/orders\/order-1\/payment-proof$/)
+  })
+})
+
+describe('fetchMyPaymentProof', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('GETs /api/orders/:orderId/payment-proof and unwraps to the blob', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200, headers: new Headers(), blob: async () => blob,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const r = await fetchMyPaymentProof('order-1')
+
+    expect(r).toEqual({ ok: true, data: blob })
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/orders\/order-1\/payment-proof$/)
   })
 })
 

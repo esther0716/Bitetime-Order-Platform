@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Truck, ExternalLink, ChevronDown } from 'lucide-react'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
-import { fetchMyOrdersAtShop, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
+import { fetchMyOrdersAtShop, fetchMyPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
 import { StatusBadge } from '../orderStatus'
 import { ItemSelections } from '../ItemSelections'
 import { courierName, trackingUrl } from '../couriers'
@@ -246,6 +246,7 @@ export default function OrderHistory() {
                         <span className="text-right">{formatMoney(o.total, currency)}</span>
                       </div>
                       <OrderTimeline status={o.status ?? 'new'} mode={o.mode} t={t} />
+                      <PaymentProofImage order={o} t={t} />
                       <Tracking order={o} t={t} />
                   </AccordionContent>
                 </AccordionItem>
@@ -262,6 +263,53 @@ export default function OrderHistory() {
             )}
           </p>
         </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The customer's own payment-proof screenshot, if they uploaded one — same image the merchant
+ * sees in `OrderDetailSheet`, fetched through the customer-scoped route instead.
+ *
+ * Lazy by construction, not by a manual open/closed flag: this only ever mounts inside an
+ * accordion panel that unmounts on collapse (`Accordion`'s default `keepMounted={false}`), so
+ * the fetch starts when the row opens and `URL.revokeObjectURL` runs in this effect's own
+ * cleanup when it closes — never fetched for orders the customer hasn't expanded.
+ */
+function PaymentProofImage({ order, t }: { order: Order; t: Translate }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!order.payment_proof || !order.id) return
+    let cancelled = false
+    let objectUrl: string | null = null
+    fetchMyPaymentProof(order.id).then((r) => {
+      if (cancelled || !r.ok) return
+      objectUrl = URL.createObjectURL(r.data)
+      setUrl(objectUrl)
+    })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [order.id, order.payment_proof])
+
+  if (!order.payment_proof) return null
+  return (
+    <div className="mt-3">
+      <div className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-1.5">
+        {t('Payment proof', '付款凭证')}
+      </div>
+      {url ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="block w-full max-w-[160px]">
+          <img
+            src={url}
+            alt={t('Payment proof', '付款凭证')}
+            className="w-full h-auto object-contain rounded-md border border-clay-border"
+          />
+        </a>
+      ) : (
+        <span className="text-[13px] text-rose-muted">{t('Loading…', '加载中…')}</span>
       )}
     </div>
   )
