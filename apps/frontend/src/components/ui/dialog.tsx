@@ -31,8 +31,8 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        // z-overlay (199) — rgba(43,10,16,0.40) matches `.add-order-overlay`
-        "fixed inset-0 isolate z-overlay bg-[rgba(43,10,16,0.40)] duration-100 supports-backdrop-filter:backdrop-blur-[2px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        // z-overlay (199) — rgba(24,24,27,0.40) matches `.add-order-overlay`
+        "fixed inset-0 isolate z-overlay bg-[rgba(24,24,27,0.40)] duration-100 supports-backdrop-filter:backdrop-blur-[2px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -55,7 +55,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           // z-modal (300), bg-surface-high, clay border, lg radius, brand shadow
-          "fixed top-1/2 left-1/2 z-modal grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-clay-border bg-surface-high p-4 text-sm text-ink shadow-[0_8px_24px_rgba(43,10,16,0.16)] duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-modal grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-clay-border bg-surface-high p-4 text-sm text-ink shadow-[0_8px_24px_rgba(24,24,27,0.16)] duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
