@@ -689,18 +689,56 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
   )
 }
 
+// Stylized mockup of the BotFather reply, so a merchant recognizes the real chat by shape
+// rather than reading step 2's instruction cold. Placeholder token — not a real leaked one.
+function BotFatherMockup() {
+  return (
+    <svg viewBox="0 0 400 92" className="w-full h-auto" role="img" aria-hidden="true">
+      <rect x="0" y="0" width="400" height="92" rx="10" className="fill-surface-sunken" />
+      <circle cx="24" cy="24" r="12" className="fill-oxblood/20" />
+      <text x="44" y="21" className="fill-oxblood text-[11px] font-medium" style={{ fontFamily: 'inherit' }}>BotFather</text>
+      <rect x="44" y="30" width="330" height="46" rx="10" className="fill-surface-raised stroke-clay-border" strokeWidth="1.5" />
+      <text x="56" y="48" className="fill-ink text-[10px]" style={{ fontFamily: 'inherit' }}>Done! Use this token to access the HTTP API:</text>
+      <rect x="56" y="55" width="228" height="15" rx="4" className="fill-oxblood/10" />
+      <text x="62" y="65.5" className="fill-oxblood text-[10px] font-mono font-medium">123456789:AAHexampleToken_9x2K</text>
+    </svg>
+  )
+}
+
+// Stylized mockup of the `getUpdates` JSON, highlighting the one field ("chat":{"id":…})
+// that matters — a merchant scanning raw JSON for the first time won't know to look for it.
+function GetUpdatesMockup() {
+  return (
+    <svg viewBox="0 0 400 108" className="w-full h-auto" role="img" aria-hidden="true">
+      <rect x="0" y="0" width="400" height="108" rx="10" className="fill-ink" />
+      <circle cx="16" cy="16" r="4" className="fill-cream/30" />
+      <circle cx="30" cy="16" r="4" className="fill-cream/30" />
+      <circle cx="44" cy="16" r="4" className="fill-cream/30" />
+      <text x="16" y="38" className="fill-cream/70 text-[10px] font-mono">{'{"result":[{"message":{'}</text>
+      <text x="16" y="54" className="fill-cream/70 text-[10px] font-mono">{'  "text":"hi","'}</text>
+      <rect x="16" y="60" width="176" height="17" rx="4" className="fill-rose-muted/40" />
+      <text x="22" y="72.5" className="fill-cream text-[10px] font-mono font-medium">{'"chat":{"id":987654321,…}'}</text>
+      <text x="16" y="94" className="fill-cream/70 text-[10px] font-mono">{'}}]}'}</text>
+    </svg>
+  )
+}
+
 // Static how-to: creating a Telegram bot and finding the token/chat id it takes to fill in
 // the two fields above. No backend call — Telegram's own APIs are what surface both values,
 // and `getUpdates` is the simplest route to a chat id without a second bot in the loop.
+// The two mockups are illustrative, not screenshots (Telegram's actual UI isn't ours to
+// ship pixel-for-pixel) — they exist so a merchant recognizes the real chat/response by
+// shape, not because the exact rendering matters.
 function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t } = useSession()
   const stepClass = 'flex gap-3'
   const numClass = 'shrink-0 w-5 h-5 rounded-full bg-oxblood text-cream text-[11px] font-medium flex items-center justify-center'
   const textClass = 'text-[13px] text-ink leading-[1.5]'
+  const mockupWrapClass = 'ml-8 rounded-lg overflow-hidden border-[1.5px] border-clay-border -mt-1'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{t('Set up Telegram notifications', '设置 Telegram 通知')}</DialogTitle>
         </DialogHeader>
@@ -721,6 +759,7 @@ function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChang
                 'BotFather 会回复一个令牌 — 复制到下方"机器人令牌"字段。')}
             </p>
           </div>
+          <div className={mockupWrapClass}><BotFatherMockup /></div>
           <div className={stepClass}>
             <span className={numClass}>3</span>
             <p className={textClass}>
@@ -745,6 +784,7 @@ function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChang
                 '在返回内容中找到 "chat":{"id": ...}，把该数字复制到下方"聊天 ID"字段。')}
             </p>
           </div>
+          <div className={mockupWrapClass}><GetUpdatesMockup /></div>
         </div>
       </DialogContent>
     </Dialog>
