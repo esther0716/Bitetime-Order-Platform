@@ -11,6 +11,7 @@ import {
   createGithubIssue,
   closeGithubIssue,
   reopenGithubIssue,
+  listGithubReleases,
 } from '../../src/github.js'
 
 afterEach(() => {
@@ -138,5 +139,65 @@ describe('closeGithubIssue / reopenGithubIssue', () => {
     vi.stubGlobal('fetch', fetchSpy)
     await closeGithubIssue('', 42)
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('listGithubReleases', () => {
+  it('returns null and makes no request when the token is empty', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    const result = await listGithubReleases('', 10)
+    expect(result).toBeNull()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('fetches releases from the right repo and per_page, mapping the fields', async () => {
+    const fetchSpy = vi.fn(async (url: string) => {
+      expect(url).toBe(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`)
+      return new Response(
+        JSON.stringify([
+          {
+            tag_name: '0.1.5', name: '0.1.5', body: 'raw body',
+            html_url: 'https://github.com/x/y/releases/tag/0.1.5',
+            published_at: '2026-08-05T05:02:51Z',
+          },
+        ]),
+        { status: 200 },
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+    const result = await listGithubReleases('ghp_test', 10)
+    expect(result).toEqual([
+      {
+        tag_name: '0.1.5', name: '0.1.5', body: 'raw body',
+        html_url: 'https://github.com/x/y/releases/tag/0.1.5',
+        published_at: '2026-08-05T05:02:51Z',
+      },
+    ])
+  })
+
+  it('defaults a null body to an empty string', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify([{
+        tag_name: '0.1.4', name: '0.1.4', body: null,
+        html_url: 'https://github.com/x/y/releases/tag/0.1.4',
+        published_at: '2026-08-04T00:00:00Z',
+      }]),
+      { status: 200 },
+    )))
+    const result = await listGithubReleases('ghp_test', 10)
+    expect(result?.[0]?.body).toBe('')
+  })
+
+  it('returns null and does not throw on a non-2xx response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('boom', { status: 500 })))
+    const result = await listGithubReleases('ghp_test', 10)
+    expect(result).toBeNull()
+  })
+
+  it('returns null and does not throw on a network error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network down') }))
+    const result = await listGithubReleases('ghp_test', 10)
+    expect(result).toBeNull()
   })
 })

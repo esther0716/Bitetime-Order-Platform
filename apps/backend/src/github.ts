@@ -128,3 +128,40 @@ export const closeGithubIssue: GithubIssueAction = (token, issueNumber) =>
   setIssueState(token, issueNumber, 'closed')
 export const reopenGithubIssue: GithubIssueAction = (token, issueNumber) =>
   setIssueState(token, issueNumber, 'open')
+
+export interface GithubRelease {
+  tag_name: string
+  name: string
+  body: string
+  html_url: string
+  published_at: string
+}
+
+export type ListGithubReleases = (token: string, perPage: number) => Promise<GithubRelease[] | null>
+
+export const listGithubReleases: ListGithubReleases = async (token, perPage) => {
+  if (!token) {
+    console.error('GitHub release listing skipped: no token configured')
+    return null
+  }
+  try {
+    const res = await fetch(`${GITHUB_API}/repos/${GITHUB_REPO}/releases?per_page=${perPage}`, {
+      headers: headers(token),
+    })
+    if (!res.ok) {
+      console.error(`GitHub release listing failed: ${res.status} ${await res.text()}`)
+      return null
+    }
+    const data = (await res.json()) as GithubRelease[]
+    return data.map((r) => ({
+      tag_name: r.tag_name,
+      name: r.name,
+      body: r.body ?? '',
+      html_url: r.html_url,
+      published_at: r.published_at,
+    }))
+  } catch (e) {
+    console.error('GitHub release listing failed:', e instanceof Error ? e.message : String(e))
+    return null
+  }
+}
