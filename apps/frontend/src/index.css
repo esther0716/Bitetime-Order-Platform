@@ -23,24 +23,18 @@
 
    The numbers are measured, not guessed: canvas `measureText` on a representative string at
    1000px, webfont against fallback. size-adjust is the advance-width ratio; the overrides are the
-   webfont's own ascent/descent divided by that ratio. Times New Roman and Arial are the bases
-   because they are the two faces that are actually everywhere. RE-MEASURE IF A FAMILY OR ITS
-   WEIGHTS CHANGE — a stale number here is a silent return of the shift. */
-@font-face {
-  font-family: 'Lora Fallback';
-  src: local('Times New Roman');
-  size-adjust: 109.16%;
-  ascent-override: 92.16%;
-  descent-override: 25.1%;
-  line-gap-override: 0%;
-}
+   webfont's own ascent/descent divided by that ratio. Arial is the base because it is a face that
+   is actually everywhere. RE-MEASURE IF A FAMILY OR ITS WEIGHTS CHANGE — a stale number here is a
+   silent return of the shift. `scripts/measure-font-metrics.ts` is what produced these three.
 
+   There is ONE face now. The reskin retired the serif/sans signage axis, so the Lora fallback
+   that used to sit beside this one has no face left to match. */
 @font-face {
-  font-family: 'DM Sans Fallback';
+  font-family: 'Poppins Fallback';
   src: local('Arial');
-  size-adjust: 100.79%;
-  ascent-override: 98.42%;
-  descent-override: 30.76%;
+  size-adjust: 110.03%;
+  ascent-override: 95.43%;
+  descent-override: 31.81%;
   line-gap-override: 0%;
 }
 @import "tw-animate-css";
@@ -269,7 +263,7 @@ html { scroll-behavior: smooth; }
   }
 }
 
-body { font-family: 'DM Sans', 'DM Sans Fallback', 'Noto Sans SC', sans-serif; background: var(--color-cream); color: var(--color-ink); min-height: 100vh; padding: 2rem 1rem 4rem; display: flex; flex-direction: column; align-items: center; scrollbar-gutter: stable; overflow-x: hidden; }
+body { font-family: 'Poppins', 'Poppins Fallback', 'Noto Sans SC', system-ui, sans-serif; background: var(--color-cream); color: var(--color-ink); min-height: 100vh; padding: 2rem 1rem 4rem; display: flex; flex-direction: column; align-items: center; scrollbar-gutter: stable; overflow-x: hidden; }
 /* AA-passing placeholder (browser default fails contrast on cream) */
 input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); opacity: 1; }
 .form-wrap { max-width: 600px; width: calc(100vw - 2rem); }
@@ -305,8 +299,15 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
   --animate-accordion-up: accordion-up 0.2s ease-out;
   /* Each real face is followed by its metric twin (see the @font-face pair at the top of this
      file), so the space a line takes is decided before the webfont arrives, not after it. */
-  --font-heading: 'Lora', 'Lora Fallback', 'Noto Serif SC', serif;
-  --font-sans: 'DM Sans', 'DM Sans Fallback', 'Noto Sans SC', sans-serif;
+  --font-sans: 'Poppins', 'Poppins Fallback', 'Noto Sans SC', system-ui, sans-serif;
+  /* ALIAS, deleted by the follow-up rename along with the colour aliases. `font-heading`
+     is on 87 call sites across 41 files; dropping the token would leave every one of them
+     silently emitting nothing. There is one family now, so it points at the same stack. */
+  --font-heading: var(--font-sans);
+  /* The SYSTEM mono stack, not Poppins. Voltage ships no mono face at all, and the order
+     number (PREFIX-YYMMDD-XXXX) has to stay readable character by character. Costs no
+     bytes and no request. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   /* Body floor: text-sm is the app's de-facto body utility (buttons, inputs,
      card/prose copy). Raised from Tailwind's 14px default to 16px for
      readability + to stop iOS input-focus zoom. Eyebrows/labels stay small
