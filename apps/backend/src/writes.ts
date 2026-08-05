@@ -4,7 +4,7 @@ import { canonicalJson, optionGroupsFromRow, isTimezone } from '@bitetime/shared
 // guard_merchant_status / guard_profile_privileges triggers, so these picks are the ONLY thing
 // stopping privilege escalation. Never spread a raw client body into a DB write — pick from here.
 
-export const ORDER_STATUSES = ['new', 'preparing', 'ready', 'completed', 'cancelled']
+export const ORDER_STATUSES = ['pending_payment', 'new', 'preparing', 'ready', 'completed', 'cancelled']
 
 // Owner-editable shop config. Deliberately EXCLUDES status, owner_id, slug, plan, billing_*, id.
 // Mirrors what the browser could safely write under the old RLS+trigger regime. This is the

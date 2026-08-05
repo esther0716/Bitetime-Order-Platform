@@ -50,6 +50,20 @@ export default function OrderTimeline({
     )
   }
 
+  // Nothing has been prepped yet — the four-step tracker would misleadingly imply the order is
+  // already in progress. #182: this is the state between checkout and the customer's payment
+  // proof landing (or the merchant manually moving it on).
+  if (status === 'pending_payment') {
+    return (
+      <div className="flex items-center gap-2.5 rounded-lg border border-clay-border bg-surface-raised px-3 py-2.5 mt-3">
+        <Clock className="size-4 shrink-0 text-rose-muted" strokeWidth={1.75} />
+        <span className="text-[13px] font-medium text-rose-muted">
+          {t('Awaiting payment confirmation', '等待付款确认')}
+        </span>
+      </div>
+    )
+  }
+
   // Anything unrecognised (a status added later, a legacy row) reads as freshly placed rather than
   // vanishing the tracker.
   const currentIdx = Math.max(0, FLOW.indexOf(status as (typeof FLOW)[number]))

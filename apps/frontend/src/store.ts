@@ -496,7 +496,7 @@ export async function fetchEarnedRewards(): Promise<Result<EarnedReward[]>> {
 
 // ── Multi-tenant order placement ─────────────────────────────────────────────
 
-const ORDER_STATUSES = ['new', 'preparing', 'ready', 'completed', 'cancelled']
+const ORDER_STATUSES = ['pending_payment', 'new', 'preparing', 'ready', 'completed', 'cancelled']
 
 /**
  * A refusal the customer can act on, as opposed to a bug.

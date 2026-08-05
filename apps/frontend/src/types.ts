@@ -12,7 +12,7 @@ import type { FeedbackCategory, FeedbackStatus } from '@bitetime/shared'
 export type Lang = 'en' | 'zh'
 export type Role = 'customer' | 'merchant' | 'superadmin'
 export type MerchantStatus = 'pending' | 'active' | 'suspended'
-export type OrderStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'cancelled'
+export type OrderStatus = 'pending_payment' | 'new' | 'preparing' | 'ready' | 'completed' | 'cancelled'
 
 export type Translate = (en: string, zh?: string) => string
 
