@@ -19,6 +19,7 @@ import { createMerchant, startCheckout } from '../store'
 import { useSession } from '../SessionContext'
 import { pendingShopFromMetadata } from './pendingShop'
 import type { PendingShop } from './pendingShop'
+import { DEFAULT_CURRENCY } from '../currency'
 import BusinessNaturePicker from '../components/BusinessNaturePicker'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -47,6 +48,7 @@ export default function FinishSignupScreen() {
       billing: shop.billing,
       referredByCode: shop.ref,
       businessNature: shop.businessNature || undefined,
+      currency: shop.currency,
     })
     if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
     if (shop.plan === 'pro') {
@@ -75,7 +77,10 @@ export default function FinishSignupScreen() {
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    create({ name: name.trim(), businessNature, plan: 'basic', billing: 'monthly' })
+    // A merchant stranded before this shipped never chose a currency either — same as plan/
+    // billing just below, this fallback form doesn't ask a third question for an edge case;
+    // the column's own default (MYR) is what they get, same as it always was.
+    create({ name: name.trim(), businessNature, currency: DEFAULT_CURRENCY, plan: 'basic', billing: 'monthly' })
   }
 
   const heading = (

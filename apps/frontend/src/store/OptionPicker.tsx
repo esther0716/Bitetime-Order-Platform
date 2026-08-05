@@ -139,12 +139,20 @@ function PickerBody({ basePrice, currency, groups, t, label, onAdd }: PickerBody
     })
   }
 
-  /** Pick-one: choosing REPLACES whatever was chosen, rather than adding to it. */
+  /**
+   * Pick-one: choosing REPLACES whatever was chosen, rather than adding to it.
+   *
+   * Re-tapping the already-chosen option clears it — but only when the group is optional
+   * (`minSelect === 0`). A required pick-one must always carry a value, so it has no empty state
+   * to return to.
+   */
   const chooseOnly = (group: OptionGroup, optionId: string) =>
-    setSelections(prev => [
-      ...prev.filter(s => s.groupId !== group.id),
-      { groupId: group.id, picks: { [optionId]: 1 } },
-    ])
+    setSelections(prev => {
+      const rest = prev.filter(s => s.groupId !== group.id)
+      const already = prev.find(s => s.groupId === group.id)?.picks[optionId]
+      if (already && group.minSelect === 0) return rest
+      return [...rest, { groupId: group.id, picks: { [optionId]: 1 } }]
+    })
 
   const problem = validateSelections(asked, selections)
   const delta = picksDelta(snapshotSelections(asked, selections))
@@ -206,7 +214,7 @@ function PickerBody({ basePrice, currency, groups, t, label, onAdd }: PickerBody
                         <Button
                           variant={qty > 0 ? 'default' : 'soft'}
                           size="sm"
-                          disabled={qty === 0 && atGroupCap}
+                          disabled={!isPickOne && qty === 0 && atGroupCap}
                           onClick={() => (isPickOne
                             ? chooseOnly(group, option.id)
                             : toggle(group, option.id))}

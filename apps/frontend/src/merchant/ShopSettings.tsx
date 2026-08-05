@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, merchantHasOrders, deletePaymentQr } from '../store'
+import { updateMerchantConfig, fetchMerchantSecret, upsertMerchantSecret, deletePaymentQr } from '../store'
 import { shopRates, shopTax, shopDistance, shopMethods } from '@bitetime/shared'
 import { CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../currency'
 import { Button } from '../components/ui/button'
@@ -10,6 +10,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { useNavGuard } from './NavGuard'
 import { isDirty, type SettingsFields } from './settingsDirty'
 import { useSaved } from './useSaved'
@@ -466,26 +467,13 @@ function PaymentTab({ onDirtyChange }: TabProps) {
   // which is the value at mount. The replaced object is deleted only AFTER the row that pointed
   // at it saved, so a failed save leaves a live QR live.
   const savedQr = useRef(initial.qr ?? '')
-  // Currency locks after the first order so past orders/aggregates never
-  // re-denominate. Assume locked until the check clears, so it can't flip open.
-  const [currencyLocked, setCurrencyLocked] = useState(true)
   const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
-
-  useEffect(() => {
-    let active = true
-    // Fail CLOSED: a could-not-ask keeps the currency selector locked, so a dropped packet can
-    // never open the door to re-denominating a shop that may already have orders.
-    merchantHasOrders(merchant!.id).then(r => { if (active) setCurrencyLocked(r.ok ? r.data : true) })
-    return () => { active = false }
-  }, [merchant!.id])
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setBusy(true)
     try {
       const saved = await updateMerchantConfig(merchant!.id, {
-        // Guard against a stale locked value slipping through: only persist the
-        // currency when it is still editable.
-        ...(currencyLocked ? {} : { currency: fields.currency }),
+        // Currency is chosen at signup and never editable here — omitted from the payload.
         payment_bank: fields.bank,
         payment_note: fields.note,
         // '' is how this form says "no QR"; the backend reads it as null (writes.ts).
@@ -525,11 +513,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
         <h3 className={HEADING}>{t('Currency', '货币')}</h3>
         <div className="flex flex-col gap-[6px]">
           <Label htmlFor="shop-currency">{t('Base currency', '基础货币')}</Label>
-          <Select
-            value={fields.currency}
-            onValueChange={(v) => setFields(f => ({ ...f, currency: v ?? f.currency }))}
-            disabled={currencyLocked}
-          >
+          <Select value={fields.currency} onValueChange={() => {}} disabled>
             <SelectTrigger id="shop-currency" className="w-full max-w-[280px]" aria-label={t('Base currency', '基础货币')}>
               <span className="truncate">
                 {currencyDef(fields.currency).code} — {currencyDef(fields.currency).symbol}
@@ -544,11 +528,8 @@ function PaymentTab({ onDirtyChange }: TabProps) {
             </SelectContent>
           </Select>
           <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
-            {currencyLocked
-              ? t('Currency is locked because your shop has orders — changing it would re-denominate past totals.',
-                  '因店铺已有订单，货币已锁定 — 更改会重新换算历史金额。')
-              : t('The unit for your prices and what customers see. Locked once your first order is placed.',
-                  '您的价格和顾客看到的金额单位。首笔订单后将锁定。')}
+            {t('The unit for your prices and what customers see. Chosen when you signed up.',
+                '您的价格和顾客看到的金额单位。注册时选定。')}
           </p>
         </div>
       </div>
@@ -622,6 +603,7 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
   const initial: SettingsFields = { tgToken: '', tgChat: '' }
   const [fields, setFields] = useState<SettingsFields>(initial)
   const [busy, setBusy] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
   const loaded = useRef(false)
   const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
 
@@ -658,7 +640,16 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
     <form onSubmit={save}>
       <div className={CARD}>
         <h3 className={HEADING}>{t('Order notifications', '订单通知')}</h3>
-        <p className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-3">Telegram</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em]">Telegram</p>
+          <button
+            type="button"
+            onClick={() => setGuideOpen(true)}
+            className="text-[12px] font-medium text-oxblood underline underline-offset-2 hover:text-ink"
+          >
+            {t('How to set this up', '如何设置')}
+          </button>
+        </div>
         <div className="flex flex-col gap-2">
           <div className="flex flex-col gap-[6px]">
             <Label htmlFor="shop-tgtoken">{t('Bot token', '机器人令牌')}</Label>
@@ -673,6 +664,109 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
         </div>
       </div>
       <SaveRow busy={busy} label={{ idle: t('Save notifications', '保存通知'), busy: t('Saving…', '保存中…') }} />
+      <TelegramSetupGuide open={guideOpen} onOpenChange={setGuideOpen} />
     </form>
+  )
+}
+
+// Stylized mockup of the BotFather reply, so a merchant recognizes the real chat by shape
+// rather than reading step 2's instruction cold. Placeholder token — not a real leaked one.
+function BotFatherMockup() {
+  return (
+    <svg viewBox="0 0 400 92" className="w-full h-auto" role="img" aria-hidden="true">
+      <rect x="0" y="0" width="400" height="92" rx="10" className="fill-surface-sunken" />
+      <circle cx="24" cy="24" r="12" className="fill-oxblood/20" />
+      <text x="44" y="21" className="fill-oxblood text-[11px] font-medium" style={{ fontFamily: 'inherit' }}>BotFather</text>
+      <rect x="44" y="30" width="330" height="46" rx="10" className="fill-surface-raised stroke-clay-border" strokeWidth="1.5" />
+      <text x="56" y="48" className="fill-ink text-[10px]" style={{ fontFamily: 'inherit' }}>Done! Use this token to access the HTTP API:</text>
+      <rect x="56" y="55" width="228" height="15" rx="4" className="fill-oxblood/10" />
+      <text x="62" y="65.5" className="fill-oxblood text-[10px] font-mono font-medium">123456789:AAHexampleToken_9x2K</text>
+    </svg>
+  )
+}
+
+// Stylized mockup of the `getUpdates` JSON, highlighting the one field ("chat":{"id":…})
+// that matters — a merchant scanning raw JSON for the first time won't know to look for it.
+function GetUpdatesMockup() {
+  return (
+    <svg viewBox="0 0 400 108" className="w-full h-auto" role="img" aria-hidden="true">
+      <rect x="0" y="0" width="400" height="108" rx="10" className="fill-ink" />
+      <circle cx="16" cy="16" r="4" className="fill-cream/30" />
+      <circle cx="30" cy="16" r="4" className="fill-cream/30" />
+      <circle cx="44" cy="16" r="4" className="fill-cream/30" />
+      <text x="16" y="38" className="fill-cream/70 text-[10px] font-mono">{'{"result":[{"message":{'}</text>
+      <text x="16" y="54" className="fill-cream/70 text-[10px] font-mono">{'  "text":"hi","'}</text>
+      <rect x="16" y="60" width="176" height="17" rx="4" className="fill-rose-muted/40" />
+      <text x="22" y="72.5" className="fill-cream text-[10px] font-mono font-medium">{'"chat":{"id":987654321,…}'}</text>
+      <text x="16" y="94" className="fill-cream/70 text-[10px] font-mono">{'}}]}'}</text>
+    </svg>
+  )
+}
+
+// Static how-to: creating a Telegram bot and finding the token/chat id it takes to fill in
+// the two fields above. No backend call — Telegram's own APIs are what surface both values,
+// and `getUpdates` is the simplest route to a chat id without a second bot in the loop.
+// The two mockups are illustrative, not screenshots (Telegram's actual UI isn't ours to
+// ship pixel-for-pixel) — they exist so a merchant recognizes the real chat/response by
+// shape, not because the exact rendering matters.
+function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useSession()
+  const stepClass = 'flex gap-3'
+  const numClass = 'shrink-0 w-5 h-5 rounded-full bg-oxblood text-cream text-[11px] font-medium flex items-center justify-center'
+  const textClass = 'text-[13px] text-ink leading-[1.5]'
+  const mockupWrapClass = 'ml-8 rounded-lg overflow-hidden border-[1.5px] border-clay-border -mt-1'
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{t('Set up Telegram notifications', '设置 Telegram 通知')}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className={stepClass}>
+            <span className={numClass}>1</span>
+            <p className={textClass}>
+              {t('In Telegram, open a chat with ', '在 Telegram 中，打开与 ')}
+              <a href="https://t.me/BotFather" target="_blank" rel="noopener" className="underline underline-offset-2 font-medium text-oxblood">@BotFather</a>
+              {t(' and send /newbot. Follow the prompts to name your bot.',
+                ' 的对话并发送 /newbot，按提示为机器人命名。')}
+            </p>
+          </div>
+          <div className={stepClass}>
+            <span className={numClass}>2</span>
+            <p className={textClass}>
+              {t('BotFather replies with a token — copy it into "Bot token" below.',
+                'BotFather 会回复一个令牌 — 复制到下方"机器人令牌"字段。')}
+            </p>
+          </div>
+          <div className={mockupWrapClass}><BotFatherMockup /></div>
+          <div className={stepClass}>
+            <span className={numClass}>3</span>
+            <p className={textClass}>
+              {t('Add your new bot to the Telegram group or DM where you want order alerts, and send it any message there.',
+                '把新机器人加入您想接收订单通知的 Telegram 群组或私聊，并在那里发送任意一条消息。')}
+            </p>
+          </div>
+          <div className={stepClass}>
+            <span className={numClass}>4</span>
+            <p className={textClass}>
+              {t('Then open this URL in a browser, with your token in place of <TOKEN>:',
+                '然后在浏览器打开以下链接，把 <TOKEN> 换成您的令牌：')}
+            </p>
+          </div>
+          <p className="font-mono text-[12px] break-all rounded-lg border-[1.5px] border-clay-border bg-surface-sunken px-3 py-2 text-ink -mt-2 ml-8">
+            https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
+          </p>
+          <div className={stepClass}>
+            <span className={numClass}>5</span>
+            <p className={textClass}>
+              {t('Find "chat":{"id": ...} in the reply and copy that number into "Chat ID" below.',
+                '在返回内容中找到 "chat":{"id": ...}，把该数字复制到下方"聊天 ID"字段。')}
+            </p>
+          </div>
+          <div className={mockupWrapClass}><GetUpdatesMockup /></div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

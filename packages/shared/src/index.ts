@@ -4,6 +4,8 @@
 export { MIN_PASSWORD_LENGTH, isPasswordLongEnough } from './password.js'
 export { BUSINESS_NATURES, isBusinessNature } from './businessNature.js'
 export type { BusinessNature } from './businessNature.js'
+export { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from './currency.js'
+export type { CurrencyCode } from './currency.js'
 export { MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES, isCart } from './cart.js'
 export {
   validateFeedback, isFeedbackCategory, isFeedbackStatus,

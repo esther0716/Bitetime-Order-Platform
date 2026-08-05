@@ -195,6 +195,55 @@ describe('POST /api/merchants', () => {
       .from('merchants').select('id').eq('slug', 'bad-nature-shop')
     expect(rows ?? []).toEqual([])
   })
+
+  // Currency is chosen at signup and never editable afterwards (writes.ts). Read back with the
+  // service client — the point is that the stored row, not just the response, holds it.
+  it('stores the currency the signup form collected', async () => {
+    await resetMerchant('currency-shop')
+    const client = await makeUser('create-currency@example.com', 'password123')
+    const { token } = await tokenOf(client)
+
+    const res = await post('/api/merchants', { name: 'Currency Shop', businessNature: 'bakery', currency: 'SGD' }, token)
+
+    expect(res.status).toBe(200)
+    const m = (await res.json()) as MerchantRow
+    const { data: row } = await serviceClient()
+      .from('merchants').select('currency').eq('id', m.id).single()
+    expect(row!.currency).toBe('SGD')
+
+    await serviceClient().from('merchants').delete().eq('id', m.id)
+  })
+
+  // Unlike business nature, currency has a sane default — a caller that sends nothing gets MYR,
+  // the column's own default, rather than a 400.
+  it('defaults to MYR when no currency is sent', async () => {
+    await resetMerchant('currencyless-shop')
+    const client = await makeUser('create-currencyless@example.com', 'password123')
+    const { token } = await tokenOf(client)
+
+    const res = await post('/api/merchants', { name: 'Currencyless Shop', businessNature: 'bakery' }, token)
+
+    expect(res.status).toBe(200)
+    const m = (await res.json()) as MerchantRow
+    const { data: row } = await serviceClient()
+      .from('merchants').select('currency').eq('id', m.id).single()
+    expect(row!.currency).toBe('MYR')
+
+    await serviceClient().from('merchants').delete().eq('id', m.id)
+  })
+
+  it('400s on an unknown currency rather than creating a shop with one', async () => {
+    await resetMerchant('bad-currency-shop')
+    const client = await makeUser('create-bad-currency@example.com', 'password123')
+    const { token } = await tokenOf(client)
+
+    const res = await post('/api/merchants', { name: 'Bad Currency Shop', businessNature: 'bakery', currency: 'XXX' }, token)
+
+    expect(res.status).toBe(400)
+    const { data: rows } = await serviceClient()
+      .from('merchants').select('id').eq('slug', 'bad-currency-shop')
+    expect(rows ?? []).toEqual([])
+  })
 })
 
 describe('PATCH /api/merchants/:id (config)', () => {
@@ -255,6 +304,25 @@ describe('PATCH /api/merchants/:id (config)', () => {
     const { data: row } = await serviceClient()
       .from('merchants').select('business_nature').eq('id', id).single()
     expect(row!.business_nature).toBeNull()
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  // currency is signup-only too, same reasoning: re-denominating past totals is exactly what
+  // this lock exists to prevent, and that has to hold on a direct PATCH, not just in the UI.
+  it('ignores currency in a PATCH — it is set at signup and never editable after', async () => {
+    await resetMerchant('cfg-currency-shop')
+    const client = await makeUser('cfg-currency@example.com', 'password123')
+    const { token, userId } = await tokenOf(client)
+    const id = await seedMerchant({ slug: 'cfg-currency-shop', owner_id: userId })
+
+    const res = await patch(`/api/merchants/${id}`, { currency: 'SGD' }, token)
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toBe('No updatable fields')
+
+    const { data: row } = await serviceClient()
+      .from('merchants').select('currency').eq('id', id).single()
+    expect(row!.currency).toBe('MYR')
 
     await serviceClient().from('merchants').delete().eq('id', id)
   })

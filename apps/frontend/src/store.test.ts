@@ -106,6 +106,7 @@ import {
   placeOrder,
   uploadPaymentProof,
   fetchPaymentProof,
+  fetchMyPaymentProof,
   MAX_PAYMENT_PROOF_BYTES,
   fetchMerchantOrders,
   fetchOrderCount,
@@ -870,6 +871,25 @@ describe('fetchPaymentProof', () => {
   })
 })
 
+describe('fetchMyPaymentProof', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('GETs /api/orders/:orderId/payment-proof and unwraps to the blob', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200, headers: new Headers(), blob: async () => blob,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const r = await fetchMyPaymentProof('order-1')
+
+    expect(r).toEqual({ ok: true, data: blob })
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/orders\/order-1\/payment-proof$/)
+  })
+})
+
 // ── fetchMerchantOrders (Task 5.2; paged since #144) ──────────────────────────
 
 describe('fetchMerchantOrders', () => {
@@ -1141,8 +1161,8 @@ describe('setOrderStatus', () => {
     expect(result).toEqual({ ok: true, data: row })
   })
 
-  it('accepts all five valid statuses: new, preparing, ready, completed, cancelled', async () => {
-    for (const status of ['new', 'preparing', 'ready', 'completed', 'cancelled']) {
+  it('accepts all six valid statuses: pending_payment, new, preparing, ready, completed, cancelled', async () => {
+    for (const status of ['pending_payment', 'new', 'preparing', 'ready', 'completed', 'cancelled']) {
       __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
       const row = { id: 'ord-1', status }
       vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({

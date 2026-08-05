@@ -55,7 +55,7 @@ import {
   buildIssueTitle, buildIssueBody, categoryToLabel,
   type CreateGithubIssue, type GithubIssueAction,
 } from './github.js'
-import { isCart, isBusinessNature, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
@@ -152,6 +152,14 @@ app.post('/api/merchants', requireUser, async (c) => {
     return c.json({ error: 'Missing or unknown business nature' }, 400)
   }
 
+  // Chosen at signup, never editable afterwards (see writes.ts) — so unlike businessNature this
+  // one has a sane default rather than forcing a choice: a caller that sends nothing gets the
+  // column's own default, MYR.
+  const currency = body?.currency === undefined ? DEFAULT_CURRENCY : body.currency
+  if (!isCurrencyCode(currency)) {
+    return c.json({ error: 'Unknown currency' }, 400)
+  }
+
   const { data: rows } = await admin.from('merchants').select('slug')
   const slug = await resolveSlug(name, { taken: (rows ?? []).map((r) => r.slug), id: user.id })
 
@@ -167,6 +175,7 @@ app.post('/api/merchants', requireUser, async (c) => {
       billing_cycle: body?.billing ?? 'monthly',
       billing_region: 'MY', // everyone is charged MYR
       business_nature: businessNature,
+      currency,
       referred_by_code: resolveReferredByCode(body?.referredByCode, referralCodeOf(user.id)),
     })
     .select()
@@ -849,6 +858,31 @@ app.get(
     })
   },
 )
+
+// The customer-facing twin of the route above — same bytes, scoped by the order's user_id
+// instead of merchant ownership. No requireOwnsChild here: that middleware proves MERCHANT
+// ownership of a child row, which is the wrong question for a customer — so the check is
+// inline, same 404-for-both shape as requireOwnsChild uses (a stranger's guess and a missing
+// order must look identical, or the 404 itself becomes an oracle).
+app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
+  const user = c.get('user')
+  const orderId = c.req.param('orderId')
+  const { data: order, error } = await admin
+    .from('orders').select('user_id, payment_proof').eq('id', orderId).maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+  if (!order || order.user_id !== user.id) return c.json({ error: 'not_found' }, 404)
+  const path = order.payment_proof as string | null
+  if (!path) return c.json({ error: 'not_found' }, 404)
+
+  const { data, error: downloadError } = await admin.storage.from('payment-proof').download(path)
+  if (downloadError || !data) return c.json({ error: 'download_failed' }, 500)
+
+  const buffer = await data.arrayBuffer()
+  return new Response(buffer, {
+    status: 200,
+    headers: { 'Content-Type': data.type || 'application/octet-stream' },
+  })
+})
 
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
 app.post('/api/checkout', requireOwnMerchant, async (c) => {

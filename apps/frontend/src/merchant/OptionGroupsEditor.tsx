@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { Trash2, Power, PowerOff, Check, Ban, Plus, ArrowUp, ArrowDown } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { Tooltip, TooltipTrigger, TooltipContent } from '../components/ui/tooltip'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '../components/ui/dropdown-menu'
@@ -125,8 +127,36 @@ export default function OptionGroupsEditor({
       </div>
 
       {value.map((group, gi) => (
-        <div key={group.id} className="flex flex-col gap-2 border-t border-divider pt-3 first:border-t-0 first:pt-0 min-w-0">
-          <div className="flex items-end gap-2 flex-wrap min-w-0">
+        <div key={group.id} className="relative flex flex-col gap-2 border-t border-divider pt-3 first:border-t-0 first:pt-0 min-w-0">
+          <div className="absolute top-2 right-0 flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button" variant={group.active ? 'ghost' : 'outline'} size="iconRound"
+                    onClick={() => patchGroup(gi, { active: !group.active })}
+                    aria-pressed={!group.active}
+                    aria-label={group.active ? t('Switch off', '停用') : t('Switched on', '已启用')}
+                  />
+                }
+              >{group.active ? <Power size={14} /> : <PowerOff size={14} />}</TooltipTrigger>
+              <TooltipContent>{group.active ? t('Switch off', '停用') : t('Switched off', '已停用')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button" variant="ghost" size="iconRound"
+                    className="text-text-tertiary hover:text-danger"
+                    onClick={() => setPendingDelete({ kind: 'group', gi })}
+                    aria-label={t('Remove question', '删除问题')}
+                  />
+                }
+              ><Trash2 size={16} /></TooltipTrigger>
+              <TooltipContent>{t('Remove question', '删除问题')}</TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="flex items-end gap-2 flex-wrap min-w-0 pr-16">
             <div className="flex-1 basis-[180px] min-w-0">
               <Label className="text-[12px]">{t('Question', '问题')}</Label>
               <Input
@@ -201,9 +231,12 @@ export default function OptionGroupsEditor({
                 <div className="flex items-center gap-1 shrink-0">
                   <span className="text-[12px] text-text-tertiary whitespace-nowrap">+{currency ?? ''}</span>
                   <Input
-                    className="w-[72px]"
-                    type="number" min={0} step="0.01" value={option.delta}
-                    onChange={e => patchOption(gi, oi, { delta: Number(e.target.value) || 0 })}
+                    className="w-24 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    type="number" min={0} step="0.01" value={option.delta === 0 ? '' : option.delta}
+                    placeholder="0"
+                    onChange={e => patchOption(gi, oi, {
+                      delta: e.target.value === '' ? 0 : Number(e.target.value) || 0,
+                    })}
                   />
                 </div>
                 {/* THE 3PM CONTROL, and the reason `option_unavailable` exists at all: a shop
@@ -211,48 +244,69 @@ export default function OptionGroupsEditor({
                     price and the name for tomorrow. Without this the only way an option ever went
                     inactive was a Pro downgrade. */}
                 <div className="flex items-center gap-1 shrink-0 ml-auto">
-                <Button
-                  type="button" variant={option.active ? 'soft' : 'outline'} size="sm"
-                  onClick={() => patchOption(gi, oi, { active: !option.active })}
-                  aria-pressed={!option.active}
-                  aria-label={t(`Mark ${option.name || 'choice'} unavailable`, `将 ${option.name || '选项'} 设为不可选`)}
-                  title={t('Sold out today', '今日售罄')}
-                >{option.active ? t('Available', '可选') : t('Sold out', '售罄')}</Button>
-                <Button
-                  type="button" variant="ghost" size="sm"
-                  onClick={() => setPendingDelete({ kind: 'option', gi, oi })}
-                  aria-label={t('Remove choice', '删除选项')}
-                >×</Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button" variant={option.active ? 'soft' : 'outline'} size="iconRound"
+                        onClick={() => patchOption(gi, oi, { active: !option.active })}
+                        aria-pressed={!option.active}
+                        aria-label={option.active
+                          ? t(`Mark ${option.name || 'choice'} unavailable`, `将 ${option.name || '选项'} 设为不可选`)
+                          : t(`Mark ${option.name || 'choice'} available`, `将 ${option.name || '选项'} 设为可选`)}
+                      />
+                    }
+                  >{option.active ? <Check size={14} /> : <Ban size={14} />}</TooltipTrigger>
+                  <TooltipContent>{option.active ? t('Sold out today', '今日售罄') : t('Available', '可选')}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button" variant="ghost" size="iconRound"
+                        className="text-text-tertiary hover:text-danger"
+                        onClick={() => setPendingDelete({ kind: 'option', gi, oi })}
+                        aria-label={t('Remove choice', '删除选项')}
+                      />
+                    }
+                  ><Trash2 size={14} /></TooltipTrigger>
+                  <TooltipContent>{t('Remove choice', '删除选项')}</TooltipContent>
+                </Tooltip>
                 </div>
               </div>
             ))}
-            <div className="flex flex-wrap gap-2 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
               <Button
                 type="button" variant="outline" size="sm"
                 disabled={group.options.length >= MAX_OPTIONS_PER_GROUP}
                 onClick={() => patchGroup(gi, { options: [...group.options, blankOption(group.options.length + 1)] })}
-              >{t('Add choice', '添加选项')}</Button>
-              <Button
-                type="button" variant="ghost" size="sm"
-                onClick={() => onChange(move(value, gi, gi - 1))}
-                disabled={gi === 0}
-                aria-label={t('Move up', '上移')}
-              >↑</Button>
-              <Button
-                type="button" variant="ghost" size="sm"
-                onClick={() => onChange(move(value, gi, gi + 1))}
-                disabled={gi === value.length - 1}
-                aria-label={t('Move down', '下移')}
-              >↓</Button>
-              <Button
-                type="button" variant={group.active ? 'ghost' : 'outline'} size="sm"
-                onClick={() => patchGroup(gi, { active: !group.active })}
-                aria-pressed={!group.active}
-              >{group.active ? t('Switch off', '停用') : t('Switched off', '已停用')}</Button>
-              <Button
-                type="button" variant="ghost" size="sm"
-                onClick={() => setPendingDelete({ kind: 'group', gi })}
-              >{t('Remove question', '删除问题')}</Button>
+              ><Plus size={12} />{t('Choice', '选项')}</Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button" variant="ghost" size="iconRound"
+                      onClick={() => onChange(move(value, gi, gi - 1))}
+                      disabled={gi === 0}
+                      aria-label={t('Move up', '上移')}
+                    />
+                  }
+                ><ArrowUp size={14} /></TooltipTrigger>
+                <TooltipContent>{t('Move up', '上移')}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button" variant="ghost" size="iconRound"
+                      onClick={() => onChange(move(value, gi, gi + 1))}
+                      disabled={gi === value.length - 1}
+                      aria-label={t('Move down', '下移')}
+                    />
+                  }
+                ><ArrowDown size={14} /></TooltipTrigger>
+                <TooltipContent>{t('Move down', '下移')}</TooltipContent>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -263,7 +317,7 @@ export default function OptionGroupsEditor({
           type="button" variant="outline" size="sm"
           disabled={value.length >= MAX_GROUPS_PER_PRODUCT}
           onClick={() => onChange([...value, blankGroup(value.length + 1)])}
-        >{t('Add a question', '添加问题')}</Button>
+        ><Plus size={12} />{t('Question', '问题')}</Button>
         {/* The same verdict the write endpoint refuses on, shown while the merchant is still
             here. Without the SQL constraints ADR 0008 gave up, this is where they find out. */}
         {problem && <span className="text-[12px] text-danger">{configMessage(problem, t)}</span>}

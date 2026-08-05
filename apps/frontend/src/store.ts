@@ -180,8 +180,8 @@ export async function lookupMyMerchant(userId: string): Promise<Result<any | nul
   return apiGet<any | null>('/api/me/merchant', { auth: true })
 }
 
-export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode, businessNature }: { name: string; plan?: string; billing?: string; referredByCode?: string; businessNature?: string }): Promise<Result<any>> {
-  return apiSend<any>('/api/merchants', 'POST', { name, plan, billing, referredByCode, businessNature }, { auth: true })
+export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode, businessNature, currency }: { name: string; plan?: string; billing?: string; referredByCode?: string; businessNature?: string; currency?: string }): Promise<Result<any>> {
+  return apiSend<any>('/api/merchants', 'POST', { name, plan, billing, referredByCode, businessNature, currency }, { auth: true })
 }
 
 // ── Billing (Stripe via the Hono backend) ──────────────────────────────────────
@@ -496,7 +496,7 @@ export async function fetchEarnedRewards(): Promise<Result<EarnedReward[]>> {
 
 // ── Multi-tenant order placement ─────────────────────────────────────────────
 
-const ORDER_STATUSES = ['new', 'preparing', 'ready', 'completed', 'cancelled']
+const ORDER_STATUSES = ['pending_payment', 'new', 'preparing', 'ready', 'completed', 'cancelled']
 
 /**
  * A refusal the customer can act on, as opposed to a bug.
@@ -757,12 +757,6 @@ export async function downloadRevenueReport(
   )
 }
 
-// True once the merchant has ≥1 order — used to lock the currency selector so
-// past orders and dashboard aggregates never silently re-denominate.
-export async function merchantHasOrders(merchantId: string): Promise<Result<boolean>> {
-  return mapOk(await fetchOrderCount(merchantId), (n) => n > 0)
-}
-
 export async function setOrderStatus(orderId: string, status: string, merchantId: string): Promise<Result<any>> {
   if (!ORDER_STATUSES.includes(status)) return { ok: false, error: { code: 'invalid_status', message: 'Invalid status' } }
   return apiSend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { status }, { auth: true })
@@ -970,6 +964,14 @@ export async function uploadPaymentProof(orderId: string, file: File): Promise<R
 /** For the merchant dashboard only — `auth: 'required'`, a signed-out caller has no shop to view. */
 export async function fetchPaymentProof(merchantId: string, orderId: string): Promise<Result<Blob>> {
   const r = await apiGetFile(`/api/merchants/${merchantId}/orders/${orderId}/payment-proof`, { auth: 'required' })
+  return mapOk(r, d => d.blob)
+}
+
+/** For the customer's own order history — scoped server-side by the order's user_id, not a
+ * merchant id. `auth: 'required'`, same reason as fetchPaymentProof: a signed-out caller has
+ * no order to view. */
+export async function fetchMyPaymentProof(orderId: string): Promise<Result<Blob>> {
+  const r = await apiGetFile(`/api/orders/${orderId}/payment-proof`, { auth: 'required' })
   return mapOk(r, d => d.blob)
 }
 

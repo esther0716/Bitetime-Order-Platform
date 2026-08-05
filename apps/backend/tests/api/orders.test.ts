@@ -1932,6 +1932,38 @@ describe('POST /api/orders', () => {
   })
 })
 
+describe('POST /api/orders — pending-payment gate (#182)', () => {
+  let paidOwnerId: string
+  let paidShop: string
+  let paidProductId: string
+
+  beforeAll(async () => {
+    const owner = await makeUser('ord-paid-owner@test.dev', 'password123')
+    paidOwnerId = (await owner.auth.getUser()).data.user!.id
+    paidShop = await seedMerchant({
+      slug: 'ord-paid-shop',
+      order_prefix: 'PD',
+      owner_id: paidOwnerId,
+      payment_bank: 'Maybank 1234567890',
+    })
+    paidProductId = await seedProduct({ merchant_id: paidShop, price: 13 })
+    await setFulfilmentConfig(paidShop, { lead_days: 0, window_days: 14, closed_weekdays: [] })
+  }, 60_000)
+
+  afterAll(async () => {
+    await resetMerchant('ord-paid-shop')
+  })
+
+  it('is born pending_payment when the shop has payment_bank set', async () => {
+    const res = await post(body(paidShop, paidProductId, { fulfilDate: tomorrowInShopZone() }))
+    expect(res.status).toBe(200)
+
+    const { data: order } = await serviceClient()
+      .from('orders').select('status').eq('merchant_id', paidShop).single()
+    expect(order!.status).toBe('pending_payment')
+  })
+})
+
 describe('GET /api/time', () => {
   it('returns a parseable instant', async () => {
     const res = await app.request('/api/time')
