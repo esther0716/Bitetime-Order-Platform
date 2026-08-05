@@ -4,6 +4,7 @@ import { getReleaseByTag } from '../store'
 import { useSession } from '../SessionContext'
 import { Spinner } from '../components/Loaders'
 import Wordmark from '../components/Wordmark'
+import ReleaseSummary from '../components/ReleaseSummary'
 import type { ReleaseDetail } from '../types'
 
 type Loaded =
@@ -62,9 +63,7 @@ export default function ReleaseNotes() {
         {new Date(release.published_at).toLocaleDateString()}
       </p>
       <h1 className="text-2xl font-heading text-ink mb-6">{release.title}</h1>
-      <div className="text-[15px] leading-[1.7] text-ink whitespace-pre-wrap">
-        {release.summary}
-      </div>
+      <ReleaseSummary text={release.summary} />
     </div>
   )
 }

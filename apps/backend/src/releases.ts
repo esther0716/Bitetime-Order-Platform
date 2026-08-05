@@ -21,7 +21,7 @@ export type HumanizeRelease = (
 ) => Promise<HumanizedRelease | null>
 
 function buildPrompt(input: { tag: string; name: string; body: string }): string {
-  return `You are writing a "what's new" note for a food-ordering platform's merchants — small business owners, not developers. Rewrite this GitHub release into copy they can read in ten seconds.
+  return `You are writing a "what's new" note for a food-ordering platform's merchants — small business owners, not developers. Rewrite this GitHub release into copy they can scan in ten seconds, not a paragraph they have to read start to finish.
 
 Release: ${input.name} (${input.tag})
 
@@ -30,9 +30,14 @@ ${input.body}
 
 Write:
 - "title": a short, plain-language headline (under 60 characters), no version numbers or PR references.
-- "summary": 2-4 short sentences or bullet points describing what changed FOR THE MERCHANT — what they can now do or what improved. Skip anything purely internal (refactors, dependency bumps, test changes) unless it fixed a bug merchants would have noticed. If nothing in this release is merchant-visible, say so plainly in one sentence.
+- "summary": markdown, grouped under whichever of these headings actually apply — omit any heading with nothing merchant-visible in this release:
+### New features
+### Fixes
+### Improvements
 
-Write in plain English. No markdown formatting, no links, no PR/issue numbers.`
+Each heading is followed by a plain bullet list ("- " prefix), one short line per item, written for what the merchant can now do or what changed for them — never a PR title, an internal refactor, or a test/dependency change unless it fixed a bug merchants would have noticed. If a release truly has nothing merchant-visible, use a single heading that fits best (usually ### Improvements) with one bullet saying so plainly. Always use headings and bullets — never a prose paragraph, even for a single change.
+
+Write in plain English. No links, no PR/issue numbers, no version numbers inside the bullets.`
 }
 
 const RELEASE_SCHEMA = {

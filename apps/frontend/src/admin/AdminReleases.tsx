@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   adminPullReleases, adminListReleases, adminSetReleaseStatus, adminRegenerateRelease,
@@ -7,6 +7,7 @@ import { unwrap } from '../api'
 import { useSession } from '../SessionContext'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import ReleaseSummary from '../components/ReleaseSummary'
 import type { AdminRelease } from '../types'
 
 export default function AdminReleases() {
@@ -14,6 +15,10 @@ export default function AdminReleases() {
   const [rows, setRows] = useState<AdminRelease[] | null>(null)
   const [pulling, setPulling] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  // Lets superadmin read a draft's full title + summary before publishing — the public
+  // /releases/:tag endpoint 404s on a draft by design, so this reuses the row data
+  // adminListReleases already fetched rather than adding a second endpoint.
+  const [previewId, setPreviewId] = useState<string | null>(null)
 
   async function load() {
     setRows(unwrap(await adminListReleases()))
@@ -76,37 +81,56 @@ export default function AdminReleases() {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="border-b border-divider">
-                <td className="py-2 pr-3">{row.tag}</td>
-                <td className="py-2 pr-3">
-                  {row.title ?? row.name}
-                  {row.humanize_error && (
-                    <div className="text-[11px] text-danger-fg mt-0.5">{row.humanize_error}</div>
-                  )}
-                </td>
-                <td className="py-2 pr-3">
-                  <Badge variant={row.status === 'published' ? 'success' : 'outline'}>
-                    {row.status === 'published' ? t('Published', '已发布') : t('Draft', '草稿')}
-                  </Badge>
-                </td>
-                <td className="py-2 pr-3">{new Date(row.published_at).toLocaleDateString()}</td>
-                <td className="py-2 text-right whitespace-nowrap">
-                  <Button
-                    variant="outline" size="sm" className="mr-2"
-                    disabled={busy === row.id}
-                    onClick={() => regenerate(row)}
-                  >
-                    {t('Regenerate', '重新生成')}
-                  </Button>
-                  <Button
-                    variant="outline" size="sm"
-                    disabled={busy === row.id || !row.title}
-                    onClick={() => togglePublish(row)}
-                  >
-                    {row.status === 'published' ? t('Unpublish', '取消发布') : t('Publish', '发布')}
-                  </Button>
-                </td>
-              </tr>
+              <Fragment key={row.id}>
+                <tr className="border-b border-divider">
+                  <td className="py-2 pr-3">{row.tag}</td>
+                  <td className="py-2 pr-3">
+                    {row.title ?? row.name}
+                    {row.humanize_error && (
+                      <div className="text-[11px] text-danger-fg mt-0.5">{row.humanize_error}</div>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <Badge variant={row.status === 'published' ? 'success' : 'outline'}>
+                      {row.status === 'published' ? t('Published', '已发布') : t('Draft', '草稿')}
+                    </Badge>
+                  </td>
+                  <td className="py-2 pr-3">{new Date(row.published_at).toLocaleDateString()}</td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    <Button
+                      variant="outline" size="sm" className="mr-2"
+                      disabled={!row.title}
+                      onClick={() => setPreviewId(previewId === row.id ? null : row.id)}
+                    >
+                      {previewId === row.id ? t('Hide preview', '收起预览') : t('Preview', '预览')}
+                    </Button>
+                    <Button
+                      variant="outline" size="sm" className="mr-2"
+                      disabled={busy === row.id}
+                      onClick={() => regenerate(row)}
+                    >
+                      {t('Regenerate', '重新生成')}
+                    </Button>
+                    <Button
+                      variant="outline" size="sm"
+                      disabled={busy === row.id || !row.title}
+                      onClick={() => togglePublish(row)}
+                    >
+                      {row.status === 'published' ? t('Unpublish', '取消发布') : t('Publish', '发布')}
+                    </Button>
+                  </td>
+                </tr>
+                {previewId === row.id && row.title && (
+                  <tr className="border-b border-divider">
+                    <td colSpan={5} className="py-4 pr-3 bg-surface-sunken">
+                      <div className="max-w-xl">
+                        <h3 className="text-base font-heading text-ink mb-2">{row.title}</h3>
+                        <ReleaseSummary text={row.summary ?? ''} />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
