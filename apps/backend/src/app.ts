@@ -1542,6 +1542,18 @@ export const releaseDeps: {
 // stores drafts; a release only reaches merchants once explicitly published. See
 // docs/superpowers/specs/2026-08-05-github-release-notes-design.md.
 
+// Shared by /pull and /regenerate: best-effort, like every other call through releaseDeps.humanize
+// — a missing key or a Claude outage is recorded as humanize_error, never a failed request.
+async function humanizeAndStore(row: { id: string; tag: string; name: string; raw_body: string }) {
+  const humanized = await releaseDeps.humanize(env.anthropicApiKey, {
+    tag: row.tag,
+    name: row.name,
+    body: row.raw_body,
+  })
+  if (humanized) await updateReleaseHumanization(row.id, humanized)
+  else await updateReleaseHumanization(row.id, { error: 'Claude could not summarize this release' })
+}
+
 app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
   const fetched = await releaseDeps.listReleases(env.githubToken, 10)
   if (fetched === null) return c.json({ error: 'Could not reach GitHub' }, 502)
@@ -1558,13 +1570,7 @@ app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
       rawBody: release.body,
       publishedAt: release.published_at,
     })
-    const humanized = await releaseDeps.humanize(env.anthropicApiKey, {
-      tag: row.tag,
-      name: row.name,
-      body: row.raw_body,
-    })
-    if (humanized) await updateReleaseHumanization(row.id, humanized)
-    else await updateReleaseHumanization(row.id, { error: 'Claude could not summarize this release' })
+    await humanizeAndStore(row)
     pulled++
   }
 
@@ -1589,11 +1595,7 @@ app.post('/api/admin/releases/:id/regenerate', requireSuperadmin, async (c) => {
   const row = await getReleaseById(c.req.param('id'))
   if (!row) return c.json({ error: 'Release not found' }, 404)
 
-  const humanized = await releaseDeps.humanize(env.anthropicApiKey, {
-    tag: row.tag, name: row.name, body: row.raw_body,
-  })
-  if (humanized) await updateReleaseHumanization(row.id, humanized)
-  else await updateReleaseHumanization(row.id, { error: 'Claude could not summarize this release' })
+  await humanizeAndStore(row)
 
   return c.json(await getReleaseById(row.id))
 })

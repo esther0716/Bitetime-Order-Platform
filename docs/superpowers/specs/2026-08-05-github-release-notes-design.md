@@ -48,6 +48,13 @@ alter table public.releases enable row level security;
 -- No policies: browser roles (anon, authenticated) have no grants on this table
 -- (20260718130000_revoke_all_browser_grants.sql pattern). All access goes through
 -- apps/backend/src/app.ts using the admin (service-role) client.
+
+-- Revised during implementation: RLS bypass and table-level GRANT are separate layers in
+-- Postgres — service_role still needs an explicit grant to touch a NEW table at all, RLS
+-- bypass or not. Every route 500'd with "permission denied" until this was added, matching
+-- trial_feedback's migration.
+revoke all on table public.releases from anon, authenticated;
+grant select, insert, update, delete on table public.releases to service_role;
 ```
 
 `status = 'draft'` covers both "pulled, humanized, awaiting publish" and "humanization failed" (distinguished by `humanize_error` being set) — one state field, not two.
@@ -74,9 +81,9 @@ export const listGithubReleases: ListGithubReleases = async (token, perPage) => 
 }
 ```
 
-### New module `apps/backend/src/releases.ts`
+### New modules `apps/backend/src/releases.ts` + `releasesDb.ts`
 
-Two responsibilities, one file: the Claude call, and the `releases` table CRUD (plain `admin` REST calls — no transaction needed, nothing here is multi-statement).
+**Revised during implementation:** split into two files, not one, matching the `shopCustomers.ts`/`shopCustomersDb.ts` convention rather than the single-file plan below. `releases.ts` holds only the Claude call and imports nothing from `supabase.ts` — that's what keeps it importable by a zero-env-var unit test, the same constraint `github.ts` documents for itself. `releasesDb.ts` holds the `releases` table CRUD (plain `admin` REST calls — no transaction needed, nothing here is multi-statement) and is exercised only via the DB-backed test suites.
 
 ```ts
 export interface HumanizedRelease {
@@ -113,7 +120,7 @@ export const releaseDeps: {
 
 | Route | Guard | Behavior |
 |---|---|---|
-| `POST /api/admin/releases/pull` | `requireSuperadmin` | `releaseDeps.listReleases(env.githubToken, 10)`. For each `tag_name` not already in the table: insert a draft row, then `releaseDeps.humanize(env.anthropicApiKey, ...)` and fill `title`/`summary`, or set `humanize_error` on failure. Returns the count pulled. 500s immediately if `env.anthropicApiKey` is unset — this route's whole purpose is the humanization, so silent degrade is wrong here (unlike `githubToken`'s posture elsewhere). |
+| `POST /api/admin/releases/pull` | `requireSuperadmin` | `releaseDeps.listReleases(env.githubToken, 10)`. For each `tag_name` not already in the table: insert a draft row, then `releaseDeps.humanize(env.anthropicApiKey, ...)` and fill `title`/`summary`, or set `humanize_error` on failure. Returns the count pulled. **Revised during implementation:** a missing `env.anthropicApiKey` is handled inside `humanizeRelease` itself (logs, returns `null`, no throw) rather than gating the route with an up-front 500 — a route-level check broke testability against the `releaseDeps` mock, and this is more consistent with `githubToken`'s posture elsewhere: the pull still succeeds, and the gap surfaces per-row as `humanize_error` on the admin screen. |
 | `GET /api/admin/releases` | `requireSuperadmin` | All rows, newest `published_at` first — the review table. |
 | `PATCH /api/admin/releases/:id` | `requireSuperadmin` | Body `{status: 'draft' \| 'published'}`. |
 | `POST /api/admin/releases/:id/regenerate` | `requireSuperadmin` | Re-runs `releaseDeps.humanize` for one row (recovers from a failed or unsatisfying first pass). |
