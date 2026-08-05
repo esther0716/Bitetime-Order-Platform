@@ -850,6 +850,31 @@ app.get(
   },
 )
 
+// The customer-facing twin of the route above — same bytes, scoped by the order's user_id
+// instead of merchant ownership. No requireOwnsChild here: that middleware proves MERCHANT
+// ownership of a child row, which is the wrong question for a customer — so the check is
+// inline, same 404-for-both shape as requireOwnsChild uses (a stranger's guess and a missing
+// order must look identical, or the 404 itself becomes an oracle).
+app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
+  const user = c.get('user')
+  const orderId = c.req.param('orderId')
+  const { data: order, error } = await admin
+    .from('orders').select('user_id, payment_proof').eq('id', orderId).maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+  if (!order || order.user_id !== user.id) return c.json({ error: 'not_found' }, 404)
+  const path = order.payment_proof as string | null
+  if (!path) return c.json({ error: 'not_found' }, 404)
+
+  const { data, error: downloadError } = await admin.storage.from('payment-proof').download(path)
+  if (downloadError || !data) return c.json({ error: 'download_failed' }, 500)
+
+  const buffer = await data.arrayBuffer()
+  return new Response(buffer, {
+    status: 200,
+    headers: { 'Content-Type': data.type || 'application/octet-stream' },
+  })
+})
+
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
 app.post('/api/checkout', requireOwnMerchant, async (c) => {
   const body = await c.req.json().catch(() => ({}))

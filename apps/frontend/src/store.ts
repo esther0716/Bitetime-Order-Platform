@@ -973,6 +973,14 @@ export async function fetchPaymentProof(merchantId: string, orderId: string): Pr
   return mapOk(r, d => d.blob)
 }
 
+/** For the customer's own order history — scoped server-side by the order's user_id, not a
+ * merchant id. `auth: 'required'`, same reason as fetchPaymentProof: a signed-out caller has
+ * no order to view. */
+export async function fetchMyPaymentProof(orderId: string): Promise<Result<Blob>> {
+  const r = await apiGetFile(`/api/orders/${orderId}/payment-proof`, { auth: 'required' })
+  return mapOk(r, d => d.blob)
+}
+
 // ── Merchant config & secrets ─────────────────────────────────────────────────
 
 export async function updateMerchantConfig(id: string, patch: any): Promise<Result<any>> {
