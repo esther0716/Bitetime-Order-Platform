@@ -228,15 +228,6 @@ html { scroll-behavior: smooth; }
 
 @keyframes shimmer { 0% { background-position: -468px 0; } 100% { background-position: 468px 0; } }
 
-/* The landing page's paper grain — a 140px SVG noise tile, repeated. It lived as an inline
-   `style={{ backgroundImage }}` on the overlay element, which put ~470 bytes of percent-encoded
-   SVG into the HTML of every prerendered page for a value that never changes. A constant belongs
-   in the stylesheet, where it is fetched once and cached; the overlay's position, z-index and
-   opacity stay Tailwind classes on the element. */
-.grain-overlay {
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'140'%20height%3D'140'%3E%3Cfilter%20id%3D'n'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.85'%20numOctaves%3D'2'%20stitchTiles%3D'stitch'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23n)'%2F%3E%3C%2Fsvg%3E");
-}
-
 /* Entry fade for a route/section wrapper. Deliberately CSS and deliberately fill-mode `none`
    (the default): the element's RESTING opacity is 1, and the keyframe only borrows it on the
    way in. An animation that never starts, gets interrupted, or is torn down therefore leaves

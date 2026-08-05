@@ -12,7 +12,6 @@ import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
 import { ctaPrimary, ctaGhost, sectionTitle } from './ctaStyles'
 import {
-  GrainOverlay,
   Reveal,
   HeroStagger,
   HeroItem,
@@ -36,7 +35,6 @@ export default function Landing() {
   return (
     // Keep mm-land class — body:has(.mm-land) in index.css resets body padding/alignment
     <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-ink bg-cream">
-      <GrainOverlay />
 
       <MarketingNav />
 

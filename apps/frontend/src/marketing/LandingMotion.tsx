@@ -12,19 +12,6 @@ import type { VerticalWord } from './verticals'
 // Editorial ease — slightly springier than the app's UI ease, still calm.
 const EASE = [0.16, 1, 0.3, 1] as const
 
-// ── Paper grain: fixed, pointer-events-none, painted once (perf guardrail) ──
-// The noise tile itself is `.grain-overlay` in index.css. It is a constant, and a constant in a
-// `style` attribute is ~470 bytes of percent-encoded SVG re-sent inside the HTML of every
-// prerendered page instead of once inside a cached stylesheet.
-export function GrainOverlay() {
-  return (
-    <div
-      aria-hidden
-      className="grain-overlay pointer-events-none fixed inset-0 -z-10 opacity-[0.035] mix-blend-multiply max-[600px]:opacity-[0.025]"
-    />
-  )
-}
-
 // ── Scroll reveal: fade + small rise once in view ───────────────────────────
 export function Reveal({
   children,

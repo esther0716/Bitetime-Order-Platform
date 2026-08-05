@@ -11,7 +11,7 @@ import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
 import { FEATURES } from './features'
 import { ctaPrimary, sectionTitle } from './ctaStyles'
-import { GrainOverlay, Reveal } from './LandingMotion'
+import { Reveal } from './LandingMotion'
 
 export default function FeaturesPage() {
   const { t } = useSession()
@@ -22,7 +22,6 @@ export default function FeaturesPage() {
   return (
     // Keep mm-land class — body:has(.mm-land) in index.css resets body padding/alignment
     <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-ink bg-cream">
-      <GrainOverlay />
       <MarketingNav />
 
       {/* ── Header ── */}

@@ -14,7 +14,7 @@ import { useFaqStructuredData } from './structuredData'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion'
 import { FAQ } from './faq'
 import { ctaPrimary } from './ctaStyles'
-import { GrainOverlay, Reveal } from './LandingMotion'
+import { Reveal } from './LandingMotion'
 
 export default function FaqPage() {
   const { t, lang } = useSession()
@@ -28,7 +28,6 @@ export default function FaqPage() {
   return (
     // Keep mm-land class — body:has(.mm-land) in index.css resets body padding/alignment
     <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-ink bg-cream">
-      <GrainOverlay />
       <MarketingNav />
 
       {/* ── Header ── */}

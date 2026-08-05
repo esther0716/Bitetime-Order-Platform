@@ -19,7 +19,7 @@ import { useTopOnRouteChange } from './useTopOnRouteChange'
 import PricingCards from './PricingCards'
 import { PLAN_COMPARISON_GROUPS, type ComparisonValue } from './pricingTiers'
 import { ctaPrimary, sectionTitle } from './ctaStyles'
-import { GrainOverlay, Reveal } from './LandingMotion'
+import { Reveal } from './LandingMotion'
 import { cn } from '../lib/utils'
 
 /**
@@ -51,7 +51,6 @@ export default function Pricing() {
   return (
     // Keep mm-land class — body:has(.mm-land) in index.css resets body padding/alignment
     <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-ink bg-cream">
-      <GrainOverlay />
       <MarketingNav />
 
       {/* ── Header ── */}
