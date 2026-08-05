@@ -316,10 +316,10 @@ export async function placeOrder(
         ${discount ? (input.voucherCode ?? null) : null},
         ${input.fulfilDate},
         ${orderNumber},
-        -- Hardcoded, never taken from the caller. A client could otherwise file an order that
-        -- is already 'completed' — which the insert policy used to prevent and no longer can,
-        -- because no policy runs on this connection.
-        'new',
+        -- Born pending_payment when the shop takes manual payment (has bank/QR/note to show the
+        -- customer) — #182. Otherwise 'new', unchanged. Never taken from the caller, same reason
+        -- as always: a client-chosen status is a client-chosen workflow state.
+        ${merchant.hasPaymentInfo ? 'pending_payment' : 'new'},
         ${distanceKm},
         ${distanceBase},
         ${distanceRate}
@@ -442,6 +442,7 @@ interface OrderableMerchant {
   tax: ShopTax
   distance: ShopDistance
   methods: ShopMethods
+  hasPaymentInfo: boolean
 }
 
 /**
@@ -463,11 +464,15 @@ async function assertOrderableMerchant(tx: postgres.TransactionSql, merchantId: 
     status: string
     currency: string | null
     timezone: string | null
+    payment_bank: string | null
+    payment_qr: string | null
+    payment_note: string | null
   }
   const rows = await tx<MerchantRow[]>`
     select order_prefix, status::text, shipping, currency, config, timezone, tax_enabled, tax_rate,
            pickup_enabled, delivery_enabled, express_enabled,
-           delivery_base_fee, delivery_rate_per_km, delivery_max_km, origin_place_id
+           delivery_base_fee, delivery_rate_per_km, delivery_max_km, origin_place_id,
+           payment_bank, payment_qr, payment_note
     from merchants where id = ${merchantId}
   `
   const merchant = rows[0]
@@ -496,6 +501,10 @@ async function assertOrderableMerchant(tx: postgres.TransactionSql, merchantId: 
     // storefront renders its buttons from this exact function, and a second reading here is a
     // second rule the customer meets as a refusal of a button they were just offered.
     methods: shopMethods(merchant),
+    // #182: an order is born pending_payment only when the customer will actually SEE somewhere
+    // to send proof — the same condition Storefront.tsx uses to render the upload widget. A shop
+    // with none of the three has no upload surface, so gating it would strand every order.
+    hasPaymentInfo: Boolean(merchant.payment_bank || merchant.payment_qr || merchant.payment_note),
   }
 }
 

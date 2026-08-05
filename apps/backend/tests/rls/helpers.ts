@@ -116,6 +116,11 @@ export async function seedMerchant(fields: {
   origin_place_id?: string
   /** Landing-page sample-shops carousel flag (#107). Omitted leaves the column default (false). */
   is_sample?: boolean
+  /** Manual-payment display fields (#156). Omitted leaves the column defaults (null) — used to
+   * test the #182 pending-payment gate, which keys off whether any of these three is set. */
+  payment_bank?: string
+  payment_qr?: string
+  payment_note?: string
 }) {
   await resetMerchant(fields.slug)
   const { data, error } = await serviceClient()
@@ -137,6 +142,9 @@ export async function seedMerchant(fields: {
       ...(fields.delivery_max_km !== undefined ? { delivery_max_km: fields.delivery_max_km } : {}),
       ...(fields.origin_place_id !== undefined ? { origin_place_id: fields.origin_place_id } : {}),
       ...(fields.is_sample !== undefined ? { is_sample: fields.is_sample } : {}),
+      ...(fields.payment_bank !== undefined ? { payment_bank: fields.payment_bank } : {}),
+      ...(fields.payment_qr !== undefined ? { payment_qr: fields.payment_qr } : {}),
+      ...(fields.payment_note !== undefined ? { payment_note: fields.payment_note } : {}),
     })
     .select('id')
     .single()
