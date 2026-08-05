@@ -106,7 +106,7 @@ export default function VouchersManager() {
   }
 
   if (!rows) return (
-    <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
       <SkeletonText lines={4} />
     </div>
   )
@@ -114,12 +114,12 @@ export default function VouchersManager() {
   return (
     <div>
       {/* Your vouchers panel */}
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
         <h3 className="font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2">
           {t('Your vouchers', '您的优惠券')}
         </h3>
         {rows.length === 0 ? (
-          <Empty className="border-[1.5px] border-dashed border-clay-border bg-cream/50">
+          <Empty className="border-[0.5px] border-dashed border-clay-border bg-cream/50">
             <EmptyHeader>
               <EmptyMedia variant="icon" className="bg-oxblood-tint text-oxblood">
                 <Ticket />
@@ -135,7 +135,7 @@ export default function VouchersManager() {
             {rows.map((v: Voucher) => (
               <div
                 key={(v as any).id}
-                className="flex items-center gap-3 px-[14px] py-[10px] bg-cream border-[1.5px] border-clay-border rounded-lg transition-colors max-[480px]:flex-wrap"
+                className="flex items-center gap-3 px-[14px] py-[10px] bg-cream border-[0.5px] border-clay-border rounded-lg transition-colors max-[480px]:flex-wrap"
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-[14px] font-medium text-ink flex items-center gap-2 flex-wrap">
@@ -170,7 +170,7 @@ export default function VouchersManager() {
       </div>
 
       {/* Create a voucher panel */}
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
         <h3 className="font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2">
           {t('Create a voucher', '创建优惠券')}
         </h3>

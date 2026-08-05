@@ -75,7 +75,7 @@ export default function ImageLightbox({
                   onClick={() => setI(n)}
                   aria-label={t('View image', '查看图片') + ` ${n + 1}`}
                   className={cn(
-                    'size-12 shrink-0 rounded-md overflow-hidden border-[1.5px] cursor-pointer',
+                    'size-12 shrink-0 rounded-md overflow-hidden border-[0.5px] cursor-pointer',
                     n === idx ? 'border-oxblood' : 'border-clay-border opacity-70 hover:opacity-100',
                   )}
                 >

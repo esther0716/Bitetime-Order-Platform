@@ -26,7 +26,7 @@ function ShopUnreachable() {
         <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-6 w-full box-border text-left">
+      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-6 w-full box-border text-left">
         <p className="text-rose-muted text-[14px] leading-[1.6] mt-1.5">
           {t(
             "We couldn't reach the server to load your shop. You are still signed in — this is on our side, not yours.",

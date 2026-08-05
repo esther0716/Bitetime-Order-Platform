@@ -171,7 +171,7 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
       </AnimatePresence>
 
       {/* Card */}
-      <div className="rounded-2xl border-[1.5px] border-clay-border bg-surface-raised p-5 text-left shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
+      <div className="rounded-2xl border-[0.5px] border-clay-border bg-surface-raised p-5 text-left shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
         {/* Shop header */}
         <div className="flex items-center gap-3 pb-4 border-b border-divider">
           <span className="grid h-10 w-10 place-items-center rounded-round bg-oxblood-tint font-heading text-[15px] font-medium text-oxblood">

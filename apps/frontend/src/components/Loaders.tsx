@@ -49,7 +49,7 @@ export function PageSkeleton() {
           <Skeleton key={i} width="84px" height="2.1rem" radius="var(--radius-pill)" />
         ))}
       </div>
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border mt-1">
+      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border mt-1">
         <SkeletonText lines={5} />
       </div>
     </div>

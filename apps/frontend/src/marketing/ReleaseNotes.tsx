@@ -43,7 +43,7 @@ export default function ReleaseNotes() {
         <div className="text-center mb-10">
           <h1><Wordmark className="h-8 mx-auto" /></h1>
         </div>
-        <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-left">
+        <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-left">
           <p className="text-rose-muted text-[14px] leading-[1.6] mt-1.5">
             {t("We couldn't find this release.", '未找到该更新记录。')}
           </p>

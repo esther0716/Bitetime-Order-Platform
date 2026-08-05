@@ -30,7 +30,7 @@ import { SkeletonText } from '../components/Loaders'
 // the thing the portal cannot say: that cancelling suspends this shop, on a named date, in the
 // merchant's own language.
 
-const CARD = 'bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4'
+const CARD = 'bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4'
 const HEADING = 'font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2'
 
 // What Pro adds, as it exists in code today — the gated surfaces and nothing else; the rest of
@@ -193,7 +193,7 @@ function ConfirmAction({
           {severe && alert && (
             <div
               role="alert"
-              className="flex items-start gap-2 rounded-md border-[1.5px] border-danger-border bg-danger-bg text-danger-fg px-3 py-2 text-[13px] font-medium leading-[1.5]"
+              className="flex items-start gap-2 rounded-md border-[0.5px] border-danger-border bg-danger-bg text-danger-fg px-3 py-2 text-[13px] font-medium leading-[1.5]"
             >
               <AlertTriangle size={15} strokeWidth={2.25} className="shrink-0 mt-[2px]" aria-hidden />
               <span>{alert}</span>

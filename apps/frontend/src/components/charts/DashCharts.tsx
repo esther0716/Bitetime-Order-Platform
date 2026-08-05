@@ -29,7 +29,7 @@ export function StatCard({ label, value, delta, icon }: {
   label: string; value: string; delta?: { pct: number; dir: 'up' | 'down' | 'flat' }; icon?: ReactNode
 }) {
   return (
-    <div className="rounded-xl border-[1.5px] border-rose-border bg-surface-raised px-5 py-4">
+    <div className="rounded-xl border-[0.5px] border-rose-border bg-surface-raised px-5 py-4">
       <div className="mb-1 inline-flex items-center text-[10px] font-medium uppercase tracking-[0.09em] text-text-tertiary">{icon && <span className="mr-1.5 inline-flex text-clay-muted" aria-hidden="true">{icon}</span>}{label}</div>
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="font-heading text-[22px] font-medium leading-[1.2] text-oxblood">{value}</span>
@@ -46,7 +46,7 @@ export function StatCard({ label, value, delta, icon }: {
 // ── Panel wrapper ────────────────────────────────────────────────────────────
 export function ChartPanel({ title, legend, children }: { title: string; legend?: ReactNode; children: ReactNode }) {
   return (
-    <div className="rounded-xl border-[1.5px] border-rose-border bg-surface-raised px-5 py-4">
+    <div className="rounded-xl border-[0.5px] border-rose-border bg-surface-raised px-5 py-4">
       <div className="mb-[0.85rem] flex items-center justify-between gap-2">
         <h3 className="font-heading text-sm font-medium text-oxblood">{title}</h3>
         {legend}

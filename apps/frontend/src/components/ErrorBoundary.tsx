@@ -31,7 +31,7 @@ export default class ErrorBoundary extends Component<Props, State> {
     if (!this.state.hasError) return this.props.children
     return (
       <div className="min-h-screen w-full flex items-center justify-center p-6">
-        <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-6 max-w-[420px] w-full box-border text-center">
+        <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-6 max-w-[420px] w-full box-border text-center">
           <h1><Wordmark className="h-7 mx-auto" /></h1>
           <p className="text-rose-muted text-[14px] leading-[1.6] mt-3">
             Something went wrong loading the page.

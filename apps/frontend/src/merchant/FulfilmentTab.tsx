@@ -9,7 +9,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 
-const CARD = 'bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
+const CARD = 'bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
 const HEADING = 'font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2'
 
 // Every zone the runtime knows, so a merchant anywhere can name their own clock. The one-entry
@@ -153,7 +153,7 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
                   'border rounded-md py-2 px-[14px] pointer-coarse:min-h-11 cursor-pointer text-[14px] font-sans transition-all ' +
                   'hover:border-oxblood focus-visible:outline-2 focus-visible:outline-oxblood focus-visible:outline-offset-2 ' +
                   (on
-                    ? 'border-[1.5px] border-oxblood bg-oxblood-tint text-oxblood font-medium'
+                    ? 'border-[0.5px] border-oxblood bg-oxblood-tint text-oxblood font-medium'
                     : 'border-clay-border bg-surface-raised text-ink')
                 }
               >

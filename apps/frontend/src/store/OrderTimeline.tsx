@@ -94,7 +94,7 @@ export default function OrderTimeline({
                 'relative z-[1] flex size-7 items-center justify-center rounded-full transition-colors',
                 reached
                   ? 'bg-oxblood text-cream'
-                  : 'border-[1.5px] border-clay-border bg-surface-raised text-clay-muted',
+                  : 'border-[0.5px] border-clay-border bg-surface-raised text-clay-muted',
                 // The live step gets a soft halo so the eye lands on it first.
                 current && 'ring-4 ring-oxblood/15',
               )}

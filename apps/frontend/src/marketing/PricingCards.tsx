@@ -30,7 +30,7 @@ export default function PricingCards() {
     <div className="text-center">
       {/* Billing toggle */}
       <div
-        className="inline-flex gap-1 p-1 border-[1.5px] border-clay-border rounded-pill bg-surface-raised"
+        className="inline-flex gap-1 p-1 border-[0.5px] border-clay-border rounded-pill bg-surface-raised"
         role="group"
         aria-label={t('Billing period', '付费周期')}
       >
@@ -75,7 +75,7 @@ export default function PricingCards() {
                 className={cn(
                   'flex flex-col p-7 rounded-lg bg-surface-raised',
                   tier.highlight
-                    ? 'border-[1.5px] border-oxblood shadow-[0_6px_24px_rgba(122,16,40,0.12)]'
+                    ? 'border-[0.5px] border-oxblood shadow-[0_6px_24px_rgba(122,16,40,0.12)]'
                     : 'border border-clay-border'
                 )}
               >

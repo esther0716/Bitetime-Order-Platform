@@ -109,7 +109,7 @@ export default function OrderHistory() {
       {/* Signed out, this renders in place and does not redirect: bouncing a hungry customer to
           the merchant login — the role guard's destination — is the wrong screen entirely. */}
       {!loading && !account && (
-        <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-6">
+        <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-6">
           <AuthPanel
             heading={t('Sign in to see your orders at this shop', '登录以查看你在本店的订单')}
             subheading={t(
@@ -132,7 +132,7 @@ export default function OrderHistory() {
       )}
 
       {orders?.length === 0 && (
-        <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-6 text-center">
+        <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-6 text-center">
           <p className="text-[14px] text-rose-muted leading-[1.6]">
             {t("You haven't ordered from this shop yet.", '你还没有在本店下过单。')}
           </p>

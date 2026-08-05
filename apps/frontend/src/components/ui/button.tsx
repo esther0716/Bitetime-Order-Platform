@@ -13,7 +13,7 @@ const buttonVariants = cva(
           "bg-oxblood text-cream hover:bg-oxblood-deep",
         // .cust-account-btn / .lang-btn — clay-border outline pill
         outline:
-          "border-[1.5px] border-clay-border bg-transparent text-rose-muted hover:bg-surface-sunken hover:text-ink",
+          "border-[0.5px] border-clay-border bg-transparent text-rose-muted hover:bg-surface-sunken hover:text-ink",
         // .add-btn / .admin-toggle button — dashed clay border
         dashed:
           "border border-dashed border-clay-border bg-transparent text-rose-muted hover:border-oxblood hover:text-oxblood hover:bg-oxblood-tint",

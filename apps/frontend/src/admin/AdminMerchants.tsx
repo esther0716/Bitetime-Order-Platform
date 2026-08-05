@@ -289,7 +289,7 @@ export default function AdminMerchants() {
   )
 
   return (
-    <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
       <DataTable
         columns={columns}
         data={data}

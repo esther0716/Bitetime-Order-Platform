@@ -55,7 +55,7 @@ export default function BillingBanner() {
     <div
       role="status"
       className={cn(
-        'flex items-center gap-3 flex-wrap px-4 py-3 mb-5 rounded-md border-[1.5px] text-[13px] leading-[1.5]',
+        'flex items-center gap-3 flex-wrap px-4 py-3 mb-5 rounded-md border-[0.5px] text-[13px] leading-[1.5]',
         urgent ? 'bg-danger-bg text-danger-fg border-danger-fg/25' : 'bg-warn-bg text-warn-fg border-warn-fg/25',
       )}
     >

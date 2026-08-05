@@ -21,7 +21,7 @@ import { mergeShopTags, tagSuggestions } from './tagSuggestions'
 import WaLink from './WaLink'
 
 // Self-contained panel — pixel-match of .admin-panel
-const PANEL = 'bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border'
+const PANEL = 'bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border'
 
 // Table header cell — pixel-match of .mm-customers-table th
 const TH = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-oxblood px-[14px] py-[10px] border-b-[1.5px] border-rose-border text-left whitespace-nowrap'
@@ -151,7 +151,7 @@ export default function CustomersView() {
         </div>
       ) : (
         // pixel-match of .admin-panel + .mm-customers-wrap (padding: 0; overflow: hidden)
-        <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-0 mb-3 w-full box-border overflow-hidden">
+        <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-0 mb-3 w-full box-border overflow-hidden">
           {/* pixel-match of .mm-customers-table-wrap */}
           <div className="overflow-x-auto">
             {/* pixel-match of .mm-customers-table */}

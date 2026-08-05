@@ -60,13 +60,13 @@ export default function ReferralTab() {
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <span className="text-[13px] text-rose-muted">{t('Your referral code', '您的推荐码')}</span>
-            <div className="rounded-lg border-[1.5px] border-clay-border bg-surface-sunken px-3 py-2 font-mono text-[15px] tracking-wider break-all text-ink">
+            <div className="rounded-lg border-[0.5px] border-clay-border bg-surface-sunken px-3 py-2 font-mono text-[15px] tracking-wider break-all text-ink">
               {code}
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <span className="text-[13px] text-rose-muted">{t('Invite link', '邀请链接')}</span>
-            <div className="rounded-lg border-[1.5px] border-clay-border bg-surface-sunken px-3 py-2 font-mono text-[13px] break-all text-ink">
+            <div className="rounded-lg border-[0.5px] border-clay-border bg-surface-sunken px-3 py-2 font-mono text-[13px] break-all text-ink">
               {link}
             </div>
           </div>
@@ -114,7 +114,7 @@ export default function ReferralTab() {
           {/* The reward rules the ledger alone cannot show: what triggers it, that it stacks,
               how it is delivered, and the one case where it is forfeited (backend:
               referralReward.ts / docs/prd-referral-reward.md). */}
-          <ul className="flex list-disc flex-col gap-1.5 rounded-lg border-[1.5px] border-clay-border bg-surface-sunken py-2.5 pl-7 pr-3 text-[13px] text-rose-muted">
+          <ul className="flex list-disc flex-col gap-1.5 rounded-lg border-[0.5px] border-clay-border bg-surface-sunken py-2.5 pl-7 pr-3 text-[13px] text-rose-muted">
             <li>{t(
               'Earned when an invited shop pays its first invoice — their free trial does not count.',
               '当受邀店铺支付第一张账单时获得 — 免费试用不算。',
@@ -206,7 +206,7 @@ function StatusBadge({ status, t }: { status: ReferredShop['status']; t: (en: st
     : t('Pending', '待审核')
   const tone = status === 'active' ? 'text-oxblood' : 'text-rose-muted'
   return (
-    <span className={`rounded-full border-[1.5px] border-clay-border bg-surface-sunken px-2 py-0.5 text-[11px] font-medium ${tone}`}>
+    <span className={`rounded-full border-[0.5px] border-clay-border bg-surface-sunken px-2 py-0.5 text-[11px] font-medium ${tone}`}>
       {label}
     </span>
   )
