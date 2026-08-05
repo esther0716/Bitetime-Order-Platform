@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Trash2, Power, PowerOff, Plus, ArrowUp, ArrowDown } from 'lucide-react'
+import { Trash2, Power, PowerOff, Check, Ban, Plus, ArrowUp, ArrowDown } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -241,7 +241,7 @@ export default function OptionGroupsEditor({
                           : t(`Mark ${option.name || 'choice'} available`, `将 ${option.name || '选项'} 设为可选`)}
                       />
                     }
-                  >{option.active ? <Power size={14} /> : <PowerOff size={14} />}</TooltipTrigger>
+                  >{option.active ? <Check size={14} /> : <Ban size={14} />}</TooltipTrigger>
                   <TooltipContent>{option.active ? t('Sold out today', '今日售罄') : t('Available', '可选')}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
