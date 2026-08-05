@@ -117,6 +117,8 @@
   --color-danger-fg: var(--color-danger-fg);
   --color-danger-bg: var(--color-danger-bg);
   --color-danger-border: var(--color-danger-border);
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-fg: var(--neutral-fg);
 
   /* Radii — brand scale (overrides Tailwind defaults) */
   --radius-xs: var(--radius-xs);
@@ -127,6 +129,48 @@
   --radius-2xl: var(--radius-2xl);
   --radius-pill: var(--radius-pill);
   --radius-round: var(--radius-round);
+
+  /* Spacing scale → p-*, m-*, gap-* utilities */
+  --spacing-1: var(--space-1);
+  --spacing-2: var(--space-2);
+  --spacing-3: var(--space-3);
+  --spacing-4: var(--space-4);
+  --spacing-5: var(--space-5);
+  --spacing-6: var(--space-6);
+  --spacing-8: var(--space-8);
+  --spacing-10: var(--space-10);
+  --spacing-12: var(--space-12);
+  --spacing-16: var(--space-16);
+  --spacing-20: var(--space-20);
+
+  /* Elevation → shadow-elev-* utilities */
+  --shadow-elev-1: var(--elev-1);
+  --shadow-elev-2: var(--elev-2);
+  --shadow-elev-3: var(--elev-3);
+
+  /* Motion → ease-* utilities */
+  --ease-out: var(--ease-out);
+  --ease-in-out: var(--ease-in-out);
+  --ease-in: var(--ease-in);
+
+  /* Primitives exposed for new code. The --color-* entries above this block are the
+     legacy alias names; anything written from here on uses these. */
+  --color-ink-50: var(--ink-50);
+  --color-ink-100: var(--ink-100);
+  --color-ink-200: var(--ink-200);
+  --color-ink-300: var(--ink-300);
+  --color-ink-400: var(--ink-400);
+  --color-ink-500: var(--ink-500);
+  --color-ink-700: var(--ink-700);
+  --color-ink-900: var(--ink-900);
+  --color-ink-950: var(--ink-950);
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
 
   /* Z-index scale → z-* utilities */
   --z-index-notif-panel: var(--z-notif-panel);
@@ -141,26 +185,28 @@
 
 /* shadcn semantic tokens → brand. Chart + sidebar tokens included here (no brand counterpart). */
 :root {
-  --background: var(--color-cream);
-  --foreground: var(--color-ink);
-  --card: var(--color-surface-raised);
-  --card-foreground: var(--color-ink);
-  --popover: var(--color-surface-high);
-  --popover-foreground: var(--color-ink);
-  --primary: var(--color-oxblood);
-  --primary-foreground: var(--color-cream);
-  --secondary: var(--color-surface-raised);
-  --secondary-foreground: var(--color-rose-muted);
-  --muted: var(--color-surface-sunken);
-  --muted-foreground: var(--color-rose-muted);
-  --accent: var(--color-surface-sunken);
-  --accent-foreground: var(--color-ink);
-  --destructive: var(--color-danger);
-  --destructive-foreground: var(--color-cream);
-  --border: var(--color-clay-border);
-  --input: var(--color-clay-border);
-  --ring: var(--color-oxblood);
-  --radius: 10px;
+  --background: var(--color-bg);
+  --foreground: var(--color-text);
+  --card: var(--color-bg-surface);
+  --card-foreground: var(--color-text);
+  --popover: var(--color-bg-surface);
+  --popover-foreground: var(--color-text);
+  --primary: var(--color-accent);
+  /* White, not cream: primary buttons are oxblood-filled, and cream-on-oxblood
+     was a warm-system pairing that has no counterpart here. */
+  --primary-foreground: var(--white);
+  --secondary: var(--color-bg-muted);
+  --secondary-foreground: var(--color-text-muted);
+  --muted: var(--color-bg-muted);
+  --muted-foreground: var(--color-text-muted);
+  --accent: var(--color-bg-muted);
+  --accent-foreground: var(--color-text);
+  --destructive: var(--danger-500);
+  --destructive-foreground: var(--white);
+  --border: var(--color-border);
+  --input: var(--color-border);
+  --ring: var(--color-accent);
+  --radius: 4px;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
