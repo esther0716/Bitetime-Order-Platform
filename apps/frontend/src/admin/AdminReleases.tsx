@@ -85,7 +85,10 @@ const columns: ColumnDef<AdminRelease>[] = [
       const { t, busy } = meta
       const r = row.original
       return (
-        <div className="text-right">
+        // Row click opens the preview (see onRowClick on DataTable below) — stop that click
+        // from also firing when it lands in this cell, or opening the actions menu would
+        // simultaneously pop the preview dialog underneath it.
+        <div className="text-right" onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -101,13 +104,6 @@ const columns: ColumnDef<AdminRelease>[] = [
               <MoreHorizontal className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                disabled={!r.title}
-                className="cursor-pointer"
-                onClick={() => meta.onPreview(r)}
-              >
-                {t('Preview', '预览')}
-              </DropdownMenuItem>
               <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onRegenerate(r)}>
                 {t('Regenerate', '重新生成')}
               </DropdownMenuItem>
@@ -202,6 +198,7 @@ export default function AdminReleases() {
           columns={columns}
           data={data}
           meta={meta}
+          onRowClick={(row) => { if (row.title) meta.onPreview(row) }}
           searchPlaceholder={t('Search releases…', '搜索更新…')}
           emptyText={t('No releases pulled yet.', '尚未拉取任何更新。')}
           prevLabel={t('Previous', '上一页')}
