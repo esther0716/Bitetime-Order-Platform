@@ -201,9 +201,12 @@ export default function OptionGroupsEditor({
                 <div className="flex items-center gap-1 shrink-0">
                   <span className="text-[12px] text-text-tertiary whitespace-nowrap">+{currency ?? ''}</span>
                   <Input
-                    className="w-[72px]"
-                    type="number" min={0} step="0.01" value={option.delta}
-                    onChange={e => patchOption(gi, oi, { delta: Number(e.target.value) || 0 })}
+                    className="w-24 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    type="number" min={0} step="0.01" value={option.delta === 0 ? '' : option.delta}
+                    placeholder="0"
+                    onChange={e => patchOption(gi, oi, {
+                      delta: e.target.value === '' ? 0 : Number(e.target.value) || 0,
+                    })}
                   />
                 </div>
                 {/* THE 3PM CONTROL, and the reason `option_unavailable` exists at all: a shop
