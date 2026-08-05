@@ -1,5 +1,7 @@
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { MoreHorizontal } from 'lucide-react'
+import type { ColumnDef } from '@tanstack/react-table'
 import {
   adminPullReleases, adminListReleases, adminSetReleaseStatus, adminRegenerateRelease,
 } from '../store'
@@ -7,8 +9,122 @@ import { unwrap } from '../api'
 import { useSession } from '../SessionContext'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DataTable, SortableHeader } from '@/components/ui/data-table'
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import ReleaseSummary from '../components/ReleaseSummary'
 import type { AdminRelease } from '../types'
+
+// Handlers + language + in-flight id ride on table.options.meta so the column defs
+// stay stable (defined once) and never reset sorting when a row action refetches.
+interface AdminTableMeta {
+  t: (en: string, zh: string) => string
+  busy: string | null
+  onPreview: (row: AdminRelease) => void
+  onRegenerate: (row: AdminRelease) => void
+  onTogglePublish: (row: AdminRelease) => void
+}
+
+const columns: ColumnDef<AdminRelease>[] = [
+  {
+    accessorKey: 'tag',
+    header: ({ column, table }) => (
+      <SortableHeader column={column} label={(table.options.meta as AdminTableMeta).t('Tag', '版本')} />
+    ),
+    cell: ({ row }) => <span className="font-medium">{row.original.tag}</span>,
+  },
+  {
+    id: 'title',
+    accessorFn: (r) => r.title ?? r.name,
+    header: ({ column, table }) => (
+      <SortableHeader column={column} label={(table.options.meta as AdminTableMeta).t('Title', '标题')} />
+    ),
+    cell: ({ row }) => {
+      const r = row.original
+      return (
+        <div>
+          <span>{r.title ?? r.name}</span>
+          {r.humanize_error && (
+            <div className="text-[11px] text-danger-fg mt-0.5">{r.humanize_error}</div>
+          )}
+        </div>
+      )
+    },
+  },
+  {
+    accessorKey: 'status',
+    header: ({ column, table }) => (
+      <SortableHeader column={column} label={(table.options.meta as AdminTableMeta).t('Status', '状态')} />
+    ),
+    cell: ({ row, table }) => {
+      const { t } = table.options.meta as AdminTableMeta
+      const s = row.original.status
+      return (
+        <Badge variant={s === 'published' ? 'success' : 'outline'}>
+          {s === 'published' ? t('Published', '已发布') : t('Draft', '草稿')}
+        </Badge>
+      )
+    },
+  },
+  {
+    accessorKey: 'published_at',
+    header: ({ column, table }) => (
+      <SortableHeader column={column} label={(table.options.meta as AdminTableMeta).t('Published', '发布时间')} />
+    ),
+    cell: ({ row }) => new Date(row.original.published_at).toLocaleDateString(),
+  },
+  {
+    id: 'actions',
+    header: ({ table }) => (
+      <div className="text-right whitespace-nowrap">{(table.options.meta as AdminTableMeta).t('Actions', '操作')}</div>
+    ),
+    cell: ({ row, table }) => {
+      const meta = table.options.meta as AdminTableMeta
+      const { t, busy } = meta
+      const r = row.original
+      return (
+        <div className="text-right">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="none"
+                  className="size-8 p-0 rounded-full cursor-pointer hover:bg-oxblood-tint hover:text-oxblood"
+                  disabled={busy === r.id}
+                  aria-label={t('Actions', '操作')}
+                />
+              }
+            >
+              <MoreHorizontal className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                disabled={!r.title}
+                className="cursor-pointer"
+                onClick={() => meta.onPreview(r)}
+              >
+                {t('Preview', '预览')}
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onRegenerate(r)}>
+                {t('Regenerate', '重新生成')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!r.title}
+                className="cursor-pointer"
+                onClick={() => meta.onTogglePublish(r)}
+              >
+                {r.status === 'published' ? t('Unpublish', '取消发布') : t('Publish', '发布')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )
+    },
+  },
+]
 
 export default function AdminReleases() {
   const { t } = useSession()
@@ -18,7 +134,7 @@ export default function AdminReleases() {
   // Lets superadmin read a draft's full title + summary before publishing — the public
   // /releases/:tag endpoint 404s on a draft by design, so this reuses the row data
   // adminListReleases already fetched rather than adding a second endpoint.
-  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [previewRow, setPreviewRow] = useState<AdminRelease | null>(null)
 
   async function load() {
     setRows(unwrap(await adminListReleases()))
@@ -56,6 +172,23 @@ export default function AdminReleases() {
     setBusy(null)
   }
 
+  const meta: AdminTableMeta = {
+    t, busy,
+    // Deferred a tick: opening the Dialog synchronously inside the DropdownMenuItem's onClick
+    // mounts it while the menu's own closing click is still bubbling, and the Dialog's
+    // outside-click listener catches that same event and closes it right back — the classic
+    // Base UI/Radix overlay-inside-overlay trap. A fresh event-loop tick decouples them.
+    onPreview: (row) => setTimeout(() => setPreviewRow(row), 0),
+    onRegenerate: regenerate,
+    onTogglePublish: togglePublish,
+  }
+
+  const data = useMemo(() => rows ?? [], [rows])
+
+  if (!rows) return (
+    <p className="text-[13px] text-text-tertiary italic pt-4">{t('Loading…', '加载中…')}</p>
+  )
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -64,77 +197,25 @@ export default function AdminReleases() {
           {pulling ? t('Pulling…', '拉取中…') : t('Pull releases from GitHub', '从 GitHub 拉取更新')}
         </Button>
       </div>
-      {rows === null ? (
-        <p className="text-[13px] text-rose-muted">{t('Loading…', '加载中…')}</p>
-      ) : rows.length === 0 ? (
-        <p className="text-[13px] text-rose-muted">{t('No releases pulled yet', '尚未拉取任何更新')}</p>
-      ) : (
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="text-left text-rose-muted border-b border-divider">
-              <th className="py-2 pr-3">{t('Tag', '版本')}</th>
-              <th className="py-2 pr-3">{t('Title', '标题')}</th>
-              <th className="py-2 pr-3">{t('Status', '状态')}</th>
-              <th className="py-2 pr-3">{t('Published', '发布时间')}</th>
-              <th className="py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <Fragment key={row.id}>
-                <tr className="border-b border-divider">
-                  <td className="py-2 pr-3">{row.tag}</td>
-                  <td className="py-2 pr-3">
-                    {row.title ?? row.name}
-                    {row.humanize_error && (
-                      <div className="text-[11px] text-danger-fg mt-0.5">{row.humanize_error}</div>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <Badge variant={row.status === 'published' ? 'success' : 'outline'}>
-                      {row.status === 'published' ? t('Published', '已发布') : t('Draft', '草稿')}
-                    </Badge>
-                  </td>
-                  <td className="py-2 pr-3">{new Date(row.published_at).toLocaleDateString()}</td>
-                  <td className="py-2 text-right whitespace-nowrap">
-                    <Button
-                      variant="outline" size="sm" className="mr-2"
-                      disabled={!row.title}
-                      onClick={() => setPreviewId(previewId === row.id ? null : row.id)}
-                    >
-                      {previewId === row.id ? t('Hide preview', '收起预览') : t('Preview', '预览')}
-                    </Button>
-                    <Button
-                      variant="outline" size="sm" className="mr-2"
-                      disabled={busy === row.id}
-                      onClick={() => regenerate(row)}
-                    >
-                      {t('Regenerate', '重新生成')}
-                    </Button>
-                    <Button
-                      variant="outline" size="sm"
-                      disabled={busy === row.id || !row.title}
-                      onClick={() => togglePublish(row)}
-                    >
-                      {row.status === 'published' ? t('Unpublish', '取消发布') : t('Publish', '发布')}
-                    </Button>
-                  </td>
-                </tr>
-                {previewId === row.id && row.title && (
-                  <tr className="border-b border-divider">
-                    <td colSpan={5} className="py-4 pr-3 bg-surface-sunken">
-                      <div className="max-w-xl">
-                        <h3 className="text-base font-heading text-ink mb-2">{row.title}</h3>
-                        <ReleaseSummary text={row.summary ?? ''} />
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+        <DataTable
+          columns={columns}
+          data={data}
+          meta={meta}
+          searchPlaceholder={t('Search releases…', '搜索更新…')}
+          emptyText={t('No releases pulled yet.', '尚未拉取任何更新。')}
+          prevLabel={t('Previous', '上一页')}
+          nextLabel={t('Next', '下一页')}
+        />
+      </div>
+      <Dialog open={!!previewRow} onOpenChange={(open) => { if (!open) setPreviewRow(null) }}>
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{previewRow?.title}</DialogTitle>
+          </DialogHeader>
+          {previewRow && <ReleaseSummary text={previewRow.summary ?? ''} />}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
