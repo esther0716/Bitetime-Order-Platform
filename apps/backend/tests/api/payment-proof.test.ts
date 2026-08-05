@@ -115,6 +115,22 @@ describe('POST /api/orders/:orderId/payment-proof', () => {
     await serviceClient().from('merchants').delete().eq('id', merchantId)
   })
 
+  it('leaves new and completed orders untouched — the CASE guard only ever fires from pending_payment', async () => {
+    for (const status of ['new', 'completed']) {
+      const merchantId = await shopWithOwner(`pp-untouched-${status}`)
+      const orderId = await seedOrder(merchantId, status)
+      written.push(`${merchantId}/${orderId}.png`)
+
+      const res = await post(orderId, PNG_1X1, 'image/png')
+      expect(res.status).toBe(200)
+
+      const { data: order } = await serviceClient().from('orders').select('status').eq('id', orderId).single()
+      expect(order!.status).toBe(status)
+
+      await serviceClient().from('merchants').delete().eq('id', merchantId)
+    }
+  })
+
   it('leaves a cancelled order cancelled — an upload cannot resurrect it', async () => {
     const merchantId = await shopWithOwner('pp-cancelled-shop')
     const orderId = await seedOrder(merchantId, 'cancelled')

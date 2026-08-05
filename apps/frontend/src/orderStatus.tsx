@@ -11,9 +11,12 @@ export const STATUS_LABELS: Record<string, { en: string; zh: string }> = {
   cancelled: { en: 'Cancelled', zh: '已取消' },
 }
 
-type BadgeConfig = { variant?: 'infoBlue' | 'danger'; className?: string }
+type BadgeConfig = { variant?: 'infoBlue' | 'warn' | 'danger'; className?: string }
 export const STATUS_BADGE: Record<string, BadgeConfig> = {
-  pending_payment: { className: 'bg-rose-pale text-oxblood border-transparent' },
+  // The plain warn variant (bg-warn-bg/text-warn-fg), not preparing's -alt pair below — same
+  // amber family AdminMerchants already uses for a merchant's own 'pending' status, but a
+  // distinct shade so the two order statuses never look like the same badge.
+  pending_payment: { variant: 'warn' },
   new:       { variant: 'infoBlue' },
   preparing: { className: 'bg-warn-bg-alt text-warn-fg-alt border-transparent' },
   ready:     { className: 'bg-success-bg-soft text-success-deep border-transparent' },
