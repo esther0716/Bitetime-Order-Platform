@@ -128,20 +128,35 @@ export default function OptionGroupsEditor({
 
       {value.map((group, gi) => (
         <div key={group.id} className="relative flex flex-col gap-2 border-t border-divider pt-3 first:border-t-0 first:pt-0 min-w-0">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button" variant="ghost" size="iconRound"
-                  className="absolute top-2 right-0 text-text-tertiary hover:text-danger"
-                  onClick={() => setPendingDelete({ kind: 'group', gi })}
-                  aria-label={t('Remove question', '删除问题')}
-                />
-              }
-            ><Trash2 size={16} /></TooltipTrigger>
-            <TooltipContent>{t('Remove question', '删除问题')}</TooltipContent>
-          </Tooltip>
-          <div className="flex items-end gap-2 flex-wrap min-w-0 pr-10">
+          <div className="absolute top-2 right-0 flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button" variant={group.active ? 'ghost' : 'outline'} size="iconRound"
+                    onClick={() => patchGroup(gi, { active: !group.active })}
+                    aria-pressed={!group.active}
+                    aria-label={group.active ? t('Switch off', '停用') : t('Switched on', '已启用')}
+                  />
+                }
+              >{group.active ? <Power size={14} /> : <PowerOff size={14} />}</TooltipTrigger>
+              <TooltipContent>{group.active ? t('Switch off', '停用') : t('Switched off', '已停用')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button" variant="ghost" size="iconRound"
+                    className="text-text-tertiary hover:text-danger"
+                    onClick={() => setPendingDelete({ kind: 'group', gi })}
+                    aria-label={t('Remove question', '删除问题')}
+                  />
+                }
+              ><Trash2 size={16} /></TooltipTrigger>
+              <TooltipContent>{t('Remove question', '删除问题')}</TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="flex items-end gap-2 flex-wrap min-w-0 pr-16">
             <div className="flex-1 basis-[180px] min-w-0">
               <Label className="text-[12px]">{t('Question', '问题')}</Label>
               <Input
@@ -291,19 +306,6 @@ export default function OptionGroupsEditor({
                   }
                 ><ArrowDown size={14} /></TooltipTrigger>
                 <TooltipContent>{t('Move down', '下移')}</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button" variant={group.active ? 'ghost' : 'outline'} size="iconRound"
-                      onClick={() => patchGroup(gi, { active: !group.active })}
-                      aria-pressed={!group.active}
-                      aria-label={group.active ? t('Switch off', '停用') : t('Switched on', '已启用')}
-                    />
-                  }
-                >{group.active ? <Power size={14} /> : <PowerOff size={14} />}</TooltipTrigger>
-                <TooltipContent>{group.active ? t('Switch off', '停用') : t('Switched off', '已停用')}</TooltipContent>
               </Tooltip>
             </div>
           </div>
