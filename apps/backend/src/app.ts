@@ -1581,6 +1581,44 @@ app.get('/api/admin/feedback', requireSuperadmin, async (c) => {
   return c.json(await listFeedback(status))
 })
 
+/**
+ * One screenshot from one feedback row, for the superadmin inbox. Same shape as the
+ * payment-proof download: the backend reads the private bucket with the service-role client
+ * and streams the bytes, because the browser has no access to that bucket in either direction
+ * (20260806120000 gives it no policies at all).
+ *
+ * The caller names an INDEX, never a path. The path comes out of the row's own image_paths
+ * array, so there is no path for a caller to point somewhere else — which is the whole
+ * security property of this route, not a convenience.
+ *
+ * Missing feedback, an out-of-range index and a non-numeric index all return the same 404:
+ * a distinguishable error here would be an oracle for which feedback ids exist.
+ */
+app.get('/api/admin/feedback/:feedbackId/images/:index', requireSuperadmin, async (c) => {
+  const { data: row, error } = await admin
+    .from('merchant_feedback')
+    .select('image_paths')
+    .eq('id', c.req.param('feedbackId'))
+    .maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+
+  const paths = (row?.image_paths ?? []) as string[]
+  const index = Number(c.req.param('index'))
+  if (!Number.isInteger(index) || index < 0 || index >= paths.length) {
+    return c.json({ error: 'not_found' }, 404)
+  }
+
+  const { data, error: downloadError } = await admin.storage
+    .from(FEEDBACK_IMAGE_BUCKET)
+    .download(paths[index])
+  if (downloadError || !data) return c.json({ error: 'download_failed' }, 500)
+
+  return new Response(await data.arrayBuffer(), {
+    status: 200,
+    headers: { 'Content-Type': data.type || 'application/octet-stream' },
+  })
+})
+
 app.patch('/api/admin/feedback/:feedbackId', requireSuperadmin, async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { status?: unknown }
   if (!isFeedbackStatus(body.status)) return c.json({ error: 'Unknown feedback status' }, 400)

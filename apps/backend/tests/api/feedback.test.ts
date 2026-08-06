@@ -226,6 +226,46 @@ describe('merchant feedback', () => {
     githubDeps.createIssue = origCreateIssue
   })
 
+  describe('reading a feedback screenshot', () => {
+    let feedbackId: string
+
+    beforeAll(async () => {
+      const res = await postForm(
+        `/api/merchants/${ownShopId}/feedback`,
+        { category: 'bug', message: 'screenshot read fixture' },
+        [pngFile('read-me.png')],
+        ownerToken,
+      )
+      feedbackId = ((await res.json()) as FeedbackRow).id
+    })
+
+    it('hands a superadmin the bytes, typed as the image it is', async () => {
+      const res = await get(`/api/admin/feedback/${feedbackId}/images/0`, superToken)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Type')).toContain('image/png')
+      expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(0)
+    })
+
+    it('404s an index past the end rather than reaching for a neighbouring path', async () => {
+      expect((await get(`/api/admin/feedback/${feedbackId}/images/1`, superToken)).status).toBe(404)
+      expect((await get(`/api/admin/feedback/${feedbackId}/images/-1`, superToken)).status).toBe(404)
+      expect((await get(`/api/admin/feedback/${feedbackId}/images/abc`, superToken)).status).toBe(404)
+    })
+
+    it('404s an unknown feedback id — a guess and a real id with no images look identical', async () => {
+      const res = await get('/api/admin/feedback/00000000-0000-0000-0000-000000000000/images/0', superToken)
+      expect(res.status).toBe(404)
+    })
+
+    it('refuses the merchant who sent it — this is a superadmin surface', async () => {
+      expect((await get(`/api/admin/feedback/${feedbackId}/images/0`, ownerToken)).status).toBe(403)
+    })
+
+    it('refuses an anonymous caller with 401', async () => {
+      expect((await get(`/api/admin/feedback/${feedbackId}/images/0`)).status).toBe(401)
+    })
+  })
+
   it('refuses feedback filed against a shop the caller does not own', async () => {
     const res = await post(`/api/merchants/${strangerShopId}/feedback`, {
       category: 'other', message: 'not my shop',
