@@ -22,7 +22,8 @@ const AA_LARGE = 3.0
 describe('primitives are present and literal', () => {
   const required = [
     '--ink-50', '--ink-100', '--ink-200', '--ink-300', '--ink-400',
-    '--ink-500', '--ink-700', '--ink-900', '--ink-950', '--white',
+    '--ink-500', '--ink-600', '--ink-700', '--ink-900', '--ink-950',
+    '--white', '--cream',
     '--brand-50', '--brand-100', '--brand-200',
     '--brand-400', '--brand-500', '--brand-600', '--brand-700',
   ]
@@ -57,21 +58,31 @@ describe('the brand ramp is monotonic', () => {
   })
 })
 
+/* The canvas is CREAM, not --ink-50, and cream is lighter — every text pair has less room
+   on it than on the zinc ladder. Assert against the surface each thing actually sits on:
+   the page for page-level copy, white for anything inside a card. */
 describe('light-theme text clears AA', () => {
   it('body text on the page background', () => {
-    expect(contrastRatio(token('--ink-900'), token('--ink-50'))).toBeGreaterThanOrEqual(AA_TEXT)
+    expect(contrastRatio(token('--ink-900'), token('--cream'))).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
   it('muted text on the page background', () => {
-    expect(contrastRatio(token('--ink-500'), token('--ink-50'))).toBeGreaterThanOrEqual(AA_TEXT)
+    expect(contrastRatio(token('--ink-600'), token('--cream'))).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
   it('muted text on a raised surface', () => {
-    expect(contrastRatio(token('--ink-500'), token('--white'))).toBeGreaterThanOrEqual(AA_TEXT)
+    expect(contrastRatio(token('--ink-600'), token('--white'))).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+
+  /* --ink-500 is the border/icon grey. It reaches 4.06:1 on cream, so it must NOT be used
+     for text there — that is what --ink-600 exists for. Pinned so a future edit cannot
+     quietly point a text alias back at it. */
+  it('the border grey is not viable as text on the canvas', () => {
+    expect(contrastRatio(token('--ink-500'), token('--cream'))).toBeLessThan(AA_TEXT)
   })
 
   it('the accent on the page background', () => {
-    expect(contrastRatio(token('--brand-500'), token('--ink-50'))).toBeGreaterThanOrEqual(AA_TEXT)
+    expect(contrastRatio(token('--brand-500'), token('--cream'))).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
   it('accent text on its own tint (chips, active rows)', () => {
@@ -83,7 +94,7 @@ describe('light-theme text clears AA', () => {
   // permitted for borders and decorative icons only; this asserts the weaker floor it must
   // still meet, so nobody later promotes it to text.
   it('subtle is held to the non-text floor only', () => {
-    const ratio = contrastRatio(token('--ink-400'), token('--ink-50'))
+    const ratio = contrastRatio(token('--ink-400'), token('--cream'))
     expect(ratio).toBeLessThan(AA_TEXT)
     expect(ratio).toBeGreaterThanOrEqual(1.5)
   })
@@ -107,8 +118,11 @@ describe('status chips clear AA', () => {
     expect(contrastRatio(token(fg), token(bg))).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
-  it.each(pairs)('%s tint is distinguishable from the page background', (_name, _fg, bg) => {
-    expect(contrastRatio(token(bg), token('--ink-50'))).toBeGreaterThanOrEqual(1.05)
+  /* Against WHITE, because a status chip lives inside a card — an order row, a detail
+     drawer — never directly on the cream canvas. Asserting it against the page would be
+     testing a pairing the UI does not produce. */
+  it.each(pairs)('%s tint is distinguishable from the card surface', (_name, _fg, bg) => {
+    expect(contrastRatio(token(bg), token('--white'))).toBeGreaterThanOrEqual(1.05)
   })
 
   it('info does not collide with the brand accent', () => {

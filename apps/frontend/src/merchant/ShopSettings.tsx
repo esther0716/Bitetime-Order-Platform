@@ -294,14 +294,14 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         <h3 className={HEADING}>{t('What customers can choose', '顾客可选的方式')}</h3>
         <div className="flex flex-col gap-2">
           <label className="flex items-start gap-2 text-[14px] text-ink">
-            <input type="checkbox" className="mt-1"
+            <input type="checkbox" className="mt-1 accent-oxblood"
               checked={fields.pickupEnabled}
               disabled={onlyMethod === 'pickup'}
               onChange={e => setFields(f => ({ ...f, pickupEnabled: e.target.checked }))} />
             <span>{t('Pickup — customers collect from you.', '自取 — 顾客自行前来领取。')}</span>
           </label>
           <label className="flex items-start gap-2 text-[14px] text-ink">
-            <input type="checkbox" className="mt-1"
+            <input type="checkbox" className="mt-1 accent-oxblood"
               checked={fields.deliveryEnabled}
               disabled={onlyMethod === 'delivery'}
               onChange={e => setFields(f => ({ ...f, deliveryEnabled: e.target.checked }))} />
@@ -311,7 +311,7 @@ function ShippingTab({ onDirtyChange }: TabProps) {
             </span>
           </label>
           <label className="flex items-start gap-2 text-[14px] text-ink">
-            <input type="checkbox" className="mt-1"
+            <input type="checkbox" className="mt-1 accent-oxblood"
               checked={fields.expressEnabled}
               disabled={onlyMethod === 'express'}
               onChange={e => setFields(f => ({ ...f, expressEnabled: e.target.checked }))} />
@@ -539,6 +539,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
           <label className="flex items-center gap-2 text-[14px] text-ink">
             <input
               type="checkbox"
+              className="accent-oxblood"
               checked={fields.taxEnabled}
               onChange={e => setFields(f => ({ ...f, taxEnabled: e.target.checked }))}
             />

@@ -8,10 +8,12 @@ colors:
   ink-300: "#D4D4D8"
   ink-400: "#A1A1AA"
   ink-500: "#71717A"
+  ink-600: "#636369"
   ink-700: "#3F3F46"
   ink-900: "#18181B"
   ink-950: "#09090B"
   white: "#FFFFFF"
+  cream: "#F2EAE0"
   brand-50: "#FDF0F2"
   brand-100: "#F5E6E8"
   brand-200: "#EBCDD3"
@@ -130,7 +132,9 @@ components:
 
 **Creative North Star: "Sharp by default"**
 
-TinyOrder is engineered geometry with one vibrant accent and a lot of neutral around it. Corners are tight (4px on most surfaces), borders are half-pixel hairlines, and depth comes from a cool zinc ladder — page `#FAFAFA`, surfaces pure white, muted rails `#F4F4F5` — rather than from shadow or ornament. The signature colour is oxblood (`#7A1028`), a deep wine-red that earns attention by being rare: it is the only accent on any screen, and everything it does not touch is grey. The whole system reads as a tool that was built rather than decorated.
+TinyOrder is engineered geometry on a warm canvas. Corners are tight (4px on most surfaces), borders are half-pixel hairlines, and depth comes from stepping *up* off a cream page (`#F2EAE0`) onto white surfaces and cool zinc rails — not from shadow or ornament. The signature colour is oxblood (`#7A1028`), a deep wine-red that earns attention by being rare: it is the only accent on any screen. The whole system reads as a tool that was built rather than decorated, but one that belongs to a food shop rather than a data centre.
+
+The cream canvas is the one warm note kept from the retired shopfront identity, and it is load-bearing: it is what stops the neutral system reading as generic SaaS. Everything raised off it — cards, popovers, drawers — is white or zinc.
 
 Two token layers, and the split is the point. **Primitives** (`--ink-*`, `--brand-*`, the four status ramps) are the raw palette. **Semantic tokens** (`--color-bg`, `--color-text-muted`, `--color-border`, `--color-accent`) are what components consume by default. Primitives are exposed as utilities too, for the cases the semantic layer does not name — chart series, status tints, a one-off wash — but reaching for one repeatedly means a semantic token is missing, and the fix is to add it rather than spread the primitive. Changing a surface colour is one edit to the semantic layer, and the dark theme is nothing but a remapping of that same layer with the primitives untouched.
 
@@ -165,14 +169,16 @@ Every pair named here is asserted by `apps/frontend/src/tokens.test.ts`, which r
 
 ### Neutral
 
-- **Ink 50** (`#FAFAFA`): the page background.
-- **White** (`#FFFFFF`): panels, cards, popovers — the raised step.
+- **Cream** (`#F2EAE0`): the page canvas. The one warm value in the system, and not a step on the zinc ladder.
+- **White** (`#FFFFFF`): panels, cards, popovers — the raised step off the canvas.
+- **Ink 50** (`#FAFAFA`): a near-white for surfaces that need to sit just off white.
 - **Ink 100** (`#F4F4F5`): muted rails, hover fills, sunken surfaces.
 - **Ink 200** (`#E4E4E7`): the default `0.5px` border. The system's edge.
 - **Ink 300** (`#D4D4D8`): a stronger border where one rule must read above another.
-- **Ink 900** (`#18181B`): primary text. 16.97:1 on the page.
-- **Ink 500** (`#71717A`): secondary text, field labels, captions, table meta. 4.63:1 on the page — the lightest text that clears AA.
-- **Ink 400** (`#A1A1AA`): borders and decorative icons **only** — 2.46:1 as text, which fails AA outright.
+- **Ink 900** (`#18181B`): primary text. 14.87:1 on cream.
+- **Ink 600** (`#636369`): secondary text, field labels, captions, table meta. 5.01:1 on cream, 5.97:1 on white. **This is the muted TEXT token.**
+- **Ink 500** (`#71717A`): borders and icons that need more weight than Ink 200. **Not text** — it reaches only 4.06:1 on cream and fails AA there, even though it passes on white.
+- **Ink 400** (`#A1A1AA`): borders and decorative icons **only** — 2.15:1 on cream, a straight AA failure as text.
 
 ### Semantic (order status — the four-tone set)
 
@@ -193,7 +199,9 @@ Six order statuses, four colour families. `new` and `preparing` share the info h
 
 **The One Voice Rule.** Oxblood is the only brand accent. It does not compete with a second saturated colour — the semantic set is reserved for status and nothing else. If a screen has two accents fighting, one of them is wrong.
 
-**The Subtle-Is-Not-Text Rule.** `--ink-400` (`#A1A1AA`) is a border and icon colour. It fails AA as body text on every surface in this system. Tertiary text goes on `--color-text-muted` (`--ink-500`). `tokens.test.ts` asserts `--ink-400` stays *below* the text threshold, so a future edit cannot quietly promote it.
+**The Subtle-Is-Not-Text Rule.** `--ink-400` (`#A1A1AA`) and `--ink-500` (`#71717A`) are border and icon colours. Neither clears AA as text on the cream canvas. All muted text goes on `--color-text-muted` (`--ink-600`). `tokens.test.ts` pins both below the text threshold on cream, so a future edit cannot quietly promote either.
+
+**The Warm-Canvas Rule.** The page is cream; everything raised off it is white or zinc. Do not paint a large surface cream to "warm it up" — the warmth is the canvas showing through, and a cream card on a cream page has no edge. Equally, do not swap the canvas for a zinc grey: that is the single change that turns this system into the generic dashboard it is trying not to be.
 
 ## 3. Typography
 
@@ -278,13 +286,14 @@ The mono order number (`PREFIX-YYMMDD-XXXX`) is the brand's receipt stamp — th
 ### Do:
 - **Do** keep oxblood (`#7A1028`) as the single brand voice; hover to `#550A1A`, never a second resting accent (The One Voice Rule).
 - **Do** reach for a **semantic** token first (`--color-bg`, `--color-text-muted`, `--color-border`). Primitives (`--ink-*`, `--brand-*`) are available for what the semantic layer does not name; if you need the same primitive in three places, add the semantic token instead.
-- **Do** build depth from the zinc ladder (`--ink-100` → `--ink-50` → `#FFFFFF`) plus `0.5px` hairlines before reaching for a shadow.
-- **Do** keep body copy on `--color-text` and secondary copy on `--color-text-muted` — both clear AA. `--ink-400` is borders and icons only (The Subtle-Is-Not-Text Rule).
+- **Do** build depth by stepping up off the cream canvas onto `#FFFFFF`, with `--ink-100`/`--ink-50` for rails and recesses, plus `0.5px` hairlines — before reaching for a shadow.
+- **Do** keep body copy on `--color-text` and secondary copy on `--color-text-muted` (`--ink-600`) — both clear AA on cream and on white. `--ink-400` and `--ink-500` are borders and icons only (The Subtle-Is-Not-Text Rule).
 - **Do** run `pnpm --filter @bitetime/frontend test -- tokens` after touching a colour. The contrast contract is executable.
 - **Do** hold every layout at both EN and 中文 string lengths; provide a `prefers-reduced-motion` fallback for any entrance.
 
 ### Don't:
-- **Don't** set any text in `--ink-400` (`#A1A1AA`) — 2.46:1 on the page background, a straight AA failure. Tertiary text goes on `--color-text-muted`.
+- **Don't** set any text in `--ink-400` (`#A1A1AA`, 2.15:1 on cream) or `--ink-500` (`#71717A`, 4.06:1 on cream). Both fail AA there. All muted text goes on `--color-text-muted`.
+- **Don't** replace the cream canvas with a grey, or paint cards cream (The Warm-Canvas Rule).
 - **Don't** introduce a second accent colour. The status set is for status; nothing else gets a hue.
 - **Don't** lower the 16px body floor for density (The 16px Body Floor).
 - **Don't** hardcode a hex in a component. The one sanctioned exception is `DashCharts.tsx`, where Recharts takes colours as props — and every literal there names its token in a comment.

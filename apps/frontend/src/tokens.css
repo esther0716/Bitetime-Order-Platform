@@ -19,11 +19,19 @@
   --ink-200: #E4E4E7;
   --ink-300: #D4D4D8;
   --ink-400: #A1A1AA;  /* borders + decorative icons ONLY — fails AA as text */
-  --ink-500: #71717A;
+  --ink-500: #71717A;  /* borders/icons on cream — 4.06:1 there, see --ink-600 */
+  /* Secondary TEXT. #71717A clears AA on white (4.83) but only reaches 4.06 on the cream
+     canvas, so muted copy needs its own darker step rather than borrowing the border grey. */
+  --ink-600: #636369;
   --ink-700: #3F3F46;
   --ink-900: #18181B;
   --ink-950: #09090B;
   --white:   #FFFFFF;
+
+  /* The canvas. Warm, and deliberately NOT a step on the zinc ladder — the page is cream,
+     everything raised off it is white or zinc. Keeping it outside --ink-* is what stops the
+     neutral ramp from being half-warm. */
+  --cream:   #F2EAE0;
 
   /* Oxblood, in Voltage's seven-step shape. -500 is the brand and is fixed. */
   --brand-50:  #FDF0F2;
@@ -59,14 +67,14 @@
   --neutral-fg:  #3F3F46;
 
   /* ── Semantic colour ───────────────────────────────────────────────────── */
-  --color-bg:            var(--ink-50);
+  --color-bg:            var(--cream);
   --color-bg-surface:    var(--white);
   --color-bg-muted:      var(--ink-100);
   --color-bg-hover:      var(--ink-100);
   --color-border:        var(--ink-200);
   --color-border-strong: var(--ink-300);
   --color-text:          var(--ink-900);
-  --color-text-muted:    var(--ink-500);
+  --color-text-muted:    var(--ink-600);
   --color-text-subtle:   var(--ink-400);
   --color-accent:        var(--brand-500);
   --color-accent-hover:  var(--brand-600);
@@ -139,7 +147,8 @@
   /* ══ ALIAS BLOCK — deleted by the follow-up rename. See the header note. ══
      These names are what 896 call sites already say. Pointing them at Voltage
      values is what reskins the app without touching a component. */
-  --color-cream:              var(--ink-50);
+  /* Truthful again: the canvas really is cream. */
+  --color-cream:              var(--cream);
   --color-white:              var(--white);
   --color-surface-raised:     var(--white);
   --color-surface-high:       var(--white);
@@ -147,13 +156,14 @@
   --color-surface-sunken-hover: var(--ink-200);
   --color-surface-warm:       var(--ink-100);
   --color-surface-warm-alt:   var(--ink-100);
-  --color-surface-cream-soft: var(--ink-50);
+  --color-surface-cream-soft: var(--cream);
   --color-divider:            var(--ink-200);
 
+  /* These four are TEXT aliases, so they take --ink-600, not the border grey. */
   --color-ink:            var(--ink-900);
   --color-ink-soft:       var(--ink-700);
-  --color-ink-faint:      var(--ink-500);
-  --color-text-tertiary:  var(--ink-500);
+  --color-ink-faint:      var(--ink-600);
+  --color-text-tertiary:  var(--ink-600);
 
   --color-oxblood:         var(--brand-500);
   --color-oxblood-deep:    var(--brand-600);
@@ -162,7 +172,7 @@
   --color-oxblood-tint:    var(--brand-100);
   --color-oxblood-tint-soft: var(--brand-50);
 
-  --color-rose-muted:  var(--ink-500);
+  --color-rose-muted:  var(--ink-600);
   --color-rose-deep:   var(--ink-700);
   --color-rose-border: var(--ink-200);
   --color-rose-tint:   var(--ink-100);
