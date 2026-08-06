@@ -119,7 +119,7 @@ const columns: ColumnDef<any>[] = [
                 <Button
                   variant="ghost"
                   size="none"
-                  className="size-8 p-0 rounded-full cursor-pointer hover:bg-brand-100 hover:text-primary"
+                  className="size-8 p-0 rounded-pill cursor-pointer hover:bg-brand-100 hover:text-primary"
                   aria-label={t('Actions', '操作')}
                 />
               }
@@ -621,9 +621,9 @@ export default function ProductsManager() {
                   role="switch"
                   aria-checked={form.active}
                   onClick={() => setForm({ ...form, active: !form.active })}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${form.active ? 'bg-primary' : 'bg-border'}`}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill transition-colors cursor-pointer ${form.active ? 'bg-primary' : 'bg-border'}`}
                 >
-                  <span className={`inline-block size-5 rounded-full bg-white shadow-sm transition-transform ${form.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                  <span className={`inline-block size-5 rounded-pill bg-white shadow-sm transition-transform ${form.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
                 </button>
               </div>
             </div>

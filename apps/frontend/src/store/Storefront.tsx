@@ -837,7 +837,7 @@ export default function Storefront() {
                     <span className="flex items-center gap-1.5 flex-wrap">
                       {item.name} × {item.qty}
                       {item.promo && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-primary text-white text-[10px] leading-[14px] font-medium">
+                        <span className="px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium">
                           {t('Promo', '优惠')}
                         </span>
                       )}
@@ -1038,7 +1038,7 @@ export default function Storefront() {
                         {/* Touch cue (no hover on a phone): a persistent photo pill, with a count
                             when there's more than one. The bare number badge read as decoration —
                             nothing said "tap me". */}
-                        <span className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded-full bg-primary/90 px-1.5 py-[3px] text-white text-[10px] font-medium leading-none">
+                        <span className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded-pill bg-primary/90 px-1.5 py-[3px] text-white text-[10px] font-medium leading-none">
                           <Images className="size-[11px]" strokeWidth={2} />
                           {p.image_urls.length > 1 && p.image_urls.length}
                         </span>
@@ -1091,7 +1091,7 @@ export default function Storefront() {
                             <span className="text-[12px] text-muted-foreground line-through">
                               {formatMoney(p.price, currency)}
                             </span>
-                            <span className="px-1.5 py-0.5 rounded-full bg-primary text-white text-[10px] leading-[14px] font-medium">
+                            <span className="px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium">
                               {t('Promo', '优惠')}
                             </span>
                             {Number.isFinite(remainingForNextUnit) && (
@@ -1468,7 +1468,7 @@ export default function Storefront() {
                           <ItemSelections item={item} />
                         </span>
                         {item.promo && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-primary text-white text-[10px] leading-[14px] font-medium">
+                          <span className="px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium">
                             {t('Promo', '优惠')}
                           </span>
                         )}
@@ -1492,7 +1492,7 @@ export default function Storefront() {
                                does not dominate a summary row; the `after` overlay is what makes
                                the touch target 44px, so a coarse pointer gets the size without
                                the visual weight. */
-                            className="relative grid place-items-center shrink-0 size-7 -my-1 rounded-full border border-border bg-white/60 text-muted-foreground cursor-pointer transition-colors hover:bg-danger hover:border-danger hover:text-white active:bg-danger active:border-danger active:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary after:absolute after:content-[''] after:-inset-2"
+                            className="relative grid place-items-center shrink-0 size-7 -my-1 rounded-pill border border-border bg-white/60 text-muted-foreground cursor-pointer transition-colors hover:bg-danger hover:border-danger hover:text-white active:bg-danger active:border-danger active:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary after:absolute after:content-[''] after:-inset-2"
                           >
                             <X className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
                           </button>

@@ -91,7 +91,7 @@ export default function OrderTimeline({
             )}
             <span
               className={cn(
-                'relative z-[1] flex size-7 items-center justify-center rounded-full transition-colors',
+                'relative z-[1] flex size-7 items-center justify-center rounded-pill transition-colors',
                 reached
                   ? 'bg-primary text-background'
                   : 'border-[0.5px] border-border bg-card text-ink-400',

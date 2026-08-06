@@ -206,7 +206,7 @@ function StatusBadge({ status, t }: { status: ReferredShop['status']; t: (en: st
     : t('Pending', '待审核')
   const tone = status === 'active' ? 'text-primary' : 'text-muted-foreground'
   return (
-    <span className={`rounded-full border-[0.5px] border-border bg-muted px-2 py-0.5 text-[11px] font-medium ${tone}`}>
+    <span className={`rounded-pill border-[0.5px] border-border bg-muted px-2 py-0.5 text-[11px] font-medium ${tone}`}>
       {label}
     </span>
   )

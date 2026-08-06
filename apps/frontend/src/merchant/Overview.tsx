@@ -23,7 +23,7 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        'rounded-full border-[0.5px] px-2.5 py-0.5 text-[11px] font-semibold transition-colors',
+        'rounded-pill border-[0.5px] px-2.5 py-0.5 text-[11px] font-semibold transition-colors',
         active
           ? 'border-primary bg-primary text-background'
           : 'border-border bg-transparent text-muted-foreground hover:text-primary',
@@ -100,7 +100,7 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
             disabled={busy}
             onClick={isPro ? download : goToSubscription}
             className={cn(
-              'inline-flex cursor-pointer items-center justify-center rounded-full border-[0.5px] p-1.5 transition-colors',
+              'inline-flex cursor-pointer items-center justify-center rounded-pill border-[0.5px] p-1.5 transition-colors',
               'border-border bg-transparent text-muted-foreground',
               'hover:border-primary hover:text-primary',
               'disabled:cursor-default disabled:opacity-50 disabled:hover:border-border disabled:hover:text-muted-foreground',

@@ -54,7 +54,7 @@ export default function PaymentQrPicker({
               disabled={busy}
               onClick={() => setConfirmRemove(true)}
               aria-label={t('Remove QR code', '删除二维码')}
-              className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-primary text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
+              className="absolute -top-1.5 -right-1.5 size-5 rounded-pill bg-primary text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
             >
               ×
             </button>

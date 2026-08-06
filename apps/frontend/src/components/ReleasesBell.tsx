@@ -44,7 +44,7 @@ export default function ReleasesBell() {
         {unread && (
           <span
             aria-hidden="true"
-            className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary"
+            className="absolute top-1.5 right-1.5 size-2 rounded-pill bg-primary"
           />
         )}
       </PopoverTrigger>

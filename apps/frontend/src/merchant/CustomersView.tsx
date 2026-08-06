@@ -133,7 +133,7 @@ export default function CustomersView() {
           <button
             type="button"
             onClick={() => narrow(setTag)(null)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-brand-100 px-3 py-1 text-[12px] text-primary"
+            className="inline-flex items-center gap-1.5 rounded-pill border border-border bg-brand-100 px-3 py-1 text-[12px] text-primary"
           >
             {tag}
             <X size={12} />
@@ -509,7 +509,7 @@ function NotesPanel({
           {customer.tags.map(tag => (
             <span
               key={tag}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-brand-100 px-2.5 py-0.5 text-[12px] text-primary"
+              className="inline-flex items-center gap-1 rounded-pill border border-border bg-brand-100 px-2.5 py-0.5 text-[12px] text-primary"
             >
               <button type="button" onClick={() => onTagClicked(tag)} className="cursor-pointer">{tag}</button>
               <button
@@ -544,7 +544,7 @@ function NotesPanel({
                 type="button"
                 disabled={busy}
                 onClick={() => addTag(s)}
-                className="inline-flex items-center gap-1 rounded-full border border-dashed border-border bg-background px-2.5 py-0.5 text-[12px] text-text-secondary hover:border-border hover:bg-brand-100 hover:text-primary transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-pill border border-dashed border-border bg-background px-2.5 py-0.5 text-[12px] text-text-secondary hover:border-border hover:bg-brand-100 hover:text-primary transition-colors disabled:opacity-50"
               >
                 <Plus size={10} />
                 {s}

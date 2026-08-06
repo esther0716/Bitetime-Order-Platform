@@ -53,7 +53,7 @@ export function ProLock({ what, why }: { what: string; why: string }) {
   const { t } = useSession()
   return (
     <div className="bg-card border-[0.5px] border-border rounded-2xl p-8 w-full box-border text-center max-sm:p-5">
-      <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-full bg-muted text-primary">
+      <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-pill bg-muted text-primary">
         <Lock size={20} strokeWidth={1.75} />
       </div>
       <div className="flex items-center justify-center gap-2 mb-2">

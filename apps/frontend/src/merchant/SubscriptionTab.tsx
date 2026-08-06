@@ -332,9 +332,9 @@ function TrialBanner({ daysLeft, trialEndsAt, progress }: {
             {t(`Ending ${fmtDate(trialEndsAt)}.`, `${fmtDate(trialEndsAt)} 结束。`)}
           </p>
           {/* Draining bar: width tracks the fraction remaining. */}
-          <div className="mt-3 h-1.5 w-full rounded-full bg-border/40 overflow-hidden">
+          <div className="mt-3 h-1.5 w-full rounded-pill bg-border/40 overflow-hidden">
             <div
-              className="h-full rounded-full bg-primary transition-[width] duration-300"
+              className="h-full rounded-pill bg-primary transition-[width] duration-300"
               style={{ width: `${Math.round(progress * 100)}%` }}
             />
           </div>

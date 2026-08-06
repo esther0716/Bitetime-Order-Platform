@@ -121,7 +121,7 @@ export default function FeedbackFab() {
         title={title}
         className={cn(
           'fixed z-30 bottom-6 right-6 max-sm:bottom-5 max-sm:right-5',
-          'flex items-center gap-2 rounded-full px-4 py-3',
+          'flex items-center gap-2 rounded-pill px-4 py-3',
           'bg-primary text-background shadow-lg cursor-pointer',
           'transition-colors duration-150 hover:bg-brand-600',
           '[@media(pointer:coarse)]:min-h-[48px]',

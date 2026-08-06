@@ -102,7 +102,7 @@ export default function ReceiptDialog({ order, merchant, itemName, onClose }: Re
                       {item.promo && (
                         <span
                           data-receipt-promo
-                          className="shrink-0 px-1.5 py-0.5 rounded-full bg-primary text-white text-[10px] leading-[14px] font-medium"
+                          className="shrink-0 px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium"
                         >
                           {t('Promo', '优惠')}
                         </span>

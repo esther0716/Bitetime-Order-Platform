@@ -89,7 +89,7 @@ export function DonutCard({ data }: { data: { name: string; value: number }[] })
     <div className="flex flex-col gap-3">
       {/* A single 100% slice renders as a degenerate zero-arc in recharts, so draw it as a plain CSS ring. */}
       {data.length === 1 ? (
-        <div className="mx-auto my-2 h-40 w-40 rounded-full border-[28px] border-solid" style={{ borderColor: CHART_COLORS[0] }} />
+        <div className="mx-auto my-2 h-40 w-40 rounded-pill border-[28px] border-solid" style={{ borderColor: CHART_COLORS[0] }} />
       ) : (
         <ResponsiveContainer width="100%" height={200}>
           <PieChart>
@@ -103,7 +103,7 @@ export function DonutCard({ data }: { data: { name: string; value: number }[] })
       <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
         {data.map((d, i) => (
           <li key={d.name} className="flex items-center gap-2 text-xs">
-            <span className="h-[9px] w-[9px] shrink-0 rounded-full" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+            <span className="h-[9px] w-[9px] shrink-0 rounded-pill" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
             <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground">{d.name}</span>
             <span className="shrink-0 font-semibold text-muted-foreground">{Math.round((d.value / total) * 100)}%</span>
           </li>
