@@ -161,6 +161,12 @@ describe('merchant feedback', () => {
     const row = (await res.json()) as FeedbackRow & { images_failed: number }
     expect(row.image_paths).toEqual([])
     expect(row.images_failed).toBe(0)
+
+    // Read the ROW, not just the response: the route substitutes its own `paths` into the body,
+    // so the response alone would look right even if the column's default were wrong.
+    const { data: stored } = await serviceClient()
+      .from('merchant_feedback').select('image_paths').eq('id', row.id).single()
+    expect(stored!.image_paths).toEqual([])
   })
 
   it('refuses a fourth screenshot, and writes no row at all', async () => {
@@ -197,6 +203,26 @@ describe('merchant feedback', () => {
     expect(after.data!.length).toBe(before.data!.length)
   })
 
+  it('refuses a file over the size ceiling, and writes no row at all', async () => {
+    const before = await serviceClient()
+      .from('merchant_feedback').select('id').eq('merchant_id', ownShopId)
+
+    // One byte past MAX_FEEDBACK_IMAGE_BYTES. The bytes are not a real PNG, which is fine: the
+    // route refuses on size before anything reaches Storage, and that IS the assertion.
+    const tooBig = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'huge.png', { type: 'image/png' })
+    const res = await postForm(
+      `/api/merchants/${ownShopId}/feedback`,
+      { category: 'bug', message: 'too big' },
+      [tooBig],
+      ownerToken,
+    )
+    expect(res.status).toBe(400)
+
+    const after = await serviceClient()
+      .from('merchant_feedback').select('id').eq('merchant_id', ownShopId)
+    expect(after.data!.length).toBe(before.data!.length)
+  })
+
   it('still refuses a multipart submission against a shop the caller does not own', async () => {
     const res = await postForm(
       `/api/merchants/${strangerShopId}/feedback`,
@@ -214,16 +240,21 @@ describe('merchant feedback', () => {
       return { number: 1, html_url: 'https://example.test/issues/1' }
     }
 
-    await postForm(
-      `/api/merchants/${ownShopId}/feedback`,
-      { category: 'bug', message: 'count check' },
-      [pngFile('a.png')],
-      ownerToken,
-    )
+    // finally, not a trailing assignment: a failed expect() below would otherwise leak this stub
+    // into every later test in the file.
+    try {
+      await postForm(
+        `/api/merchants/${ownShopId}/feedback`,
+        { category: 'bug', message: 'count check' },
+        [pngFile('a.png')],
+        ownerToken,
+      )
 
-    expect(seenBody).toContain('Screenshots: 1')
-    expect(seenBody).not.toMatch(/feedback-images/)
-    githubDeps.createIssue = origCreateIssue
+      expect(seenBody).toContain('Screenshots: 1')
+      expect(seenBody).not.toMatch(/feedback-images/)
+    } finally {
+      githubDeps.createIssue = origCreateIssue
+    }
   })
 
   describe('reading a feedback screenshot', () => {

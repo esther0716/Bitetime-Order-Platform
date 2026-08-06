@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { MessageSquarePlus, ImagePlus, X } from 'lucide-react'
 import {
   FEEDBACK_CATEGORIES, FEEDBACK_MAX_LENGTH, FEEDBACK_MAX_IMAGES, FEEDBACK_IMAGE_TYPES,
-  validateFeedbackImage, type FeedbackCategory,
+  validateFeedbackImage, type FeedbackCategory, type FeedbackImageError,
 } from '@bitetime/shared'
 import { useSession } from '../SessionContext'
 import { submitFeedback } from '../store'
@@ -110,6 +110,20 @@ export default function FeedbackFab() {
     setFailedCount(0)
   }
 
+  // The shared validator returns a CODE, not a sentence, precisely so this dialog can say it in
+  // the merchant's own language — an English string from @bitetime/shared would land untranslated
+  // inside a Chinese UI.
+  const imageErrorText = (code: FeedbackImageError, name: string) => {
+    switch (code) {
+      case 'unsupported_type':
+        return t(`${name}: must be JPEG, PNG or WebP`, `${name}：必须是 JPEG、PNG 或 WebP`)
+      case 'empty':
+        return t(`${name}: file is empty`, `${name}：文件是空的`)
+      case 'too_large':
+        return t(`${name}: must be 5MB or smaller`, `${name}：不能超过 5MB`)
+    }
+  }
+
   // A bad file in the selection must not cost the merchant the good ones — the rejected file is
   // named, the rest are kept. Same reasoning as keeping the typed message on a failed send.
   const pick = (chosen: FileList | null) => {
@@ -127,7 +141,7 @@ export default function FeedbackFab() {
         continue
       }
       const check = validateFeedbackImage({ type: file.type, size: file.size })
-      if (!check.ok) { rejected.push(`${file.name}: ${check.error}`); continue }
+      if (!check.ok) { rejected.push(imageErrorText(check.code, file.name)); continue }
       accepted.push({ file, url: URL.createObjectURL(file) })
     }
 

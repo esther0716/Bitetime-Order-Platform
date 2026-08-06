@@ -1,5 +1,5 @@
 import type { User } from '@supabase/auth-js';
-import { voucherFromRow, QUOTE_REFUSALS, validateFeedbackImage, FEEDBACK_MAX_IMAGES } from '@bitetime/shared';
+import { voucherFromRow, QUOTE_REFUSALS, validateFeedbackImages } from '@bitetime/shared';
 import type { FeedbackDraft, FeedbackStatus, MerchantStats, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
@@ -1011,12 +1011,10 @@ export async function submitFeedback(
   draft: FeedbackDraft,
   files: File[] = [],
 ): Promise<Result<{ images_failed: number }>> {
-  if (files.length > FEEDBACK_MAX_IMAGES) {
-    return { ok: false, error: { message: `Attach at most ${FEEDBACK_MAX_IMAGES} screenshots` } }
-  }
-  for (const file of files) {
-    const check = validateFeedbackImage({ type: file.type, size: file.size })
-    if (!check.ok) return { ok: false, error: { message: `${check.error}: ${file.name}` } }
+  const images = validateFeedbackImages(files.map(f => ({ type: f.type, size: f.size })))
+  if (!images.ok) {
+    const name = images.index === null ? null : files[images.index]?.name
+    return { ok: false, error: { code: images.code, message: name ? `${images.error}: ${name}` : images.error } }
   }
 
   const form = new FormData()

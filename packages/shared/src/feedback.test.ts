@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  validateFeedback, isFeedbackStatus, validateFeedbackImage,
+  validateFeedback, isFeedbackStatus, validateFeedbackImage, validateFeedbackImages,
   FEEDBACK_MAX_LENGTH, FEEDBACK_MAX_IMAGES, MAX_FEEDBACK_IMAGE_BYTES,
 } from './feedback.js'
 
@@ -62,7 +62,19 @@ describe('validateFeedbackImage', () => {
   it('refuses a type the bucket would reject, naming what is allowed', () => {
     const r = validateFeedbackImage({ type: 'application/pdf', size: 1024 })
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toMatch(/JPEG, PNG or WebP/)
+    if (!r.ok) {
+      expect(r.code).toBe('unsupported_type')
+      expect(r.error).toMatch(/JPEG, PNG or WebP/)
+    }
+  })
+
+  it('carries a code, not only a sentence — this module cannot translate', () => {
+    const empty = validateFeedbackImage({ type: 'image/png', size: 0 })
+    const big = validateFeedbackImage({ type: 'image/png', size: MAX_FEEDBACK_IMAGE_BYTES + 1 })
+    expect(empty.ok).toBe(false)
+    expect(big.ok).toBe(false)
+    if (!empty.ok) expect(empty.code).toBe('empty')
+    if (!big.ok) expect(big.code).toBe('too_large')
   })
 
   it('refuses image/gif — an image type, but not one this bucket takes', () => {
@@ -84,6 +96,40 @@ describe('validateFeedbackImage', () => {
   it('pins the count and size ceilings the migration and the route also state', () => {
     expect(FEEDBACK_MAX_IMAGES).toBe(3)
     expect(MAX_FEEDBACK_IMAGE_BYTES).toBe(5 * 1024 * 1024)
+  })
+})
+
+describe('validateFeedbackImages', () => {
+  const png = (size = 1024) => ({ type: 'image/png', size })
+
+  it('accepts an empty selection — screenshots are optional', () => {
+    expect(validateFeedbackImages([])).toEqual({ ok: true })
+  })
+
+  it(`accepts exactly ${FEEDBACK_MAX_IMAGES} and refuses one more`, () => {
+    expect(validateFeedbackImages(Array(FEEDBACK_MAX_IMAGES).fill(png()))).toEqual({ ok: true })
+    const over = validateFeedbackImages(Array(FEEDBACK_MAX_IMAGES + 1).fill(png()))
+    expect(over.ok).toBe(false)
+    if (!over.ok) {
+      expect(over.code).toBe('too_many')
+      // No single file is to blame for a selection that is too long.
+      expect(over.index).toBeNull()
+    }
+  })
+
+  it('names the index of the first bad file, so the caller can name the file', () => {
+    const r = validateFeedbackImages([png(), { type: 'application/pdf', size: 10 }, png()])
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.code).toBe('unsupported_type')
+      expect(r.index).toBe(1)
+    }
+  })
+
+  it('checks the count BEFORE the files — a four-file selection fails on its size', () => {
+    const r = validateFeedbackImages(Array(FEEDBACK_MAX_IMAGES + 1).fill({ type: 'application/pdf', size: 10 }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.code).toBe('too_many')
   })
 })
 

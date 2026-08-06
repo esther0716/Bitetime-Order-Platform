@@ -61,7 +61,7 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImage, FEEDBACK_MAX_IMAGES, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
@@ -80,6 +80,26 @@ app.use('/api/*', cors({
 }))
 
 const ORDER_HISTORY_LIMIT = 20
+
+/**
+ * Streams one object out of a PRIVATE bucket, with the type Storage recorded for it.
+ *
+ * The private buckets (`payment-proof`, `feedback-images`) have no storage.objects policies at
+ * all, so the browser cannot fetch these bytes directly in either direction — a backend route
+ * reading them with the service-role client is the only way out, and every such route ended up
+ * writing the same download-then-arrayBuffer tail. Three copies was the point to stop.
+ *
+ * Callers do the AUTHORISATION. This function proves nothing about who may see the object; it is
+ * only the transport, and it must never be handed a path that came from a request.
+ */
+async function streamPrivateObject(bucket: string, path: string): Promise<Response> {
+  const { data, error } = await admin.storage.from(bucket).download(path)
+  if (error || !data) return Response.json({ error: 'download_failed' }, { status: 500 })
+  return new Response(await data.arrayBuffer(), {
+    status: 200,
+    headers: { 'Content-Type': data.type || 'application/octet-stream' },
+  })
+}
 
 app.get('/health', (c) => c.json({ ok: true }))
 
@@ -854,14 +874,7 @@ app.get(
     const path = order?.payment_proof as string | null | undefined
     if (!path) return c.json({ error: 'not_found' }, 404)
 
-    const { data, error } = await admin.storage.from('payment-proof').download(path)
-    if (error || !data) return c.json({ error: 'download_failed' }, 500)
-
-    const buffer = await data.arrayBuffer()
-    return new Response(buffer, {
-      status: 200,
-      headers: { 'Content-Type': data.type || 'application/octet-stream' },
-    })
+    return streamPrivateObject('payment-proof', path)
   },
 )
 
@@ -880,14 +893,7 @@ app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
   const path = order.payment_proof as string | null
   if (!path) return c.json({ error: 'not_found' }, 404)
 
-  const { data, error: downloadError } = await admin.storage.from('payment-proof').download(path)
-  if (downloadError || !data) return c.json({ error: 'download_failed' }, 500)
-
-  const buffer = await data.arrayBuffer()
-  return new Response(buffer, {
-    status: 200,
-    headers: { 'Content-Type': data.type || 'application/octet-stream' },
-  })
+  return streamPrivateObject('payment-proof', path)
 })
 
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
@@ -1514,16 +1520,18 @@ app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
   const parsed = validateFeedback(body)
   if (!parsed.ok) return c.json({ error: parsed.error }, 400)
 
-  // Every file check runs BEFORE the insert, so a rejected submission leaves nothing behind —
-  // no row, no orphan object.
-  if (files.length > FEEDBACK_MAX_IMAGES) {
-    return c.json({ error: `Attach at most ${FEEDBACK_MAX_IMAGES} screenshots` }, 400)
+  // The whole selection — count and every file — judged BEFORE the insert, so a rejected
+  // submission leaves nothing behind: no row, no orphan object. One shared call rather than a
+  // hand-rolled loop, so this and store.ts cannot drift from each other or from the database's
+  // own cardinality CHECK.
+  const images = validateFeedbackImages(files.map(f => ({ type: f.type, size: f.size })))
+  if (!images.ok) {
+    const name = images.index === null ? null : files[images.index]?.name
+    return c.json({ error: name ? `${images.error}: ${name}` : images.error }, 400)
   }
+  // Redundant with the type rule above (same three types) and kept anyway: it is what makes the
+  // extension lookup below total instead of producing "undefined" in a storage path.
   for (const file of files) {
-    const check = validateFeedbackImage({ type: file.type, size: file.size })
-    if (!check.ok) return c.json({ error: `${check.error}: ${file.name}` }, 400)
-    // Redundant with the type check above (same three types) and kept anyway: it is what makes
-    // the extension lookup below total instead of producing "undefined" in a storage path.
     if (!FEEDBACK_IMAGE_EXT[file.type]) return c.json({ error: `Unsupported image type: ${file.name}` }, 400)
   }
 
@@ -1608,15 +1616,7 @@ app.get('/api/admin/feedback/:feedbackId/images/:index', requireSuperadmin, asyn
     return c.json({ error: 'not_found' }, 404)
   }
 
-  const { data, error: downloadError } = await admin.storage
-    .from(FEEDBACK_IMAGE_BUCKET)
-    .download(paths[index])
-  if (downloadError || !data) return c.json({ error: 'download_failed' }, 500)
-
-  return new Response(await data.arrayBuffer(), {
-    status: 200,
-    headers: { 'Content-Type': data.type || 'application/octet-stream' },
-  })
+  return streamPrivateObject(FEEDBACK_IMAGE_BUCKET, paths[index])
 })
 
 app.patch('/api/admin/feedback/:feedbackId', requireSuperadmin, async (c) => {

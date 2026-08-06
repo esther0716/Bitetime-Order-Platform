@@ -145,7 +145,12 @@ export default function AdminFeedback() {
  */
 function FeedbackImages({ item }: { item: FeedbackItem }) {
   const { t } = useSession()
-  const [urls, setUrls] = useState<string[]>([])
+  // `null` is "still fetching"; an array is the settled answer, however many of the fetches
+  // actually succeeded. Deriving "loading" from `urls.length < count` instead is what made a
+  // single failed fetch sit under a Loading… hint forever — a terminal state wearing a
+  // transient state's label.
+  const [urls, setUrls] = useState<string[] | null>(null)
+  const [failed, setFailed] = useState(0)
   // Paths never change for a given feedback id, so the COUNT plus the id is the whole of what
   // drives this — depending on the array itself would refetch every time toggle() rebuilds the
   // row object with a fresh array reference.
@@ -164,6 +169,7 @@ function FeedbackImages({ item }: { item: FeedbackItem }) {
         if (cancelled) return
         for (const r of results) if (r.ok) created.push(URL.createObjectURL(r.data))
         setUrls(created)
+        setFailed(results.filter(r => !r.ok).length)
       })
 
     return () => {
@@ -176,7 +182,7 @@ function FeedbackImages({ item }: { item: FeedbackItem }) {
 
   return (
     <div className="flex flex-wrap gap-2">
-      {urls.map((url, i) => (
+      {(urls ?? []).map((url, i) => (
         <a key={url} href={url} target="_blank" rel="noopener noreferrer">
           <img
             src={url}
@@ -185,9 +191,17 @@ function FeedbackImages({ item }: { item: FeedbackItem }) {
           />
         </a>
       ))}
-      {urls.length < count && (
+      {urls === null && (
         <span className="self-center text-[12px] text-text-tertiary">
           {t('Loading screenshots…', '正在加载截图…')}
+        </span>
+      )}
+      {failed > 0 && (
+        <span className="self-center text-[12px] text-danger-fg">
+          {t(
+            `${failed} of ${count} could not be loaded.`,
+            `${count} 张截图中有 ${failed} 张无法加载。`,
+          )}
         </span>
       )}
     </div>
