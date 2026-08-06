@@ -22,12 +22,12 @@ const NEUTRAL = 'bg-neutral-100 text-neutral-fg border-transparent'
    scanning a busy table still sees two different things; the palette still has four
    entries. Every pair here is asserted AA by tokens.test.ts. */
 export const STATUS_BADGE: Record<string, BadgeConfig> = {
-  pending_payment: { className: 'bg-warn-bg text-warn-fg border-transparent' },
+  pending_payment: { className: 'bg-warning-100 text-warning-fg border-transparent' },
   new:             { className: 'bg-info-fg text-white border-transparent' },
-  preparing:       { className: 'bg-info-bg text-info-fg border-transparent' },
-  ready:           { className: 'bg-success-bg text-success-fg border-transparent' },
+  preparing:       { className: 'bg-info-100 text-info-fg border-transparent' },
+  ready:           { className: 'bg-success-100 text-success-fg border-transparent' },
   completed:       { className: NEUTRAL },
-  cancelled:       { className: 'bg-danger-bg text-danger-fg border-transparent' },
+  cancelled:       { className: 'bg-danger-100 text-danger-fg border-transparent' },
 }
 
 export function StatusBadge({ status, t }: { status: string; t: (en: string, zh: string) => string }) {

@@ -149,45 +149,45 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
             initial={{ opacity: 0, y: -8, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 18 } }}
             exit={{ opacity: 0, y: -6, scale: 0.96, transition: { duration: 0.18 } }}
-            className="absolute -top-3 -right-2 z-10 flex items-center gap-2 rounded-pill border border-clay-border bg-surface-high py-1.5 px-3 shadow-elev-2"
+            className="absolute -top-3 -right-2 z-10 flex items-center gap-2 rounded-pill border border-border bg-card py-1.5 px-3 shadow-elev-2"
           >
-            <ReceiptText size={14} strokeWidth={1.5} className="text-oxblood" aria-hidden />
-            <span className="text-[12px] font-medium text-ink">{t('New order · BT-0242', '新订单 · BT-0242')}</span>
+            <ReceiptText size={14} strokeWidth={1.5} className="text-primary" aria-hidden />
+            <span className="text-[12px] font-medium text-foreground">{t('New order · BT-0242', '新订单 · BT-0242')}</span>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Card */}
-      <div className="rounded-2xl border-[0.5px] border-clay-border bg-surface-raised p-5 text-left shadow-elev-3">
+      <div className="rounded-2xl border-[0.5px] border-border bg-card p-5 text-left shadow-elev-3">
         {/* Shop header */}
-        <div className="flex items-center gap-3 pb-4 border-b border-divider">
-          <span className="grid h-10 w-10 place-items-center rounded-round bg-oxblood-tint font-heading text-[15px] font-medium text-oxblood">
+        <div className="flex items-center gap-3 pb-4 border-b border-border">
+          <span className="grid h-10 w-10 place-items-center rounded-round bg-brand-100 font-heading text-[15px] font-medium text-primary">
             NK
           </span>
           <div className="min-w-0">
-            <p className="font-heading text-[15px] font-medium text-ink leading-tight">
+            <p className="font-heading text-[15px] font-medium text-foreground leading-tight">
               {t('Nyonya Kueh by Mei', '美的娘惹糕')}
             </p>
-            <p className="text-[12px] text-rose-muted leading-tight">/s/nyonya-kueh</p>
+            <p className="text-[12px] text-muted-foreground leading-tight">/s/nyonya-kueh</p>
           </div>
-          <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-success-strong">
-            <span className="h-1.5 w-1.5 rounded-round bg-success-strong" aria-hidden />
+          <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-success-fg">
+            <span className="h-1.5 w-1.5 rounded-round bg-success-fg" aria-hidden />
             {t('Open', '营业中')}
           </span>
         </div>
 
         {/* Products */}
-        <ul className="list-none m-0 p-0 flex flex-col divide-y divide-divider">
+        <ul className="list-none m-0 p-0 flex flex-col divide-y divide-border">
           {products.map((p) => (
             <li key={p.name} className="flex items-center justify-between gap-3 py-3">
-              <span className="text-[13.5px] text-ink">{p.name}</span>
-              <span className="font-heading text-[13.5px] font-medium text-oxblood shrink-0">{p.price}</span>
+              <span className="text-[13.5px] text-foreground">{p.name}</span>
+              <span className="font-heading text-[13.5px] font-medium text-primary shrink-0">{p.price}</span>
             </li>
           ))}
         </ul>
 
         {/* Order bar (static mock) */}
-        <div className="mt-4 flex items-center justify-center rounded-md bg-oxblood py-2.5 text-[13px] font-medium text-cream">
+        <div className="mt-4 flex items-center justify-center rounded-md bg-primary py-2.5 text-[13px] font-medium text-background">
           {t('Place order', '下单')}
         </div>
       </div>
@@ -223,7 +223,7 @@ const WORD_INTERVAL_MS = 2600
 // the baseline — where the browser's own underline sits, measured against the h1's font.
 const WORD_RULE =
   'relative after:content-[\'\'] after:pointer-events-none after:absolute after:inset-x-0 ' +
-  'after:bottom-[0.145em] after:h-[0.055em] after:bg-oxblood/60'
+  'after:bottom-[0.145em] after:h-[0.055em] after:bg-primary/60'
 
 export const RotatingWord = memo(function RotatingWord({
   words,

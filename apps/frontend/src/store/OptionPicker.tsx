@@ -166,14 +166,14 @@ function PickerBody({ basePrice, currency, groups, t, label, onAdd }: PickerBody
             return (
               <div key={group.id} className="flex flex-col gap-2">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[14px] font-medium text-ink">
+                  <span className="text-[14px] font-medium text-foreground">
                     {label(group.name, group.name_zh)}
-                    {group.minSelect > 0 && <span className="text-oxblood"> *</span>}
+                    {group.minSelect > 0 && <span className="text-primary"> *</span>}
                   </span>
                   {/* The running count is the whole affordance of a mix-and-match box: without it
                       the customer cannot tell how far off six they are until Add stays disabled. */}
                   {group.maxSelect !== null && group.maxSelect > 1 && (
-                    <span className="text-[12px] text-rose-muted" aria-live="polite">
+                    <span className="text-[12px] text-muted-foreground" aria-live="polite">
                       {t(`${chosen} of ${group.maxSelect} chosen`, `已选 ${chosen} / ${group.maxSelect}`)}
                     </span>
                   )}
@@ -185,10 +185,10 @@ function PickerBody({ basePrice, currency, groups, t, label, onAdd }: PickerBody
                   const atOptionCap = group.maxPerOption !== null && qty >= group.maxPerOption
                   return (
                     <div key={option.id} className="flex items-center justify-between gap-3">
-                      <span className="text-[13px] text-ink">
+                      <span className="text-[13px] text-foreground">
                         {label(option.name, option.name_zh)}
                         {option.delta > 0 && (
-                          <span className="text-[12px] text-rose-muted">
+                          <span className="text-[12px] text-muted-foreground">
                             {' '}+{formatMoney(option.delta, currency)}
                           </span>
                         )}

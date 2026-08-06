@@ -28,7 +28,7 @@ describe('the four-tone vocabulary', () => {
   const classOf = (s: string) => STATUS_BADGE[s].className ?? ''
 
   it('uses only the four sanctioned tone families', () => {
-    const allowed = /^(bg-(info|warn|success|danger|neutral)-|text-(info|warn|success|danger|neutral)-|text-white$|border-)/
+    const allowed = /^(bg-(info|warning|success|danger|neutral)-|text-(info|warning|success|danger|neutral)-|text-white$|border-)/
     for (const s of ORDER_STATUSES) {
       for (const cls of classOf(s).split(/\s+/).filter(Boolean)) {
         expect(cls, `${s} → ${cls}`).toMatch(allowed)
@@ -49,7 +49,7 @@ describe('the four-tone vocabulary', () => {
   })
 
   it('maps the remaining statuses to their own tones', () => {
-    expect(classOf('pending_payment')).toMatch(/warn/)
+    expect(classOf('pending_payment')).toMatch(/warning/)
     expect(classOf('ready')).toMatch(/success/)
     expect(classOf('completed')).toMatch(/neutral/)
     expect(classOf('cancelled')).toMatch(/danger/)

@@ -37,7 +37,7 @@ export default function CheckoutGate({ onGuest }: { onGuest: () => void }) {
               <button
                 type="button"
                 onClick={() => setAuth(null)}
-                className="text-[13px] text-rose-muted underline underline-offset-2 cursor-pointer"
+                className="text-[13px] text-muted-foreground underline underline-offset-2 cursor-pointer"
               >
                 {t('Back', '返回')}
               </button>
@@ -51,32 +51,32 @@ export default function CheckoutGate({ onGuest }: { onGuest: () => void }) {
   return (
     <div className="py-2 flex flex-col gap-5">
       <div className="text-center">
-        <h2 className="font-heading text-[19px] font-medium text-oxblood leading-snug">{pitch.heading}</h2>
-        <p className="text-[13px] text-rose-muted leading-[1.6] mt-2">{pitch.subheading}</p>
+        <h2 className="font-heading text-[19px] font-medium text-primary leading-snug">{pitch.heading}</h2>
+        <p className="text-[13px] text-muted-foreground leading-[1.6] mt-2">{pitch.subheading}</p>
       </div>
 
       <div className="flex flex-col gap-2">
         <Button onClick={() => setAuth('signin')}>{t('Sign in', '登录')}</Button>
         <Button
           onClick={() => setAuth('signup')}
-          className="bg-surface-raised text-ink border border-clay-border hover:border-oxblood"
+          className="bg-card text-foreground border border-border hover:border-primary"
         >
           {t('Create account', '注册账户')}
         </Button>
       </div>
 
-      <hr className="border-0 border-t border-clay-border" />
+      <hr className="border-0 border-t border-border" />
 
       <div className="text-center">
         <button
           type="button"
           onClick={onGuest}
-          className="text-[14px] text-ink font-medium underline underline-offset-2 cursor-pointer"
+          className="text-[14px] text-foreground font-medium underline underline-offset-2 cursor-pointer"
         >
           {t('Continue as guest', '以访客身份继续')} →
         </button>
-        <p className="text-[12px] text-rose-muted leading-[1.6] mt-2.5 max-w-[340px] mx-auto">
-          <strong className="font-medium text-ink">
+        <p className="text-[12px] text-muted-foreground leading-[1.6] mt-2.5 max-w-[340px] mx-auto">
+          <strong className="font-medium text-foreground">
             {t("Guest orders can't be traced back.", '访客订单无法追溯。')}
           </strong>{' '}
           {t(
@@ -96,14 +96,14 @@ export default function CheckoutGate({ onGuest }: { onGuest: () => void }) {
 export function GuestStrip({ onSignIn }: { onSignIn: () => void }) {
   const { t } = useSession()
   return (
-    <div className="flex items-center justify-between gap-3 bg-oxblood-tint border border-rose-border rounded-md px-[13px] py-2.5 mb-3">
-      <span className="text-[13px] text-rose-muted leading-[1.4]">
+    <div className="flex items-center justify-between gap-3 bg-brand-100 border border-border rounded-md px-[13px] py-2.5 mb-3">
+      <span className="text-[13px] text-muted-foreground leading-[1.4]">
         {t('Ordering as a guest.', '正在以访客身份下单。')}
       </span>
       <button
         type="button"
         onClick={onSignIn}
-        className="text-[13px] text-oxblood font-medium underline underline-offset-2 cursor-pointer shrink-0"
+        className="text-[13px] text-primary font-medium underline underline-offset-2 cursor-pointer shrink-0"
       >
         {t('Sign in', '登录')}
       </button>

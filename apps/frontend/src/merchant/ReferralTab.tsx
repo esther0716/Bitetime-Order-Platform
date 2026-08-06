@@ -59,14 +59,14 @@ export default function ReferralTab() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <span className="text-[13px] text-rose-muted">{t('Your referral code', '您的推荐码')}</span>
-            <div className="rounded-lg border-[0.5px] border-clay-border bg-surface-sunken px-3 py-2 font-mono text-[15px] tracking-wider break-all text-ink">
+            <span className="text-[13px] text-muted-foreground">{t('Your referral code', '您的推荐码')}</span>
+            <div className="rounded-lg border-[0.5px] border-border bg-muted px-3 py-2 font-mono text-[15px] tracking-wider break-all text-foreground">
               {code}
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <span className="text-[13px] text-rose-muted">{t('Invite link', '邀请链接')}</span>
-            <div className="rounded-lg border-[0.5px] border-clay-border bg-surface-sunken px-3 py-2 font-mono text-[13px] break-all text-ink">
+            <span className="text-[13px] text-muted-foreground">{t('Invite link', '邀请链接')}</span>
+            <div className="rounded-lg border-[0.5px] border-border bg-muted px-3 py-2 font-mono text-[13px] break-all text-foreground">
               {link}
             </div>
           </div>
@@ -92,7 +92,7 @@ export default function ReferralTab() {
               <div className="rounded-lg bg-white p-3">
                 <QRCodeSVG value={link} size={180} />
               </div>
-              <p className="font-mono text-[12px] break-all text-center text-rose-muted">{link}</p>
+              <p className="font-mono text-[12px] break-all text-center text-muted-foreground">{link}</p>
             </div>
           </DialogContent>
         </Dialog>
@@ -114,7 +114,7 @@ export default function ReferralTab() {
           {/* The reward rules the ledger alone cannot show: what triggers it, that it stacks,
               how it is delivered, and the one case where it is forfeited (backend:
               referralReward.ts / docs/prd-referral-reward.md). */}
-          <ul className="flex list-disc flex-col gap-1.5 rounded-lg border-[0.5px] border-clay-border bg-surface-sunken py-2.5 pl-7 pr-3 text-[13px] text-rose-muted">
+          <ul className="flex list-disc flex-col gap-1.5 rounded-lg border-[0.5px] border-border bg-muted py-2.5 pl-7 pr-3 text-[13px] text-muted-foreground">
             <li>{t(
               'Earned when an invited shop pays its first invoice — their free trial does not count.',
               '当受邀店铺支付第一张账单时获得 — 免费试用不算。',
@@ -133,20 +133,20 @@ export default function ReferralTab() {
             )}</li>
           </ul>
           {rewardsError ? (
-            <p className="text-[13px] text-rose-muted">{t('Could not load rewards.', '无法加载奖励。')}</p>
+            <p className="text-[13px] text-muted-foreground">{t('Could not load rewards.', '无法加载奖励。')}</p>
           ) : rewards === null ? (
-            <p className="text-[13px] text-rose-muted">{t('Loading…', '加载中…')}</p>
+            <p className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</p>
           ) : rewards.length === 0 ? (
-            <p className="text-[13px] text-rose-muted">{t('No rewards yet — you earn one when an invited shop starts paying.', '还没有奖励 — 当受邀店铺开始付费时即可获得。')}</p>
+            <p className="text-[13px] text-muted-foreground">{t('No rewards yet — you earn one when an invited shop starts paying.', '还没有奖励 — 当受邀店铺开始付费时即可获得。')}</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-clay-border">
+            <ul className="flex flex-col divide-y divide-border">
               {rewards.map((r, i) => (
                 <li key={i} className="flex items-center justify-between py-2">
                   <div className="flex flex-col">
-                    <span className="text-[14px] text-ink">{r.referred_shop_name}</span>
-                    <span className="text-[12px] text-rose-muted">{new Date(r.created_at).toLocaleDateString()}</span>
+                    <span className="text-[14px] text-foreground">{r.referred_shop_name}</span>
+                    <span className="text-[12px] text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</span>
                   </div>
-                  <span className="text-[13px] font-medium text-oxblood">
+                  <span className="text-[13px] font-medium text-primary">
                     {t('1 month free', '免费1个月')} · {formatRewardAmount(r)}
                   </span>
                 </li>
@@ -167,18 +167,18 @@ export default function ReferralTab() {
         </CardHeader>
         <CardContent>
           {loadError ? (
-            <p className="text-[13px] text-rose-muted">{t('Could not load invited shops.', '无法加载已邀请店铺。')}</p>
+            <p className="text-[13px] text-muted-foreground">{t('Could not load invited shops.', '无法加载已邀请店铺。')}</p>
           ) : shops === null ? (
-            <p className="text-[13px] text-rose-muted">{t('Loading…', '加载中…')}</p>
+            <p className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</p>
           ) : shops.length === 0 ? (
-            <p className="text-[13px] text-rose-muted">{t('No invited shops yet.', '还没有已邀请的店铺。')}</p>
+            <p className="text-[13px] text-muted-foreground">{t('No invited shops yet.', '还没有已邀请的店铺。')}</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-clay-border">
+            <ul className="flex flex-col divide-y divide-border">
               {shops.map((s, i) => (
                 <li key={i} className="flex items-center justify-between py-2">
                   <div className="flex flex-col">
-                    <span className="text-[14px] text-ink">{s.name}</span>
-                    <span className="text-[12px] text-rose-muted">{new Date(s.created_at).toLocaleDateString()}</span>
+                    <span className="text-[14px] text-foreground">{s.name}</span>
+                    <span className="text-[12px] text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</span>
                   </div>
                   <StatusBadge status={s.status} t={t} />
                 </li>
@@ -204,9 +204,9 @@ function StatusBadge({ status, t }: { status: ReferredShop['status']; t: (en: st
   const label = status === 'active' ? t('Active', '营业中')
     : status === 'suspended' ? t('Suspended', '已暂停')
     : t('Pending', '待审核')
-  const tone = status === 'active' ? 'text-oxblood' : 'text-rose-muted'
+  const tone = status === 'active' ? 'text-primary' : 'text-muted-foreground'
   return (
-    <span className={`rounded-full border-[0.5px] border-clay-border bg-surface-sunken px-2 py-0.5 text-[11px] font-medium ${tone}`}>
+    <span className={`rounded-full border-[0.5px] border-border bg-muted px-2 py-0.5 text-[11px] font-medium ${tone}`}>
       {label}
     </span>
   )

@@ -163,7 +163,7 @@ export function DataTable<TData, TValue>({
             <TableRow className="hover:bg-transparent">
               <TableCell
                 colSpan={columns.length}
-                className="h-20 text-center text-text-tertiary italic"
+                className="h-20 text-center text-muted-foreground italic"
               >
                 {emptyText}
               </TableCell>
@@ -176,7 +176,7 @@ export function DataTable<TData, TValue>({
           <Button
             variant="outline"
             size="none"
-            className="py-[4px] px-3 rounded-pill text-[12px] bg-surface-raised hover:bg-oxblood-tint hover:text-oxblood hover:border-oxblood"
+            className="py-[4px] px-3 rounded-pill text-[12px] bg-card hover:bg-brand-100 hover:text-primary hover:border-primary"
             onClick={() => goToPage(pageIndex - 1)}
             disabled={pageIndex <= 0}
           >{prevLabel}</Button>
@@ -184,14 +184,14 @@ export function DataTable<TData, TValue>({
               know where in it they are. The client-paged tables elsewhere show the whole list
               on one screen's worth of pages and never needed it. */}
           {server && (
-            <span className="text-[12px] text-text-tertiary tabular-nums">
+            <span className="text-[12px] text-muted-foreground tabular-nums">
               {pageIndex + 1} / {pageCount}
             </span>
           )}
           <Button
             variant="outline"
             size="none"
-            className="py-[4px] px-3 rounded-pill text-[12px] bg-surface-raised hover:bg-oxblood-tint hover:text-oxblood hover:border-oxblood"
+            className="py-[4px] px-3 rounded-pill text-[12px] bg-card hover:bg-brand-100 hover:text-primary hover:border-primary"
             onClick={() => goToPage(pageIndex + 1)}
             disabled={pageIndex >= pageCount - 1}
           >{nextLabel}</Button>
@@ -212,7 +212,7 @@ export function SortableHeader<TData, TValue>({
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1 -ml-1 px-1 py-0.5 rounded cursor-pointer hover:text-oxblood transition-colors"
+      className="inline-flex items-center gap-1 -ml-1 px-1 py-0.5 rounded cursor-pointer hover:text-primary transition-colors"
       onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
     >
       {label}

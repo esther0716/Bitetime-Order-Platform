@@ -9,8 +9,8 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 
-const CARD = 'bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
-const HEADING = 'font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2'
+const CARD = 'bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
+const HEADING = 'font-heading text-[15px] font-medium text-primary mb-4 flex items-center gap-2'
 
 // Every zone the runtime knows, so a merchant anywhere can name their own clock. The one-entry
 // fallback is for a runtime without `supportedValuesOf` — the default is the only shop clock
@@ -121,7 +121,7 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
             <Label htmlFor="ff-lead">{t('Days of notice you need', '需要提前的天数')}</Label>
             <Input id="ff-lead" type="number" min="0" max="30" value={fields.lead} variant="compact"
               onChange={e => setFields(f => ({ ...f, lead: e.target.value }))} />
-            <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+            <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
               {t('0 lets customers order for today. 1 means the earliest they can pick is tomorrow.',
                  '填 0 表示顾客可选当天。填 1 表示最早只能选明天。')}
             </p>
@@ -130,7 +130,7 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
             <Label htmlFor="ff-window">{t('How many days ahead you take orders', '可提前预订的天数')}</Label>
             <Input id="ff-window" type="number" min="1" max="90" value={fields.window} variant="compact"
               onChange={e => setFields(f => ({ ...f, window: e.target.value }))} />
-            <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+            <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
               {t('Counted from the earliest date above. Closed days come out of this range — they do not extend it.',
                  '从上面最早可选日期起算。休息日会从这段日期中扣除，不会顺延。')}
             </p>
@@ -151,10 +151,10 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
                 onClick={() => toggleDay(d.value)}
                 className={
                   'border rounded-md py-2 px-[14px] pointer-coarse:min-h-11 cursor-pointer text-[14px] font-sans transition-all ' +
-                  'hover:border-oxblood focus-visible:outline-2 focus-visible:outline-oxblood focus-visible:outline-offset-2 ' +
+                  'hover:border-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 ' +
                   (on
-                    ? 'border-[0.5px] border-oxblood bg-oxblood-tint text-oxblood font-medium'
-                    : 'border-clay-border bg-surface-raised text-ink')
+                    ? 'border-[0.5px] border-primary bg-brand-100 text-primary font-medium'
+                    : 'border-border bg-card text-foreground')
                 }
               >
                 {t(d.en, d.zh)}
@@ -162,7 +162,7 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
             )
           })}
         </div>
-        <p className="text-[12px] text-rose-muted mt-3 leading-[1.5]">
+        <p className="text-[12px] text-muted-foreground mt-3 leading-[1.5]">
           {allClosed
             ? t('Every day is marked closed — customers would have no date to pick.', '所有日期都标记为休息，顾客将无日期可选。')
             : t('Days you take no orders. Customers cannot pick these.', '不接单的日子，顾客无法选择。')}
@@ -181,7 +181,7 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
               {TIMEZONES.map(tz => <SelectItem key={tz} value={tz}>{tz}</SelectItem>)}
             </SelectContent>
           </Select>
-          <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+          <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
             {t('Decides which date counts as “today” for your customers, wherever they are ordering from.',
                '决定顾客下单时“今天”是哪一天，无论他们身在何处。')}
           </p>

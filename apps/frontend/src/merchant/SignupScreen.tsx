@@ -109,18 +109,18 @@ export default function SignupScreen() {
     <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-6">
       <div className="text-center mb-6">
         <h1><Wordmark className="h-8 mx-auto" /></h1>
-        <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
+        <p className="font-heading text-[13px] italic text-muted-foreground mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
       <Card className="px-8 pt-7 pb-6 gap-0">
-        <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">{t('Start your shop', '开店')}</h2>
-        <p className="text-[13px] text-rose-muted mb-5">{t('Create your merchant account to get started.', '创建商家账号以开始使用。')}</p>
+        <h2 className="font-heading text-[20px] font-medium text-primary mb-1">{t('Start your shop', '开店')}</h2>
+        <p className="text-[13px] text-muted-foreground mb-5">{t('Create your merchant account to get started.', '创建商家账号以开始使用。')}</p>
 
         {/* Plan banner: oxblood-tint bg, rose-border, md radius */}
-        <div className="flex items-baseline flex-wrap gap-2 px-[13px] py-[10px] mb-[14px] bg-oxblood-tint border border-rose-border rounded-md">
-          <span className="font-semibold text-oxblood text-[14px]">{planName} · {cycleName}</span>
-          <span className="font-heading text-ink text-[15px]">{formatMoney(perMoAmount, pricing.currency)}{t('/mo', '/月')}</span>
+        <div className="flex items-baseline flex-wrap gap-2 px-[13px] py-[10px] mb-[14px] bg-brand-100 border border-border rounded-md">
+          <span className="font-semibold text-primary text-[14px]">{planName} · {cycleName}</span>
+          <span className="font-heading text-foreground text-[15px]">{formatMoney(perMoAmount, pricing.currency)}{t('/mo', '/月')}</span>
           {pricing.estimate && perMoAmount > 0 && (
-            <span className="text-rose-muted text-[13px]">≈ {formatMoney(perMoAmount * pricing.estimate.rate, pricing.estimate.currency)}{t('/mo', '/月')}</span>
+            <span className="text-muted-foreground text-[13px]">≈ {formatMoney(perMoAmount * pricing.estimate.rate, pricing.estimate.currency)}{t('/mo', '/月')}</span>
           )}
           {plan === 'basic' && (
             <Badge variant="default" className="ml-auto py-[2px] tracking-[0.03em]">
@@ -130,13 +130,13 @@ export default function SignupScreen() {
         </div>
 
         {canceled && (
-          <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+          <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
             {t('Checkout was canceled. Complete your details to try again.',
                '结账已取消。完善信息后可再次尝试。')}
           </div>
         )}
         {msg && (
-          <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+          <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
             {msg}
           </div>
         )}
@@ -147,7 +147,7 @@ export default function SignupScreen() {
               <Input id="signup-1" value={name} onChange={e => setName(e.target.value)} required placeholder={t('e.g. Sunny Bakes', '如：阳光烘焙')} />
               {/* Folded into a plain caption under the field it describes, rather than its own
                   boxed row — same information, one line instead of a whole extra block. */}
-              <p className="text-[12px] text-rose-muted font-mono tracking-[0.3px] leading-[1.4]">
+              <p className="text-[12px] text-muted-foreground font-mono tracking-[0.3px] leading-[1.4]">
                 /s/{slugPreview}
               </p>
             </div>
@@ -176,7 +176,7 @@ export default function SignupScreen() {
                 </Select>
               </div>
             </div>
-            <p className="text-[12px] text-rose-muted leading-[1.4] -mt-1">
+            <p className="text-[12px] text-muted-foreground leading-[1.4] -mt-1">
               {t("Can't be changed after signup.", '设置后无法更改。')}
             </p>
             <div className="flex flex-col gap-1.5">
@@ -203,15 +203,15 @@ export default function SignupScreen() {
               from translated fragments: ' and ' and '.' as their own units bake English word
               order and spacing into strings a translator cannot reorder, and Chinese wants
               neither the spaces nor the full stop. */}
-          <p className="text-[14px] leading-[1.6] text-text-tertiary text-center mt-3">
+          <p className="text-[14px] leading-[1.6] text-muted-foreground text-center mt-3">
             {(() => {
               const terms = (
-                <Link key="terms" to="/terms" className="text-oxblood underline underline-offset-2">
+                <Link key="terms" to="/terms" className="text-primary underline underline-offset-2">
                   {t('Terms of Service', '服务条款')}
                 </Link>
               )
               const privacy = (
-                <Link key="privacy" to="/privacy" className="text-oxblood underline underline-offset-2">
+                <Link key="privacy" to="/privacy" className="text-primary underline underline-offset-2">
                   {t('Privacy Policy', '隐私政策')}
                 </Link>
               )
@@ -221,8 +221,8 @@ export default function SignupScreen() {
             })()}
           </p>
         </form>
-        <p className="text-[13px] text-rose-muted text-center mt-4">
-          <Link to="/merchant/login" className="text-oxblood cursor-pointer underline">{t('Already have a shop? Log in', '已有店铺？登录')}</Link>
+        <p className="text-[13px] text-muted-foreground text-center mt-4">
+          <Link to="/merchant/login" className="text-primary cursor-pointer underline">{t('Already have a shop? Log in', '已有店铺？登录')}</Link>
         </p>
       </Card>
     </div>

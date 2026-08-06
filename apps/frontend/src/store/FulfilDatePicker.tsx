@@ -60,7 +60,7 @@ export default function FulfilDatePicker({ available, value, onChange, t, lang }
 
   if (available.length === 0) {
     return (
-      <div className="text-[14px] text-rose-muted leading-[1.5]">
+      <div className="text-[14px] text-muted-foreground leading-[1.5]">
         {t('This shop is not taking orders for any date right now. Please check back later.',
            '本店目前暂不接受任何日期的订单，请稍后再试。')}
       </div>
@@ -73,19 +73,19 @@ export default function FulfilDatePicker({ available, value, onChange, t, lang }
         <button
           type="button" onClick={() => step(-1)} disabled={!canPrev}
           aria-label={t('Previous month', '上个月')}
-          className="w-9 h-9 rounded-md border border-clay-border bg-surface-raised text-ink disabled:opacity-35 disabled:cursor-not-allowed hover:enabled:border-oxblood transition-colors focus-visible:outline-2 focus-visible:outline-oxblood focus-visible:outline-offset-2"
+          className="w-9 h-9 rounded-md border border-border bg-card text-foreground disabled:opacity-35 disabled:cursor-not-allowed hover:enabled:border-primary transition-colors focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
         >‹</button>
-        <div aria-live="polite" className="text-[14px] font-medium text-oxblood">{monthLabel}</div>
+        <div aria-live="polite" className="text-[14px] font-medium text-primary">{monthLabel}</div>
         <button
           type="button" onClick={() => step(1)} disabled={!canNext}
           aria-label={t('Next month', '下个月')}
-          className="w-9 h-9 rounded-md border border-clay-border bg-surface-raised text-ink disabled:opacity-35 disabled:cursor-not-allowed hover:enabled:border-oxblood transition-colors focus-visible:outline-2 focus-visible:outline-oxblood focus-visible:outline-offset-2"
+          className="w-9 h-9 rounded-md border border-border bg-card text-foreground disabled:opacity-35 disabled:cursor-not-allowed hover:enabled:border-primary transition-colors focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
         >›</button>
       </div>
 
       <div className="grid grid-cols-7 gap-1" role="grid" aria-label={t('Choose a date', '选择日期')}>
         {weekdayLabels.map((w, i) => (
-          <div key={i} className="text-[11px] text-rose-muted text-center py-1" aria-hidden="true">{w}</div>
+          <div key={i} className="text-[11px] text-muted-foreground text-center py-1" aria-hidden="true">{w}</div>
         ))}
         {Array.from({ length: leading }, (_, i) => <div key={`pad-${i}`} />)}
         {Array.from({ length: daysInMonth }, (_, i) => {
@@ -102,14 +102,14 @@ export default function FulfilDatePicker({ available, value, onChange, t, lang }
               onClick={() => onChange(date)}
               className={cn(
                 'h-10 pointer-coarse:min-h-11 rounded-md text-[14px] font-sans transition-all border',
-                'focus-visible:outline-2 focus-visible:outline-oxblood focus-visible:outline-offset-2',
+                'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2',
                 selected
-                  ? 'border-[0.5px] border-oxblood bg-oxblood-tint text-oxblood font-medium'
+                  ? 'border-[0.5px] border-primary bg-brand-100 text-primary font-medium'
                   : selectable
-                    ? 'border-clay-border bg-surface-raised text-ink hover:border-oxblood cursor-pointer'
+                    ? 'border-border bg-card text-foreground hover:border-primary cursor-pointer'
                     // Greyed, not gone: the customer must be able to SEE that the shop is shut
                     // on this day rather than wonder where it went.
-                    : 'border-transparent bg-transparent text-ink/25 cursor-not-allowed',
+                    : 'border-transparent bg-transparent text-foreground/25 cursor-not-allowed',
               )}
             >
               {i + 1}

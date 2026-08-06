@@ -52,7 +52,7 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
       {/* Mobile top bar — hamburger + brand. Hidden on desktop. */}
       <header className={cn(
         'hidden max-sm:flex fixed top-0 inset-x-0 z-30 h-14 items-center gap-3 px-4',
-        'bg-surface-sunken border-b border-divider',
+        'bg-muted border-b border-border',
       )}>
         <button
           type="button"
@@ -61,8 +61,8 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
           aria-expanded={open}
           className={cn(
             'flex items-center justify-center -ml-1 p-2 rounded-md',
-            'text-oxblood cursor-pointer transition-colors',
-            'hover:bg-surface-sunken-hover',
+            'text-primary cursor-pointer transition-colors',
+            'hover:bg-ink-200',
           )}
         >
           <Menu size={22} strokeWidth={1.75} />
@@ -83,9 +83,9 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
       <aside className={cn(
         'flex flex-col flex-shrink-0 sticky top-0 h-screen overflow-hidden',
         'w-[210px]',
-        'bg-surface-sunken',
+        'bg-muted',
         // Right-only hairline border (flush layout — no radius)
-        'border-0 [border-right:0.5px_solid_var(--color-clay-border)]',
+        'border-0 [border-right:0.5px_solid_var(--color-border)]',
         'shadow-[2px_0_12px_rgba(122,16,40,0.06)]',
         // Mobile: fixed drawer that slides in from the left
         'max-sm:fixed max-sm:z-50 max-sm:w-[248px] max-sm:max-w-[82vw]',
@@ -94,17 +94,17 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
       )}>
 
         {/* Brand block */}
-        <div className="px-5 pt-7 pb-5 border-b border-divider relative max-sm:pt-5">
+        <div className="px-5 pt-7 pb-5 border-b border-border relative max-sm:pt-5">
           <Wordmark className="h-7" />
           {/* Shop / app title */}
           {title && (
-            <div className="font-heading text-[13px] text-rose-muted mt-0.5">
+            <div className="font-heading text-[13px] text-muted-foreground mt-0.5">
               {title}
             </div>
           )}
           {/* Role label */}
           {role && (
-            <div className="text-[10px] font-medium text-text-tertiary uppercase tracking-[0.12em] mt-1">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-[0.12em] mt-1">
               {role}
             </div>
           )}
@@ -115,7 +115,7 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
             aria-label={t('Close menu', '关闭菜单')}
             className={cn(
               'hidden max-sm:flex items-center justify-center absolute top-4 right-3 p-1.5 rounded-md',
-              'text-rose-muted cursor-pointer transition-colors hover:bg-surface-sunken-hover hover:text-oxblood',
+              'text-muted-foreground cursor-pointer transition-colors hover:bg-ink-200 hover:text-primary',
             )}
           >
             <X size={20} strokeWidth={1.75} />
@@ -134,9 +134,9 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
                 'px-5 py-[13px] mb-1',
                 '[@media(pointer:coarse)]:py-3.5',
                 'border-0 rounded-none bg-transparent text-left no-underline',
-                'text-[13px] font-sans font-medium tracking-[0.01em] text-rose-muted',
+                'text-[13px] font-sans font-medium tracking-[0.01em] text-muted-foreground',
                 'cursor-pointer transition-[background,color] duration-150',
-                'hover:bg-surface-sunken-hover hover:text-oxblood',
+                'hover:bg-ink-200 hover:text-primary',
               )}
             >
               <span className="flex-shrink-0 w-5 flex items-center justify-center" aria-hidden="true">
@@ -158,12 +158,12 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
                 // Reset
                 'border-0 rounded-none bg-transparent text-left',
                 // Typography
-                'text-[13px] font-sans font-medium tracking-[0.01em] text-ink-soft',
+                'text-[13px] font-sans font-medium tracking-[0.01em] text-ink-700',
                 // Interaction
                 'cursor-pointer transition-[background,color] duration-150',
-                'hover:bg-surface-sunken-hover hover:text-oxblood',
+                'hover:bg-ink-200 hover:text-primary',
                 // Active state
-                active === n.key && 'bg-oxblood-tint text-oxblood font-semibold',
+                active === n.key && 'bg-brand-100 text-primary font-semibold',
               )}
             >
               {/* Indicator bar — left-edge vertical stripe (replaces ::before) */}
@@ -171,7 +171,7 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
                 aria-hidden="true"
                 className={cn(
                   'absolute left-0 top-[20%] bottom-[20%] w-[3px]',
-                  'bg-oxblood rounded-[0_2px_2px_0]',
+                  'bg-primary rounded-[0_2px_2px_0]',
                   'transition-transform duration-150',
                   'scale-y-0 group-hover:scale-y-100',
                   active === n.key && 'scale-y-100',
@@ -196,7 +196,7 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
         </nav>
 
         {/* Footer — language selector, sign-out */}
-        <div className="px-5 pt-4 pb-6 border-t border-divider">
+        <div className="px-5 pt-4 pb-6 border-t border-border">
           {/* Language select + what's-new bell */}
           <div className="mb-2 flex items-center gap-2">
             <LanguageSelect className="flex-1" />
@@ -207,11 +207,11 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
             type="button"
             onClick={() => signOut()}
             className={cn(
-              'bg-transparent border border-clay-border rounded-sm',
-              'text-rose-muted text-[12px] font-sans',
+              'bg-transparent border border-border rounded-sm',
+              'text-muted-foreground text-[12px] font-sans',
               'px-3 py-1.5 w-full cursor-pointer',
               'transition-all duration-150',
-              'hover:bg-surface-sunken-hover hover:text-ink hover:border-clay-muted',
+              'hover:bg-ink-200 hover:text-foreground hover:border-ink-400',
               '[@media(pointer:coarse)]:min-h-[44px]',
             )}
           >

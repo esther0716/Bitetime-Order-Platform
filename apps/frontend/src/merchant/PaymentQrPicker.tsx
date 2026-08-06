@@ -47,14 +47,14 @@ export default function PaymentQrPicker({
             <img
               src={paymentQrUrl(value)}
               alt={t('Payment QR', '付款二维码')}
-              className="size-28 object-contain rounded-lg border-[0.5px] border-clay-border bg-white p-1"
+              className="size-28 object-contain rounded-lg border-[0.5px] border-border bg-white p-1"
             />
             <button
               type="button"
               disabled={busy}
               onClick={() => setConfirmRemove(true)}
               aria-label={t('Remove QR code', '删除二维码')}
-              className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-oxblood text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-oxblood/90 disabled:opacity-50 cursor-pointer"
+              className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-primary text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
             >
               ×
             </button>
@@ -64,7 +64,7 @@ export default function PaymentQrPicker({
             type="button"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="size-28 shrink-0 rounded-lg border-[0.5px] border-dashed border-clay-border text-rose-muted text-[11px] flex flex-col items-center justify-center gap-0.5 hover:border-oxblood hover:text-oxblood disabled:opacity-50 cursor-pointer"
+            className="size-28 shrink-0 rounded-lg border-[0.5px] border-dashed border-border text-muted-foreground text-[11px] flex flex-col items-center justify-center gap-0.5 hover:border-primary hover:text-primary disabled:opacity-50 cursor-pointer"
           >
             <span className="text-[18px] leading-none">＋</span>
             {busy ? t('Uploading…', '上传中…') : t('QR code', '二维码')}
@@ -75,7 +75,7 @@ export default function PaymentQrPicker({
             type="button"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="text-[13px] text-oxblood underline disabled:opacity-50 cursor-pointer"
+            className="text-[13px] text-primary underline disabled:opacity-50 cursor-pointer"
           >
             {busy ? t('Uploading…', '上传中…') : t('Replace', '更换')}
           </button>

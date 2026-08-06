@@ -44,16 +44,16 @@ export default function ReleasesBell() {
         {unread && (
           <span
             aria-hidden="true"
-            className="absolute top-1.5 right-1.5 size-2 rounded-full bg-oxblood"
+            className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary"
           />
         )}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80">
-        <div className="text-[13px] font-semibold text-ink px-1 pb-1">
+        <div className="text-[13px] font-semibold text-foreground px-1 pb-1">
           {t("What's new", '更新日志')}
         </div>
         {releases.length === 0 ? (
-          <div className="text-[13px] text-rose-muted px-1 py-2">
+          <div className="text-[13px] text-muted-foreground px-1 py-2">
             {t('No updates yet', '暂无更新')}
           </div>
         ) : (
@@ -64,10 +64,10 @@ export default function ReleasesBell() {
                   href={`/releases/${r.tag}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-[13px] text-ink no-underline hover:bg-surface-sunken"
+                  className="flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-[13px] text-foreground no-underline hover:bg-muted"
                 >
                   <span className="font-medium">{r.title}</span>
-                  <span className="text-[11px] text-rose-muted">
+                  <span className="text-[11px] text-muted-foreground">
                     {new Date(r.published_at).toLocaleDateString()}
                   </span>
                 </a>

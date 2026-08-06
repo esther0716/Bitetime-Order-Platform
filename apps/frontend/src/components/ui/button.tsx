@@ -17,28 +17,28 @@ const buttonVariants = cva(
         // dashed keep their transparent background — a grey slab where a text link used to
         // be reads as broken layout, not as a disabled control.
         default:
-          "bg-oxblood text-cream hover:bg-oxblood-deep disabled:bg-disabled-bg",
+          "bg-primary text-background hover:bg-brand-600 disabled:bg-disabled-bg",
         // .cust-account-btn / .lang-btn — clay-border outline pill
         outline:
-          "border-[0.5px] border-clay-border bg-transparent text-rose-muted hover:bg-surface-sunken hover:text-ink",
+          "border-[0.5px] border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
         // .add-btn / .admin-toggle button — dashed clay border
         dashed:
-          "border border-dashed border-clay-border bg-transparent text-rose-muted hover:border-oxblood hover:text-oxblood hover:bg-oxblood-tint",
+          "border border-dashed border-border bg-transparent text-muted-foreground hover:border-primary hover:text-primary hover:bg-brand-100",
         // Generic ghost — no border, subtle hover
         ghost:
-          "bg-transparent text-rose-muted hover:bg-surface-sunken hover:text-ink",
+          "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
         // .del-btn — rose-tinted destructive (border-rose, oxblood-tint bg)
         destructive:
-          "border border-rose-border bg-oxblood-tint text-oxblood hover:bg-rose-hover disabled:bg-disabled-bg",
+          "border border-border bg-brand-100 text-primary hover:bg-ink-200 disabled:bg-disabled-bg",
         // .invoice-btn — white bg / clay-rose text, inverts on hover + self-encodes geometry (use size="none")
         invoice:
-          "w-full px-[14px] py-[10px] text-[13px] rounded-sm border border-rose-border bg-white text-clay-rose font-semibold hover:bg-clay-rose hover:text-white hover:border-clay-rose disabled:bg-disabled-bg",
+          "w-full px-[14px] py-[10px] text-[13px] rounded-sm border border-border bg-white text-ink-400 font-semibold hover:bg-ink-400 hover:text-white hover:border-ink-400 disabled:bg-disabled-bg",
         // .qty-btn — cream bg, clay border, oxblood text (use size="iconRound")
         soft:
-          "border border-clay-border bg-cream text-oxblood hover:bg-surface-warm-alt disabled:bg-disabled-bg",
+          "border border-border bg-background text-primary hover:bg-muted disabled:bg-disabled-bg",
         // Text-style link button
         link:
-          "text-oxblood underline-offset-4 hover:underline",
+          "text-primary underline-offset-4 hover:underline",
       },
       size: {
         // .submit-btn — full-width, 14 px pad all sides, 15 px text, lg radius (8 px), letter-spacing
@@ -53,7 +53,7 @@ const buttonVariants = cva(
         sm:
           "px-[18px] py-[10px] text-sm rounded-md",
         // .cust-account-btn — pill, 14 px H / 7 px V, 13 px text, pill radius (9999 px = stadium)
-        // Note: .lang-btn uses py-[5px] + bg-surface-raised; screens must override those
+        // Note: .lang-btn uses py-[5px] + bg-card; screens must override those
         pill:
           "px-[14px] py-[7px] text-[13px] rounded-pill",
         // .hamburger-btn / .notif-bell — 36×36 px square, md radius (dimension only)

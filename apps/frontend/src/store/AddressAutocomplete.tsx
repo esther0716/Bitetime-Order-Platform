@@ -212,7 +212,7 @@ export default function AddressAutocomplete({ id, label, value, placeholder, dis
           id={listboxId}
           role="listbox"
           aria-label={label}
-          className="absolute top-full left-0 right-0 z-20 mt-1 max-h-[240px] overflow-y-auto rounded-xl border-[0.5px] border-rose-border bg-surface-raised shadow-lg"
+          className="absolute top-full left-0 right-0 z-20 mt-1 max-h-[240px] overflow-y-auto rounded-xl border-[0.5px] border-border bg-card shadow-lg"
         >
           {suggestions.map((s, i) => {
             const active = i === activeIndex
@@ -226,12 +226,12 @@ export default function AddressAutocomplete({ id, label, value, placeholder, dis
                 onMouseEnter={() => setActiveIndex(i)}
                 onClick={() => void pick(s)}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-2 text-[14px] text-ink cursor-pointer',
+                  'flex items-center gap-1.5 px-3 py-2 text-[14px] text-foreground cursor-pointer',
                   // Highlight is background + weight + a marker glyph, never colour alone.
-                  active ? 'bg-oxblood-tint font-medium' : 'hover:bg-oxblood-tint-soft',
+                  active ? 'bg-brand-100 font-medium' : 'hover:bg-brand-50',
                 )}
               >
-                <span aria-hidden="true" className="w-3 text-oxblood">{active ? '›' : ''}</span>
+                <span aria-hidden="true" className="w-3 text-primary">{active ? '›' : ''}</span>
                 {s.text}
               </li>
             )

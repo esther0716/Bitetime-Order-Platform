@@ -8,7 +8,7 @@ import type { ReactNode } from 'react'
  */
 export default function MoneyLine({ label, value }: { label: ReactNode; value: string }) {
   return (
-    <div className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+    <div className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
       {/* The label shrinks and wraps, the money never does. shrink-0 on the label let a long
           product name push the value past the container's right edge (#92). */}
       <span className="min-w-0">{label}</span>

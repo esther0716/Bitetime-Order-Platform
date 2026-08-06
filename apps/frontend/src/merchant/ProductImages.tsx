@@ -74,14 +74,14 @@ export default function ImagePicker({
             <img
               src={productImageUrl(path)}
               alt=""
-              className="size-16 object-cover rounded-lg border-[0.5px] border-clay-border"
+              className="size-16 object-cover rounded-lg border-[0.5px] border-border"
             />
             <button
               type="button"
               disabled={busy}
               onClick={() => setPendingDelete(path)}
               aria-label={t('Remove image', '删除图片')}
-              className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-oxblood text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-oxblood/90 disabled:opacity-50 cursor-pointer"
+              className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-primary text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
             >
               ×
             </button>
@@ -92,7 +92,7 @@ export default function ImagePicker({
             type="button"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="size-16 shrink-0 rounded-lg border-[0.5px] border-dashed border-clay-border text-rose-muted text-[11px] flex flex-col items-center justify-center gap-0.5 hover:border-oxblood hover:text-oxblood disabled:opacity-50 cursor-pointer"
+            className="size-16 shrink-0 rounded-lg border-[0.5px] border-dashed border-border text-muted-foreground text-[11px] flex flex-col items-center justify-center gap-0.5 hover:border-primary hover:text-primary disabled:opacity-50 cursor-pointer"
           >
             <span className="text-[18px] leading-none">＋</span>
             {busy ? t('…', '…') : t('Photo', '图片')}
@@ -121,7 +121,7 @@ export default function ImagePicker({
               <img
                 src={productImageUrl(pendingDelete)}
                 alt=""
-                className="size-16 shrink-0 object-cover rounded-lg border-[0.5px] border-clay-border"
+                className="size-16 shrink-0 object-cover rounded-lg border-[0.5px] border-border"
               />
             )}
             <p>{t('The photo is deleted for good. You can upload it again afterwards.', '该图片将被永久删除。之后可以重新上传。')}</p>
