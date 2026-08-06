@@ -36,9 +36,20 @@ const buttonVariants = cva(
         // .qty-btn — cream bg, clay border, oxblood text (use size="iconRound")
         soft:
           "border border-border bg-background text-primary hover:bg-muted disabled:bg-disabled-bg",
-        // Text-style link button
+        /* Text-style link button. Pair with size="none".
+           `inline` and `border-0` undo the base's inline-flex + transparent border, which
+           would otherwise add 2px of width and break wrapping when the link sits inside a
+           sentence. `font-normal` undoes the base's font-medium; a link in running copy
+           should weigh the same as the text around it. Colour is NOT forced — these appear
+           in primary, muted and foreground across the app — so pass it in className.
+           `text-[length:inherit]` undoes the base's text-sm, which is the 16px body floor:
+           a link sitting inside 13px copy must not jump to 16px. Caught in the browser
+           after the first four conversions -- "Create an account" rendered visibly larger
+           than the "New here?" beside it. Pass an explicit text-[Npx] to opt out.
+           What the variant is really for is the parts nobody remembers to hand-roll: the
+           focus ring and the disabled treatment. */
         link:
-          "text-primary underline-offset-4 hover:underline",
+          "inline border-0 font-normal text-[length:inherit] underline underline-offset-2 text-primary",
       },
       size: {
         // .submit-btn — full-width, 14 px pad all sides, 15 px text, lg radius (8 px), letter-spacing

@@ -203,13 +203,15 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
               <div className="flex items-baseline justify-between gap-2">
                 <Label htmlFor="auth-password">{t('Password', '密码')}</Label>
                 {!signingUp && (
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="none"
                     onClick={() => switchMode('forgot')}
-                    className="text-[12px] text-muted-foreground underline underline-offset-2 cursor-pointer"
+                    className="text-[12px] text-muted-foreground"
                   >
                     {t('Forgot password?', '忘记密码？')}
-                  </button>
+                  </Button>
                 )}
               </div>
               <Input
@@ -242,32 +244,35 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
         {signingUp ? (
           <>
             {t('Already have an account?', '已有账户？')}{' '}
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="none"
               onClick={() => switchMode('signin')}
-              className="text-primary underline underline-offset-2"
             >
               {t('Sign in', '登录')}
-            </button>
+            </Button>
           </>
         ) : forgot ? (
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={() => switchMode('signin')}
-            className="text-primary underline underline-offset-2"
           >
             {t('Back to sign in', '返回登录')}
-          </button>
+          </Button>
         ) : (
           <>
             {t('New here?', '第一次来？')}{' '}
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="none"
               onClick={() => switchMode('signup')}
-              className="text-primary underline underline-offset-2"
             >
               {t('Create an account', '创建账户')}
-            </button>
+            </Button>
           </>
         )}
       </p>
