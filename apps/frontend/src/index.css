@@ -177,6 +177,21 @@
    still win — an unlayered `* { padding: 0 }` would override shadcn classes. */
 @layer base {
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* Tailwind v4's preflight sets `cursor: default` on buttons, reversing the v3 behaviour.
+     This app had been paying for that one call site at a time — `cursor-pointer` appears
+     52 times — and the places that forgot are exactly the ones that felt broken: the FAQ
+     accordion and the order rows in customer detail, neither of which changed a cursor on
+     hover. Fixing it here means a new button is right by default instead of right only if
+     someone remembers.
+
+     Disabled controls keep the default cursor. `[aria-disabled]` is checked as well as
+     `:disabled` because Base UI marks some triggers that way rather than with the
+     attribute, and those must not read as clickable either. */
+  button:not(:disabled):not([aria-disabled='true']),
+  [role='button']:not(:disabled):not([aria-disabled='true']) {
+    cursor: pointer;
+  }
 }
 
 /* Smooth in-page anchor scrolling (e.g. nav "Pricing" → #pricing). Disabled
