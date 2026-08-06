@@ -939,6 +939,10 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
     line_items: [{ price: priceFor(plan, billing), quantity: 1 }],
     client_reference_id: merchant.id,
     metadata,
+    // Stripe hides the promo-code field unless asked, so a coupon we hand a merchant is
+    // unredeemable without this. It only surfaces the input — the code still has to exist
+    // as a promotion code in Stripe (a bare coupon has nothing customer-facing to type).
+    allow_promotion_codes: true,
     // No trial here: trials are granted only by superadmin approval (cardless).
     // Checkout is the paid path — pro signup and suspended-shop reactivation.
     subscription_data: { metadata },
