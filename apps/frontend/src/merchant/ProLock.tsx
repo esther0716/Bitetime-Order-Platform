@@ -60,7 +60,7 @@ export function ProLock({ what, why }: { what: string; why: string }) {
         <h3 className="font-heading text-[16px] font-medium text-primary">{what}</h3>
         <ProBadge />
       </div>
-      <p className="text-[13px] text-text-secondary max-w-[380px] mx-auto mb-5 leading-[1.6]">{why}</p>
+      <p className="text-[13px] text-muted-foreground max-w-[380px] mx-auto mb-5 leading-[1.6]">{why}</p>
       <UpgradeLink />
       <p className="text-[12px] text-muted-foreground mt-3">
         {t('See the price and what Pro adds in Settings → Subscription.', '在设置 → 订阅中查看价格和 Pro 功能。')}

@@ -487,7 +487,7 @@ function NotesPanel({
           <span className="text-[13px] font-medium text-primary">{t('Notes & tags', '备注与标签')}</span>
           <ProBadge />
         </div>
-        <p className="mb-3 text-[12px] leading-[1.6] text-text-secondary">
+        <p className="mb-3 text-[12px] leading-[1.6] text-muted-foreground">
           {t(
             'Keep a private note against a customer and tag your regulars. Only you can see it.',
             '为顾客保存私密备注并为常客添加标签，仅你可见。',
@@ -544,7 +544,7 @@ function NotesPanel({
                 type="button"
                 disabled={busy}
                 onClick={() => addTag(s)}
-                className="inline-flex items-center gap-1 rounded-pill border border-dashed border-border bg-background px-2.5 py-0.5 text-[12px] text-text-secondary hover:border-border hover:bg-brand-100 hover:text-primary transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-pill border border-dashed border-border bg-background px-2.5 py-0.5 text-[12px] text-muted-foreground hover:border-border hover:bg-brand-100 hover:text-primary transition-colors disabled:opacity-50"
               >
                 <Plus size={10} />
                 {s}

@@ -205,7 +205,7 @@ export default function OrderDetailSheet({
                           </span>
                         )}
                       </span>
-                      <span className="tabular-nums text-text-secondary whitespace-nowrap">
+                      <span className="tabular-nums text-muted-foreground whitespace-nowrap">
                         {formatMoney((it.price ?? 0) * (it.qty ?? 0), orderCurrency)}
                       </span>
                     </li>

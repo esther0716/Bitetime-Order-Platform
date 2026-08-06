@@ -328,7 +328,7 @@ function TrialBanner({ daysLeft, trialEndsAt, progress }: {
         <Timer size={20} strokeWidth={2} className="text-primary shrink-0 mt-[2px]" aria-hidden />
         <div className="min-w-0 flex-1">
           <p className="font-heading text-[15px] font-medium text-primary">{heading}</p>
-          <p className="text-[13px] text-text-secondary mt-0.5">
+          <p className="text-[13px] text-muted-foreground mt-0.5">
             {t(`Ending ${fmtDate(trialEndsAt)}.`, `${fmtDate(trialEndsAt)} 结束。`)}
           </p>
           {/* Draining bar: width tracks the fraction remaining. */}
@@ -472,11 +472,11 @@ export default function SubscriptionTab() {
                 badge, with no subscription behind it — reads as a bill. */}
             {state.comped
               ? t('Free', '免费')
-              : <>{formatMoney(planPrice, pricing.currency)}<span className="text-[13px] text-text-secondary">{per}</span></>}
+              : <>{formatMoney(planPrice, pricing.currency)}<span className="text-[13px] text-muted-foreground">{per}</span></>}
           </span>
         </div>
 
-        <p className="text-[13px] text-text-secondary leading-[1.6]">
+        <p className="text-[13px] text-muted-foreground leading-[1.6]">
           {state.kind === 'ending'
             ? (endsAt
                 ? t(`Your subscription ends on ${fmtDate(endsAt)}. Your shop stays open until then, and is suspended after that.`,
@@ -507,7 +507,7 @@ export default function SubscriptionTab() {
             and keeps being billed, at the lower tier — so it gets its own line rather than
             being folded into the sentence above. */}
         {state.pendingPlan === 'basic' && state.pendingAt && (
-          <p className="text-[13px] text-text-secondary leading-[1.6] mt-2">
+          <p className="text-[13px] text-muted-foreground leading-[1.6] mt-2">
             {t(`Switching to Basic on ${fmtDate(state.pendingAt)}. You keep Pro features until then.`,
               `将于 ${fmtDate(state.pendingAt)} 转为基础版。在此之前 Pro 功能仍可使用。`)}
           </p>
@@ -610,7 +610,7 @@ export default function SubscriptionTab() {
             {t('Upgrade to Pro', '升级到 Pro')}
             <Badge variant="default" className="uppercase tracking-[0.08em]">Pro</Badge>
           </h3>
-          <p className="text-[13px] text-text-secondary mb-4">
+          <p className="text-[13px] text-muted-foreground mb-4">
             {t(`${formatMoney(proPrice, pricing.currency)}${per} — everything in Basic, plus:`,
               `${formatMoney(proPrice, pricing.currency)}${per} — 包含基础版全部功能，另加：`)}
           </p>

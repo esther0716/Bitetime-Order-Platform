@@ -229,7 +229,7 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
           )}
         </div>
         {/* Base UI's Button defaults to type="button" — explicit submit or the form never fires */}
-        <Button type="submit" disabled={busy} className="disabled:opacity-60">
+        <Button type="submit" disabled={busy}>
           {signingUp
             ? busy ? t('Creating account…', '创建中…') : t('Create account', '创建账户')
             : forgot

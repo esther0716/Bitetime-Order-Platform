@@ -43,7 +43,7 @@ export default function DeactivatedVouchers() {
       <h3 className="font-heading text-[15px] font-medium text-primary mb-2">
         {t('Codes that no longer work', '已失效的优惠码')}
       </h3>
-      <p className="text-[13px] text-text-secondary leading-[1.6] mb-4">
+      <p className="text-[13px] text-muted-foreground leading-[1.6] mb-4">
         {t('These stopped being redeemable when this shop moved to Basic. Customers who still have them will be told the code is not valid.',
           '店铺转为基础版后，这些优惠码已无法使用。仍持有的顾客会看到优惠码无效的提示。')}
       </p>

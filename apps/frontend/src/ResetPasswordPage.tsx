@@ -135,7 +135,7 @@ export default function ResetPasswordPage() {
               </p>
             </div>
             {/* Base UI's Button defaults to type="button" — explicit submit or the form never fires */}
-            <Button type="submit" disabled={busy} className="disabled:opacity-60">
+            <Button type="submit" disabled={busy}>
               {busy ? t('Saving…', '保存中…') : t('Set password', '设置密码')}
             </Button>
           </form>

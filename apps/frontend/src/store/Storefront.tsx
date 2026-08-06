@@ -1555,7 +1555,7 @@ export default function Storefront() {
           <Button
             disabled={!canSubmit}
             onClick={handleSubmit}
-            className="disabled:opacity-60 active:scale-[0.99]"
+            className="active:scale-[0.99]"
           >
             {busy ? t('Placing order…', '提交中…') : t('Place Order', '提交订单')}
           </Button>

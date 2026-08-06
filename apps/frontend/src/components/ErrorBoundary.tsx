@@ -41,7 +41,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="mt-5 inline-flex items-center justify-center rounded-pill bg-primary text-background text-[14px] font-medium px-5 py-2.5 hover:opacity-90 transition-opacity"
+            className="mt-5 inline-flex items-center justify-center rounded-pill bg-primary text-background text-[14px] font-medium px-5 py-2.5 hover:bg-brand-600 transition-colors"
           >
             Reload · 重新加载
           </button>

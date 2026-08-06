@@ -266,7 +266,9 @@ The shadcn primitives in `src/components/ui/` resolve through the semantic layer
 ### Disabled
 One treatment for every control: fill `--color-disabled-bg` (`--ink-200`), label `--color-disabled-fg` (`--ink-600`), border transparent. 4.70:1, so the label stays readable.
 
-**Never `opacity`.** Fading a fill does not produce a disabled colour, it produces a *blend with whatever is behind it* — oxblood at 50% over the cream canvas composites to `#B67D84`, a mauve in no palette that reads as a third brand colour. Grey says inert; a tint of the accent says "some other state".
+**Never `opacity` on a filled control.** Fading a fill does not produce a disabled colour, it produces a *blend with whatever is behind it* — oxblood at 50% over the cream canvas composites to `#B67D84`, a mauve in no palette that reads as a third brand colour. Grey says inert; a tint of the accent says "some other state".
+
+The rule is about **fills**, and that scope is deliberate. Form primitives whose resting state is already white or transparent — input, textarea, select, checkbox, radio, menu items — keep shadcn's `disabled:opacity-50`. There is no brand fill to composite, so nothing goes off-palette, and it is the convention every user has already learned. Do not "fix" those.
 
 Only filled variants take the fill. `ghost`, `link`, `outline` and `dashed` keep their transparent background and change only their label — a grey slab where a text link used to be reads as broken layout.
 
@@ -306,4 +308,4 @@ The mono order number (`PREFIX-YYMMDD-XXXX`) is the brand's receipt stamp — th
 - **Don't** hardcode a hex in a component. The one sanctioned exception is `DashCharts.tsx`, where Recharts takes colours as props — and every literal there names its token in a comment.
 - **Don't** use a webfont for monospace, or set monospace anywhere but order numbers, voucher codes and AWB.
 - **Don't** remove a focus ring for aesthetics.
-- **Don't** express a disabled state with `opacity` — use the disabled pair (see Components → Disabled).
+- **Don't** express a disabled state with `opacity` on a **filled** control, and don't re-add `disabled:opacity-*` to a `<Button>` — the component already carries the disabled pair, and the override defeats it (see Components → Disabled).
