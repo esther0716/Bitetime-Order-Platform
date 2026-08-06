@@ -360,7 +360,9 @@ function SummaryGrid({ nextPayment, renewalLabel, renewalValue, readOnly }: {
   const { busy, toPortal } = useBillingPortal()
   const label = 'text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground'
   const value = 'text-[14px] text-primary mt-1'
-  const portalLink = 'text-[14px] text-primary underline underline-offset-2 mt-1 text-left cursor-pointer disabled:opacity-60 disabled:cursor-default'
+  /* Paired with variant="link", which brings the underline, the focus ring and the
+     disabled treatment — so this carries only what is specific to these two. */
+  const portalLink = 'text-[14px] mt-1 text-left disabled:cursor-default'
   return (
     <div className={CARD}>
       <h3 className={HEADING}>{t('Summary', '摘要')}</h3>
@@ -382,15 +384,15 @@ function SummaryGrid({ nextPayment, renewalLabel, renewalValue, readOnly }: {
           <>
             <div>
               <p className={label}>{t('Payment method', '付款方式')}</p>
-              <button type="button" className={portalLink} onClick={toPortal} disabled={busy}>
+              <Button type="button" variant="link" size="none" className={portalLink} onClick={toPortal} disabled={busy}>
                 {t('Manage in portal', '在门户中管理')}
-              </button>
+              </Button>
             </div>
             <div>
               <p className={label}>{t('Payment history', '付款记录')}</p>
-              <button type="button" className={portalLink} onClick={toPortal} disabled={busy}>
+              <Button type="button" variant="link" size="none" className={portalLink} onClick={toPortal} disabled={busy}>
                 {t('Billing portal', '账单门户')}
-              </button>
+              </Button>
             </div>
           </>
         )}

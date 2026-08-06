@@ -927,9 +927,9 @@ export default function Storefront() {
             )}
 
             <div className="flex flex-col items-center gap-2 mt-5">
-              <button type="button" className="text-[13px] text-primary font-medium cursor-pointer underline inline-block" onClick={handleReset}>
+              <Button type="button" variant="link" size="none" className="text-[13px] font-medium inline-block" onClick={handleReset}>
                 {t('Back to shop', '返回商店')}
-              </button>
+              </Button>
               {account && (
                 <Link to={`/s/${merchant.slug}/orders`} className="text-[13px] text-muted-foreground underline">
                   {t('Your orders', '你的订单')}
@@ -970,13 +970,15 @@ export default function Storefront() {
                     {t('Your orders', '你的订单')}
                   </Link>
                 ) : (
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="none"
                     onClick={() => setSignInOpen(true)}
-                    className="text-[12px] text-primary underline inline-block cursor-pointer"
+                    className="text-[12px] inline-block"
                   >
                     {t('Sign in', '登录')}
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -1403,19 +1405,21 @@ export default function Storefront() {
               // — but asked the other way round, a signed-out customer holding an applied
               // voucher was shown "Applied: CODE" for a discount the backend would refuse. The
               // branch that decides is the one that cannot be wrong.
-              <button
+              <Button
                 type="button"
+                variant="link"
+                size="none"
                 onClick={() => setSignInOpen(true)}
-                className="text-[13px] text-muted-foreground cursor-pointer underline inline-block hover:text-primary"
+                className="text-[13px] text-muted-foreground inline-block hover:text-primary"
               >
                 {t('Sign in to use a voucher', '登录后可使用优惠券')}
-              </button>
+              </Button>
             ) : appliedVoucher ? (
               <div className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                 <span className="shrink-0">{t('Applied', '已应用')}: <strong>{appliedVoucher.code}</strong></span>
-                <button type="button" className="text-[13px] text-muted-foreground cursor-pointer underline mt-5 inline-block" onClick={removeVoucher}>
+                <Button type="button" variant="link" size="none" className="text-[13px] text-muted-foreground mt-5 inline-block" onClick={removeVoucher}>
                   {t('Remove', '移除')}
-                </button>
+                </Button>
               </div>
             ) : (
               <div className="flex items-stretch gap-2">

@@ -197,13 +197,15 @@ export default function OnboardingChecklist({ section, onNavigate }: { section: 
             <p className="text-[13px] font-medium text-primary">
               {t(`Progress · ${state.doneCount} / 3 Complete`, `进度 · ${state.doneCount} / 3 完成`)}
             </p>
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="none"
               onClick={() => goToStep(0)}
-              className="flex items-center gap-1 text-[13px] text-muted-foreground underline underline-offset-2 hover:text-primary"
+              className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-primary"
             >
               <Sparkles size={14} strokeWidth={1.75} /> {t('Show me around', '带我了解一下')}
-            </button>
+            </Button>
           </div>
         </CardContent>
       </Card>

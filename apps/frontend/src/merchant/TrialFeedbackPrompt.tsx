@@ -60,14 +60,16 @@ export default function TrialFeedbackPrompt() {
         <p className="text-[14px] font-medium text-foreground">
           {t('How was your trial?', '试用体验如何？')}
         </p>
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="none"
           onClick={() => void skip()}
           disabled={busy}
-          className="text-[12px] text-muted-foreground underline shrink-0"
+          className="text-[12px] text-muted-foreground shrink-0"
         >
           {t('No thanks', '不用了')}
-        </button>
+        </Button>
       </div>
 
       <div className="flex gap-1" role="radiogroup" aria-label={t('Rating', '评分')}>
