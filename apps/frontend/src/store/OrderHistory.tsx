@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Truck, ExternalLink, ChevronDown } from 'lucide-react'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
+import { Button } from '../components/ui/button'
 import { fetchMyOrdersAtShop, fetchMyPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
 import { StatusBadge } from '../orderStatus'
 import { ItemSelections } from '../ItemSelections'
@@ -78,9 +79,9 @@ export default function OrderHistory() {
     <div className="form-wrap pt-8 pb-24">
       <div className="flex items-start justify-between gap-4 mb-7 max-[480px]:flex-col max-[480px]:gap-2">
         <div>
-          <h1 className="font-heading text-[26px] font-medium text-oxblood tracking-[0.3px]">{merchant.name}</h1>
-          <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Your orders', '你的订单')}</p>
-          <Link to={`/s/${slug}`} className="text-[12px] text-oxblood underline mt-1 inline-block">
+          <h1 className="font-heading text-[26px] font-medium text-primary tracking-[0.3px]">{merchant.name}</h1>
+          <p className="font-heading text-[13px] italic text-muted-foreground mt-[5px]">{t('Your orders', '你的订单')}</p>
+          <Link to={`/s/${slug}`} className="text-[12px] text-primary underline mt-1 inline-block">
             {t('Back to menu', '返回菜单')}
           </Link>
         </div>
@@ -92,24 +93,26 @@ export default function OrderHistory() {
       {/* Signed in: identity, and the only sign-out in the customer app — this is the one
           signed-in customer surface there is, so there is nowhere else sensible to put it. */}
       {account && (
-        <div className="flex items-center justify-between gap-3 bg-oxblood-tint border border-rose-border rounded-md px-[13px] py-2.5 mb-6">
-          <span className="text-[13px] text-rose-muted leading-[1.4] truncate">
-            {t('Signed in as', '已登录：')} <strong className="text-oxblood font-medium">{account.email}</strong>
+        <div className="flex items-center justify-between gap-3 bg-brand-100 border border-border rounded-md px-[13px] py-2.5 mb-6">
+          <span className="text-[13px] text-muted-foreground leading-[1.4] truncate">
+            {t('Signed in as', '已登录：')} <strong className="text-primary font-medium">{account.email}</strong>
           </span>
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={() => signOut()}
-            className="text-[13px] text-rose-muted underline underline-offset-2 cursor-pointer shrink-0"
+            className="text-[13px] text-muted-foreground shrink-0"
           >
             {t('Sign out', '登出')}
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Signed out, this renders in place and does not redirect: bouncing a hungry customer to
           the merchant login — the role guard's destination — is the wrong screen entirely. */}
       {!loading && !account && (
-        <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-6">
+        <div className="bg-card border-[0.5px] border-border rounded-2xl p-6">
           <AuthPanel
             heading={t('Sign in to see your orders at this shop', '登录以查看你在本店的订单')}
             subheading={t(
@@ -123,7 +126,7 @@ export default function OrderHistory() {
       {/* A failed read must never wear the empty state's clothes: "you haven't ordered here yet"
           is a lie to a customer whose history simply didn't load, and the one they'd believe. */}
       {failed && (
-        <div className="bg-rose-pale border border-danger-border rounded-md px-[13px] py-[10px] text-[13px] text-danger leading-[1.5]">
+        <div className="bg-danger-100 border border-danger-500 rounded-md px-[13px] py-[10px] text-[13px] text-danger leading-[1.5]">
           {t(
             "Couldn't load your orders. Check your connection and try again.",
             '无法加载你的订单。请检查网络后重试。',
@@ -132,11 +135,11 @@ export default function OrderHistory() {
       )}
 
       {orders?.length === 0 && (
-        <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-6 text-center">
-          <p className="text-[14px] text-rose-muted leading-[1.6]">
+        <div className="bg-card border-[0.5px] border-border rounded-2xl p-6 text-center">
+          <p className="text-[14px] text-muted-foreground leading-[1.6]">
             {t("You haven't ordered from this shop yet.", '你还没有在本店下过单。')}
           </p>
-          <Link to={`/s/${slug}`} className="text-[13px] text-oxblood font-medium underline mt-3 inline-block">
+          <Link to={`/s/${slug}`} className="text-[13px] text-primary font-medium underline mt-3 inline-block">
             {t('See the menu', '查看菜单')}
           </Link>
         </div>
@@ -146,7 +149,7 @@ export default function OrderHistory() {
         <>
           {/* One-open-at-a-time accordion. The chevron is the point: the old plain rows gave a
               customer no sign they could be opened, so the receipt detail sat unfound. */}
-          <Accordion multiple={false} className="border border-clay-border rounded-xl overflow-hidden bg-surface-raised">
+          <Accordion multiple={false} className="border border-border rounded-xl overflow-hidden bg-card">
             {orders.map((o, i) => {
               const id = o.order_number ?? o.id ?? String(i)
               // The currency the order was PAID in, not the shop's current one. They are the same
@@ -158,19 +161,19 @@ export default function OrderHistory() {
               const tax = o.tax ?? 0
               const taxRate = o.tax_rate ?? 0
               return (
-                <AccordionItem key={id} value={id} className={cn('border-clay-border', i > 0 && 'border-t')}>
+                <AccordionItem key={id} value={id} className={cn('border-border', i > 0 && 'border-t')}>
                   {/* Status and total sit on the row, unexpanded. "Where's my order?" is the single
                       most common reason this screen is opened — it must not cost a tap. The two
                       default up/down glyphs are hidden in favour of one chevron that rotates. */}
-                  <AccordionTrigger className="items-center gap-3 px-4 py-3 rounded-none border-0 font-normal cursor-pointer hover:no-underline hover:bg-oxblood-tint/40 transition-colors [&_[data-slot=accordion-trigger-icon]]:hidden">
+                  <AccordionTrigger className="items-center gap-3 px-4 py-3 rounded-none border-0 font-normal cursor-pointer hover:no-underline hover:bg-brand-100/40 transition-colors [&_[data-slot=accordion-trigger-icon]]:hidden">
                     <div className="flex flex-1 min-w-0 items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="font-mono text-[13px] text-ink truncate">{o.order_number}</div>
-                        <div className="text-[12px] text-rose-muted mt-0.5">{formatOrderDate(o.created_at, lang)}</div>
+                        <div className="font-mono text-[13px] text-foreground truncate">{o.order_number}</div>
+                        <div className="text-[12px] text-muted-foreground mt-0.5">{formatOrderDate(o.created_at, lang)}</div>
                         {/* When placed vs. when the customer wants it — a legacy order (placed
                             before #91) shows `—` rather than nothing, so it reads as "no date was
                             ever collected" and not as data this row lost. */}
-                        <div className="text-[12px] text-rose-muted mt-0.5">
+                        <div className="text-[12px] text-muted-foreground mt-0.5">
                           {o.fulfil_date
                             ? `${t('For', '取货日期')} ${formatCalendarDate(o.fulfil_date, lang)}`
                             : '—'}
@@ -178,15 +181,15 @@ export default function OrderHistory() {
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <StatusBadge status={o.status ?? 'new'} t={t} />
-                        <span className="text-[14px] font-medium text-ink tabular-nums">
+                        <span className="text-[14px] font-medium text-foreground tabular-nums">
                           {formatMoney(o.total, currency)}
                         </span>
-                        <ChevronDown className="size-4 text-rose-muted transition-transform duration-200 group-aria-expanded/accordion-trigger:rotate-180" strokeWidth={2} />
+                        <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 group-aria-expanded/accordion-trigger:rotate-180" strokeWidth={2} />
                       </div>
                     </div>
                   </AccordionTrigger>
 
-                  <AccordionContent className="px-4 pb-4 pt-3 border-t border-clay-border/60 bg-oxblood-tint/30">
+                  <AccordionContent className="px-4 pb-4 pt-3 border-t border-border/60 bg-brand-100/30">
                       {(o.items ?? []).map((item, n) => (
                         // Index (`n`) in the key, not just id: a split promo writes two lines
                         // sharing the same product id (base half + promo half), and an id-only
@@ -200,7 +203,7 @@ export default function OrderHistory() {
                               <span className="truncate">{itemName(item)} × {item.qty}</span>
                               {/* Missing `promo` (rows written before I-2) reads as false. */}
                               {item.promo && (
-                                <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
+                                <span className="shrink-0 px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium">
                                   {t('Promo', '优惠')}
                                 </span>
                               )}
@@ -239,7 +242,7 @@ export default function OrderHistory() {
                           value={formatMoney(tax, currency)}
                         />
                       )}
-                      <div className="flex justify-between items-start gap-2 text-[14px] font-medium text-ink border-t border-rose-border mt-2 pt-2">
+                      <div className="flex justify-between items-start gap-2 text-[14px] font-medium text-foreground border-t border-border mt-2 pt-2">
                         <span className="shrink-0">
                           {fulfilmentLabel(o.mode, t)}
                         </span>
@@ -256,7 +259,7 @@ export default function OrderHistory() {
 
           {/* The cap is stated, not silently applied: a truncated list with nothing said reads as
               "these are all my orders" when it isn't. */}
-          <p className="text-[12px] text-rose-muted text-center mt-6">
+          <p className="text-[12px] text-muted-foreground text-center mt-6">
             {t(
               `Showing your last ${ORDER_HISTORY_LIMIT} orders at this shop.`,
               `显示你在本店最近的 ${ORDER_HISTORY_LIMIT} 笔订单。`,
@@ -297,7 +300,7 @@ function PaymentProofImage({ order, t }: { order: Order; t: Translate }) {
   if (!order.payment_proof) return null
   return (
     <div className="mt-3">
-      <div className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-1.5">
+      <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-1.5">
         {t('Payment proof', '付款凭证')}
       </div>
       {url ? (
@@ -305,11 +308,11 @@ function PaymentProofImage({ order, t }: { order: Order; t: Translate }) {
           <img
             src={url}
             alt={t('Payment proof', '付款凭证')}
-            className="w-full h-auto object-contain rounded-md border border-clay-border"
+            className="w-full h-auto object-contain rounded-md border border-border"
           />
         </a>
       ) : (
-        <span className="text-[13px] text-rose-muted">{t('Loading…', '加载中…')}</span>
+        <span className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</span>
       )}
     </div>
   )
@@ -327,22 +330,22 @@ function Tracking({ order, t }: { order: Order; t: Translate }) {
   const courierLabel = courierName(courier) || courier
   return (
     <div className="mt-3">
-      <div className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-1.5">
+      <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-1.5">
         {t('Tracking number', '物流单号')}
       </div>
       {/* A real field, not a line of text: truck + AWB on the left, the courier link as a button on
           the right — the shape a customer reads as "here is the number, tap to follow it". */}
-      <div className="flex items-stretch gap-2 rounded-lg border border-clay-border bg-surface-raised p-1 pl-3">
+      <div className="flex items-stretch gap-2 rounded-lg border border-border bg-card p-1 pl-3">
         <span className="flex flex-1 min-w-0 items-center gap-2">
-          <Truck className="size-4 shrink-0 text-oxblood" strokeWidth={1.75} />
-          <span className="font-mono text-[13px] text-ink truncate">{awb}</span>
+          <Truck className="size-4 shrink-0 text-primary" strokeWidth={1.75} />
+          <span className="font-mono text-[13px] text-foreground truncate">{awb}</span>
         </span>
         {link && (
           <a
             href={link}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex shrink-0 items-center gap-1 rounded-md border border-clay-border bg-surface-high px-3 py-1.5 text-[13px] font-medium text-oxblood transition-colors hover:bg-oxblood-tint"
+            className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-card px-3 py-1.5 text-[13px] font-medium text-primary transition-colors hover:bg-brand-100"
           >
             {t('Track', '追踪')}
             <ExternalLink className="size-3.5" strokeWidth={2} />
@@ -351,7 +354,7 @@ function Tracking({ order, t }: { order: Order; t: Translate }) {
       </div>
       {/* Which courier's site, and that it leaves the shop — a tracking link that silently hands
           off is a small surprise this one line removes. */}
-      <div className="text-[12px] text-rose-muted mt-1.5">
+      <div className="text-[12px] text-muted-foreground mt-1.5">
         {courierLabel} · {t("Track on the courier's website.", '在物流商网站追踪。')}
       </div>
     </div>

@@ -150,26 +150,26 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
 
   return (
     <div className="text-left">
-      <h2 className="font-heading text-[18px] font-medium text-oxblood mb-1">
+      <h2 className="font-heading text-[18px] font-medium text-primary mb-1">
         {signingUp ? t('Create an account', '创建账户')
           : forgot ? t('Reset your password', '重设密码')
           : heading}
       </h2>
       {forgot ? (
-        <p className="text-[13px] text-rose-muted leading-[1.5] mb-5">
+        <p className="text-[13px] text-muted-foreground leading-[1.5] mb-5">
           {t(
             "Enter your email and we'll send you a link to set a new password.",
             '输入你的邮箱，我们会发送重设密码的链接。',
           )}
         </p>
       ) : subheading && (
-        <p className="text-[13px] text-rose-muted leading-[1.5] mb-5">{subheading}</p>
+        <p className="text-[13px] text-muted-foreground leading-[1.5] mb-5">{subheading}</p>
       )}
 
       {notice && (
         <div
           role="status"
-          className="text-[13px] text-oxblood bg-rose-pale border border-rose-pale rounded-md px-[13px] py-[10px] mb-[10px] leading-[1.5]"
+          className="text-[13px] text-primary bg-danger-100 border border-danger-100 rounded-md px-[13px] py-[10px] mb-[10px] leading-[1.5]"
         >
           {notice}
         </div>
@@ -178,7 +178,7 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
       {error && (
         <div
           role="alert"
-          className="text-[13px] text-danger bg-rose-pale border border-danger-border rounded-md px-[13px] py-[10px] mb-[10px] leading-[1.5]"
+          className="text-[13px] text-danger bg-danger-100 border border-danger-500 rounded-md px-[13px] py-[10px] mb-[10px] leading-[1.5]"
         >
           {error}
         </div>
@@ -203,13 +203,15 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
               <div className="flex items-baseline justify-between gap-2">
                 <Label htmlFor="auth-password">{t('Password', '密码')}</Label>
                 {!signingUp && (
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="none"
                     onClick={() => switchMode('forgot')}
-                    className="text-[12px] text-rose-muted underline underline-offset-2 cursor-pointer"
+                    className="text-[12px] text-muted-foreground"
                   >
                     {t('Forgot password?', '忘记密码？')}
-                  </button>
+                  </Button>
                 )}
               </div>
               <Input
@@ -221,7 +223,7 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
                 required
               />
               {signingUp && (
-                <p className="text-[12px] text-rose-muted">
+                <p className="text-[12px] text-muted-foreground">
                   {t(`At least ${MIN_PASSWORD_LENGTH} characters.`, `至少 ${MIN_PASSWORD_LENGTH} 个字符。`)}
                 </p>
               )}
@@ -229,7 +231,7 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
           )}
         </div>
         {/* Base UI's Button defaults to type="button" — explicit submit or the form never fires */}
-        <Button type="submit" disabled={busy} className="disabled:opacity-60">
+        <Button type="submit" disabled={busy}>
           {signingUp
             ? busy ? t('Creating account…', '创建中…') : t('Create account', '创建账户')
             : forgot
@@ -238,36 +240,39 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
         </Button>
       </form>
 
-      <p className="text-[13px] text-rose-muted mt-4">
+      <p className="text-[13px] text-muted-foreground mt-4">
         {signingUp ? (
           <>
             {t('Already have an account?', '已有账户？')}{' '}
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="none"
               onClick={() => switchMode('signin')}
-              className="text-oxblood underline underline-offset-2"
             >
               {t('Sign in', '登录')}
-            </button>
+            </Button>
           </>
         ) : forgot ? (
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={() => switchMode('signin')}
-            className="text-oxblood underline underline-offset-2"
           >
             {t('Back to sign in', '返回登录')}
-          </button>
+          </Button>
         ) : (
           <>
             {t('New here?', '第一次来？')}{' '}
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="none"
               onClick={() => switchMode('signup')}
-              className="text-oxblood underline underline-offset-2"
             >
               {t('Create an account', '创建账户')}
-            </button>
+            </Button>
           </>
         )}
       </p>

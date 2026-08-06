@@ -10,7 +10,7 @@ export function Skeleton({ width = '100%', height = '1rem', radius = 'var(--radi
     <span
       className={cn(
         'block',
-        'bg-[linear-gradient(90deg,var(--color-cream)_25%,var(--color-surface-raised)_50%,var(--color-cream)_75%)]',
+        'bg-[linear-gradient(90deg,var(--color-background)_25%,var(--color-card)_50%,var(--color-background)_75%)]',
         'bg-[length:936px_100%]',
         'animate-[shimmer_1.4s_linear_infinite]',
         // Dynamic sizing via CSS custom properties set in inline style below
@@ -49,7 +49,7 @@ export function PageSkeleton() {
           <Skeleton key={i} width="84px" height="2.1rem" radius="var(--radius-pill)" />
         ))}
       </div>
-      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border mt-1">
+      <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border mt-1">
         <SkeletonText lines={5} />
       </div>
     </div>
@@ -59,9 +59,9 @@ export function PageSkeleton() {
 // @keyframes spin lives in index.css (shared with Tailwind arbitrary animation).
 export function Spinner({ label }: { label?: string }) {
   return (
-    <span className="inline-flex items-center gap-[10px] text-rose-muted text-[14px]" role="status">
+    <span className="inline-flex items-center gap-[10px] text-muted-foreground text-[14px]" role="status">
       <span
-        className="w-[18px] h-[18px] rounded-full border-2 border-clay-border border-t-oxblood animate-[spin_0.7s_linear_infinite]"
+        className="w-[18px] h-[18px] rounded-pill border-2 border-border border-t-oxblood animate-[spin_0.7s_linear_infinite]"
         aria-hidden="true"
       />
       {label && <span className="font-sans">{label}</span>}

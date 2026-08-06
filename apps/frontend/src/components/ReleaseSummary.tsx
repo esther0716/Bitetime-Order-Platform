@@ -28,7 +28,7 @@ function parseSummary(text: string): Block[] {
 
 export default function ReleaseSummary({ text }: { text: string }) {
   if (!text.includes('### ')) {
-    return <p className="text-[15px] leading-[1.7] text-ink whitespace-pre-wrap">{text}</p>
+    return <p className="text-[15px] leading-[1.7] text-foreground whitespace-pre-wrap">{text}</p>
   }
 
   const blocks = parseSummary(text)
@@ -37,13 +37,13 @@ export default function ReleaseSummary({ text }: { text: string }) {
       {blocks.map((block, i) => (
         <div key={i}>
           {block.heading && (
-            <h3 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-rose-muted mb-1.5">
+            <h3 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mb-1.5">
               {block.heading}
             </h3>
           )}
           <ul className="list-disc pl-5 flex flex-col gap-1">
             {block.items.map((item, j) => (
-              <li key={j} className="text-[15px] leading-[1.6] text-ink">{item}</li>
+              <li key={j} className="text-[15px] leading-[1.6] text-foreground">{item}</li>
             ))}
           </ul>
         </div>

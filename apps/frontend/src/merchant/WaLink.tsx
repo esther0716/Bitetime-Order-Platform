@@ -18,7 +18,7 @@ export default function WaLink({ wa, stopClick = false }: { wa: string; stopClic
 
   // Nothing dialable in there. Still show what the customer wrote — the merchant may recognise
   // it, and a blank cell would look like missing data rather than an unusable number.
-  if (href === null) return <span className="whitespace-nowrap text-text-tertiary">{label}</span>
+  if (href === null) return <span className="whitespace-nowrap text-muted-foreground">{label}</span>
 
   return (
     <a
@@ -29,7 +29,7 @@ export default function WaLink({ wa, stopClick = false }: { wa: string; stopClic
       // pixel-match of .mm-order-wa + :hover. `whitespace-nowrap` because the formatted number
       // carries spaces and a narrow column would otherwise break `+60 12-345 6789` across two
       // lines — a phone number split in half is harder to read than the raw digits were.
-      className="whitespace-nowrap text-oxblood no-underline font-medium hover:underline"
+      className="whitespace-nowrap text-primary no-underline font-medium hover:underline"
     >
       {label}
     </a>

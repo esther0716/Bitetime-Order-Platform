@@ -36,24 +36,24 @@ export default function AdminTrialFeedback() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="font-heading text-[20px] text-oxblood">{t('Trial feedback', '试用反馈')}</h2>
+      <h2 className="font-heading text-[20px] text-primary">{t('Trial feedback', '试用反馈')}</h2>
 
       {error && <p className="text-[13px] text-danger-fg">{error}</p>}
-      {loading && <p className="text-[13px] text-text-tertiary">{t('Loading…', '加载中…')}</p>}
+      {loading && <p className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</p>}
       {!loading && items.length === 0 && (
-        <p className="text-[13px] text-text-tertiary">{t('No responses yet.', '暂无回复。')}</p>
+        <p className="text-[13px] text-muted-foreground">{t('No responses yet.', '暂无回复。')}</p>
       )}
 
       {items.map(item => (
         <Card key={item.merchant_id} className="p-4 flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-heading text-[15px] text-oxblood">
+            <span className="font-heading text-[15px] text-primary">
               {item.shop_name ?? t('Deleted shop', '已删除的店铺')}
             </span>
             {item.shop_slug && (
-              <span className="text-[12px] text-text-tertiary">/s/{item.shop_slug}</span>
+              <span className="text-[12px] text-muted-foreground">/s/{item.shop_slug}</span>
             )}
-            <span className="ml-auto text-[12px] text-text-tertiary">
+            <span className="ml-auto text-[12px] text-muted-foreground">
               {item.responded_at ? formatDate(item.responded_at) : ''}
             </span>
           </div>
@@ -64,12 +64,12 @@ export default function AdminTrialFeedback() {
                 key={n}
                 size={16}
                 strokeWidth={1.75}
-                className={(item.rating ?? 0) >= n ? 'fill-oxblood text-oxblood' : 'text-text-tertiary'}
+                className={(item.rating ?? 0) >= n ? 'fill-primary text-primary' : 'text-muted-foreground'}
               />
             ))}
           </div>
 
-          {item.comment && <p className="text-[14px] text-ink whitespace-pre-wrap">{item.comment}</p>}
+          {item.comment && <p className="text-[14px] text-foreground whitespace-pre-wrap">{item.comment}</p>}
         </Card>
       ))}
     </div>

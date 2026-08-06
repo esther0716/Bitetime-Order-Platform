@@ -67,10 +67,10 @@ const columns: ColumnDef<any>[] = [
         <img
           src={productImageUrl(p.image_urls[0])}
           alt=""
-          className="size-11 shrink-0 object-cover rounded-lg border-[0.5px] border-clay-border"
+          className="size-11 shrink-0 object-cover rounded-lg border-[0.5px] border-border"
         />
       ) : (
-        <div className="size-11 shrink-0 rounded-lg border-[0.5px] border-dashed border-clay-border" aria-hidden />
+        <div className="size-11 shrink-0 rounded-lg border-[0.5px] border-dashed border-border" aria-hidden />
       )
     },
   },
@@ -83,10 +83,10 @@ const columns: ColumnDef<any>[] = [
       const { t } = table.options.meta as ProductTableMeta
       const p = row.original
       return (
-        <div className="text-[14px] font-medium text-ink">
+        <div className="text-[14px] font-medium text-foreground">
           {p.name}
-          {p.name_zh ? <span className="text-rose-muted font-normal"> / {p.name_zh}</span> : null}
-          {!p.active && <em className="italic text-[12px] text-text-tertiary"> · {t('hidden', '已隐藏')}</em>}
+          {p.name_zh ? <span className="text-muted-foreground font-normal"> / {p.name_zh}</span> : null}
+          {!p.active && <em className="italic text-[12px] text-muted-foreground"> · {t('hidden', '已隐藏')}</em>}
         </div>
       )
     },
@@ -99,7 +99,7 @@ const columns: ColumnDef<any>[] = [
     cell: ({ row, table }) => {
       const { currency } = table.options.meta as ProductTableMeta
       const p = row.original
-      return <span className="text-[13px] text-rose-muted whitespace-nowrap">{formatMoney(p.price, currency)} / {formatUnit(p.unit_quantity, p.unit)}</span>
+      return <span className="text-[13px] text-muted-foreground whitespace-nowrap">{formatMoney(p.price, currency)} / {formatUnit(p.unit_quantity, p.unit)}</span>
     },
   },
   {
@@ -119,7 +119,7 @@ const columns: ColumnDef<any>[] = [
                 <Button
                   variant="ghost"
                   size="none"
-                  className="size-8 p-0 rounded-full cursor-pointer hover:bg-oxblood-tint hover:text-oxblood"
+                  className="size-8 p-0 rounded-pill cursor-pointer hover:bg-brand-100 hover:text-primary"
                   aria-label={t('Actions', '操作')}
                 />
               }
@@ -352,15 +352,15 @@ export default function ProductsManager() {
   ]
 
   if (!rows) return (
-    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
       <SkeletonText lines={4} />
     </div>
   )
 
   return (
-    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
       <div className="flex items-center justify-between gap-3 mb-4">
-        <h3 className="font-heading text-[15px] font-medium text-oxblood flex items-center gap-2">
+        <h3 className="font-heading text-[15px] font-medium text-primary flex items-center gap-2">
           {t('Your products', '您的产品')}
         </h3>
         <Button data-tour="add-product" type="button" size="none" className="rounded-pill py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
@@ -369,13 +369,13 @@ export default function ProductsManager() {
       </div>
 
       {rows.length === 0 ? (
-        <Empty className="border-[0.5px] border-dashed border-clay-border bg-cream/50">
+        <Empty className="border-[0.5px] border-dashed border-border bg-background/50">
           <EmptyHeader>
-            <EmptyMedia variant="icon" className="bg-oxblood-tint text-oxblood">
+            <EmptyMedia variant="icon" className="bg-brand-100 text-primary">
               <Package />
             </EmptyMedia>
-            <EmptyTitle className="text-oxblood">{t('No products yet', '还没有产品')}</EmptyTitle>
-            <EmptyDescription className="text-rose-muted">
+            <EmptyTitle className="text-primary">{t('No products yet', '还没有产品')}</EmptyTitle>
+            <EmptyDescription className="text-muted-foreground">
               {t('Add your first product to start taking orders in your storefront.', '添加第一个产品，开始在店面接收订单。')}
             </EmptyDescription>
           </EmptyHeader>
@@ -406,7 +406,7 @@ export default function ProductsManager() {
             <DialogTitle>{editingProduct ? t('Edit product', '编辑产品') : t('Add a product', '添加产品')}</DialogTitle>
           </DialogHeader>
           {msg && (
-            <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+            <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
               {msg}
             </div>
           )}
@@ -440,7 +440,7 @@ export default function ProductsManager() {
                   value={form.descr}
                   onChange={e => setForm({ ...form, descr: e.target.value })}
                   placeholder={t('Short description (optional)', '简短描述（可选）')}
-                  className="bg-cream text-[13px] rounded-sm py-[7px] px-2.5 min-h-0"
+                  className="bg-background text-[13px] rounded-sm py-[7px] px-2.5 min-h-0"
                 />
               </div>
               <div className="flex flex-col gap-[6px]">
@@ -472,7 +472,7 @@ export default function ProductsManager() {
                     placeholder="1"
                   />
                   <Select value={form.unit} onValueChange={v => setForm({ ...form, unit: v ?? form.unit })} items={unitItems}>
-                    <SelectTrigger id="pm-5" className="flex-1 bg-cream border-clay-border text-[13px]">
+                    <SelectTrigger id="pm-5" className="flex-1 bg-background border-border text-[13px]">
                       <SelectValue />
                     </SelectTrigger>
                     {/* z-modal-popover (400) floats above the dialog popup (z-modal). */}
@@ -503,7 +503,7 @@ export default function ProductsManager() {
                     onChange={e => setForm({ ...form, promo_price: e.target.value })}
                     placeholder="0.00"
                   />
-                  <span className="text-[12px] text-text-tertiary">{t('Leave empty for no promo.', '留空表示无优惠。')}</span>
+                  <span className="text-[12px] text-muted-foreground">{t('Leave empty for no promo.', '留空表示无优惠。')}</span>
                 </div>
                 <div className="flex flex-col gap-[6px]">
                   <Label htmlFor="pm-promo-limit">{t('Promo limit', '优惠数量上限')}</Label>
@@ -517,7 +517,7 @@ export default function ProductsManager() {
                     onChange={e => setForm({ ...form, promo_limit: e.target.value })}
                     placeholder={t('No limit', '不限')}
                   />
-                  <span className="text-[12px] text-text-tertiary">
+                  <span className="text-[12px] text-muted-foreground">
                     {t('How many units sell at this price. Leave empty for no limit.', '以此价格出售的数量。留空表示不限。')}
                   </span>
                 </div>
@@ -530,7 +530,7 @@ export default function ProductsManager() {
                     value={form.promo_end}
                     onChange={e => setForm({ ...form, promo_end: e.target.value })}
                   />
-                  <span className="text-[12px] text-text-tertiary">
+                  <span className="text-[12px] text-muted-foreground">
                     {t('The promo runs to the end of this day. Leave empty for no end date.', '优惠持续到当天结束。留空表示无结束日期。')}
                   </span>
                 </div>
@@ -547,7 +547,7 @@ export default function ProductsManager() {
                 const capReached = limit != null && sold >= limit
                 const shownSold = limit != null ? Math.min(sold, limit) : sold
                 return (
-                  <p className="text-[12px] text-rose-muted">
+                  <p className="text-[12px] text-muted-foreground">
                     {limit
                       ? t(`${shownSold} of ${limit} sold at the promo price.`,
                           `已以优惠价售出 ${shownSold} / ${limit} 件。`)
@@ -611,7 +611,7 @@ export default function ProductsManager() {
               <div className="flex items-center justify-between gap-3 pt-1">
                 <div className="flex flex-col">
                   <Label htmlFor="pm-active">{t('Visible in storefront', '在店面显示')}</Label>
-                  <span className="text-[12px] text-text-tertiary">
+                  <span className="text-[12px] text-muted-foreground">
                     {form.active ? t('Customers can order this', '顾客可下单') : t('Hidden from customers', '对顾客隐藏')}
                   </span>
                 </div>
@@ -621,9 +621,9 @@ export default function ProductsManager() {
                   role="switch"
                   aria-checked={form.active}
                   onClick={() => setForm({ ...form, active: !form.active })}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${form.active ? 'bg-oxblood' : 'bg-clay-border'}`}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill transition-colors cursor-pointer ${form.active ? 'bg-primary' : 'bg-border'}`}
                 >
-                  <span className={`inline-block size-5 rounded-full bg-white shadow-sm transition-transform ${form.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                  <span className={`inline-block size-5 rounded-pill bg-white shadow-sm transition-transform ${form.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
                 </button>
               </div>
             </div>
@@ -632,8 +632,8 @@ export default function ProductsManager() {
                 sits with the primary action, which is where a merchant looks when they try to
                 save and find out something was locked. */}
             {!pro && (
-              <div className="mt-4 flex items-center justify-between gap-3 flex-wrap rounded-lg bg-surface-sunken px-3 py-2.5">
-                <span className="text-[12px] text-rose-muted">
+              <div className="mt-4 flex items-center justify-between gap-3 flex-wrap rounded-lg bg-muted px-3 py-2.5">
+                <span className="text-[12px] text-muted-foreground">
                   {t('Sale prices and customer options are Pro features.',
                      '优惠价与商品选项为 Pro 功能。')}
                 </span>

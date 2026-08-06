@@ -61,17 +61,17 @@ export default function ReceiptDialog({ order, merchant, itemName, onClose }: Re
           {/* Shop name alone: `merchants` carries no address or phone, and inventing a
               header out of the payment fields — written to instruct payment BEFORE an
               order, not to identify a shop after it — would be worse than a plain name. */}
-          <div className="border-b border-clay-border pb-3 mb-3">
-            <h2 className="font-heading text-[18px] font-medium text-oxblood tracking-[0.3px]">
+          <div className="border-b border-border pb-3 mb-3">
+            <h2 className="font-heading text-[18px] font-medium text-primary tracking-[0.3px]">
               {merchant.name}
             </h2>
-            <p className="font-heading text-[12px] italic text-rose-muted mt-0.5">
+            <p className="font-heading text-[12px] italic text-muted-foreground mt-0.5">
               {t('Receipt', '收据')}
             </p>
           </div>
 
-          <div className="text-[13px] text-rose-muted leading-[1.6] mb-4">
-            <div className="font-mono text-ink">{order.order_number}</div>
+          <div className="text-[13px] text-muted-foreground leading-[1.6] mb-4">
+            <div className="font-mono text-foreground">{order.order_number}</div>
             <div>{formatOrderDateTime(order.created_at, lang)}</div>
             {/* When PLACED (above, to the minute) vs. when the customer asked to have it —
                 the fact this document exists to state. `—` rather than a dropped line for a
@@ -80,14 +80,14 @@ export default function ReceiptDialog({ order, merchant, itemName, onClose }: Re
             <div>
               {t('For', '取货日期')}: {order.fulfil_date ? formatCalendarDate(order.fulfil_date, lang) : '—'}
             </div>
-            {order.customer_name && <div className="mt-1.5 text-ink">{order.customer_name}</div>}
+            {order.customer_name && <div className="mt-1.5 text-foreground">{order.customer_name}</div>}
             {order.customer_wa && <div>{order.customer_wa}</div>}
             {/* Only a delivery has somewhere to go. A pickup order printing a blank
                 address block would read as an order we lost the address for. */}
             {address && <div className="mt-1.5">{address}</div>}
           </div>
 
-          <div className="border-t border-clay-border pt-3">
+          <div className="border-t border-border pt-3">
             {(order.items ?? []).map((item, n) => (
               // Index in the key, not the id: a split promo writes two lines sharing one
               // product id, and an id-only key would collapse them into one row while the
@@ -102,7 +102,7 @@ export default function ReceiptDialog({ order, merchant, itemName, onClose }: Re
                       {item.promo && (
                         <span
                           data-receipt-promo
-                          className="shrink-0 px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium"
+                          className="shrink-0 px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium"
                         >
                           {t('Promo', '优惠')}
                         </span>
@@ -119,7 +119,7 @@ export default function ReceiptDialog({ order, merchant, itemName, onClose }: Re
           {/* Subtotal is stated here and nowhere else in the app: it is what closes the
               arithmetic on a page that has to stand on its own — subtotal + fee − voucher
               + tax = total, every term printed. */}
-          <div className="border-t border-clay-border mt-2 pt-2">
+          <div className="border-t border-border mt-2 pt-2">
             <MoneyLine label={t('Subtotal', '小计')} value={money(subtotal)} />
             {shipping > 0 && (
               // The STORED distance, not a re-derivation: this is a snapshot of what the order
@@ -146,7 +146,7 @@ export default function ReceiptDialog({ order, merchant, itemName, onClose }: Re
             )}
           </div>
 
-          <div className="flex justify-between items-start gap-2 text-[15px] font-medium text-ink border-t border-rose-border mt-2 pt-2">
+          <div className="flex justify-between items-start gap-2 text-[15px] font-medium text-foreground border-t border-border mt-2 pt-2">
             <span className="shrink-0">
               {fulfilmentLabel(order.mode, t)}
             </span>
@@ -157,7 +157,7 @@ export default function ReceiptDialog({ order, merchant, itemName, onClose }: Re
         {/* data-receipt-actions: the print rules hide this. Paper does not need a Print button. */}
         <div
           data-receipt-actions
-          className="flex justify-end gap-2 border-t border-clay-border bg-surface-sunken p-4 rounded-b-lg"
+          className="flex justify-end gap-2 border-t border-border bg-muted p-4 rounded-b-lg"
         >
           <Button variant="outline" size="sm" onClick={onClose}>
             {t('Close', '关闭')}

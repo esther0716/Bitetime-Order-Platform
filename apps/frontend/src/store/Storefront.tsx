@@ -796,7 +796,7 @@ export default function Storefront() {
           {/* Header */}
           <div className="flex items-start justify-between gap-4 mb-8 max-[480px]:flex-col max-[480px]:gap-2">
             <div>
-              <h1 className="font-heading text-[26px] font-medium text-oxblood tracking-[0.3px]">{merchant.name}</h1>
+              <h1 className="font-heading text-[26px] font-medium text-primary tracking-[0.3px]">{merchant.name}</h1>
             </div>
             <div className="flex justify-end flex-shrink-0 max-[480px]:justify-start">
               <LanguageSelect />
@@ -805,13 +805,13 @@ export default function Storefront() {
 
           {/* Success content */}
           <div className="text-center py-12 px-6">
-            <h2 className="font-heading text-[24px] font-medium text-oxblood mb-2">
+            <h2 className="font-heading text-[24px] font-medium text-primary mb-2">
               {t('Order Placed!', '订单已提交！')}
             </h2>
-            <p className="text-[14px] text-rose-muted mb-6 leading-[1.6]">
+            <p className="text-[14px] text-muted-foreground mb-6 leading-[1.6]">
               {t('Thank you for your order.', '感谢您的订单。')}
             </p>
-            <p className="text-[15px] text-oxblood mb-3 tracking-[0.5px]">
+            <p className="text-[15px] text-primary mb-3 tracking-[0.5px]">
               {t('Order number', '订单号')}:<br />
               <strong className="font-mono text-[16px]">{success.orderNumber}</strong>
             </p>
@@ -822,22 +822,22 @@ export default function Storefront() {
                 not formatOrderDate: this is a calendar date, and rendering it in the viewer's zone
                 would show a customer abroad the day before the one they chose. */}
             {success.fulfilDate && (
-              <p className="text-[15px] text-oxblood mb-5 tracking-[0.5px]">
+              <p className="text-[15px] text-primary mb-5 tracking-[0.5px]">
                 {t('For', '取货日期')}:<br />
                 <strong className="text-[16px]">{formatCalendarDate(success.fulfilDate, lang)}</strong>
               </p>
             )}
 
-            <div className="max-w-[360px] mx-auto mb-5 text-left px-4 py-3 bg-surface-raised border-[0.5px] border-divider rounded-md">
+            <div className="max-w-[360px] mx-auto mb-5 text-left px-4 py-3 bg-card border-[0.5px] border-border rounded-md">
               {success.items.map((item, i) => (
-                <div key={i} className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+                <div key={i} className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                   {/* min-w-0 (not shrink-0): a long product name must wrap inside its own column.
                       shrink-0 let it push the price out past the card's right edge. */}
                   <span className="min-w-0 flex flex-col gap-0.5">
                     <span className="flex items-center gap-1.5 flex-wrap">
                       {item.name} × {item.qty}
                       {item.promo && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
+                        <span className="px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium">
                           {t('Promo', '优惠')}
                         </span>
                       )}
@@ -848,7 +848,7 @@ export default function Storefront() {
                 </div>
               ))}
               {success.fee > 0 && (
-                <div className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+                <div className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                   {/* Same house term as the summary and every other surface, with the distance
                       that priced it named in parentheses when there is one — the confirmation
                       the customer keeps must name what a tap earlier already did (Finding 7). */}
@@ -861,26 +861,26 @@ export default function Storefront() {
                 </div>
               )}
               {success.discount > 0 && (
-                <div className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+                <div className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                   <span className="min-w-0">{t('Voucher', '优惠券')}</span>
                   <span className="shrink-0 text-right whitespace-nowrap">−{formatMoney(success.discount, currency)}</span>
                 </div>
               )}
               {success.taxRate > 0 && (
-                <div className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+                <div className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                   <span className="min-w-0">{t('Tax', '税')} ({formatTaxRate(success.taxRate)}%)</span>
                   <span className="shrink-0 text-right whitespace-nowrap">{formatMoney(success.taxAmount, currency)}</span>
                 </div>
               )}
-              <div className="flex justify-between items-start gap-2 text-[15px] font-medium text-ink border-t border-rose-border mt-2 pt-[10px]">
+              <div className="flex justify-between items-start gap-2 text-[15px] font-medium text-foreground border-t border-border mt-2 pt-[10px]">
                 <span className="min-w-0">{t('Total', '总计')}</span>
                 <span className="shrink-0 text-right whitespace-nowrap">{formatMoney(success.total, currency)}</span>
               </div>
             </div>
 
             {(merchant.payment_note || merchant.payment_bank || merchant.payment_qr) && (
-              <div className="max-w-[360px] mx-auto mb-4 text-left px-[14px] py-[10px] bg-surface-raised border-[0.5px] border-divider rounded-md text-[13px] text-ink-faint leading-[1.5]">
-                <div className="font-semibold text-oxblood mb-1">
+              <div className="max-w-[360px] mx-auto mb-4 text-left px-[14px] py-[10px] bg-card border-[0.5px] border-border rounded-md text-[13px] text-muted-foreground leading-[1.5]">
+                <div className="font-semibold text-primary mb-1">
                   {t('Payment Instructions', '付款说明')}
                 </div>
                 {merchant.payment_bank && <p>{merchant.payment_bank}</p>}
@@ -906,7 +906,7 @@ export default function Storefront() {
                       href={paymentQrUrl(merchant.payment_qr)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block w-full max-w-[240px] rounded-md bg-white p-2 border border-divider"
+                      className="block w-full max-w-[240px] rounded-md bg-white p-2 border border-border"
                     >
                       <img
                         src={paymentQrUrl(merchant.payment_qr)}
@@ -914,7 +914,7 @@ export default function Storefront() {
                         className="w-full h-auto object-contain"
                       />
                     </a>
-                    <span className="text-[12px] text-rose-muted">
+                    <span className="text-[12px] text-muted-foreground">
                       {t('Scan to pay · tap to enlarge', '扫码付款 · 点击放大')}
                     </span>
                   </div>
@@ -927,11 +927,11 @@ export default function Storefront() {
             )}
 
             <div className="flex flex-col items-center gap-2 mt-5">
-              <button type="button" className="text-[13px] text-oxblood font-medium cursor-pointer underline inline-block" onClick={handleReset}>
+              <Button type="button" variant="link" size="none" className="text-[13px] font-medium inline-block" onClick={handleReset}>
                 {t('Back to shop', '返回商店')}
-              </button>
+              </Button>
               {account && (
-                <Link to={`/s/${merchant.slug}/orders`} className="text-[13px] text-rose-muted underline">
+                <Link to={`/s/${merchant.slug}/orders`} className="text-[13px] text-muted-foreground underline">
                   {t('Your orders', '你的订单')}
                 </Link>
               )}
@@ -944,8 +944,8 @@ export default function Storefront() {
           {/* Header with lang switch */}
           <div className="flex items-start justify-between gap-4 mb-8 max-[480px]:flex-col max-[480px]:gap-2">
             <div>
-              <h1 className="font-heading text-[26px] font-medium text-oxblood tracking-[0.3px]">{merchant.name}</h1>
-              <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">
+              <h1 className="font-heading text-[26px] font-medium text-primary tracking-[0.3px]">{merchant.name}</h1>
+              <p className="font-heading text-[13px] italic text-muted-foreground mt-[5px]">
                 {t('Powered by TinyOrder', 'TinyOrder 提供技术支持')}
                 {' · '}
                 {/* The customer's name, phone and delivery address are collected on THIS page,
@@ -955,7 +955,7 @@ export default function Storefront() {
                   href="/privacy"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="not-italic underline underline-offset-2 hover:text-oxblood"
+                  className="not-italic underline underline-offset-2 hover:text-primary"
                 >
                   {t('Privacy', '隐私政策')}
                 </a>
@@ -966,17 +966,19 @@ export default function Storefront() {
                   // would say and more. Offering both here asked the customer to tell apart two
                   // links that do the same job, and pointed one of them at a form demanding an
                   // order number they can already see.
-                  <Link to={`/s/${merchant.slug}/orders`} className="text-[12px] text-oxblood underline inline-block">
+                  <Link to={`/s/${merchant.slug}/orders`} className="text-[12px] text-primary underline inline-block">
                     {t('Your orders', '你的订单')}
                   </Link>
                 ) : (
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="none"
                     onClick={() => setSignInOpen(true)}
-                    className="text-[12px] text-oxblood underline inline-block cursor-pointer"
+                    className="text-[12px] inline-block"
                   >
                     {t('Sign in', '登录')}
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -1004,9 +1006,9 @@ export default function Storefront() {
 
           {/* Product list */}
           <div className="mb-7">
-            <div className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-3">{t('Menu', '菜单')}</div>
+            <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-3">{t('Menu', '菜单')}</div>
             {activeProducts.length === 0 ? (
-              <p className="text-[14px] text-rose-muted italic py-6 text-center">
+              <p className="text-[14px] text-muted-foreground italic py-6 text-center">
                 {t('This shop has no products yet.', '此店暂无商品。')}
               </p>
             ) : (
@@ -1015,8 +1017,8 @@ export default function Storefront() {
                   <div
                     key={p.id}
                     className={cn(
-                      "flex items-center gap-[14px] px-4 py-[14px] bg-surface-raised border-[0.5px] border-clay-border rounded-xl transition-colors",
-                      cart.some(l => l.productId === p.id) && "border-oxblood bg-oxblood-tint"
+                      "flex items-center gap-[14px] px-4 py-[14px] bg-card border-[0.5px] border-border rounded-xl transition-colors",
+                      cart.some(l => l.productId === p.id) && "border-primary bg-brand-100"
                     )}
                   >
                     {p.image_urls?.length ? (
@@ -1024,7 +1026,7 @@ export default function Storefront() {
                         type="button"
                         onClick={() => setGallery(p)}
                         aria-label={t('View photos', '查看图片')}
-                        className="group size-14 shrink-0 rounded-lg overflow-hidden border-[0.5px] border-clay-border cursor-pointer relative transition-transform active:scale-[0.97]"
+                        className="group size-14 shrink-0 rounded-lg overflow-hidden border-[0.5px] border-border cursor-pointer relative transition-transform active:scale-[0.97]"
                       >
                         <img
                           src={productImageUrl(p.image_urls[0])}
@@ -1032,22 +1034,22 @@ export default function Storefront() {
                           className="size-full object-cover transition-transform duration-200 group-hover:scale-110"
                         />
                         {/* Desktop cue: a veil + expand glyph on hover says "this opens". */}
-                        <span className="absolute inset-0 flex items-center justify-center bg-oxblood/0 transition-colors group-hover:bg-oxblood/30">
+                        <span className="absolute inset-0 flex items-center justify-center bg-primary/0 transition-colors group-hover:bg-primary/30">
                           <Expand className="size-4 text-white opacity-0 transition-opacity group-hover:opacity-100" strokeWidth={2} />
                         </span>
                         {/* Touch cue (no hover on a phone): a persistent photo pill, with a count
                             when there's more than one. The bare number badge read as decoration —
                             nothing said "tap me". */}
-                        <span className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded-full bg-oxblood/90 px-1.5 py-[3px] text-white text-[10px] font-medium leading-none">
+                        <span className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded-pill bg-primary/90 px-1.5 py-[3px] text-white text-[10px] font-medium leading-none">
                           <Images className="size-[11px]" strokeWidth={2} />
                           {p.image_urls.length > 1 && p.image_urls.length}
                         </span>
                       </button>
                     ) : null}
                     <div className="flex-1 min-w-0">
-                      <div className="text-[14px] font-medium text-ink">{productName(p)}</div>
+                      <div className="text-[14px] font-medium text-foreground">{productName(p)}</div>
                       {productDescr(p) && (
-                        <div className="text-[12px] text-rose-muted mt-0.5 leading-[1.4]">{productDescr(p)}</div>
+                        <div className="text-[12px] text-muted-foreground mt-0.5 leading-[1.4]">{productDescr(p)}</div>
                       )}
                       {(() => {
                         const promo = promoById.get(p.id)
@@ -1078,24 +1080,24 @@ export default function Storefront() {
                           : Infinity
                         if (!promo || remainingForNextUnit <= 0) {
                           return (
-                            <div className="text-[13px] font-medium text-oxblood mt-[5px]">
+                            <div className="text-[13px] font-medium text-primary mt-[5px]">
                               {formatMoney(p.price, currency)} / {unit}
                             </div>
                           )
                         }
                         return (
                           <div className="flex items-center gap-2 mt-[5px] flex-wrap">
-                            <span className="text-[13px] font-medium text-oxblood">
+                            <span className="text-[13px] font-medium text-primary">
                               {formatMoney(promo.price, currency)} / {unit}
                             </span>
-                            <span className="text-[12px] text-rose-muted line-through">
+                            <span className="text-[12px] text-muted-foreground line-through">
                               {formatMoney(p.price, currency)}
                             </span>
-                            <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
+                            <span className="px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium">
                               {t('Promo', '优惠')}
                             </span>
                             {Number.isFinite(remainingForNextUnit) && (
-                              <span className="text-[11px] text-rose-muted">
+                              <span className="text-[11px] text-muted-foreground">
                                 {t(`${remainingForNextUnit} left at this price`, `此价格剩 ${remainingForNextUnit} 件`)}
                               </span>
                             )}
@@ -1122,7 +1124,7 @@ export default function Storefront() {
                         aria-label={t('Decrease quantity', '减少数量')}
                       >−</Button>
                       <span
-                        className="text-[14px] font-medium min-w-[20px] pointer-coarse:min-w-[28px] text-center text-ink"
+                        className="text-[14px] font-medium min-w-[20px] pointer-coarse:min-w-[28px] text-center text-foreground"
                         aria-live="polite"
                         aria-label={t('Quantity', '数量')}
                       >{plainQty(cart, p.id)}</span>
@@ -1150,21 +1152,21 @@ export default function Storefront() {
             t={t}
           />
 
-          <hr className="border-0 border-t border-clay-border my-6" />
+          <hr className="border-0 border-t border-border my-6" />
 
           {/* Fulfilment */}
           <div className="mb-7">
-            <div className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-3">{t('Fulfilment', '配送方式')}</div>
+            <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-3">{t('Fulfilment', '配送方式')}</div>
             <div className="flex gap-[10px]" role="group" aria-label={t('Fulfilment method', '配送方式')}>
               {FULFILMENT_METHODS.filter(m => methods[m]).map(m => (
                 <button
                   key={m}
                   type="button"
                   className={cn(
-                    "flex-1 border rounded-md py-[10px] px-[14px] pointer-coarse:min-h-11 cursor-pointer text-[14px] font-sans text-center transition-all hover:border-oxblood focus-visible:outline-2 focus-visible:outline-oxblood focus-visible:outline-offset-2",
+                    "flex-1 border rounded-md py-[10px] px-[14px] pointer-coarse:min-h-11 cursor-pointer text-[14px] font-sans text-center transition-all hover:border-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2",
                     mode === m
-                      ? "border-[0.5px] border-oxblood bg-oxblood-tint text-oxblood font-medium"
-                      : "border-clay-border bg-surface-raised text-ink"
+                      ? "border-[0.5px] border-primary bg-brand-100 text-primary font-medium"
+                      : "border-border bg-card text-foreground"
                   )}
                   aria-pressed={mode === m}
                   onClick={() => setMode(m)}
@@ -1184,18 +1186,18 @@ export default function Storefront() {
             {noMethods && (
               /* Unreachable past `merchants_one_fulfilment_method`. Said anyway, because the
                  alternative is a checkout with no buttons and no explanation. */
-              <p className="text-[13px] text-oxblood mt-3">
+              <p className="text-[13px] text-primary mt-3">
                 {t('This shop is not accepting orders right now.', '本店目前暂不接受订单。')}
               </p>
             )}
             {mode === 'pickup' && merchant?.pickup_address && (
               <div className="flex flex-col gap-1.5 mt-3">
-                <div className="text-[13px] font-medium text-oxblood">{t('Pickup address', '自取地址')}</div>
+                <div className="text-[13px] font-medium text-primary">{t('Pickup address', '自取地址')}</div>
                 <a
                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(merchant.pickup_address)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[14px] text-oxblood whitespace-pre-line leading-[1.5] underline decoration-oxblood/30 underline-offset-2 hover:decoration-oxblood transition-colors"
+                  className="text-[14px] text-primary whitespace-pre-line leading-[1.5] underline decoration-primary/30 underline-offset-2 hover:decoration-primary transition-colors"
                 >
                   {merchant.pickup_address}
                 </a>
@@ -1221,19 +1223,19 @@ export default function Storefront() {
                           placeholder={t('e.g. A-3-2, next to the surau', '例如：A-3-2，祈祷室旁')} />
                         {/* Says it plainly, because the customer's worry is that it will cost them
                             money: it is passed to the rider and never routed (story 21). */}
-                        <p className="text-[12px] text-rose-muted leading-[1.5]">
+                        <p className="text-[12px] text-muted-foreground leading-[1.5]">
                           {t('Passed to the rider. It does not change your delivery fee.',
                              '仅提供给骑手，不影响运费。')}
                         </p>
                       </div>
-                      {quoting && <p className="text-[13px] text-rose-muted">{t('Calculating delivery fee…', '正在计算运费…')}</p>}
+                      {quoting && <p className="text-[13px] text-muted-foreground">{t('Calculating delivery fee…', '正在计算运费…')}</p>}
                       {/* Rendered from the refusal CODE at paint time, not from a sentence frozen
                           when the request failed. `LanguageSelect` sits in this page's own header,
                           and `pickupEscape` can turn on under a merchant refresh — a stored string
                           would go on speaking English, and go on withholding a pickup offer the
                           shop now has, while the page around it changed. */}
                       {quoteError && (
-                        <p className="text-[13px] text-oxblood">
+                        <p className="text-[13px] text-primary">
                           {quoteRefusalPlan(quoteError, { t, pickupEscape })}
                         </p>
                       )}
@@ -1244,7 +1246,7 @@ export default function Storefront() {
                   // `ShopDistance.usable`'s contract forbids. Unreachable today — the DB and the
                   // backend cannot construct this state — but the storefront must not silently
                   // invent a fee if they ever could.
-                  <p className="text-[13px] text-oxblood">
+                  <p className="text-[13px] text-primary">
                     {methods.pickup
                       ? t('Express delivery is not available at this shop right now. Please choose pickup instead.',
                           '本店目前暂不提供快速配送，请改选自取。')
@@ -1321,7 +1323,7 @@ export default function Storefront() {
                             Input. Matching the variant lets the merge drop the h-9. */}
                         <SelectTrigger
                           id="sf-state"
-                          className="w-full min-w-0 data-[size=default]:h-auto rounded-md border border-clay-border bg-surface-raised px-[13px] py-2.5 text-[16px] text-ink transition-colors outline-none focus-visible:border-oxblood focus-visible:ring-3 focus-visible:ring-oxblood/10 data-placeholder:text-text-tertiary"
+                          className="w-full min-w-0 data-[size=default]:h-auto rounded-md border border-border bg-card px-[13px] py-2.5 text-[16px] text-foreground transition-colors outline-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/10 data-placeholder:text-muted-foreground"
                         >
                           <SelectValue placeholder={t('Select state…', '选择州属…')} />
                         </SelectTrigger>
@@ -1336,11 +1338,11 @@ export default function Storefront() {
             )}
           </div>
 
-          <hr className="border-0 border-t border-clay-border my-6" />
+          <hr className="border-0 border-t border-border my-6" />
 
           {/* When */}
           <div className="mb-7">
-            <div className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-3">
+            <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-3">
               {t('Date', '日期')} *
             </div>
             <FulfilDatePicker
@@ -1352,7 +1354,7 @@ export default function Storefront() {
             />
           </div>
 
-          <hr className="border-0 border-t border-clay-border my-6" />
+          <hr className="border-0 border-t border-border my-6" />
 
           {/* The gate stands where the checkout form would be, and replaces it top to bottom:
               details, voucher, summary, Place Order. The cart above it is untouched, so it
@@ -1364,7 +1366,7 @@ export default function Storefront() {
           <>
           {/* Customer details */}
           <div className="mb-7">
-            <div className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-3">{t('Your Details', '您的资料')}</div>
+            <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-3">{t('Your Details', '您的资料')}</div>
             {step === 'guest' && <GuestStrip onSignIn={() => setSignInOpen(true)} />}
             <div className="flex flex-col gap-1.5 mb-3">
               <Label htmlFor="sf-name">{t('Name', '姓名')} *</Label>
@@ -1388,11 +1390,11 @@ export default function Storefront() {
             </div>
           </div>
 
-          <hr className="border-0 border-t border-clay-border my-6" />
+          <hr className="border-0 border-t border-border my-6" />
 
           {/* Voucher */}
           <div className="mb-7">
-            <div className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em] mb-3">{t('Voucher', '优惠券')}</div>
+            <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-3">{t('Voucher', '优惠券')}</div>
             {!account ? (
               // A voucher is keyed to a verified account, so a guest cannot carry one (#72).
               // This is an OFFER, not a gate: the checkout path itself is untouched and guest
@@ -1403,19 +1405,21 @@ export default function Storefront() {
               // — but asked the other way round, a signed-out customer holding an applied
               // voucher was shown "Applied: CODE" for a discount the backend would refuse. The
               // branch that decides is the one that cannot be wrong.
-              <button
+              <Button
                 type="button"
+                variant="link"
+                size="none"
                 onClick={() => setSignInOpen(true)}
-                className="text-[13px] text-rose-muted cursor-pointer underline inline-block hover:text-oxblood"
+                className="text-[13px] text-muted-foreground inline-block hover:text-primary"
               >
                 {t('Sign in to use a voucher', '登录后可使用优惠券')}
-              </button>
+              </Button>
             ) : appliedVoucher ? (
-              <div className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+              <div className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                 <span className="shrink-0">{t('Applied', '已应用')}: <strong>{appliedVoucher.code}</strong></span>
-                <button type="button" className="text-[13px] text-rose-muted cursor-pointer underline mt-5 inline-block" onClick={removeVoucher}>
+                <Button type="button" variant="link" size="none" className="text-[13px] text-muted-foreground mt-5 inline-block" onClick={removeVoucher}>
                   {t('Remove', '移除')}
-                </button>
+                </Button>
               </div>
             ) : (
               <div className="flex items-stretch gap-2">
@@ -1441,15 +1445,15 @@ export default function Storefront() {
             )}
           </div>
 
-          <hr className="border-0 border-t border-clay-border my-6" />
+          <hr className="border-0 border-t border-border my-6" />
 
           {/* Live order summary */}
-          <div className="bg-oxblood-tint border border-rose-border rounded-xl py-4 px-5 mb-6">
-            <div className="font-heading text-[14px] font-medium text-oxblood mb-[10px]">
+          <div className="bg-brand-100 border border-border rounded-xl py-4 px-5 mb-6">
+            <div className="font-heading text-[14px] font-medium text-primary mb-[10px]">
               {t('Order Summary', '订单摘要')}
             </div>
             {cartItems.length === 0 ? (
-              <p className="text-[13px] text-text-tertiary italic">
+              <p className="text-[13px] text-muted-foreground italic">
                 {t('No items selected yet.', '尚未选择任何商品。')}
               </p>
             ) : (
@@ -1458,7 +1462,7 @@ export default function Storefront() {
                   const prod = activeProducts.find(p => p.id === item.id)
                   const displayName = (lang === 'zh' && prod?.name_zh) ? prod.name_zh : item.name
                   return (
-                    <div key={i} className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+                    <div key={i} className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                       {/* min-w-0, not shrink-0 — see the success view's line items (#92). */}
                       <span className="min-w-0 flex items-center gap-1.5 flex-wrap">
                         <span className="flex flex-col">
@@ -1468,7 +1472,7 @@ export default function Storefront() {
                           <ItemSelections item={item} />
                         </span>
                         {item.promo && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium">
+                          <span className="px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium">
                             {t('Promo', '优惠')}
                           </span>
                         )}
@@ -1492,7 +1496,7 @@ export default function Storefront() {
                                does not dominate a summary row; the `after` overlay is what makes
                                the touch target 44px, so a coarse pointer gets the size without
                                the visual weight. */
-                            className="relative grid place-items-center shrink-0 size-7 -my-1 rounded-full border border-rose-border bg-white/60 text-rose-muted cursor-pointer transition-colors hover:bg-danger hover:border-danger hover:text-white active:bg-danger active:border-danger active:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood after:absolute after:content-[''] after:-inset-2"
+                            className="relative grid place-items-center shrink-0 size-7 -my-1 rounded-pill border border-border bg-white/60 text-muted-foreground cursor-pointer transition-colors hover:bg-danger hover:border-danger hover:text-white active:bg-danger active:border-danger active:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary after:absolute after:content-[''] after:-inset-2"
                           >
                             <X className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
                           </button>
@@ -1501,7 +1505,7 @@ export default function Storefront() {
                     </div>
                   )
                 })}
-                <div className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+                <div className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                   <span className="min-w-0">{t('Subtotal', '小计')}</span>
                   <span className="shrink-0 text-right whitespace-nowrap">{formatMoney(subtotal, currency)}</span>
                 </div>
@@ -1521,23 +1525,23 @@ export default function Storefront() {
                   />
                 )}
                 {discount > 0 && (
-                  <div className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+                  <div className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                     <span className="min-w-0">{t('Voucher', '优惠券')} ({appliedVoucher?.code})</span>
                     <span className="shrink-0 text-right whitespace-nowrap">−{formatMoney(discount, currency)}</span>
                   </div>
                 )}
                 {taxRate > 0 && (
-                  <div className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
+                  <div className="flex justify-between items-start gap-2 text-sm text-muted-foreground py-[3px]">
                     <span className="min-w-0">{t('Tax', '税')} ({formatTaxRate(taxRate)}%)</span>
                     <span className="shrink-0 text-right whitespace-nowrap">{formatMoney(taxAmount, currency)}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-start gap-2 text-[15px] font-medium text-ink border-t border-rose-border mt-2 pt-[10px]">
+                <div className="flex justify-between items-start gap-2 text-[15px] font-medium text-foreground border-t border-border mt-2 pt-[10px]">
                   <span className="min-w-0">{t('Total', '总计')}</span>
                   <span className="shrink-0 text-right whitespace-nowrap">{formatMoney(total, currency)}</span>
                 </div>
                 {bd.shippingPending && (
-                  <p className="text-[12px] text-rose-muted leading-[1.5] mt-2">
+                  <p className="text-[12px] text-muted-foreground leading-[1.5] mt-2">
                     {t('This total does not include delivery yet. Pick your address to see the fee.',
                        '此金额尚未包含运费。请选择地址以查看运费。')}
                   </p>
@@ -1547,7 +1551,7 @@ export default function Storefront() {
           </div>
 
           {error && (
-            <div className="text-[13px] text-danger bg-rose-pale border border-danger-border rounded-md px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+            <div className="text-[13px] text-danger bg-danger-100 border border-danger-500 rounded-md px-[13px] py-[10px] mb-[10px] leading-[1.5]">
               {noticeText(error, noticeCtx)}
             </div>
           )}
@@ -1555,7 +1559,7 @@ export default function Storefront() {
           <Button
             disabled={!canSubmit}
             onClick={handleSubmit}
-            className="disabled:opacity-60 active:scale-[0.99]"
+            className="active:scale-[0.99]"
           >
             {busy ? t('Placing order…', '提交中…') : t('Place Order', '提交订单')}
           </Button>

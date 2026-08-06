@@ -28,7 +28,7 @@ const columns: ColumnDef<any>[] = [
       <SortableHeader column={column} label={(table.options.meta as OrderTableMeta).t('Order #', '订单号')} />
     ),
     cell: ({ row }) => (
-      <span className="font-heading text-[14px] font-medium text-oxblood whitespace-nowrap">
+      <span className="font-heading text-[14px] font-medium text-primary whitespace-nowrap">
         {row.original.order_number || '—'}
       </span>
     ),
@@ -39,7 +39,7 @@ const columns: ColumnDef<any>[] = [
       <SortableHeader column={column} label={(table.options.meta as OrderTableMeta).t('Time', '时间')} />
     ),
     cell: ({ row }) => (
-      <span className="whitespace-nowrap text-text-tertiary">{fmtDateTime(row.original.created_at)}</span>
+      <span className="whitespace-nowrap text-muted-foreground">{fmtDateTime(row.original.created_at)}</span>
     ),
   },
   {
@@ -173,7 +173,7 @@ export default function OrdersView(
 
   if (failed) {
     return (
-      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-center text-sm text-rose-muted">
+      <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border text-center text-sm text-muted-foreground">
         {t('Could not load your orders. Try again in a moment.', '无法加载订单，请稍后再试。')}
       </div>
     )
@@ -181,14 +181,14 @@ export default function OrdersView(
 
   if (orders === null) {
     return (
-      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+      <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
         <SkeletonText lines={4} />
       </div>
     )
   }
 
   return (
-    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
       <DataTable
         columns={columns}
         data={orders}
@@ -213,7 +213,7 @@ export default function OrdersView(
       {/* The count, stated. A merchant reading fifteen rows should be able to tell fifteen
           orders from the first fifteen of nine hundred — which the old unbounded list, cut off
           at a thousand without saying so, gave them no way to do. */}
-      <p className="pt-3 text-[12px] text-text-tertiary">
+      <p className="pt-3 text-[12px] text-muted-foreground">
         {search.trim()
           ? t(`${total} matching order${total === 1 ? '' : 's'}`, `${total} 笔匹配订单`)
           : t(`${total} order${total === 1 ? '' : 's'}`, `${total} 笔订单`)}

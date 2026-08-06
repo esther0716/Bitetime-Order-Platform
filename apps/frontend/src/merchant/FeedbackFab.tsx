@@ -114,22 +114,21 @@ export default function FeedbackFab() {
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        size="none"
         onClick={() => change(true)}
         aria-label={title}
         title={title}
         className={cn(
           'fixed z-30 bottom-6 right-6 max-sm:bottom-5 max-sm:right-5',
-          'flex items-center gap-2 rounded-full px-4 py-3',
-          'bg-oxblood text-cream shadow-lg cursor-pointer',
-          'transition-colors duration-150 hover:bg-oxblood-deep',
+          'gap-2 rounded-pill px-4 py-3 shadow-lg',
           '[@media(pointer:coarse)]:min-h-[48px]',
         )}
       >
         <MessageSquarePlus size={18} strokeWidth={1.75} />
-        <span className="text-[13px] font-sans font-medium max-sm:sr-only">{title}</span>
-      </button>
+        <span className="text-[13px] font-medium max-sm:sr-only">{title}</span>
+      </Button>
 
       <Dialog open={open} onOpenChange={change}>
         <DialogContent className="p-6">
@@ -142,7 +141,7 @@ export default function FeedbackFab() {
           </DialogHeader>
 
           {sent ? (
-            <p className="py-6 text-center text-[14px] text-ink">
+            <p className="py-6 text-center text-[14px] text-foreground">
               {t('Thanks — we got it.', '谢谢，我们已收到。')}
             </p>
           ) : (
@@ -174,7 +173,7 @@ export default function FeedbackFab() {
                 />
                 <div className={cn(
                   'mt-1 text-right text-[11px]',
-                  tooLong ? 'text-danger-fg' : 'text-text-tertiary',
+                  tooLong ? 'text-danger-fg' : 'text-muted-foreground',
                 )}>
                   {trimmed.length} / {FEEDBACK_MAX_LENGTH}
                 </div>

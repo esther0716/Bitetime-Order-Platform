@@ -66,24 +66,24 @@ export default function LoginScreen() {
     <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
       <div className="text-center mb-10">
         <h1><Wordmark className="h-8 mx-auto" /></h1>
-        <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
+        <p className="font-heading text-[13px] italic text-muted-foreground mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
       <Card className="px-8 pt-8 pb-7 gap-0">
-        <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">
+        <h2 className="font-heading text-[20px] font-medium text-primary mb-1">
           {forgot ? t('Reset your password', '重设密码') : t('Merchant login', '商家登录')}
         </h2>
-        <p className="text-[13px] text-rose-muted mb-6">
+        <p className="text-[13px] text-muted-foreground mb-6">
           {forgot
             ? t("Enter your email and we'll send you a link to set a new password.", '输入你的邮箱，我们会发送重设密码的链接。')
             : t('Sign in to manage your shop.', '登录以管理您的店铺。')}
         </p>
         {notice && (
-          <div role="status" className="text-[13px] text-oxblood bg-rose-pale border border-rose-pale rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+          <div role="status" className="text-[13px] text-primary bg-danger-100 border border-danger-100 rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
             {notice}
           </div>
         )}
         {msg && (
-          <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+          <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
             {msg}
           </div>
         )}
@@ -98,13 +98,15 @@ export default function LoginScreen() {
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-baseline justify-between gap-2">
                   <Label htmlFor="login-2">{t('Password', '密码')}</Label>
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="none"
                     onClick={() => switchMode(true)}
-                    className="text-[12px] text-rose-muted underline underline-offset-2 cursor-pointer"
+                    className="text-[12px] text-muted-foreground"
                   >
                     {t('Forgot password?', '忘记密码？')}
-                  </button>
+                  </Button>
                 </div>
                 <div className="relative">
                   <Input
@@ -121,7 +123,7 @@ export default function LoginScreen() {
                     onClick={() => setShowPassword(v => !v)}
                     aria-pressed={showPassword}
                     aria-label={showPassword ? t('Hide password', '隐藏密码') : t('Show password', '显示密码')}
-                    className="absolute inset-y-0 right-0 flex items-center px-3 text-rose-muted hover:text-oxblood cursor-pointer"
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-primary cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
                   </button>
@@ -136,13 +138,13 @@ export default function LoginScreen() {
               : busy ? t('Logging in…', '登录中…') : t('Log in', '登录')}
           </Button>
         </form>
-        <p className="text-[13px] text-rose-muted text-center mt-4">
+        <p className="text-[13px] text-muted-foreground text-center mt-4">
           {forgot ? (
-            <button type="button" onClick={() => switchMode(false)} className="text-oxblood cursor-pointer underline">
+            <Button type="button" variant="link" size="none" onClick={() => switchMode(false)}>
               {t('Back to sign in', '返回登录')}
-            </button>
+            </Button>
           ) : (
-            <Link to="/merchant/signup" className="text-oxblood cursor-pointer underline">{t('New here? Start your shop', '新用户？开店')}</Link>
+            <Link to="/merchant/signup" className="text-primary cursor-pointer underline">{t('New here? Start your shop', '新用户？开店')}</Link>
           )}
         </p>
       </Card>

@@ -48,7 +48,7 @@ const columns: ColumnDef<MerchantRow>[] = [
         href={`/s/${row.original.slug}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-oxblood no-underline font-medium hover:underline"
+        className="text-primary no-underline font-medium hover:underline"
       >/s/{row.original.slug}</a>
     ),
   },
@@ -64,9 +64,9 @@ const columns: ColumnDef<MerchantRow>[] = [
       return (
         <Badge className={
           'px-[10px] border-transparent ' + (
-            s === 'active' ? 'bg-success-bg-soft text-success-deep' :
-            s === 'pending' ? 'bg-warn-bg text-warn-fg' :
-            'bg-danger-bg text-danger-fg'
+            s === 'active' ? 'bg-success-100 text-success-fg' :
+            s === 'pending' ? 'bg-warning-100 text-warning-fg' :
+            'bg-danger-100 text-danger-fg'
           )
         }>{s}</Badge>
       )
@@ -84,7 +84,7 @@ const columns: ColumnDef<MerchantRow>[] = [
       const plan = m.plan === 'pro' ? t('Pro', 'Pro')
         : m.plan === 'basic' ? t('Basic', '基础版') : null
       const sub = m.billingStatus
-      if (!plan && !sub) return <span className="text-text-tertiary">—</span>
+      if (!plan && !sub) return <span className="text-muted-foreground">—</span>
       const subLabel = m.comped ? t('comped', '赠送')
         : sub === 'active' ? t('active', '有效')
         : sub === 'trialing' ? t('trialing', '试用')
@@ -94,18 +94,18 @@ const columns: ColumnDef<MerchantRow>[] = [
         : sub
       // Neutral, not green: a comp is neither a healthy subscription nor a failing one, and
       // colouring it `active` is what made comped and paying shops indistinguishable here.
-      const subCls = m.comped ? 'text-text-tertiary'
-        : sub === 'active' ? 'text-success-deep'
-        : sub === 'trialing' ? 'text-warn-fg'
+      const subCls = m.comped ? 'text-muted-foreground'
+        : sub === 'active' ? 'text-success-fg'
+        : sub === 'trialing' ? 'text-warning-fg'
         : (sub === 'past_due' || sub === 'canceled' || sub === 'incomplete') ? 'text-danger-fg'
-        : 'text-text-tertiary'
+        : 'text-muted-foreground'
       return (
         <span className="inline-flex items-center gap-[6px] whitespace-nowrap">
           {plan && (
             <Badge className={
               'px-[10px] ' + (m.plan === 'pro'
-                ? 'border-transparent bg-oxblood-tint text-oxblood'
-                : 'bg-transparent border-clay-border text-rose-muted')
+                ? 'border-transparent bg-brand-100 text-primary'
+                : 'bg-transparent border-border text-muted-foreground')
             }>{plan}</Badge>
           )}
           {sub && <span className={'text-[12px] ' + subCls}>{subLabel}</span>}
@@ -121,7 +121,7 @@ const columns: ColumnDef<MerchantRow>[] = [
       return (
         <Link
           to={`/merchant/${row.original.slug}`}
-          className="py-[4px] px-[10px] border border-clay-border rounded-pill text-rose-muted text-[11px] font-semibold no-underline whitespace-nowrap transition-all hover:bg-oxblood-tint hover:text-oxblood [@media(pointer:coarse)]:min-h-9 [@media(pointer:coarse)]:inline-flex [@media(pointer:coarse)]:items-center"
+          className="py-[4px] px-[10px] border border-border rounded-pill text-muted-foreground text-[11px] font-semibold no-underline whitespace-nowrap transition-all hover:bg-brand-100 hover:text-primary [@media(pointer:coarse)]:min-h-9 [@media(pointer:coarse)]:inline-flex [@media(pointer:coarse)]:items-center"
         >{t('Dashboard', '后台')}</Link>
       )
     },
@@ -143,7 +143,7 @@ const columns: ColumnDef<MerchantRow>[] = [
                 <Button
                   variant="ghost"
                   size="none"
-                  className="size-8 p-0 rounded-full cursor-pointer hover:bg-oxblood-tint hover:text-oxblood"
+                  className="size-8 p-0 rounded-pill cursor-pointer hover:bg-brand-100 hover:text-primary"
                   disabled={busy === m.id}
                   aria-label={t('Actions', '操作')}
                 />
@@ -285,11 +285,11 @@ export default function AdminMerchants() {
   }
 
   if (!rows) return (
-    <p className="text-[13px] text-text-tertiary italic pt-4">{t('Loading…', '加载中…')}</p>
+    <p className="text-[13px] text-muted-foreground italic pt-4">{t('Loading…', '加载中…')}</p>
   )
 
   return (
-    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
       <DataTable
         columns={columns}
         data={data}

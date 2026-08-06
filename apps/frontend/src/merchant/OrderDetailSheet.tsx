@@ -21,7 +21,7 @@ import WaLink from './WaLink'
 import { ItemSelections } from '../ItemSelections'
 
 // 11px semibold uppercase rose-muted label.
-const LBL = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-rose-muted shrink-0'
+const LBL = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground shrink-0'
 
 // A labelled key/value line in the detail sheet — label in a fixed left column,
 // value aligned in the right column so rows scan like a receipt.
@@ -29,7 +29,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
   return (
     <div className="grid grid-cols-[84px_1fr] gap-x-3 items-baseline text-[13px]">
       <span className={LBL}>{label}</span>
-      <span className="min-w-0 break-words text-ink">{children}</span>
+      <span className="min-w-0 break-words text-foreground">{children}</span>
     </div>
   )
 }
@@ -38,7 +38,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 // top divider + spacing; an optional caption heads the group.
 function Section({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-2 pt-4 mt-4 border-t border-surface-sunken first:pt-0 first:mt-0 first:border-t-0">
+    <section className="flex flex-col gap-2 pt-4 mt-4 border-t border-muted first:pt-0 first:mt-0 first:border-t-0">
       {title && <span className={LBL}>{title}</span>}
       {children}
     </section>
@@ -153,18 +153,18 @@ export default function OrderDetailSheet({
       <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
         {order && (
           <>
-            <SheetHeader className="border-b border-surface-sunken">
+            <SheetHeader className="border-b border-muted">
               <div className="flex items-center gap-[10px] flex-wrap">
                 <SheetTitle className="text-[15px]">{order.order_number || '—'}</SheetTitle>
                 <StatusBadge status={order.status || 'new'} t={t} />
               </div>
-              <span className="text-[12px] text-text-tertiary">{fmtDateTime(order.created_at)}</span>
+              <span className="text-[12px] text-muted-foreground">{fmtDateTime(order.created_at)}</span>
             </SheetHeader>
 
             <div className="flex flex-col px-4 pb-4">
               {/* Customer */}
               <Section title={t('Customer', '顾客')}>
-                <span className="text-[14px] font-medium text-ink">{order.customer_name || '—'}</span>
+                <span className="text-[14px] font-medium text-foreground">{order.customer_name || '—'}</span>
                 {order.customer_wa && (
                   <span className="text-[13px] w-fit"><WaLink wa={order.customer_wa} /></span>
                 )}
@@ -178,11 +178,11 @@ export default function OrderDetailSheet({
                       <img
                         src={proofUrl}
                         alt={t('Payment proof', '付款凭证')}
-                        className="w-full h-auto object-contain rounded-md border border-clay-border"
+                        className="w-full h-auto object-contain rounded-md border border-border"
                       />
                     </a>
                   ) : (
-                    <span className="text-[13px] text-rose-muted">{t('Loading…', '加载中…')}</span>
+                    <span className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</span>
                   )}
                 </Section>
               )}
@@ -194,56 +194,56 @@ export default function OrderDetailSheet({
                     // Index key, deliberately not id: a split promo puts two lines with the
                     // SAME product id in `items` (base half + promo half), and keying by id
                     // would collapse them into one row on screen while charging for both.
-                    <li key={i} className="flex justify-between gap-3 text-[13px] text-ink">
+                    <li key={i} className="flex justify-between gap-3 text-[13px] text-foreground">
                       <span className="min-w-0 break-words">
-                        <span className="text-rose-muted tabular-nums">{it.qty}×</span> {it.name}
+                        <span className="text-muted-foreground tabular-nums">{it.qty}×</span> {it.name}
                         <ItemSelections item={it} />
                         {/* `it.promo` missing (rows written before I-2) reads as false, not a crash. */}
                         {it.promo && (
-                          <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-oxblood text-white text-[10px] leading-[14px] font-medium align-middle">
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded-pill bg-primary text-white text-[10px] leading-[14px] font-medium align-middle">
                             {t('Promo', '优惠')}
                           </span>
                         )}
                       </span>
-                      <span className="tabular-nums text-text-secondary whitespace-nowrap">
+                      <span className="tabular-nums text-muted-foreground whitespace-nowrap">
                         {formatMoney((it.price ?? 0) * (it.qty ?? 0), orderCurrency)}
                       </span>
                     </li>
                   ))}
                 </ul>
-                <div className="flex flex-col gap-1 pt-2 mt-1 border-t border-dashed border-clay-border text-[13px]">
+                <div className="flex flex-col gap-1 pt-2 mt-1 border-t border-dashed border-border text-[13px]">
                   {order.shipping_fee != null && (
                     <div className="flex justify-between">
                       {/* The dashboard keeps its own word for this ("Shipping"), which is the
                           merchant's, not the customer's — only the DISTANCE is added here. The
                           stored value labels it, never a re-derivation: null (region-priced, or
                           placed before #101) prints the plain label, never `0.0 km`. */}
-                      <span className="text-rose-muted">
+                      <span className="text-muted-foreground">
                         {order.delivery_distance_km != null
                           ? t(`Shipping (${Number(order.delivery_distance_km).toFixed(1)} km)`,
                               `运费（${Number(order.delivery_distance_km).toFixed(1)} 公里）`)
                           : t('Shipping', '运费')}
                       </span>
-                      <span className="tabular-nums text-ink">{formatMoney(order.shipping_fee, orderCurrency)}</span>
+                      <span className="tabular-nums text-foreground">{formatMoney(order.shipping_fee, orderCurrency)}</span>
                     </div>
                   )}
                   {order.discount != null && order.discount > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-rose-muted">
+                      <span className="text-muted-foreground">
                         {t('Discount', '折扣')}{order.voucher_code ? ` (${order.voucher_code})` : ''}
                       </span>
-                      <span className="tabular-nums text-ink">−{formatMoney(order.discount, orderCurrency)}</span>
+                      <span className="tabular-nums text-foreground">−{formatMoney(order.discount, orderCurrency)}</span>
                     </div>
                   )}
                   {order.tax_rate != null && order.tax_rate > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-rose-muted">{t('Tax', '税')} ({formatTaxRate(order.tax_rate)}%)</span>
-                      <span className="tabular-nums text-ink">{formatMoney(order.tax ?? 0, orderCurrency)}</span>
+                      <span className="text-muted-foreground">{t('Tax', '税')} ({formatTaxRate(order.tax_rate)}%)</span>
+                      <span className="tabular-nums text-foreground">{formatMoney(order.tax ?? 0, orderCurrency)}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-medium">
-                    <span className="text-ink">{t('Total', '总计')}</span>
-                    <span className="tabular-nums text-oxblood">{formatMoney(order.total, orderCurrency)}</span>
+                    <span className="text-foreground">{t('Total', '总计')}</span>
+                    <span className="tabular-nums text-primary">{formatMoney(order.total, orderCurrency)}</span>
                   </div>
                 </div>
               </Section>
@@ -280,7 +280,7 @@ export default function OrderDetailSheet({
                       onValueChange={v => setCourierDraft(v ?? '')}
                       items={courierItems}
                     >
-                      <SelectTrigger id={`courier-${order.id}`} className="w-full min-w-[140px] bg-cream text-[13px]">
+                      <SelectTrigger id={`courier-${order.id}`} className="w-full min-w-[140px] bg-background text-[13px]">
                         <SelectValue placeholder={t('Select courier…', '选择快递…')} />
                       </SelectTrigger>
                       <SelectContent>
@@ -297,7 +297,7 @@ export default function OrderDetailSheet({
                       value={awbDraft}
                       onChange={e => setAwbDraft(e.target.value)}
                       placeholder={t('e.g. 630123456789', '例如 630123456789')}
-                      className="text-[13px] bg-cream border-clay-border"
+                      className="text-[13px] bg-background border-border"
                     />
                   </div>
                   {trackingUrl(courierDraft, awbDraft) && (
@@ -305,7 +305,7 @@ export default function OrderDetailSheet({
                       href={trackingUrl(courierDraft, awbDraft)!}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[13px] text-oxblood font-medium hover:underline w-fit"
+                      className="text-[13px] text-primary font-medium hover:underline w-fit"
                     >
                       {t('Preview track link →', '预览追踪链接 →')}
                     </a>
@@ -326,7 +326,7 @@ export default function OrderDetailSheet({
               {readOnly ? (
                 order.note && (
                   <Section title={t('Note', '备注')}>
-                    <p className="rounded-md bg-cream border border-clay-border px-3 py-2 text-[13px] text-ink break-words">
+                    <p className="rounded-md bg-background border border-border px-3 py-2 text-[13px] text-foreground break-words">
                       {order.note}
                     </p>
                   </Section>
@@ -338,7 +338,7 @@ export default function OrderDetailSheet({
                     onChange={e => setNoteDraft(e.target.value)}
                     rows={3}
                     placeholder={t('Add a note for this order…', '为此订单添加备注…')}
-                    className="text-[13px] bg-cream border-clay-border resize-none"
+                    className="text-[13px] bg-background border-border resize-none"
                   />
                   <Button
                     type="button"
@@ -362,7 +362,7 @@ export default function OrderDetailSheet({
                     onValueChange={v => { if (v) handleStatusChange(order, v) }}
                     items={statusItems}
                   >
-                    <SelectTrigger id={`status-${order.id}`} className="w-full min-w-[140px] bg-cream text-[13px]">
+                    <SelectTrigger id={`status-${order.id}`} className="w-full min-w-[140px] bg-background text-[13px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

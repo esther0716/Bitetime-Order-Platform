@@ -46,71 +46,22 @@
 /* ── Brand tokens → Tailwind theme. Values live in tokens.css (canonical).
    `inline` means utilities emit var(--color-*) and resolve against :root. ── */
 @theme inline {
-  /* Surfaces / neutrals */
-  --color-cream: var(--color-cream);
-  --color-white: var(--color-white);
-  --color-surface-raised: var(--color-surface-raised);
-  --color-surface-high: var(--color-surface-high);
-  --color-surface-sunken: var(--color-surface-sunken);
-  --color-surface-sunken-hover: var(--color-surface-sunken-hover);
-  --color-surface-warm: var(--color-surface-warm);
-  --color-surface-warm-alt: var(--color-surface-warm-alt);
-  --color-surface-cream-soft: var(--color-surface-cream-soft);
-  --color-divider: var(--color-divider);
-
-  /* Ink / text */
-  --color-ink: var(--color-ink);
-  --color-ink-soft: var(--color-ink-soft);
-  --color-ink-faint: var(--color-ink-faint);
-  --color-text-tertiary: var(--color-text-tertiary);
-
-  /* Oxblood */
-  --color-oxblood: var(--color-oxblood);
-  --color-oxblood-deep: var(--color-oxblood-deep);
-  --color-oxblood-deeper: var(--color-oxblood-deeper);
-  --color-oxblood-light: var(--color-oxblood-light);
-  --color-oxblood-tint: var(--color-oxblood-tint);
-  --color-oxblood-tint-soft: var(--color-oxblood-tint-soft);
-
-  /* Rose / clay */
-  --color-rose-muted: var(--color-rose-muted);
-  --color-rose-deep: var(--color-rose-deep);
-  --color-rose-border: var(--color-rose-border);
-  --color-rose-tint: var(--color-rose-tint);
-  --color-rose-pale: var(--color-rose-pale);
-  --color-rose-hover: var(--color-rose-hover);
-  --color-clay-muted: var(--color-clay-muted);
-  --color-clay-border: var(--color-clay-border);
-  --color-clay-rose: var(--color-clay-rose);
-  --color-clay-faint: var(--color-clay-faint);
-  --color-clay-warm: var(--color-clay-warm);
-  --color-clay-pale: var(--color-clay-pale);
-
-  /* Status: success / info / prep / warn / done / danger */
-  --color-success-fg: var(--color-success-fg);
-  --color-success-bg: var(--color-success-bg);
-  --color-success-strong: var(--color-success-strong);
-  --color-success-deep: var(--color-success-deep);
-  --color-success-border: var(--color-success-border);
-  --color-success-bg-soft: var(--color-success-bg-soft);
-  --color-success-bg-alt: var(--color-success-bg-alt);
-  --color-info-fg: var(--color-info-fg);
-  --color-info-bg: var(--color-info-bg);
-  --color-info-blue-fg: var(--color-info-blue-fg);
-  --color-info-blue-bg: var(--color-info-blue-bg);
-  --color-prep-fg: var(--color-prep-fg);
-  --color-prep-bg: var(--color-prep-bg);
-  --color-prep-fg-alt: var(--color-prep-fg-alt);
-  --color-prep-bg-alt: var(--color-prep-bg-alt);
-  --color-warn-fg: var(--color-warn-fg);
-  --color-warn-bg: var(--color-warn-bg);
-  --color-warn-fg-alt: var(--color-warn-fg-alt);
-  --color-warn-bg-alt: var(--color-warn-bg-alt);
-  --color-status-done-fg: var(--color-status-done-fg);
-  --color-danger: var(--color-danger);
-  --color-danger-fg: var(--color-danger-fg);
-  --color-danger-bg: var(--color-danger-bg);
-  --color-danger-border: var(--color-danger-border);
+  /* Status tones, named directly. `-100` is the chip tint, `-fg` its label, `-500` the
+     solid fill. `--color-danger` is the plain inline-error red and is the one status name
+     without a numeric suffix, because it reads as prose in `text-danger`. */
+  --color-danger: var(--danger-500);
+  --color-danger-fg: var(--danger-fg);
+  --color-success-fg: var(--success-fg);
+  --color-success-100: var(--success-100);
+  --color-success-500: var(--success-500);
+  --color-warning-100: var(--warning-100);
+  --color-warning-500: var(--warning-500);
+  --color-warning-fg: var(--warning-fg);
+  --color-danger-100: var(--danger-100);
+  --color-danger-500: var(--danger-500);
+  --color-info-100: var(--info-100);
+  --color-info-500: var(--info-500);
+  --color-info-fg: var(--info-fg);
   --color-neutral-100: var(--neutral-100);
   --color-neutral-fg: var(--neutral-fg);
   --color-disabled-bg: var(--color-disabled-bg);
@@ -153,8 +104,7 @@
   /* Primitives, exposed as utilities for the cases the semantic layer does not name --
      chart series, status tints, a one-off wash. Reach for a SEMANTIC token first
      (DESIGN.md section 6); needing the same primitive repeatedly means a semantic token
-     is missing, and the fix is to add one, not to spread the primitive.
-     The --color-* entries above this block are the legacy alias names. */
+     is missing, and the fix is to add one, not to spread the primitive. */
   --color-ink-50: var(--ink-50);
   --color-ink-100: var(--ink-100);
   --color-ink-200: var(--ink-200);
@@ -227,6 +177,21 @@
    still win — an unlayered `* { padding: 0 }` would override shadcn classes. */
 @layer base {
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* Tailwind v4's preflight sets `cursor: default` on buttons, reversing the v3 behaviour.
+     This app had been paying for that one call site at a time — `cursor-pointer` appears
+     52 times — and the places that forgot are exactly the ones that felt broken: the FAQ
+     accordion and the order rows in customer detail, neither of which changed a cursor on
+     hover. Fixing it here means a new button is right by default instead of right only if
+     someone remembers.
+
+     Disabled controls keep the default cursor. `[aria-disabled]` is checked as well as
+     `:disabled` because Base UI marks some triggers that way rather than with the
+     attribute, and those must not read as clickable either. */
+  button:not(:disabled):not([aria-disabled='true']),
+  [role='button']:not(:disabled):not([aria-disabled='true']) {
+    cursor: pointer;
+  }
 }
 
 /* Smooth in-page anchor scrolling (e.g. nav "Pricing" → #pricing). Disabled
