@@ -34,19 +34,39 @@ describe('buildIssueTitle', () => {
 })
 
 describe('buildIssueBody', () => {
+  const base = {
+    message: 'App crashes when I add a voucher at checkout',
+    shopName: 'Golden Wok',
+    shopSlug: 'golden-wok',
+    feedbackId: 'abc-123',
+    createdAt: '2026-08-04T00:00:00Z',
+    adminUrl: 'https://tinyorder.vercel.app',
+  }
+
   it('includes the message, shop, feedback id and timestamp', () => {
-    const body = buildIssueBody({
-      message: 'App crashes when I add a voucher at checkout',
-      shopName: 'Golden Wok',
-      shopSlug: 'golden-wok',
-      feedbackId: 'abc-123',
-      createdAt: '2026-08-04T00:00:00Z',
-    })
+    const body = buildIssueBody({ ...base, imageCount: 0 })
     expect(body).toContain('App crashes when I add a voucher at checkout')
     expect(body).toContain('Golden Wok')
     expect(body).toContain('/s/golden-wok')
     expect(body).toContain('abc-123')
     expect(body).toContain('2026-08-04T00:00:00Z')
+  })
+
+  it('says nothing about screenshots when there are none', () => {
+    expect(buildIssueBody({ ...base, imageCount: 0 })).not.toContain('Screenshot')
+  })
+
+  it('states the count and where to look when there are some', () => {
+    const body = buildIssueBody({ ...base, imageCount: 2 })
+    expect(body).toContain('Screenshots: 2')
+    expect(body).toContain('https://tinyorder.vercel.app/admin/feedback')
+  })
+
+  it('never puts an image URL in a public issue', () => {
+    const body = buildIssueBody({ ...base, imageCount: 3 })
+    expect(body).not.toMatch(/feedback-images/)
+    expect(body).not.toMatch(/storage\/v1/)
+    expect(body).not.toMatch(/\.(png|jpe?g|webp)\b/i)
   })
 })
 
