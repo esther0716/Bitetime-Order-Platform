@@ -66,12 +66,16 @@
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:type" content="image/jpeg" />
-    <meta property="og:image:alt" content="A printed receipt reading: Sell your food online — without the DM chaos. One storefront link, every order in one place, bilingual. Total: 7 days free." />
+    <meta property="og:image:alt" content="A printed receipt reading: Sell what you make online — without the DM chaos. One storefront link, every order in one place, bilingual. Total: 7 days free." />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="TinyOrder — Sell your food online" />
+    <!-- Not the <title>'s twin, unlike og:title. This string sits directly above the share card,
+         which no longer says "food" — a card reading "Sell what you make online" under a title
+         reading "Sell your food online" contradicts itself in the one place both are visible at
+         once. Nothing indexes this tag, so aligning it costs no keyword. -->
+    <meta name="twitter:title" content="TinyOrder — Sell what you make online" />
     <meta name="twitter:description" content="One branded storefront link for home kitchens, bakers, makers and small sellers — every order in one place." />
     <meta name="twitter:image" content="https://tinyorder.shop/og-cover.jpg" />
-    <meta name="twitter:image:alt" content="A printed receipt reading: Sell your food online — without the DM chaos. One storefront link, every order in one place, bilingual. Total: 7 days free." />
+    <meta name="twitter:image:alt" content="A printed receipt reading: Sell what you make online — without the DM chaos. One storefront link, every order in one place, bilingual. Total: 7 days free." />
     <!-- WHO THIS SITE IS. Static, and deliberately so: the rest of the app's structured data is
          injected by the route that owns it (src/marketing/structuredData.ts), but a crawler that
          does not execute JavaScript — which is most of the LLM ones — sees none of that, and

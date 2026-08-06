@@ -39,7 +39,7 @@ const FONTS = [
   {
     family: 'Lora',
     weight: 500,
-    text: 'Sell your food online — without the DM chaos.',
+    text: 'Sell what you make online — without the DM chaos.',
   },
   {
     // Uppercase, because the template sets text-transform: uppercase — the
