@@ -1,5 +1,5 @@
 import type { User } from '@supabase/auth-js';
-import { voucherFromRow, QUOTE_REFUSALS } from '@bitetime/shared';
+import { voucherFromRow, QUOTE_REFUSALS, validateFeedbackImage, FEEDBACK_MAX_IMAGES } from '@bitetime/shared';
 import type { FeedbackDraft, FeedbackStatus, MerchantStats, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
@@ -9,7 +9,7 @@ import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { pendingShopMetadata } from './merchant/pendingShop';
 import type { PendingShop } from './merchant/pendingShop';
-import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, mapOk, toVoid } from './api'
+import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForm, mapOk, toVoid } from './api'
 import type { Result } from './api'
 import type { CartLine } from '@bitetime/shared'
 
@@ -994,12 +994,50 @@ export async function upsertMerchantSecret(merchantId: string, secret: any): Pro
 // merchantId scopes the route; the backend re-derives ownership from the bearer token
 // and ignores anything else in the body, so there is nothing else to send.
 //
-// Returns no data: the POST responds with a bare merchant_feedback row, which is NOT a
-// FeedbackItem — it carries no shop_name / shop_slug, and only the admin list joins those
-// in. Claiming the richer type here would be a cast the compiler cannot check, so the success
-// carries `void`; the form renders `error` on failure.
-export async function submitFeedback(merchantId: string, draft: FeedbackDraft): Promise<Result<void>> {
-  return toVoid(await apiSend<unknown>(`/api/merchants/${merchantId}/feedback`, 'POST', draft, { auth: true }))
+/**
+ * Sends the merchant's feedback and up to FEEDBACK_MAX_IMAGES screenshots as one multipart
+ * request, so the row and its images arrive together.
+ *
+ * Validates every file against the shared rules FIRST — the same "readable error before the
+ * bytes cross the wire" role uploadPaymentProof plays. The shared validator judges type and
+ * size only, so the filename is prefixed here, where there is a merchant to show it to.
+ *
+ * Returns `images_failed`, not the row: the POST responds with a bare merchant_feedback row,
+ * which is NOT a FeedbackItem — it carries no shop_name / shop_slug, and only the admin list
+ * joins those in. Claiming the richer type here would be a cast the compiler cannot check.
+ */
+export async function submitFeedback(
+  merchantId: string,
+  draft: FeedbackDraft,
+  files: File[] = [],
+): Promise<Result<{ images_failed: number }>> {
+  if (files.length > FEEDBACK_MAX_IMAGES) {
+    return { ok: false, error: { message: `Attach at most ${FEEDBACK_MAX_IMAGES} screenshots` } }
+  }
+  for (const file of files) {
+    const check = validateFeedbackImage({ type: file.type, size: file.size })
+    if (!check.ok) return { ok: false, error: { message: `${check.error}: ${file.name}` } }
+  }
+
+  const form = new FormData()
+  form.append('category', draft.category)
+  form.append('message', draft.message)
+  for (const file of files) form.append('images', file)
+
+  const r = await apiSendForm<{ images_failed?: number }>(
+    `/api/merchants/${merchantId}/feedback`, form, { auth: true },
+  )
+  return mapOk(r, d => ({ images_failed: d?.images_failed ?? 0 }))
+}
+
+/**
+ * One screenshot's bytes, for the superadmin inbox. `auth: 'required'` — a signed-out caller
+ * has no feedback to view. Same shape as fetchPaymentProof; the bucket is private, so this
+ * route is the only way to these bytes.
+ */
+export async function fetchFeedbackImage(feedbackId: string, index: number): Promise<Result<Blob>> {
+  const r = await apiGetFile(`/api/admin/feedback/${feedbackId}/images/${index}`, { auth: 'required' })
+  return mapOk(r, d => d.blob)
 }
 
 export async function fetchAdminFeedback(status?: FeedbackStatus): Promise<Result<FeedbackItem[]>> {
