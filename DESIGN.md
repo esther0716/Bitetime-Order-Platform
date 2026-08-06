@@ -97,17 +97,17 @@ components:
   button-primary:
     backgroundColor: "{colors.brand-500}"
     textColor: "{colors.white}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "14px"
   button-primary-hover:
     backgroundColor: "{colors.brand-600}"
     textColor: "{colors.white}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "14px"
   button-ghost:
     backgroundColor: "{colors.white}"
     textColor: "{colors.ink-500}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.lg}"
     padding: "7px 14px"
   input:
     backgroundColor: "{colors.white}"
@@ -258,7 +258,7 @@ The old **Flat-Rest Rule** — which forbade any shadow on a resting card — is
 The shadcn primitives in `src/components/ui/` resolve through the semantic layer via `index.css`: `--primary` → `--color-accent`, `--background` → `--color-bg`, `--card` → `--color-bg-surface`, `--border` → `--color-border`, `--radius` → `4px`.
 
 ### Buttons
-- **Shape:** 4px radius (`rounded.md`); pill (`9999px`) for toggles and filters.
+- **Shape:** 8px radius (`rounded.lg`) on every rectangular button, at every size — the sizes vary in dimension, never in corner. Pill (`9999px`) for toggles, filters and the small inline actions that read as chips. This is the one place a button parts from the 4px surface corner: at 4px a filled oxblood slab read as square, and the three button sizes disagreed with each other (`default` was 8px while `md`, `sm` and `icon` were 4px). Inputs stay 4px — a control you type into is not one you press.
 - **Primary:** brand-500 fill, **white** text, Poppins 500.
 - **Hover / Active:** background → brand-600; `:active` `transform: scale(0.99)`.
 - **Ghost:** white surface, ink-500 text, hairline border; hover shifts to the accent with a brand-50 wash.

@@ -363,7 +363,7 @@ export default function ProductsManager() {
         <h3 className="font-heading text-[15px] font-medium text-primary flex items-center gap-2">
           {t('Your products', '您的产品')}
         </h3>
-        <Button data-tour="add-product" type="button" size="none" className="rounded-pill py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
+        <Button data-tour="add-product" type="button" size="none" className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
           {t('+ Add product', '+ 添加产品')}
         </Button>
       </div>
@@ -380,7 +380,7 @@ export default function ProductsManager() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button type="button" size="none" className="rounded-pill py-[6px] px-[14px] text-[13px]" onClick={openAdd}>
+            <Button type="button" size="none" className="rounded-lg py-[6px] px-[14px] text-[13px]" onClick={openAdd}>
               {t('+ Add product', '+ 添加产品')}
             </Button>
           </EmptyContent>

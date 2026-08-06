@@ -51,26 +51,33 @@ const buttonVariants = cva(
         link:
           "inline border-0 font-normal text-[length:inherit] underline underline-offset-2 text-primary",
       },
+      // ONE corner for every rectangular button: `rounded-lg` (8 px), the radius `default`
+      // already used. `md`, `sm` and `icon` each carried the 4 px `rounded-md` instead, so a
+      // single pane showed two button radii at once — an 8 px submit above a 4 px Save above
+      // a 4 px icon button — which reads as a squarish slab rather than a deliberate scale.
+      // Sizes below now vary in DIMENSION only; the exceptions are the two that are round on
+      // purpose (`pill`, `iconRound`). Inputs are still 4 px and deliberately not touched
+      // here — a control the user types into is not the control they press.
       size: {
-        // .submit-btn — full-width, 14 px pad all sides, 15 px text, lg radius (8 px), letter-spacing
+        // .submit-btn — full-width, 14 px pad all sides, 15 px text, letter-spacing
         default:
           "w-full p-[14px] text-[15px] rounded-lg tracking-[0.01em] pointer-coarse:min-h-11",
-        // .save-btn — full-width, 10 px pad all sides, 14 px text, md radius (4 px)
+        // .save-btn — full-width, 10 px pad all sides, 14 px text
         // Note: .auth-btn uses padding: 12 px; screens should pass className="py-3" override
         md:
-          "w-full p-[10px] text-sm rounded-md pointer-coarse:min-h-11",
-        // .voucher-apply-btn — inline, 18 px H / 10 px V, 14 px text, md radius
+          "w-full p-[10px] text-sm rounded-lg pointer-coarse:min-h-11",
+        // .voucher-apply-btn — inline, 18 px H / 10 px V, 14 px text
         // Note: .add-btn uses py-[7px] px-[14px] w-full rounded-sm; screens must override
         sm:
-          "px-[18px] py-[10px] text-sm rounded-md",
+          "px-[18px] py-[10px] text-sm rounded-lg",
         // .cust-account-btn — pill, 14 px H / 7 px V, 13 px text, pill radius (9999 px = stadium)
         // Note: .lang-btn uses py-[5px] + bg-card; screens must override those
         pill:
           "px-[14px] py-[7px] text-[13px] rounded-pill",
-        // .hamburger-btn / .notif-bell — 36×36 px square, md radius (dimension only)
+        // .hamburger-btn / .notif-bell — 36×36 px square (dimension only)
         // Pair with variant="outline" for the hairline border + hover muted-surface appearance
         icon:
-          "size-9 rounded-md",
+          "size-9 rounded-lg",
         // .qty-btn / .del-btn — 26×26 px round icon button (dimension only)
         // Pair with variant="soft" for qty-btn; variant="destructive" + className="size-[30px]" for del-btn
         iconRound:

@@ -88,11 +88,14 @@ export default function ShopSettings() {
   return (
     <div className="w-full">
       <Tabs value={tab} onValueChange={(v) => changeTab(v as TabKey)} className="mb-6">
-        {/* Mobile: 4 nowrap tabs exceed the narrow column, so scroll horizontally
-            with natural widths instead of clipping the last tab off-screen. */}
-        <TabsList className="max-sm:justify-start max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden">
+        {/* Six nowrap tabs outgrow the column well before the `sm` breakpoint — the scroll
+            was `max-sm:` and every width between overflowed the rail instead. Unconditional:
+            the triggers keep `flex-1` so they still stretch to fill a wide rail, and only
+            scroll once their natural (nowrap) widths exceed it. `justify-start` matters
+            here — centred overflow puts the first tab off the left edge, unreachable. */}
+        <TabsList className="justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TABS.map(({ key, label, tag }) => (
-            <TabsTrigger key={key} value={key} className="group/tab max-sm:flex-none">
+            <TabsTrigger key={key} value={key} className="group/tab">
               {label}
               {/* The active trigger fills with oxblood, so the outline badge's `text-foreground` would
                   sit near-invisible on it — invert to cream while the tab is selected. */}

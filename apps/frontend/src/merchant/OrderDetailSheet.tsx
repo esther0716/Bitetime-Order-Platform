@@ -313,7 +313,7 @@ export default function OrderDetailSheet({
                   <Button
                     type="button"
                     size="none"
-                    className="self-end rounded-pill py-[6px] px-[14px] text-[13px]"
+                    className="self-end rounded-lg py-[6px] px-[14px] text-[13px]"
                     disabled={!trackDirty || savingTrack}
                     onClick={handleTrackingSave}
                   >
@@ -343,7 +343,7 @@ export default function OrderDetailSheet({
                   <Button
                     type="button"
                     size="none"
-                    className="self-end rounded-pill py-[6px] px-[14px] text-[13px]"
+                    className="self-end rounded-lg py-[6px] px-[14px] text-[13px]"
                     disabled={!noteDirty || savingNote}
                     onClick={handleNoteSave}
                   >
