@@ -173,7 +173,7 @@ export default function OrdersView(
 
   if (failed) {
     return (
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-center text-sm text-rose-muted">
+      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-center text-sm text-rose-muted">
         {t('Could not load your orders. Try again in a moment.', '无法加载订单，请稍后再试。')}
       </div>
     )
@@ -181,14 +181,14 @@ export default function OrdersView(
 
   if (orders === null) {
     return (
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
         <SkeletonText lines={4} />
       </div>
     )
   }
 
   return (
-    <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
       <DataTable
         columns={columns}
         data={orders}

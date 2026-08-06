@@ -23,7 +23,7 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        'rounded-full border-[1.5px] px-2.5 py-0.5 text-[11px] font-semibold transition-colors',
+        'rounded-full border-[0.5px] px-2.5 py-0.5 text-[11px] font-semibold transition-colors',
         active
           ? 'border-oxblood bg-oxblood text-cream'
           : 'border-rose-border bg-transparent text-text-tertiary hover:text-oxblood',
@@ -100,7 +100,7 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
             disabled={busy}
             onClick={isPro ? download : goToSubscription}
             className={cn(
-              'inline-flex cursor-pointer items-center justify-center rounded-full border-[1.5px] p-1.5 transition-colors',
+              'inline-flex cursor-pointer items-center justify-center rounded-full border-[0.5px] p-1.5 transition-colors',
               'border-rose-border bg-transparent text-text-tertiary',
               'hover:border-oxblood hover:text-oxblood',
               'disabled:cursor-default disabled:opacity-50 disabled:hover:border-rose-border disabled:hover:text-text-tertiary',
@@ -169,7 +169,7 @@ export default function Overview() {
   if (failed) return (
     <div className="flex flex-col gap-5">
       <ShareStorefront />
-      <div className="rounded-xl border-[1.5px] border-rose-border bg-surface-raised px-5 py-6 text-center text-sm text-rose-muted">
+      <div className="rounded-xl border-[0.5px] border-rose-border bg-surface-raised px-5 py-6 text-center text-sm text-rose-muted">
         {t('Could not load your figures. Try again in a moment.', '无法加载数据，请稍后再试。')}
       </div>
     </div>
@@ -180,10 +180,10 @@ export default function Overview() {
       <ShareStorefront />
       <div className="grid grid-cols-4 gap-[10px] max-[900px]:grid-cols-2 max-[520px]:grid-cols-1">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-xl border-[1.5px] border-rose-border bg-surface-raised px-5 py-4"><SkeletonText lines={2} /></div>
+          <div key={i} className="rounded-xl border-[0.5px] border-rose-border bg-surface-raised px-5 py-4"><SkeletonText lines={2} /></div>
         ))}
       </div>
-      <div className="rounded-xl border-[1.5px] border-rose-border bg-surface-raised px-5 py-4"><SkeletonText lines={6} /></div>
+      <div className="rounded-xl border-[0.5px] border-rose-border bg-surface-raised px-5 py-4"><SkeletonText lines={6} /></div>
     </div>
   )
 

@@ -39,7 +39,7 @@ export default function DeactivatedVouchers() {
   if (!dead.length) return null
 
   return (
-    <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mt-6 w-full box-border max-sm:p-4">
+    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mt-6 w-full box-border max-sm:p-4">
       <h3 className="font-heading text-[15px] font-medium text-oxblood mb-2">
         {t('Codes that no longer work', '已失效的优惠码')}
       </h3>
@@ -51,7 +51,7 @@ export default function DeactivatedVouchers() {
         {dead.map(v => (
           <div
             key={(v as any).id ?? v.code}
-            className="flex items-center gap-3 px-[14px] py-[10px] bg-cream border-[1.5px] border-clay-border rounded-lg"
+            className="flex items-center gap-3 px-[14px] py-[10px] bg-cream border-[0.5px] border-clay-border rounded-lg"
           >
             <span className="text-[14px] font-medium text-ink flex-1 min-w-0">{v.code}</span>
             <Badge variant="outline" className="uppercase tracking-[0.08em] shrink-0">

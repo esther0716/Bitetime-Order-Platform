@@ -828,7 +828,7 @@ export default function Storefront() {
               </p>
             )}
 
-            <div className="max-w-[360px] mx-auto mb-5 text-left px-4 py-3 bg-surface-raised border-[1.5px] border-divider rounded-md">
+            <div className="max-w-[360px] mx-auto mb-5 text-left px-4 py-3 bg-surface-raised border-[0.5px] border-divider rounded-md">
               {success.items.map((item, i) => (
                 <div key={i} className="flex justify-between items-start gap-2 text-sm text-rose-muted py-[3px]">
                   {/* min-w-0 (not shrink-0): a long product name must wrap inside its own column.
@@ -879,7 +879,7 @@ export default function Storefront() {
             </div>
 
             {(merchant.payment_note || merchant.payment_bank || merchant.payment_qr) && (
-              <div className="max-w-[360px] mx-auto mb-4 text-left px-[14px] py-[10px] bg-surface-raised border-[1.5px] border-divider rounded-md text-[13px] text-ink-faint leading-[1.5]">
+              <div className="max-w-[360px] mx-auto mb-4 text-left px-[14px] py-[10px] bg-surface-raised border-[0.5px] border-divider rounded-md text-[13px] text-ink-faint leading-[1.5]">
                 <div className="font-semibold text-oxblood mb-1">
                   {t('Payment Instructions', '付款说明')}
                 </div>
@@ -1015,7 +1015,7 @@ export default function Storefront() {
                   <div
                     key={p.id}
                     className={cn(
-                      "flex items-center gap-[14px] px-4 py-[14px] bg-surface-raised border-[1.5px] border-clay-border rounded-xl transition-colors",
+                      "flex items-center gap-[14px] px-4 py-[14px] bg-surface-raised border-[0.5px] border-clay-border rounded-xl transition-colors",
                       cart.some(l => l.productId === p.id) && "border-oxblood bg-oxblood-tint"
                     )}
                   >
@@ -1024,7 +1024,7 @@ export default function Storefront() {
                         type="button"
                         onClick={() => setGallery(p)}
                         aria-label={t('View photos', '查看图片')}
-                        className="group size-14 shrink-0 rounded-lg overflow-hidden border-[1.5px] border-clay-border cursor-pointer relative transition-transform active:scale-[0.97]"
+                        className="group size-14 shrink-0 rounded-lg overflow-hidden border-[0.5px] border-clay-border cursor-pointer relative transition-transform active:scale-[0.97]"
                       >
                         <img
                           src={productImageUrl(p.image_urls[0])}
@@ -1163,7 +1163,7 @@ export default function Storefront() {
                   className={cn(
                     "flex-1 border rounded-md py-[10px] px-[14px] pointer-coarse:min-h-11 cursor-pointer text-[14px] font-sans text-center transition-all hover:border-oxblood focus-visible:outline-2 focus-visible:outline-oxblood focus-visible:outline-offset-2",
                     mode === m
-                      ? "border-[1.5px] border-oxblood bg-oxblood-tint text-oxblood font-medium"
+                      ? "border-[0.5px] border-oxblood bg-oxblood-tint text-oxblood font-medium"
                       : "border-clay-border bg-surface-raised text-ink"
                   )}
                   aria-pressed={mode === m}

@@ -12,19 +12,6 @@ import type { VerticalWord } from './verticals'
 // Editorial ease — slightly springier than the app's UI ease, still calm.
 const EASE = [0.16, 1, 0.3, 1] as const
 
-// ── Paper grain: fixed, pointer-events-none, painted once (perf guardrail) ──
-// The noise tile itself is `.grain-overlay` in index.css. It is a constant, and a constant in a
-// `style` attribute is ~470 bytes of percent-encoded SVG re-sent inside the HTML of every
-// prerendered page instead of once inside a cached stylesheet.
-export function GrainOverlay() {
-  return (
-    <div
-      aria-hidden
-      className="grain-overlay pointer-events-none fixed inset-0 -z-10 opacity-[0.035] mix-blend-multiply max-[600px]:opacity-[0.025]"
-    />
-  )
-}
-
 // ── Scroll reveal: fade + small rise once in view ───────────────────────────
 export function Reveal({
   children,
@@ -162,7 +149,7 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
             initial={{ opacity: 0, y: -8, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 18 } }}
             exit={{ opacity: 0, y: -6, scale: 0.96, transition: { duration: 0.18 } }}
-            className="absolute -top-3 -right-2 z-10 flex items-center gap-2 rounded-pill border border-clay-border bg-surface-high py-1.5 px-3 shadow-[0_8px_24px_rgba(43,10,16,0.14)]"
+            className="absolute -top-3 -right-2 z-10 flex items-center gap-2 rounded-pill border border-clay-border bg-surface-high py-1.5 px-3 shadow-elev-2"
           >
             <ReceiptText size={14} strokeWidth={1.5} className="text-oxblood" aria-hidden />
             <span className="text-[12px] font-medium text-ink">{t('New order · BT-0242', '新订单 · BT-0242')}</span>
@@ -171,7 +158,7 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
       </AnimatePresence>
 
       {/* Card */}
-      <div className="rounded-2xl border-[1.5px] border-clay-border bg-surface-raised p-5 text-left shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
+      <div className="rounded-2xl border-[0.5px] border-clay-border bg-surface-raised p-5 text-left shadow-elev-3">
         {/* Shop header */}
         <div className="flex items-center gap-3 pb-4 border-b border-divider">
           <span className="grid h-10 w-10 place-items-center rounded-round bg-oxblood-tint font-heading text-[15px] font-medium text-oxblood">

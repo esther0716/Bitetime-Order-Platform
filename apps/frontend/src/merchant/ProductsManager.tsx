@@ -67,10 +67,10 @@ const columns: ColumnDef<any>[] = [
         <img
           src={productImageUrl(p.image_urls[0])}
           alt=""
-          className="size-11 shrink-0 object-cover rounded-lg border-[1.5px] border-clay-border"
+          className="size-11 shrink-0 object-cover rounded-lg border-[0.5px] border-clay-border"
         />
       ) : (
-        <div className="size-11 shrink-0 rounded-lg border-[1.5px] border-dashed border-clay-border" aria-hidden />
+        <div className="size-11 shrink-0 rounded-lg border-[0.5px] border-dashed border-clay-border" aria-hidden />
       )
     },
   },
@@ -352,13 +352,13 @@ export default function ProductsManager() {
   ]
 
   if (!rows) return (
-    <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
       <SkeletonText lines={4} />
     </div>
   )
 
   return (
-    <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
       <div className="flex items-center justify-between gap-3 mb-4">
         <h3 className="font-heading text-[15px] font-medium text-oxblood flex items-center gap-2">
           {t('Your products', '您的产品')}
@@ -369,7 +369,7 @@ export default function ProductsManager() {
       </div>
 
       {rows.length === 0 ? (
-        <Empty className="border-[1.5px] border-dashed border-clay-border bg-cream/50">
+        <Empty className="border-[0.5px] border-dashed border-clay-border bg-cream/50">
           <EmptyHeader>
             <EmptyMedia variant="icon" className="bg-oxblood-tint text-oxblood">
               <Package />

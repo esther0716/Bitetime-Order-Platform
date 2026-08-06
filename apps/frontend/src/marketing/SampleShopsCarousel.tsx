@@ -28,7 +28,7 @@ export default function SampleShopsCarousel({ shops }: { shops: SampleShop[] }) 
             {shop.screenshotPath ? (
               // Replaces the avatar+product-list block ENTIRELY — one card, one representation
               // of the shop, never both. A static <img>, same as every other card: no <a>/<Link>.
-              <div className="h-full overflow-hidden rounded-2xl border-[1.5px] border-clay-border bg-surface-raised shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
+              <div className="h-full overflow-hidden rounded-2xl border-[0.5px] border-clay-border bg-surface-raised shadow-elev-3">
                 <img
                   src={sampleShopScreenshotUrl(shop.screenshotPath)}
                   alt={shop.name}
@@ -36,7 +36,7 @@ export default function SampleShopsCarousel({ shops }: { shops: SampleShop[] }) 
                 />
               </div>
             ) : (
-              <div className="h-full rounded-2xl border-[1.5px] border-clay-border bg-surface-raised p-5 text-left shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
+              <div className="h-full rounded-2xl border-[0.5px] border-clay-border bg-surface-raised p-5 text-left shadow-elev-3">
                 <div className="flex items-center gap-3 pb-4 border-b border-divider">
                   {shop.products[0]?.imagePath ? (
                     <img

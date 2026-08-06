@@ -10,7 +10,7 @@ export const ctaPrimary =
   'inline-block py-[13px] px-7 bg-oxblood text-cream rounded-md text-[15px] font-medium font-sans no-underline [transition:background_0.15s,transform_0.15s] hover:bg-oxblood-deep hover:-translate-y-px'
 
 export const ctaGhost =
-  'inline-block py-3 px-[26px] border-[1.5px] border-clay-border rounded-md text-[15px] font-medium font-sans text-ink-soft no-underline [transition:border-color_0.15s,color_0.15s] hover:border-oxblood hover:text-oxblood'
+  'inline-block py-3 px-[26px] border-[0.5px] border-clay-border rounded-md text-[15px] font-medium font-sans text-ink-soft no-underline [transition:border-color_0.15s,color_0.15s] hover:border-oxblood hover:text-oxblood'
 
 /** Inside a flex-col card: push to the bottom edge and centre the label. */
 export const cardCtaPrimary = cn(ctaPrimary, 'mt-auto text-center')

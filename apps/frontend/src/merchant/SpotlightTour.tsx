@@ -78,7 +78,7 @@ export default function SpotlightTour({ targetSelector, stepLabel, title, body, 
         }}
       />
       <div
-        className="absolute rounded-2xl border-[1.5px] border-rose-border bg-surface-raised p-4 shadow-xl"
+        className="absolute rounded-2xl border-[0.5px] border-rose-border bg-surface-raised p-4 shadow-xl"
         style={{
           width: TOOLTIP_W,
           left,

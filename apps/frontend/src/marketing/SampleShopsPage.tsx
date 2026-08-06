@@ -10,7 +10,7 @@ import { useSession } from '../SessionContext'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
 import { useSampleShops } from '../useSampleShops'
-import { GrainOverlay, Reveal } from './LandingMotion'
+import { Reveal } from './LandingMotion'
 import { sectionTitle } from './ctaStyles'
 import SampleShopsCarousel from './SampleShopsCarousel'
 
@@ -21,7 +21,6 @@ export default function SampleShopsPage() {
 
   return (
     <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-ink bg-cream">
-      <GrainOverlay />
 
       <MarketingNav />
 

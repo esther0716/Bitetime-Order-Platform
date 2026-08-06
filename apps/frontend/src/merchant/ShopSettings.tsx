@@ -130,7 +130,7 @@ export default function ShopSettings() {
 
 interface TabProps { onDirtyChange: (dirty: boolean) => void }
 
-const CARD = 'bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
+const CARD = 'bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
 const HEADING = 'font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2'
 
 // `SettingsFields`' index signature is `string | boolean | undefined`, wide enough to cover
@@ -294,14 +294,14 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         <h3 className={HEADING}>{t('What customers can choose', '顾客可选的方式')}</h3>
         <div className="flex flex-col gap-2">
           <label className="flex items-start gap-2 text-[14px] text-ink">
-            <input type="checkbox" className="mt-1"
+            <input type="checkbox" className="mt-1 accent-oxblood"
               checked={fields.pickupEnabled}
               disabled={onlyMethod === 'pickup'}
               onChange={e => setFields(f => ({ ...f, pickupEnabled: e.target.checked }))} />
             <span>{t('Pickup — customers collect from you.', '自取 — 顾客自行前来领取。')}</span>
           </label>
           <label className="flex items-start gap-2 text-[14px] text-ink">
-            <input type="checkbox" className="mt-1"
+            <input type="checkbox" className="mt-1 accent-oxblood"
               checked={fields.deliveryEnabled}
               disabled={onlyMethod === 'delivery'}
               onChange={e => setFields(f => ({ ...f, deliveryEnabled: e.target.checked }))} />
@@ -311,7 +311,7 @@ function ShippingTab({ onDirtyChange }: TabProps) {
             </span>
           </label>
           <label className="flex items-start gap-2 text-[14px] text-ink">
-            <input type="checkbox" className="mt-1"
+            <input type="checkbox" className="mt-1 accent-oxblood"
               checked={fields.expressEnabled}
               disabled={onlyMethod === 'express'}
               onChange={e => setFields(f => ({ ...f, expressEnabled: e.target.checked }))} />
@@ -539,6 +539,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
           <label className="flex items-center gap-2 text-[14px] text-ink">
             <input
               type="checkbox"
+              className="accent-oxblood"
               checked={fields.taxEnabled}
               onChange={e => setFields(f => ({ ...f, taxEnabled: e.target.checked }))}
             />
@@ -714,7 +715,7 @@ function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChang
   const stepClass = 'flex gap-3'
   const numClass = 'shrink-0 w-5 h-5 rounded-full bg-oxblood text-cream text-[11px] font-medium flex items-center justify-center'
   const textClass = 'text-[13px] text-ink leading-[1.5]'
-  const mockupWrapClass = 'ml-8 rounded-lg overflow-hidden border-[1.5px] border-clay-border -mt-1'
+  const mockupWrapClass = 'ml-8 rounded-lg overflow-hidden border-[0.5px] border-clay-border -mt-1'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -754,7 +755,7 @@ function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChang
                 '然后在浏览器打开以下链接，把 <TOKEN> 换成您的令牌：')}
             </p>
           </div>
-          <p className="font-mono text-[12px] break-all rounded-lg border-[1.5px] border-clay-border bg-surface-sunken px-3 py-2 text-ink -mt-2 ml-8">
+          <p className="font-mono text-[12px] break-all rounded-lg border-[0.5px] border-clay-border bg-surface-sunken px-3 py-2 text-ink -mt-2 ml-8">
             https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
           </p>
           <div className={stepClass}>

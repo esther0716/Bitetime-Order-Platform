@@ -5,20 +5,23 @@ import {
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-// Brand-derived palette (oxblood family + gold + semantic accents from tokens.css).
-const CHART_COLORS = ['#7A1028', '#C9A030', '#B86B6B', '#5A1A7A', '#1A7A3A', '#0C5460', '#A07820']
-const OXBLOOD = '#7A1028'
-const GOLD = '#C9A030'
-const AXIS = '#8A5550'      // --color-text-tertiary
-const GRID = '#E8D5C8'      // warm hairline
+/* Recharts takes colours as props, not classes, so these cannot ride the token
+   indirection the rest of the app uses — they are literals by necessity and must be
+   updated by hand whenever tokens.css moves. Every value here mirrors a token:
+   brand-500/-400/-200, then the four status tones. */
+const CHART_COLORS = ['#7A1028', '#D4708A', '#EBCDD3', '#2563EB', '#059669', '#F59E0B', '#EF4444']
+const OXBLOOD = '#7A1028'   // --brand-500
+const ACCENT_2 = '#D4708A'  // --brand-400
+const AXIS = '#71717A'      // --ink-500
+const GRID = '#E4E4E7'      // --ink-200
 
 const tooltipStyle = {
-  background: '#FFFDF9',
-  border: '1.5px solid #C9A0A8',
-  borderRadius: 10,
+  background: '#FFFFFF',              // --white
+  border: '0.5px solid #E4E4E7',      // --ink-200
+  borderRadius: 4,                    // --radius-md
   fontSize: 12,
-  fontFamily: 'DM Sans, sans-serif',
-  color: '#2B0A10',
+  fontFamily: 'Poppins, system-ui, sans-serif',
+  color: '#18181B',                   // --ink-900
 } as const
 
 // ── KPI stat card ──────────────────────────────────────────────────────────
@@ -26,7 +29,7 @@ export function StatCard({ label, value, delta, icon }: {
   label: string; value: string; delta?: { pct: number; dir: 'up' | 'down' | 'flat' }; icon?: ReactNode
 }) {
   return (
-    <div className="rounded-xl border-[1.5px] border-rose-border bg-surface-raised px-5 py-4">
+    <div className="rounded-xl border-[0.5px] border-rose-border bg-surface-raised px-5 py-4">
       <div className="mb-1 inline-flex items-center text-[10px] font-medium uppercase tracking-[0.09em] text-text-tertiary">{icon && <span className="mr-1.5 inline-flex text-clay-muted" aria-hidden="true">{icon}</span>}{label}</div>
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="font-heading text-[22px] font-medium leading-[1.2] text-oxblood">{value}</span>
@@ -43,7 +46,7 @@ export function StatCard({ label, value, delta, icon }: {
 // ── Panel wrapper ────────────────────────────────────────────────────────────
 export function ChartPanel({ title, legend, children }: { title: string; legend?: ReactNode; children: ReactNode }) {
   return (
-    <div className="rounded-xl border-[1.5px] border-rose-border bg-surface-raised px-5 py-4">
+    <div className="rounded-xl border-[0.5px] border-rose-border bg-surface-raised px-5 py-4">
       <div className="mb-[0.85rem] flex items-center justify-between gap-2">
         <h3 className="font-heading text-sm font-medium text-oxblood">{title}</h3>
         {legend}
@@ -69,10 +72,10 @@ export function RevenueBarChart({ data, revenueLabel, ordersLabel }: {
         <XAxis dataKey="label" tick={{ fontSize: 11, fill: AXIS }} axisLine={{ stroke: GRID }} tickLine={false} />
         <YAxis yAxisId="rev" tick={{ fontSize: 11, fill: AXIS }} axisLine={false} tickLine={false} allowDecimals={false} />
         {showSecondary && <YAxis yAxisId="ord" orientation="right" tick={{ fontSize: 11, fill: AXIS }} axisLine={false} tickLine={false} allowDecimals={false} />}
-        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: '#F5E6E8' }} labelFormatter={tooltipLabel} />
-        <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'DM Sans, sans-serif' }} />
+        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: '#F4F4F5' }} labelFormatter={tooltipLabel} />
+        <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'Poppins, system-ui, sans-serif' }} />
         <Bar yAxisId="rev" dataKey="revenue" name={revenueLabel} fill={OXBLOOD} radius={[3, 3, 0, 0]} maxBarSize={28} />
-        {showSecondary && <Bar yAxisId="ord" dataKey="orders" name={ordersLabel} fill={GOLD} radius={[3, 3, 0, 0]} maxBarSize={28} />}
+        {showSecondary && <Bar yAxisId="ord" dataKey="orders" name={ordersLabel} fill={ACCENT_2} radius={[3, 3, 0, 0]} maxBarSize={28} />}
       </BarChart>
     </ResponsiveContainer>
   )

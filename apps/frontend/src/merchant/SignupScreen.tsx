@@ -111,7 +111,7 @@ export default function SignupScreen() {
         <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
-      <Card className="rounded-pill px-8 pt-7 pb-6 gap-0">
+      <Card className="px-8 pt-7 pb-6 gap-0">
         <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">{t('Start your shop', '开店')}</h2>
         <p className="text-[13px] text-rose-muted mb-5">{t('Create your merchant account to get started.', '创建商家账号以开始使用。')}</p>
 

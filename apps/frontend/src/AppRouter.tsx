@@ -68,7 +68,7 @@ function StorefrontShell() {
         <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">Shop not found</p>
       </div>
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-left">
+      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-left">
         <p className="text-rose-muted text-[14px] leading-[1.6] mt-1.5">
           This shop doesn't exist or may have moved.
         </p>
@@ -84,7 +84,7 @@ function StorefrontShell() {
         <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{merchant.name}</p>
       </div>
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-left">
+      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-left">
         <p className="text-rose-muted text-[14px] leading-[1.6] mt-1.5">
           {t('This shop is temporarily closed. Please check back later.', '本店暂时休息，请稍后再来。')}
         </p>

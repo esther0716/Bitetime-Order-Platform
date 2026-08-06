@@ -31,7 +31,7 @@ export default function SuspendedScreen() {
     <div className="w-full max-w-[720px] mx-auto pt-8 px-4 pb-12">
       <div
         role="status"
-        className="flex items-center gap-3 flex-wrap px-4 py-3 mb-6 rounded-md border-[1.5px] text-[13px] leading-[1.5] bg-danger-bg text-danger-fg border-danger-fg/25"
+        className="flex items-center gap-3 flex-wrap px-4 py-3 mb-6 rounded-md border-[0.5px] text-[13px] leading-[1.5] bg-danger-bg text-danger-fg border-danger-fg/25"
       >
         <span className="flex-1 min-w-[200px] font-medium">
           {t('Your shop is suspended — your subscription has ended. Subscribe to reopen it.',

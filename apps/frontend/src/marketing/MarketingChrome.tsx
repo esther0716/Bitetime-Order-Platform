@@ -108,7 +108,7 @@ export function MarketingNav() {
                   onClick={() => setMenuOpen(false)}
                 />
                 <div
-                  className="absolute top-[calc(100%+8px)] right-0 z-[var(--z-modal-popover)] min-w-[160px] bg-surface-high border-[1.5px] border-clay-border rounded-lg shadow-[0_8px_24px_rgba(43,10,16,0.16)] overflow-hidden p-1"
+                  className="absolute top-[calc(100%+8px)] right-0 z-[var(--z-modal-popover)] min-w-[160px] bg-surface-high border-[0.5px] border-clay-border rounded-lg shadow-elev-2 overflow-hidden p-1"
                   role="menu"
                 >
                   {portal && (

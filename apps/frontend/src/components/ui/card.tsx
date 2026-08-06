@@ -8,7 +8,9 @@ import { cn } from "@/lib/utils"
  * Screens pass className to override for variants:
  *   - rose border:   "border-rose-border"
  *   - oxblood tint:  "bg-oxblood-tint border-rose-border"
- *   - auth card:     "rounded-pill"
+ *   (Auth cards used to override to "rounded-pill". That token was 20px and read as a soft
+ *    panel; it is now 9999px and would render the whole card as a circle. They use the base
+ *    radius. `rounded-pill` is for chips and small controls only.)
  *   - how-to / cookie-card: "rounded-xl"
  */
 function Card({
@@ -21,7 +23,7 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl border-[1.5px] border-clay-border bg-surface-raised py-(--card-spacing) text-sm text-ink [--card-spacing:--spacing(5)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-2xl *:[img:last-child]:rounded-b-2xl",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl border-[0.5px] border-clay-border bg-surface-raised py-(--card-spacing) text-sm text-ink [--card-spacing:--spacing(5)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-2xl *:[img:last-child]:rounded-b-2xl",
         className
       )}
       {...props}

@@ -55,7 +55,7 @@ export default function TrialFeedbackPrompt() {
   }
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-4 mb-6 rounded-md border-[1.5px] border-oxblood/20 bg-surface-raised">
+    <div className="flex flex-col gap-3 px-4 py-4 mb-6 rounded-md border-[0.5px] border-oxblood/20 bg-surface-raised">
       <div className="flex items-center justify-between gap-3">
         <p className="text-[14px] font-medium text-ink">
           {t('How was your trial?', '试用体验如何？')}

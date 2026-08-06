@@ -23,24 +23,18 @@
 
    The numbers are measured, not guessed: canvas `measureText` on a representative string at
    1000px, webfont against fallback. size-adjust is the advance-width ratio; the overrides are the
-   webfont's own ascent/descent divided by that ratio. Times New Roman and Arial are the bases
-   because they are the two faces that are actually everywhere. RE-MEASURE IF A FAMILY OR ITS
-   WEIGHTS CHANGE — a stale number here is a silent return of the shift. */
-@font-face {
-  font-family: 'Lora Fallback';
-  src: local('Times New Roman');
-  size-adjust: 109.16%;
-  ascent-override: 92.16%;
-  descent-override: 25.1%;
-  line-gap-override: 0%;
-}
+   webfont's own ascent/descent divided by that ratio. Arial is the base because it is a face that
+   is actually everywhere. RE-MEASURE IF A FAMILY OR ITS WEIGHTS CHANGE — a stale number here is a
+   silent return of the shift. `scripts/measure-font-metrics.ts` is what produced these three.
 
+   There is ONE face now. The reskin retired the serif/sans signage axis, so the Lora fallback
+   that used to sit beside this one has no face left to match. */
 @font-face {
-  font-family: 'DM Sans Fallback';
+  font-family: 'Poppins Fallback';
   src: local('Arial');
-  size-adjust: 100.79%;
-  ascent-override: 98.42%;
-  descent-override: 30.76%;
+  size-adjust: 110.03%;
+  ascent-override: 95.43%;
+  descent-override: 31.81%;
   line-gap-override: 0%;
 }
 @import "tw-animate-css";
@@ -92,13 +86,6 @@
   --color-clay-warm: var(--color-clay-warm);
   --color-clay-pale: var(--color-clay-pale);
 
-  /* Gold (tracking/AWB) */
-  --color-gold-accent: var(--color-gold-accent);
-  --color-gold-deep: var(--color-gold-deep);
-  --color-gold-deeper: var(--color-gold-deeper);
-  --color-gold-border: var(--color-gold-border);
-  --color-gold-bg: var(--color-gold-bg);
-
   /* Status: success / info / prep / warn / done / danger */
   --color-success-fg: var(--color-success-fg);
   --color-success-bg: var(--color-success-bg);
@@ -124,6 +111,10 @@
   --color-danger-fg: var(--color-danger-fg);
   --color-danger-bg: var(--color-danger-bg);
   --color-danger-border: var(--color-danger-border);
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-fg: var(--neutral-fg);
+  --color-disabled-bg: var(--color-disabled-bg);
+  --color-disabled-fg: var(--color-disabled-fg);
 
   /* Radii — brand scale (overrides Tailwind defaults) */
   --radius-xs: var(--radius-xs);
@@ -134,6 +125,53 @@
   --radius-2xl: var(--radius-2xl);
   --radius-pill: var(--radius-pill);
   --radius-round: var(--radius-round);
+
+  /* Spacing scale → p-*, m-*, gap-* utilities */
+  --spacing-1: var(--space-1);
+  --spacing-2: var(--space-2);
+  --spacing-3: var(--space-3);
+  --spacing-4: var(--space-4);
+  --spacing-5: var(--space-5);
+  --spacing-6: var(--space-6);
+  --spacing-8: var(--space-8);
+  --spacing-10: var(--space-10);
+  --spacing-12: var(--space-12);
+  --spacing-16: var(--space-16);
+  --spacing-20: var(--space-20);
+
+  /* Elevation → shadow-elev-* utilities */
+  --shadow-elev-1: var(--elev-1);
+  --shadow-elev-2: var(--elev-2);
+  --shadow-elev-3: var(--elev-3);
+  --shadow-elev-rail: var(--elev-rail);
+
+  /* Motion → ease-* utilities */
+  --ease-out: var(--ease-out);
+  --ease-in-out: var(--ease-in-out);
+  --ease-in: var(--ease-in);
+
+  /* Primitives, exposed as utilities for the cases the semantic layer does not name --
+     chart series, status tints, a one-off wash. Reach for a SEMANTIC token first
+     (DESIGN.md section 6); needing the same primitive repeatedly means a semantic token
+     is missing, and the fix is to add one, not to spread the primitive.
+     The --color-* entries above this block are the legacy alias names. */
+  --color-ink-50: var(--ink-50);
+  --color-ink-100: var(--ink-100);
+  --color-ink-200: var(--ink-200);
+  --color-ink-300: var(--ink-300);
+  --color-ink-400: var(--ink-400);
+  --color-ink-500: var(--ink-500);
+  --color-ink-600: var(--ink-600);
+  --color-ink-700: var(--ink-700);
+  --color-ink-900: var(--ink-900);
+  --color-ink-950: var(--ink-950);
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
 
   /* Z-index scale → z-* utilities */
   --z-index-notif-panel: var(--z-notif-panel);
@@ -148,26 +186,28 @@
 
 /* shadcn semantic tokens → brand. Chart + sidebar tokens included here (no brand counterpart). */
 :root {
-  --background: var(--color-cream);
-  --foreground: var(--color-ink);
-  --card: var(--color-surface-raised);
-  --card-foreground: var(--color-ink);
-  --popover: var(--color-surface-high);
-  --popover-foreground: var(--color-ink);
-  --primary: var(--color-oxblood);
-  --primary-foreground: var(--color-cream);
-  --secondary: var(--color-surface-raised);
-  --secondary-foreground: var(--color-rose-muted);
-  --muted: var(--color-surface-sunken);
-  --muted-foreground: var(--color-rose-muted);
-  --accent: var(--color-surface-sunken);
-  --accent-foreground: var(--color-ink);
-  --destructive: var(--color-danger);
-  --destructive-foreground: var(--color-cream);
-  --border: var(--color-clay-border);
-  --input: var(--color-clay-border);
-  --ring: var(--color-oxblood);
-  --radius: 10px;
+  --background: var(--color-bg);
+  --foreground: var(--color-text);
+  --card: var(--color-bg-surface);
+  --card-foreground: var(--color-text);
+  --popover: var(--color-bg-surface);
+  --popover-foreground: var(--color-text);
+  --primary: var(--color-accent);
+  /* White, not cream: primary buttons are oxblood-filled, and cream-on-oxblood
+     was a warm-system pairing that has no counterpart here. */
+  --primary-foreground: var(--white);
+  --secondary: var(--color-bg-muted);
+  --secondary-foreground: var(--color-text-muted);
+  --muted: var(--color-bg-muted);
+  --muted-foreground: var(--color-text-muted);
+  --accent: var(--color-bg-muted);
+  --accent-foreground: var(--color-text);
+  --destructive: var(--danger-500);
+  --destructive-foreground: var(--white);
+  --border: var(--color-border);
+  --input: var(--color-border);
+  --ring: var(--color-accent);
+  --radius: 4px;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -195,15 +235,6 @@ html { scroll-behavior: smooth; }
 
 @keyframes shimmer { 0% { background-position: -468px 0; } 100% { background-position: 468px 0; } }
 
-/* The landing page's paper grain — a 140px SVG noise tile, repeated. It lived as an inline
-   `style={{ backgroundImage }}` on the overlay element, which put ~470 bytes of percent-encoded
-   SVG into the HTML of every prerendered page for a value that never changes. A constant belongs
-   in the stylesheet, where it is fetched once and cached; the overlay's position, z-index and
-   opacity stay Tailwind classes on the element. */
-.grain-overlay {
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'140'%20height%3D'140'%3E%3Cfilter%20id%3D'n'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.85'%20numOctaves%3D'2'%20stitchTiles%3D'stitch'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23n)'%2F%3E%3C%2Fsvg%3E");
-}
-
 /* Entry fade for a route/section wrapper. Deliberately CSS and deliberately fill-mode `none`
    (the default): the element's RESTING opacity is 1, and the keyframe only borrows it on the
    way in. An animation that never starts, gets interrupted, or is torn down therefore leaves
@@ -230,8 +261,8 @@ html { scroll-behavior: smooth; }
   }
 }
 
-body { font-family: 'DM Sans', 'DM Sans Fallback', 'Noto Sans SC', sans-serif; background: var(--color-cream); color: var(--color-ink); min-height: 100vh; padding: 2rem 1rem 4rem; display: flex; flex-direction: column; align-items: center; scrollbar-gutter: stable; overflow-x: hidden; }
-/* AA-passing placeholder (browser default fails contrast on cream) */
+body { font-family: 'Poppins', 'Poppins Fallback', 'Noto Sans SC', system-ui, sans-serif; background: var(--color-bg); color: var(--color-text); min-height: 100vh; padding: 2rem 1rem 4rem; display: flex; flex-direction: column; align-items: center; scrollbar-gutter: stable; overflow-x: hidden; }
+/* AA-passing placeholder (the browser default fails contrast on the page background) */
 input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); opacity: 1; }
 .form-wrap { max-width: 600px; width: calc(100vw - 2rem); }
 .form-wrap--wide { max-width: 900px; }
@@ -266,8 +297,15 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
   --animate-accordion-up: accordion-up 0.2s ease-out;
   /* Each real face is followed by its metric twin (see the @font-face pair at the top of this
      file), so the space a line takes is decided before the webfont arrives, not after it. */
-  --font-heading: 'Lora', 'Lora Fallback', 'Noto Serif SC', serif;
-  --font-sans: 'DM Sans', 'DM Sans Fallback', 'Noto Sans SC', sans-serif;
+  --font-sans: 'Poppins', 'Poppins Fallback', 'Noto Sans SC', system-ui, sans-serif;
+  /* ALIAS, deleted by the follow-up rename along with the colour aliases. `font-heading`
+     is on 87 call sites across 41 files; dropping the token would leave every one of them
+     silently emitting nothing. There is one family now, so it points at the same stack. */
+  --font-heading: var(--font-sans);
+  /* The SYSTEM mono stack, not Poppins. Voltage ships no mono face at all, and the order
+     number (PREFIX-YYMMDD-XXXX) has to stay readable character by character. Costs no
+     bytes and no request. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   /* Body floor: text-sm is the app's de-facto body utility (buttons, inputs,
      card/prose copy). Raised from Tailwind's 14px default to 16px for
      readability + to stop iOS input-focus zoom. Eyebrows/labels stay small
@@ -310,7 +348,40 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-.dark { --background: oklch(0.145 0 0); --foreground: oklch(0.985 0 0); --card: oklch(0.205 0 0); --card-foreground: oklch(0.985 0 0); --popover: oklch(0.205 0 0); --popover-foreground: oklch(0.985 0 0); --primary: oklch(0.922 0 0); --primary-foreground: oklch(0.205 0 0); --secondary: oklch(0.269 0 0); --secondary-foreground: oklch(0.985 0 0); --muted: oklch(0.269 0 0); --muted-foreground: oklch(0.708 0 0); --accent: oklch(0.269 0 0); --accent-foreground: oklch(0.985 0 0); --destructive: oklch(0.704 0.191 22.216); --border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 15%); --ring: oklch(0.556 0 0); --chart-1: oklch(0.87 0 0); --chart-2: oklch(0.556 0 0); --chart-3: oklch(0.439 0 0); --chart-4: oklch(0.371 0 0); --chart-5: oklch(0.269 0 0); --sidebar: oklch(0.205 0 0); --sidebar-foreground: oklch(0.985 0 0); --sidebar-primary: oklch(0.488 0.243 264.376); --sidebar-primary-foreground: oklch(0.985 0 0); --sidebar-accent: oklch(0.269 0 0); --sidebar-accent-foreground: oklch(0.985 0 0); --sidebar-border: oklch(1 0 0 / 10%); --sidebar-ring: oklch(0.556 0 0); }
+/* The shadcn bridge under `.dark`. This block used to be stock shadcn's neutral oklch
+   greys, which silently won over the semantic dark map in tokens.css — `--primary`
+   resolved to a light grey rather than the brand accent, so nothing the reskin wired
+   for dark actually reached a shadcn component. It now mirrors the `:root` bridge and
+   inherits whatever tokens.css's `.dark` remapped.
+   STILL UNVERIFIED, like the rest of dark mode: no dark UI ships and no dark QA ran. */
+.dark {
+  --background: var(--color-bg);
+  --foreground: var(--color-text);
+  --card: var(--color-bg-surface);
+  --card-foreground: var(--color-text);
+  --popover: var(--color-bg-surface);
+  --popover-foreground: var(--color-text);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--ink-950);
+  --secondary: var(--color-bg-muted);
+  --secondary-foreground: var(--color-text-muted);
+  --muted: var(--color-bg-muted);
+  --muted-foreground: var(--color-text-muted);
+  --accent: var(--color-bg-muted);
+  --accent-foreground: var(--color-text);
+  --destructive: var(--danger-500);
+  --destructive-foreground: var(--white);
+  --border: var(--color-border);
+  --input: var(--color-border);
+  --ring: var(--color-accent);
+  /* Chart + sidebar tokens have no brand counterpart; stock shadcn values retained. */
+  --chart-1: oklch(0.87 0 0); --chart-2: oklch(0.556 0 0); --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0); --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0); --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376); --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0); --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%); --sidebar-ring: oklch(0.556 0 0);
+}
 
 /* ─── Printing a receipt ──────────────────────────────────────────────────────
    The receipt dialog is the only thing in this app that is meant to reach paper.

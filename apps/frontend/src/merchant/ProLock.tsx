@@ -52,7 +52,7 @@ export function UpgradeLink({ className }: { className?: string }) {
 export function ProLock({ what, why }: { what: string; why: string }) {
   const { t } = useSession()
   return (
-    <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-8 w-full box-border text-center max-sm:p-5">
+    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-8 w-full box-border text-center max-sm:p-5">
       <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-full bg-surface-sunken text-oxblood">
         <Lock size={20} strokeWidth={1.75} />
       </div>

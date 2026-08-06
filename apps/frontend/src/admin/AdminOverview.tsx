@@ -27,12 +27,12 @@ export default function AdminOverview() {
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-1 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4 gap-[10px]">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="bg-surface-raised border-[1.5px] border-rose-border rounded-xl py-4 px-5">
+          <div key={i} className="bg-surface-raised border-[0.5px] border-rose-border rounded-xl py-4 px-5">
             <SkeletonText lines={2} />
           </div>
         ))}
       </div>
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-xl py-4 px-5">
+      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-xl py-4 px-5">
         <SkeletonText lines={6} />
       </div>
     </div>
