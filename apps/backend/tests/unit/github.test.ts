@@ -59,7 +59,10 @@ describe('buildIssueBody', () => {
   it('states the count and where to look when there are some', () => {
     const body = buildIssueBody({ ...base, imageCount: 2 })
     expect(body).toContain('Screenshots: 2')
-    expect(body).toContain('https://tinyorder.vercel.app/admin/feedback')
+    // A HASH, not a path segment. The admin dashboard is a single route whose sections live in
+    // the hash (useDashboardSection); `/admin/feedback` matches no route and renders blank.
+    expect(body).toContain('https://tinyorder.vercel.app/admin#feedback')
+    expect(body).not.toContain('/admin/feedback')
   })
 
   it('never puts an image URL in a public issue', () => {

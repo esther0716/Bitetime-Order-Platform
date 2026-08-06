@@ -64,8 +64,12 @@ export function buildIssueBody(input: {
   // file an issue that hides the screenshots, which is the one failure this line exists to
   // prevent. adminUrl is a parameter rather than an env read, same adapter discipline as the
   // token — it is what keeps this module importable by tests/unit with zero env vars set.
+  //
+  // `/admin#feedback`, with a HASH: the admin dashboard is one route and its sections are hash
+  // segments (useDashboardSection). `/admin/feedback` is not a route — it matches nothing and
+  // renders a blank page, which is exactly what it did until a run-and-verify pass caught it.
   if (input.imageCount > 0) {
-    lines.push(`Screenshots: ${input.imageCount} — view at ${input.adminUrl}/admin/feedback`)
+    lines.push(`Screenshots: ${input.imageCount} — view at ${input.adminUrl}/admin#feedback`)
   }
   return lines.join('\n')
 }
