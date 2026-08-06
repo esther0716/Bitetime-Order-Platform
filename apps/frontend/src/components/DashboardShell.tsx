@@ -6,6 +6,7 @@ import { signOut } from '../store'
 import LanguageSelect from './LanguageSelect'
 import ReleasesBell from './ReleasesBell'
 import Wordmark from './Wordmark'
+import { Button } from './ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
@@ -54,19 +55,17 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
         'hidden max-sm:flex fixed top-0 inset-x-0 z-30 h-14 items-center gap-3 px-4',
         'bg-muted border-b border-border',
       )}>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={() => setOpen(true)}
           aria-label={t('Open menu', '打开菜单')}
           aria-expanded={open}
-          className={cn(
-            'flex items-center justify-center -ml-1 p-2 rounded-md',
-            'text-primary cursor-pointer transition-colors',
-            'hover:bg-ink-200',
-          )}
+          className="-ml-1 size-auto p-2 text-primary hover:bg-ink-200 hover:text-primary"
         >
           <Menu size={22} strokeWidth={1.75} />
-        </button>
+        </Button>
         <Wordmark className="h-6" />
       </header>
 
@@ -109,17 +108,19 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
             </div>
           )}
           {/* Close button — mobile drawer only */}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => setOpen(false)}
             aria-label={t('Close menu', '关闭菜单')}
             className={cn(
-              'hidden max-sm:flex items-center justify-center absolute top-4 right-3 p-1.5 rounded-md',
-              'text-muted-foreground cursor-pointer transition-colors hover:bg-ink-200 hover:text-primary',
+              'hidden max-sm:inline-flex absolute top-4 right-3 size-auto p-1.5',
+              'text-muted-foreground hover:bg-ink-200 hover:text-primary',
             )}
           >
             <X size={20} strokeWidth={1.75} />
-          </button>
+          </Button>
         </div>
 
         {/* Nav */}
@@ -203,20 +204,21 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
             <ReleasesBell />
           </div>
           {/* Sign out */}
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="none"
             onClick={() => signOut()}
             className={cn(
-              'bg-transparent border border-border rounded-sm',
-              'text-muted-foreground text-[12px] font-sans',
-              'px-3 py-1.5 w-full cursor-pointer',
-              'transition-all duration-150',
+              'rounded-sm',
+              'text-[12px]',
+              'px-3 py-1.5 w-full',
               'hover:bg-ink-200 hover:text-foreground hover:border-ink-400',
               '[@media(pointer:coarse)]:min-h-[44px]',
             )}
           >
             {t('Log out', '登出')}
-          </button>
+          </Button>
         </div>
       </aside>
 

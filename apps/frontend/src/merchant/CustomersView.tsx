@@ -539,16 +539,18 @@ function NotesPanel({
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <span className="text-[11px] text-muted-foreground">{t('Used before', '曾用标签')}</span>
             {suggestions.map(s => (
-              <button
+              <Button
                 key={s}
                 type="button"
+                variant="dashed"
+                size="none"
                 disabled={busy}
                 onClick={() => addTag(s)}
-                className="inline-flex items-center gap-1 rounded-pill border border-dashed border-border bg-background px-2.5 py-0.5 text-[12px] text-muted-foreground hover:border-border hover:bg-brand-100 hover:text-primary transition-colors disabled:opacity-50"
+                className="gap-1 rounded-pill bg-background px-2.5 py-0.5 text-[12px] hover:border-border"
               >
                 <Plus size={10} />
                 {s}
-              </button>
+              </Button>
             ))}
           </div>
         )}

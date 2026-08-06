@@ -61,15 +61,17 @@ export default function PaymentQrPicker({
             </button>
           </div>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="dashed"
+            size="none"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="size-28 shrink-0 rounded-lg border-[0.5px] border-dashed border-border text-muted-foreground text-[11px] flex flex-col items-center justify-center gap-0.5 hover:border-primary hover:text-primary disabled:opacity-50 cursor-pointer"
+            className="size-28 shrink-0 rounded-lg border-[0.5px] text-[11px] flex-col gap-0.5"
           >
             <span className="text-[18px] leading-none">＋</span>
             {busy ? t('Uploading…', '上传中…') : t('QR code', '二维码')}
-          </button>
+          </Button>
         )}
         {value && (
           <Button

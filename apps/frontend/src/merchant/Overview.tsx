@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ReceiptText, Wallet, Users, TrendingUp, Download, Lock, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { useSession } from '../SessionContext'
 import { fetchMerchantStats, downloadRevenueReport } from '../store'
 import { SkeletonText } from '../components/Loaders'
@@ -94,16 +95,17 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
     <Tooltip>
       <TooltipTrigger
         render={
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="none"
             aria-label={label}
             disabled={busy}
             onClick={isPro ? download : goToSubscription}
             className={cn(
-              'inline-flex cursor-pointer items-center justify-center rounded-pill border-[0.5px] p-1.5 transition-colors',
-              'border-border bg-transparent text-muted-foreground',
-              'hover:border-primary hover:text-primary',
-              'disabled:cursor-default disabled:opacity-50 disabled:hover:border-border disabled:hover:text-muted-foreground',
+              'rounded-pill p-1.5',
+              'hover:border-primary hover:bg-transparent hover:text-primary',
+              'disabled:cursor-default disabled:hover:border-border disabled:hover:text-muted-foreground',
             )}
           />
         }

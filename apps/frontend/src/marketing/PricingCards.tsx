@@ -14,16 +14,20 @@ import { PRICING_TIERS } from './pricingTiers'
 import { cardCtaPrimary, cardCtaGhost } from './ctaStyles'
 import { cn } from '../lib/utils'
 import { Reveal } from './LandingMotion'
+import { Button } from '../components/ui/button'
 
 export default function PricingCards() {
   const { t } = useSession()
   const { pricing } = usePlatformPricing()
   const [billing, setBilling] = useState<'monthly' | 'yearly'>('monthly')
 
+  /* Geometry only — the fill comes from the variant (`default` when selected, `ghost` when
+     not). The inactive text colour stays explicit because ghost's own muted-foreground is a
+     step lighter than this control wants against the card it sits on. */
   const toggleButton = (value: 'monthly' | 'yearly') =>
     cn(
-      'inline-flex items-center gap-2 py-2 px-[18px] border-0 rounded-pill font-sans text-sm font-medium cursor-pointer [transition:background_0.15s,color_0.15s]',
-      billing === value ? 'bg-primary text-background' : 'bg-transparent text-ink-700'
+      'py-2 px-[18px] rounded-pill text-sm',
+      billing === value ? '' : 'text-ink-700',
     )
 
   return (
@@ -34,16 +38,20 @@ export default function PricingCards() {
         role="group"
         aria-label={t('Billing period', '付费周期')}
       >
-        <button
+        <Button
           type="button"
+          variant={billing === 'monthly' ? 'default' : 'ghost'}
+          size="none"
           className={toggleButton('monthly')}
           aria-pressed={billing === 'monthly'}
           onClick={() => setBilling('monthly')}
         >
           {t('Monthly', '按月')}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant={billing === 'yearly' ? 'default' : 'ghost'}
+          size="none"
           className={toggleButton('yearly')}
           aria-pressed={billing === 'yearly'}
           onClick={() => setBilling('yearly')}
@@ -59,7 +67,7 @@ export default function PricingCards() {
           >
             {t('Save ~17%', '省约17%')}
           </span>
-        </button>
+        </Button>
       </div>
 
       <Reveal>

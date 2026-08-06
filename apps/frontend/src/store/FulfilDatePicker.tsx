@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   /** Every date the shop is taking, `YYYY-MM-DD`, ascending. */
@@ -70,17 +71,17 @@ export default function FulfilDatePicker({ available, value, onChange, t, lang }
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <button
-          type="button" onClick={() => step(-1)} disabled={!canPrev}
+        <Button
+          type="button" variant="outline" size="icon" onClick={() => step(-1)} disabled={!canPrev}
           aria-label={t('Previous month', '上个月')}
-          className="w-9 h-9 rounded-md border border-border bg-card text-foreground disabled:opacity-35 disabled:cursor-not-allowed hover:enabled:border-primary transition-colors focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
-        >‹</button>
+          className="bg-card text-foreground disabled:cursor-not-allowed hover:enabled:border-primary"
+        >‹</Button>
         <div aria-live="polite" className="text-[14px] font-medium text-primary">{monthLabel}</div>
-        <button
-          type="button" onClick={() => step(1)} disabled={!canNext}
+        <Button
+          type="button" variant="outline" size="icon" onClick={() => step(1)} disabled={!canNext}
           aria-label={t('Next month', '下个月')}
-          className="w-9 h-9 rounded-md border border-border bg-card text-foreground disabled:opacity-35 disabled:cursor-not-allowed hover:enabled:border-primary transition-colors focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
-        >›</button>
+          className="bg-card text-foreground disabled:cursor-not-allowed hover:enabled:border-primary"
+        >›</Button>
       </div>
 
       <div className="grid grid-cols-7 gap-1" role="grid" aria-label={t('Choose a date', '选择日期')}>

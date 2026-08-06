@@ -8,6 +8,7 @@ import {
   PRODUCT_IMAGE_TYPES,
 } from '../store'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { Button } from '../components/ui/button'
 
 type T = (en: string, zh: string) => string
 
@@ -88,15 +89,17 @@ export default function ImagePicker({
           </div>
         ))}
         {!full && (
-          <button
+          <Button
             type="button"
+            variant="dashed"
+            size="none"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="size-16 shrink-0 rounded-lg border-[0.5px] border-dashed border-border text-muted-foreground text-[11px] flex flex-col items-center justify-center gap-0.5 hover:border-primary hover:text-primary disabled:opacity-50 cursor-pointer"
+            className="size-16 shrink-0 rounded-lg border-[0.5px] text-[11px] flex-col gap-0.5"
           >
             <span className="text-[18px] leading-none">＋</span>
             {busy ? t('…', '…') : t('Photo', '图片')}
-          </button>
+          </Button>
         )}
       </div>
       <input

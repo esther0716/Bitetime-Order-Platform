@@ -1,6 +1,7 @@
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import Wordmark from './Wordmark'
+import { Button } from './ui/button'
 
 // Top-level catch-all. Without a boundary above `createRoot`, any uncaught throw
 // during render unmounts the whole tree to a blank #root — recoverable only by a
@@ -38,13 +39,14 @@ export default class ErrorBoundary extends Component<Props, State> {
             <br />
             <span className="text-muted-foreground/80">页面加载出错了。</span>
           </p>
-          <button
+          <Button
             type="button"
+            size="none"
             onClick={() => window.location.reload()}
-            className="mt-5 inline-flex items-center justify-center rounded-pill bg-primary text-background text-[14px] font-medium px-5 py-2.5 hover:bg-brand-600 transition-colors"
+            className="mt-5 rounded-pill text-[14px] px-5 py-2.5"
           >
             Reload · 重新加载
-          </button>
+          </Button>
         </div>
       </div>
     )
