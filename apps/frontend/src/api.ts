@@ -139,6 +139,28 @@ export async function apiSendFile<T>(path: string, file: File, opts?: Opts): Pro
   }
 }
 
+/**
+ * A POST whose body is a FORM — text fields and files in one request, the multipart twin of
+ * `apiSendFile`'s single raw file. Used by the feedback submit, where the message and its
+ * screenshots have to arrive together or the GitHub issue cannot state an accurate count.
+ *
+ * Sets NO Content-Type: `fetch` writes the multipart boundary itself, and supplying the header
+ * by hand suppresses that and produces a body the server cannot parse. Same Result convention
+ * and the same `auth` option as every other call here.
+ */
+export async function apiSendForm<T>(path: string, form: FormData, opts?: Opts): Promise<Result<T>> {
+  const h = await resolveHeaders({}, opts?.auth)
+  if ('fail' in h) return { ok: false, error: h.fail }
+  try {
+    const res = await fetch(`${API_URL}${path}`, { method: 'POST', headers: h.headers, body: form })
+    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    const text = await res.text()
+    return { ok: true, data: (text ? JSON.parse(text) : null) as T }
+  } catch {
+    return { ok: false, error: NETWORK_ERROR }
+  }
+}
+
 type Method = 'POST' | 'PATCH' | 'PUT' | 'DELETE'
 
 export async function apiSend<T>(path: string, method: Method, body?: unknown, opts?: Opts): Promise<Result<T>> {

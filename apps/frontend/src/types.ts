@@ -271,6 +271,9 @@ export interface FeedbackItem {
   user_id: string
   category: FeedbackCategory
   message: string
+  // Storage paths in the private `feedback-images` bucket. NOT URLs and not resolvable to one:
+  // the bucket has no public read, so the bytes come from fetchFeedbackImage(id, index).
+  image_paths: string[]
   status: FeedbackStatus
   created_at: string
   resolved_at: string | null
