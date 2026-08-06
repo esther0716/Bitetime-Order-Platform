@@ -17,10 +17,11 @@ import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
 import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, requirePro, hasProAccess, REQUIRES_PRO, type AppEnv } from './mw.js'
 import { stripe, priceFor, isValidPlan, isValidCycle, isStripeError } from './stripe.js'
-import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileMerchantPlan, LIVE_STATUSES } from './billing.js'
+import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileMerchantPlan, lapseMerchant, LIVE_STATUSES } from './billing.js'
 import { downgradePhases, ScheduleError, type LivePhase } from './subscriptionSchedule.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
 import { startCardlessTrial } from './trialSubscription.js'
+import { runBillingSweep } from './billingSweep.js'
 import { resendSend } from './email.js'
 import { notifyOrderPlaced, telegramSend } from './notify.js'
 import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
@@ -944,6 +945,10 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
     line_items: [{ price: priceFor(plan, billing), quantity: 1 }],
     client_reference_id: merchant.id,
     metadata,
+    // Stripe hides the promo-code field unless asked, so a coupon we hand a merchant is
+    // unredeemable without this. It only surfaces the input — the code still has to exist
+    // as a promotion code in Stripe (a bare coupon has nothing customer-facing to type).
+    allow_promotion_codes: true,
     // No trial here: trials are granted only by superadmin approval (cardless).
     // Checkout is the paid path — pro signup and suspended-shop reactivation.
     subscription_data: { metadata },
@@ -1798,6 +1803,21 @@ app.post('/api/internal/trial-feedback-sweep', async (c) => {
   return c.json({ due: due.length, sent: sentCount })
 })
 
+// Not user-authenticated — called by a GitHub Actions schedule (see
+// .github/workflows/billing-sweep.yml), gated by a shared secret header instead. Fails CLOSED
+// (503) when the secret is unset, matching trial-feedback-sweep's house rule.
+//
+// This is the backstop for a lost `customer.subscription.deleted`: see billingSweep.ts for why
+// push-only subscription state was not survivable. Hourly rather than daily, because the thing it
+// repairs is a shop that should be shut and is not.
+app.post('/api/internal/billing-sweep', async (c) => {
+  if (!env.billingSweepSecret) return c.json({ error: 'Sweep disabled' }, 503)
+  const provided = c.req.header('x-sweep-secret') || ''
+  if (!safeEqualSecret(provided, env.billingSweepSecret)) return c.json({ error: 'Forbidden' }, 403)
+
+  return c.json(await runBillingSweep(new Date()))
+})
+
 const SAMPLE_SCREENSHOT_BUCKET = 'sample-shop-screenshots'
 const MAX_SAMPLE_SCREENSHOT_BYTES = 3 * 1024 * 1024 // 3 MiB — same ceiling as the migration's file_size_limit
 
@@ -2274,7 +2294,9 @@ app.post('/api/stripe/webhook', async (c) => {
             .maybeSingle()
           if (current?.stripe_subscription_id && current.stripe_subscription_id !== sub.id) break
           await upsertBilling(merchantId, billingFromSubscription(sub))
-          await setMerchantStatus(merchantId, 'suspended')
+          // Suspends AND returns the shop to basic — see lapseMerchant. Shared with the
+          // reconciliation sweep so a shop closed by either road is closed the same way.
+          await lapseMerchant(merchantId)
         }
         break
       }

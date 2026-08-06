@@ -53,6 +53,16 @@ export const env = {
   // rather than running unauthenticated.
   trialFeedbackSweepSecret: process.env.TRIAL_FEEDBACK_SWEEP_SECRET || '',
 
+  // Shared secret for the billing reconciliation sweep (POST /api/internal/billing-sweep, called
+  // by a GitHub Actions schedule — see .github/workflows/billing-sweep.yml). Same posture as
+  // trialFeedbackSweepSecret: unset means the endpoint always refuses (503).
+  //
+  // Worth stating what an unset secret costs here, because it is not the same as the other two:
+  // this sweep is the ONLY thing that closes a shop when Stripe's `customer.subscription.deleted`
+  // never reaches us. Disabled, the app is back to trusting a single webhook delivery — which is
+  // exactly the state that let expired trials keep selling in production.
+  billingSweepSecret: process.env.BILLING_SWEEP_SECRET || '',
+
   // Shared secret for the sample-shop screenshot cron sweep
   // (POST /api/internal/sample-shop-screenshot/:merchantId, called by a GitHub Actions
   // schedule — see .github/workflows/sample-shop-screenshot-sweep.yml). Same posture as

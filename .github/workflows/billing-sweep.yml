@@ -1,0 +1,42 @@
+# Hourly billing reconciliation — the backstop for a Stripe webhook that never arrives.
+#
+# Subscription state used to be push-only: a single `customer.subscription.deleted` delivery
+# carried a shop's suspension, its return to Basic and the revocation of its Pro artifacts. Lose
+# that request and the shop stayed open and entitled forever, with no trace in the app. In
+# production it was lost the simplest way there is — the endpoint was subscribed only to
+# `checkout.session.completed`, so the event was never sent at all.
+#
+# This calls the endpoint that re-asks Stripe about every shop whose stored deadline has passed
+# while its stored status still reads running. See apps/backend/src/billingSweep.ts.
+#
+# HOURLY, not daily like trial-feedback-sweep: what this repairs is a shop that should be closed
+# and is still taking orders, so a day of drift is a day of service nobody is paying for.
+#
+# TWO REPO SECRETS ARE REQUIRED and are NOT set by this file:
+#   BACKEND_URL          — the deployed backend's base URL (Railway); shared with the other sweeps
+#   BILLING_SWEEP_SECRET — must equal the backend's BILLING_SWEEP_SECRET env var
+# Without both, the sweep 403s/503s harmlessly — see apps/backend/src/env.ts's billingSweepSecret
+# and the route's fail-closed check. Harmlessly, but also uselessly: unset, the app is back to
+# trusting one webhook delivery.
+name: billing-sweep
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call the sweep endpoint
+        run: |
+          status=$(curl -sS -o /tmp/body -w '%{http_code}' \
+            -X POST "${{ secrets.BACKEND_URL }}/api/internal/billing-sweep" \
+            -H "x-sweep-secret: ${{ secrets.BILLING_SWEEP_SECRET }}")
+          cat /tmp/body
+          if [ "$status" -ge 300 ]; then
+            echo "Sweep failed with HTTP $status"
+            exit 1
+          fi

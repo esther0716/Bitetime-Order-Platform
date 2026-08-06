@@ -6,6 +6,52 @@ export interface BillingRow {
   stripe_subscription_id?: string | null
   status?: string | null
   trial_ends_at?: string | null
+  current_period_end?: string | null
+  comped?: boolean | null
+}
+
+/**
+ * The Stripe subscription statuses that mean nothing is paying for this shop any more, and it
+ * must close.
+ *
+ * An ALLOWLIST, deliberately — the opposite direction from LIVE_STATUSES in billing.ts, and for a
+ * reason worth stating: a status Stripe adds tomorrow must default to "leave the shop open". The
+ * cost of being wrong is asymmetric. A shop left open one sweep too long is a few hours of free
+ * service; a shop closed on a status we misread is a merchant's storefront dark with orders
+ * coming in and no idea why.
+ *
+ * `past_due` is NOT here. It is Stripe still retrying the card, which is what dunning is; the
+ * shop stays open until Stripe gives up and reports one of these three.
+ */
+export const LAPSED_STATUSES = ['canceled', 'incomplete_expired', 'unpaid']
+
+export function isLapsed(status: string | null | undefined): boolean {
+  return !!status && LAPSED_STATUSES.includes(status)
+}
+
+/** The billing-row statuses this sweep considers still-running, and so worth re-checking. */
+const RUNNING = ['trialing', 'active', 'past_due']
+
+/**
+ * Is this billing row worth asking Stripe about?
+ *
+ * The sweep's whole worklist, as a pure predicate. It selects rows whose stored DEADLINE has
+ * passed while the stored STATUS still says the subscription is running — which is precisely the
+ * shape a lost webhook leaves behind: Stripe moved on at the trial end or the period end, and
+ * nothing told us.
+ *
+ * The point of narrowing here rather than re-reading every subscription is cost. One Stripe API
+ * call per shop per run, forever, for shops nothing has happened to, is a bill and a rate limit
+ * for no information.
+ */
+export function needsReconcile(billing: BillingRow, now: Date): boolean {
+  if (billing.comped) return false // a comp has no Stripe object to read
+  if (!billing.stripe_subscription_id) return false
+  if (!billing.status || !RUNNING.includes(billing.status)) return false
+
+  const elapsed = (iso: string | null | undefined) =>
+    !!iso && new Date(iso).getTime() <= now.getTime()
+  return elapsed(billing.trial_ends_at) || elapsed(billing.current_period_end)
 }
 
 // One trial ever: a merchant that has ever had a subscription (trialing,

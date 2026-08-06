@@ -187,6 +187,41 @@ async function revokePage(rows: { id: string; active: boolean; option_groups: un
   }
 }
 
+/**
+ * Close a shop whose subscription has ended — trial expired unpaid, dunning exhausted, or a
+ * cancellation that has finally landed.
+ *
+ * ONE function, called from BOTH the `customer.subscription.deleted` webhook and the
+ * reconciliation sweep, because those two are the same decision reached by different roads and a
+ * second copy would eventually disagree about what "closed" means.
+ *
+ * It does two things the suspension alone never did:
+ *
+ *   * Returns `merchants.plan` to basic. `hasProAccess` reads that column and nothing else — it
+ *     is status-blind on purpose, so that no hot path has to ask about billing — which left a
+ *     lapsed Pro shop still entitled. Suspension hid that behind a closed storefront rather than
+ *     fixing it: un-suspend the shop and every Pro feature came back.
+ *   * Revokes the Pro artifacts, on the TRANSITION only, exactly as `reconcileMerchantPlan` does
+ *     for a portal downgrade. Read before write for the same reason: a replayed webhook, or a
+ *     sweep re-reading a shop that is already closed, must not switch off vouchers the merchant
+ *     has since restored.
+ *
+ * Idempotent, and it has to be: the sweep exists precisely to run over shops the webhook may or
+ * may not have already handled.
+ */
+export async function lapseMerchant(merchantId: string) {
+  const { data: before } = await admin
+    .from('merchants').select('plan').eq('id', merchantId).maybeSingle()
+
+  const { error } = await admin
+    .from('merchants')
+    .update({ status: 'suspended', plan: 'basic' })
+    .eq('id', merchantId)
+  if (error) throw error
+
+  if (before?.plan === 'pro') await revokeProArtifacts(merchantId)
+}
+
 // Flip the merchant's activation status (service role bypasses RLS).
 export async function setMerchantStatus(merchantId: string, status: string) {
   const { error } = await admin.from('merchants').update({ status }).eq('id', merchantId)
