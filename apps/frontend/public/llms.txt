@@ -1,20 +1,26 @@
 # TinyOrder
 
-> TinyOrder is online ordering software for home kitchens and small food businesses. Each shop gets
-> its own storefront link, its own menu and its own order list. TinyOrder charges a flat
-> subscription and takes **no commission** on orders; customers pay the shop directly and TinyOrder
-> never handles the money. The dashboard and every storefront work in both English and Chinese.
+> TinyOrder is online ordering software for **home businesses and small independent sellers** —
+> home kitchens and bakers first, and equally anyone selling what they make: handmade goods, crafts,
+> art, clothing. Each shop gets its own storefront link, its own product list and its own order
+> list. TinyOrder charges a flat subscription and takes **no commission** on orders; customers pay
+> the shop directly and TinyOrder never handles the money. The dashboard and every storefront work
+> in both English and Chinese.
 
 TinyOrder is **software a shop runs itself**, not a marketplace and not a delivery app. There is no
 shared customer marketplace to be listed in, no rider network, and no payment processing — the shop
 shares its own link, shows its own payment instructions, and is paid directly.
 
-Who it is for: home bakers, home kitchens, frozen-food and meal-prep sellers, market stalls and
-small cafés currently taking orders by hand in WhatsApp groups, Instagram DMs or Google Forms.
+Who it is for: anyone selling their own products direct to customers and currently taking orders by
+hand in WhatsApp groups, Instagram DMs or Google Forms. Food is where most shops start — home
+bakers, home kitchens, frozen-food and meal-prep sellers, market stalls, small cafés — and nothing
+in the product is food-only: a maker selling craft, art, clothing or any other small-batch goods
+uses the same storefront, the same delivery pricing and the same order list.
 
-What a shop gets: a storefront page with photos, prices and per-unit pricing (per box, per kilo, per
-tray); product names and descriptions in English, Chinese or both; delivery fees that are flat, by
-region, or a base fee plus a rate per kilometre of real road distance from the shop's address;
+What a shop gets: a storefront page with photos, prices and per-unit pricing (per piece, box, set,
+pack, dozen, bottle, jar, tray, slice, kg or g); product names and descriptions in English, Chinese
+or both; delivery fees that are flat, by region, or a base fee plus a rate per kilometre of real
+road distance from the shop's address;
 pickup, delivery or both; numbered orders in one list with the customer's name, WhatsApp number,
 items, wanted date and total; order status (preparing / ready / done); customer self-service order
 lookup by order number; an email alert on every order on every plan; and a customer list the shop
