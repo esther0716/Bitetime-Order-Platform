@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { paymentQrUrl, uploadPaymentQr, PAYMENT_QR_TYPES } from '../store'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { Button } from '../components/ui/button'
 
 type T = (en: string, zh: string) => string
 
@@ -71,14 +72,16 @@ export default function PaymentQrPicker({
           </button>
         )}
         {value && (
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="text-[13px] text-primary underline disabled:opacity-50 cursor-pointer"
+            className="text-[13px]"
           >
             {busy ? t('Uploading…', '上传中…') : t('Replace', '更换')}
-          </button>
+          </Button>
         )}
       </div>
       <input

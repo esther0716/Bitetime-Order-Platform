@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Truck, ExternalLink, ChevronDown } from 'lucide-react'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
+import { Button } from '../components/ui/button'
 import { fetchMyOrdersAtShop, fetchMyPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
 import { StatusBadge } from '../orderStatus'
 import { ItemSelections } from '../ItemSelections'
@@ -96,13 +97,15 @@ export default function OrderHistory() {
           <span className="text-[13px] text-muted-foreground leading-[1.4] truncate">
             {t('Signed in as', '已登录：')} <strong className="text-primary font-medium">{account.email}</strong>
           </span>
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={() => signOut()}
-            className="text-[13px] text-muted-foreground underline underline-offset-2 cursor-pointer shrink-0"
+            className="text-[13px] text-muted-foreground shrink-0"
           >
             {t('Sign out', '登出')}
-          </button>
+          </Button>
         </div>
       )}
 

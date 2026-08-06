@@ -91,13 +91,15 @@ export default function SpotlightTour({ targetSelector, stepLabel, title, body, 
         <h4 className="mt-1 font-heading text-[15px] font-medium text-primary">{title}</h4>
         <p className="mt-1 text-[13px] leading-[1.5] text-foreground">{body}</p>
         <div className="mt-3 flex items-center justify-between gap-2">
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={onSkip}
-            className="text-[13px] text-muted-foreground underline underline-offset-2 hover:text-primary"
+            className="text-[13px] text-muted-foreground hover:text-primary"
           >
             {skipLabel}
-          </button>
+          </Button>
           <Button size="sm" className="w-auto" onClick={onNext}>{ctaLabel}</Button>
         </div>
       </div>

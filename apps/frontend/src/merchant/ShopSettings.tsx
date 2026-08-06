@@ -643,13 +643,15 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
         <h3 className={HEADING}>{t('Order notifications', '订单通知')}</h3>
         <div className="flex items-center justify-between mb-3">
           <p className="text-[11px] font-medium text-primary uppercase tracking-[0.09em]">Telegram</p>
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={() => setGuideOpen(true)}
-            className="text-[12px] font-medium text-primary underline underline-offset-2 hover:text-foreground"
+            className="text-[12px] font-medium hover:text-foreground"
           >
             {t('How to set this up', '如何设置')}
-          </button>
+          </Button>
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex flex-col gap-[6px]">

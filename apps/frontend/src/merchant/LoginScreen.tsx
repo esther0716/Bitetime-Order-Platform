@@ -98,13 +98,15 @@ export default function LoginScreen() {
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-baseline justify-between gap-2">
                   <Label htmlFor="login-2">{t('Password', '密码')}</Label>
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="none"
                     onClick={() => switchMode(true)}
-                    className="text-[12px] text-muted-foreground underline underline-offset-2 cursor-pointer"
+                    className="text-[12px] text-muted-foreground"
                   >
                     {t('Forgot password?', '忘记密码？')}
-                  </button>
+                  </Button>
                 </div>
                 <div className="relative">
                   <Input
@@ -138,9 +140,9 @@ export default function LoginScreen() {
         </form>
         <p className="text-[13px] text-muted-foreground text-center mt-4">
           {forgot ? (
-            <button type="button" onClick={() => switchMode(false)} className="text-primary cursor-pointer underline">
+            <Button type="button" variant="link" size="none" onClick={() => switchMode(false)}>
               {t('Back to sign in', '返回登录')}
-            </button>
+            </Button>
           ) : (
             <Link to="/merchant/signup" className="text-primary cursor-pointer underline">{t('New here? Start your shop', '新用户？开店')}</Link>
           )}

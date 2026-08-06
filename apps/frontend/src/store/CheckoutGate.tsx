@@ -34,13 +34,15 @@ export default function CheckoutGate({ onGuest }: { onGuest: () => void }) {
           {...pitch}
           footer={
             <p className="mt-4">
-              <button
+              <Button
                 type="button"
+                variant="link"
+                size="none"
                 onClick={() => setAuth(null)}
-                className="text-[13px] text-muted-foreground underline underline-offset-2 cursor-pointer"
+                className="text-[13px] text-muted-foreground"
               >
                 {t('Back', '返回')}
-              </button>
+              </Button>
             </p>
           }
         />
@@ -68,13 +70,15 @@ export default function CheckoutGate({ onGuest }: { onGuest: () => void }) {
       <hr className="border-0 border-t border-border" />
 
       <div className="text-center">
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="none"
           onClick={onGuest}
-          className="text-[14px] text-foreground font-medium underline underline-offset-2 cursor-pointer"
+          className="text-[14px] text-foreground font-medium"
         >
           {t('Continue as guest', '以访客身份继续')} →
-        </button>
+        </Button>
         <p className="text-[12px] text-muted-foreground leading-[1.6] mt-2.5 max-w-[340px] mx-auto">
           <strong className="font-medium text-foreground">
             {t("Guest orders can't be traced back.", '访客订单无法追溯。')}
@@ -100,13 +104,15 @@ export function GuestStrip({ onSignIn }: { onSignIn: () => void }) {
       <span className="text-[13px] text-muted-foreground leading-[1.4]">
         {t('Ordering as a guest.', '正在以访客身份下单。')}
       </span>
-      <button
+      <Button
         type="button"
+        variant="link"
+        size="none"
         onClick={onSignIn}
-        className="text-[13px] text-primary font-medium underline underline-offset-2 cursor-pointer shrink-0"
+        className="text-[13px] font-medium shrink-0"
       >
         {t('Sign in', '登录')}
-      </button>
+      </Button>
     </div>
   )
 }

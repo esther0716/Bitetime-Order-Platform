@@ -96,13 +96,15 @@ export default function ResetPasswordPage() {
               '此链接已过期或已被使用。请在你下单的店铺重新申请。',
             )}
           </p>
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={() => navigate(destination)}
-            className="text-[13px] text-primary underline underline-offset-2 mt-4 inline-block cursor-pointer"
+            className="text-[13px] mt-4 inline-block"
           >
             {shop ? t('Back to the shop', '返回店铺') : t('Back to sign in', '返回登录')}
-          </button>
+          </Button>
         </>
       ) : (
         <>
