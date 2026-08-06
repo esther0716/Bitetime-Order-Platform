@@ -113,6 +113,8 @@
   --color-danger-border: var(--color-danger-border);
   --color-neutral-100: var(--neutral-100);
   --color-neutral-fg: var(--neutral-fg);
+  --color-disabled-bg: var(--color-disabled-bg);
+  --color-disabled-fg: var(--color-disabled-fg);
 
   /* Radii — brand scale (overrides Tailwind defaults) */
   --radius-xs: var(--radius-xs);

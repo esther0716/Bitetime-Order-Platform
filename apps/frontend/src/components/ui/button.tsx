@@ -8,13 +8,16 @@ const buttonVariants = cva(
   // pin 'DM_Sans', which the reskin removed; the declaration survived and quietly resolved
   // to the generic sans-serif on any machine without DM Sans installed, so buttons rendered
   // in Helvetica while every other element rendered in Poppins.
-  "group/button inline-flex shrink-0 items-center justify-center gap-2 border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none cursor-pointer focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center gap-2 border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none cursor-pointer focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:text-disabled-fg disabled:border-transparent aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         // .submit-btn / .save-btn / .auth-btn / .voucher-apply-btn — oxblood primary fill
+        // Only the FILLED variants take the grey disabled fill. ghost / link / outline /
+        // dashed keep their transparent background — a grey slab where a text link used to
+        // be reads as broken layout, not as a disabled control.
         default:
-          "bg-oxblood text-cream hover:bg-oxblood-deep",
+          "bg-oxblood text-cream hover:bg-oxblood-deep disabled:bg-disabled-bg",
         // .cust-account-btn / .lang-btn — clay-border outline pill
         outline:
           "border-[0.5px] border-clay-border bg-transparent text-rose-muted hover:bg-surface-sunken hover:text-ink",
@@ -26,13 +29,13 @@ const buttonVariants = cva(
           "bg-transparent text-rose-muted hover:bg-surface-sunken hover:text-ink",
         // .del-btn — rose-tinted destructive (border-rose, oxblood-tint bg)
         destructive:
-          "border border-rose-border bg-oxblood-tint text-oxblood hover:bg-rose-hover",
+          "border border-rose-border bg-oxblood-tint text-oxblood hover:bg-rose-hover disabled:bg-disabled-bg",
         // .invoice-btn — white bg / clay-rose text, inverts on hover + self-encodes geometry (use size="none")
         invoice:
-          "w-full px-[14px] py-[10px] text-[13px] rounded-sm border border-rose-border bg-white text-clay-rose font-semibold hover:bg-clay-rose hover:text-white hover:border-clay-rose",
+          "w-full px-[14px] py-[10px] text-[13px] rounded-sm border border-rose-border bg-white text-clay-rose font-semibold hover:bg-clay-rose hover:text-white hover:border-clay-rose disabled:bg-disabled-bg",
         // .qty-btn — cream bg, clay border, oxblood text (use size="iconRound")
         soft:
-          "border border-clay-border bg-cream text-oxblood hover:bg-surface-warm-alt",
+          "border border-clay-border bg-cream text-oxblood hover:bg-surface-warm-alt disabled:bg-disabled-bg",
         // Text-style link button
         link:
           "text-oxblood underline-offset-4 hover:underline",

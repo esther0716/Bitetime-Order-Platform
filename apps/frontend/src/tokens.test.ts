@@ -100,6 +100,19 @@ describe('light-theme text clears AA', () => {
   })
 })
 
+/* WCAG exempts inactive controls from contrast requirements, so this is a legibility
+   floor we choose rather than one we owe. It exists because the treatment it replaced --
+   opacity-50 on an oxblood fill -- landed at 2.82:1 and was genuinely hard to read. */
+describe('the disabled treatment stays legible', () => {
+  it('disabled label on the disabled fill', () => {
+    expect(contrastRatio(token('--ink-600'), token('--ink-200'))).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+
+  it('the disabled fill is distinguishable from the canvas', () => {
+    expect(contrastRatio(token('--ink-200'), token('--cream'))).toBeGreaterThanOrEqual(1.05)
+  })
+})
+
 describe('dark-theme accent clears AA', () => {
   it('brand-400 on the darkest surface', () => {
     expect(contrastRatio(token('--brand-400'), token('--ink-950'))).toBeGreaterThanOrEqual(AA_TEXT)

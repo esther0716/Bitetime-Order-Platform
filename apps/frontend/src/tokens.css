@@ -78,6 +78,11 @@
   --color-text-subtle:   var(--ink-400);
   --color-accent:        var(--brand-500);
   --color-accent-hover:  var(--brand-600);
+  /* Disabled. A real pair, not opacity: fading an oxblood fill to 50% over the cream canvas
+     composites to #B67D84, a mauve that is in no palette and reads as a third brand colour
+     rather than as "inert". Grey says inert. 4.70:1, so the label stays readable. */
+  --color-disabled-bg:   var(--ink-200);
+  --color-disabled-fg:   var(--ink-600);
   /* The colour alone; --focus-ring below is the full box-shadow built from it. */
   --color-focus-ring:    rgba(122, 16, 40, 0.40);
 
