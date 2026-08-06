@@ -88,12 +88,20 @@ export default function ShopSettings() {
   return (
     <div className="w-full">
       <Tabs value={tab} onValueChange={(v) => changeTab(v as TabKey)} className="mb-6">
-        {/* Six nowrap tabs outgrow the column well before the `sm` breakpoint — the scroll
-            was `max-sm:` and every width between overflowed the rail instead. Unconditional:
-            the triggers keep `flex-1` so they still stretch to fill a wide rail, and only
-            scroll once their natural (nowrap) widths exceed it. `justify-start` matters
-            here — centred overflow puts the first tab off the left edge, unreachable. */}
-        <TabsList className="justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* Six nowrap tabs outgrow the column long before any phone width, so the rail WRAPS
+            rather than scrolls. A scrolling rail hid two things at once: the merchant had no
+            way to know the tabs continued past the edge, and — worse — Base UI's tabs do not
+            scroll the active tab into view, so a deep link at `#settings/subscription` (which
+            is where every Pro CTA points, #112) opened the Subscription panel under a rail
+            still showing Shipping. Wrapping removes both: nothing is off-screen, so there is
+            no affordance to signal and nothing to scroll to.
+
+            No breakpoint on purpose. The triggers keep `flex-1`, so while all six fit they are
+            one stretched row exactly as before; past that they wrap and each row fills. The
+            width where that happens depends on the dashboard column, not on the viewport, so
+            a `max-sm:` here would leave the tablet widths overflowing — which is the bug this
+            replaced. */}
+        <TabsList className="flex-wrap">
           {TABS.map(({ key, label, tag }) => (
             <TabsTrigger key={key} value={key} className="group/tab">
               {label}
