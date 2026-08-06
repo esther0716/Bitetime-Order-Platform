@@ -125,8 +125,17 @@ script entry implies something CI might run.
   copy on every run rather than from a stale committed binary.
 - **`apps/frontend/scripts/og-cover.ts`** — viewport `1200×630`,
   `deviceScaleFactor: 2`, `screenshot({ type: 'jpeg', quality: 92 })` →
-  `public/og-cover.jpg`. Run with
+  `public/og-cover-v2.jpg`. Run with
   `pnpm dlx tsx apps/frontend/scripts/og-cover.ts` from the repo root.
+- **The `-v2` in that filename is a cache bust, not a version counter.** Facebook,
+  WhatsApp and X key their `og:image` cache on the URL and re-fetch on a schedule of
+  their own; reprinting the card under its old name leaves the previous artwork in
+  circulation for weeks. X and Facebook at least publish validators that force a
+  refetch — WhatsApp publishes nothing, so the URL is the only lever there is. Rename
+  when the printed content changes in a way that must not linger, and change `og:image`
+  and `twitter:image` in `index.html` in the same commit. The old file is deleted, not
+  kept: leaving it served is leaving the superseded card reachable, which is the exact
+  thing the rename exists to stop.
 - **`apps/frontend/package.json`** — adds `playwright-core` as a devDependency, not
   `playwright`. `playwright-core` ships no browser binaries, so it costs every
   `pnpm install` about 2MB instead of a ~150MB Chromium download; the script launches
@@ -165,11 +174,11 @@ fetched, which is correct on every route. Do not add it back without per-route m
 
 Per `CLAUDE.md`, UI is verified by running the app. For this change that means:
 
-1. `pnpm dlx tsx apps/frontend/scripts/og-cover.ts` writes `public/og-cover.jpg`;
+1. `pnpm dlx tsx apps/frontend/scripts/og-cover.ts` writes `public/og-cover-v2.jpg`;
    confirm the file is 1200×630 and under 300KB.
 2. Open the rendered JPEG and check it at full size and scaled to ~200px wide — the
    headline must still be legible at thumbnail size.
-3. Run the app and confirm `/og-cover.jpg` is served.
+3. Run the app and confirm `/og-cover-v2.jpg` is served.
 4. After deploy, run the URL through a scraper preview (e.g. opengraph.xyz) to confirm
    the card renders in the WhatsApp/Facebook/Twitter previews.
 
