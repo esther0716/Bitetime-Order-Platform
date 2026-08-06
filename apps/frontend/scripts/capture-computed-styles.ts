@@ -13,9 +13,21 @@ import { chromium } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 
 const ORIGIN = process.env.ORIGIN ?? 'http://localhost:4173'
-const ROUTES = ['/', '/pricing', '/features', '/faq', '/sample-shops', '/merchant/login', '/merchant/signup']
 const OUT = process.argv[2]
 if (!OUT) throw new Error('usage: capture-computed-styles.ts <output-file>')
+
+const PUBLIC_ROUTES = ['/', '/pricing', '/features', '/faq', '/sample-shops', '/merchant/login', '/merchant/signup']
+
+/* The dashboard is where most of the app's markup lives, and it is behind a login — so a
+   public-only snapshot can return a clean diff for a change that only touches authed
+   screens, which is exactly what happened once: a sweep of 38 `rounded-full` classes
+   produced an empty diff because not one of them rendered on a public route. Set
+   VERIFY_EMAIL / VERIFY_PASSWORD to include them. Without credentials the run still works,
+   and says plainly what it did not cover. */
+const AUTHED_ROUTES = ['/merchant', '/merchant#orders', '/merchant#products', '/merchant#customers', '/merchant#settings/shipping']
+const SHOP = process.env.VERIFY_SHOP ?? 'demo-basic'
+const EMAIL = process.env.VERIFY_EMAIL
+const PASSWORD = process.env.VERIFY_PASSWORD
 
 /* `opacity` is deliberately NOT captured. One storefront element animates on a setInterval
    that prefers-reduced-motion does not reach, so its opacity is still mid-interpolation at
@@ -40,7 +52,19 @@ const page = await (await browser.newContext({
 })).newPage()
 const lines: string[] = []
 
-for (const route of ROUTES) {
+const routes = [...PUBLIC_ROUTES, `/s/${SHOP}`]
+if (EMAIL && PASSWORD) {
+  await page.goto(`${ORIGIN}/merchant/login`, { waitUntil: 'networkidle' })
+  await page.getByLabel('Email').fill(EMAIL)
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD)
+  await page.getByRole('button', { name: 'Log in' }).click()
+  await page.waitForURL(/\/merchant/, { timeout: 15_000 })
+  routes.push(...AUTHED_ROUTES)
+} else {
+  console.warn('VERIFY_EMAIL / VERIFY_PASSWORD unset — dashboard routes NOT captured.')
+}
+
+for (const route of routes) {
   await page.goto(`${ORIGIN}${route}`, { waitUntil: 'networkidle' })
   await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(400)
