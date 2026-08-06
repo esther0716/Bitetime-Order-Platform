@@ -55,19 +55,21 @@ export default function TrialFeedbackPrompt() {
   }
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-4 mb-6 rounded-md border-[0.5px] border-oxblood/20 bg-surface-raised">
+    <div className="flex flex-col gap-3 px-4 py-4 mb-6 rounded-md border-[0.5px] border-primary/20 bg-card">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[14px] font-medium text-ink">
+        <p className="text-[14px] font-medium text-foreground">
           {t('How was your trial?', '试用体验如何？')}
         </p>
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="none"
           onClick={() => void skip()}
           disabled={busy}
-          className="text-[12px] text-text-tertiary underline shrink-0"
+          className="text-[12px] text-muted-foreground shrink-0"
         >
           {t('No thanks', '不用了')}
-        </button>
+        </Button>
       </div>
 
       <div className="flex gap-1" role="radiogroup" aria-label={t('Rating', '评分')}>
@@ -85,7 +87,7 @@ export default function TrialFeedbackPrompt() {
             <Star
               size={22}
               strokeWidth={1.75}
-              className={cn((hoverRating || rating) >= n ? 'fill-oxblood text-oxblood' : 'text-text-tertiary')}
+              className={cn((hoverRating || rating) >= n ? 'fill-primary text-primary' : 'text-muted-foreground')}
             />
           </button>
         ))}

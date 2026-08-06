@@ -21,16 +21,16 @@ import { mergeShopTags, tagSuggestions } from './tagSuggestions'
 import WaLink from './WaLink'
 
 // Self-contained panel — pixel-match of .admin-panel
-const PANEL = 'bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border'
+const PANEL = 'bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border'
 
 // Table header cell — pixel-match of .mm-customers-table th
-const TH = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-oxblood px-[14px] py-[10px] border-b-[0.5px] border-rose-border text-left whitespace-nowrap'
+const TH = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-primary px-[14px] py-[10px] border-b-[0.5px] border-border text-left whitespace-nowrap'
 
 // Table data cell (base) — pixel-match of .mm-customers-table td + hover
-const TD = 'px-[14px] py-[12px] border-b border-surface-warm-alt text-ink align-middle group-hover:bg-oxblood-tint'
+const TD = 'px-[14px] py-[12px] border-b border-muted text-foreground align-middle group-hover:bg-brand-100'
 
 // Count cell — pixel-match of .mm-customers-count overrides
-const TD_COUNT = 'px-[14px] py-[12px] border-b border-surface-warm-alt text-oxblood font-semibold text-center align-middle group-hover:bg-oxblood-tint'
+const TD_COUNT = 'px-[14px] py-[12px] border-b border-muted text-primary font-semibold text-center align-middle group-hover:bg-brand-100'
 
 const PAGE_SIZE = 50
 
@@ -108,7 +108,7 @@ export default function CustomersView() {
 
   if (failed) {
     return (
-      <div className={`${PANEL} text-center text-rose-muted text-sm`}>
+      <div className={`${PANEL} text-center text-muted-foreground text-sm`}>
         <p>{t('Could not load your customers. Try again in a moment.', '无法加载顾客名单，请稍后再试。')}</p>
       </div>
     )
@@ -124,7 +124,7 @@ export default function CustomersView() {
           value={search}
           onChange={e => narrow(setSearch)(e.target.value)}
           placeholder={t('Search by name or WhatsApp…', '按姓名或 WhatsApp 搜索…')}
-          className="max-w-sm bg-cream border-clay-border text-[13px]"
+          className="max-w-sm bg-background border-border text-[13px]"
         />
 
         <SortControl sort={sort} onSort={narrow(setSort)} isPro={isPro} />
@@ -133,7 +133,7 @@ export default function CustomersView() {
           <button
             type="button"
             onClick={() => narrow(setTag)(null)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-rose-border bg-oxblood-tint px-3 py-1 text-[12px] text-oxblood"
+            className="inline-flex items-center gap-1.5 rounded-pill border border-border bg-brand-100 px-3 py-1 text-[12px] text-primary"
           >
             {tag}
             <X size={12} />
@@ -142,7 +142,7 @@ export default function CustomersView() {
       </div>
 
       {customers!.length === 0 ? (
-        <div className={`${PANEL} text-center text-rose-muted text-sm`}>
+        <div className={`${PANEL} text-center text-muted-foreground text-sm`}>
           <p>
             {narrowed
               ? t('No customers match that.', '没有符合条件的顾客。')
@@ -151,7 +151,7 @@ export default function CustomersView() {
         </div>
       ) : (
         // pixel-match of .admin-panel + .mm-customers-wrap (padding: 0; overflow: hidden)
-        <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-0 mb-3 w-full box-border overflow-hidden">
+        <div className="bg-card border-[0.5px] border-border rounded-2xl p-0 mb-3 w-full box-border overflow-hidden">
           {/* pixel-match of .mm-customers-table-wrap */}
           <div className="overflow-x-auto">
             {/* pixel-match of .mm-customers-table */}
@@ -185,7 +185,7 @@ export default function CustomersView() {
                     <td className={TD}>
                       <span className="flex flex-col">
                         <span>{fmtDate(c.lastOrderAt)}</span>
-                        <span className="text-[11px] text-text-tertiary">{agoLabel(c.daysSinceLastOrder, t)}</span>
+                        <span className="text-[11px] text-muted-foreground">{agoLabel(c.daysSinceLastOrder, t)}</span>
                       </span>
                     </td>
                   </tr>
@@ -222,7 +222,7 @@ function AccountMark() {
   const { t } = useSession()
   return (
     <Tooltip>
-      <TooltipTrigger render={<span className="text-text-tertiary" />}>
+      <TooltipTrigger render={<span className="text-muted-foreground" />}>
         <UserCheck size={13} strokeWidth={2} />
       </TooltipTrigger>
       <TooltipContent>
@@ -250,7 +250,7 @@ function SortControl({
   return (
     <div className="flex items-center gap-2">
       <Select value={sort} onValueChange={v => onSort(v as ShopCustomerSort)} disabled={!isPro} items={sortItems}>
-        <SelectTrigger className="w-[190px] bg-cream border-clay-border text-[13px]">
+        <SelectTrigger className="w-[190px] bg-background border-border text-[13px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -281,7 +281,7 @@ function ListFooter({
   const { t } = useSession()
   return (
     <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
-      <div className="text-[12px] text-text-tertiary">
+      <div className="text-[12px] text-muted-foreground">
         <p>{t(`${total} customer${total === 1 ? '' : 's'}`, `${total} 位顾客`)}</p>
         {unattributed > 0 && (
           <p className="mt-1">
@@ -298,7 +298,7 @@ function ListFooter({
           <Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => onPage(page - 1)}>
             {t('Previous', '上一页')}
           </Button>
-          <span className="text-[12px] text-text-tertiary tabular-nums">{page} / {pageCount}</span>
+          <span className="text-[12px] text-muted-foreground tabular-nums">{page} / {pageCount}</span>
           <Button type="button" size="sm" variant="outline" disabled={page >= pageCount} onClick={() => onPage(page + 1)}>
             {t('Next', '下一页')}
           </Button>
@@ -378,19 +378,19 @@ function DrawerContents({
 
   return (
     <>
-              <SheetHeader className="border-b border-surface-sunken">
+              <SheetHeader className="border-b border-muted">
                 <SheetTitle className="text-[15px] flex items-center gap-1.5">
                   {customer.name || '—'}
                   {customer.hasAccount && <AccountMark />}
                 </SheetTitle>
                 {customer.wa && <span className="text-[13px]"><WaLink wa={customer.wa} /></span>}
-                <span className="text-[12px] text-text-tertiary">
+                <span className="text-[12px] text-muted-foreground">
                   {t(
                     `${customer.bookedOrders} order${customer.bookedOrders === 1 ? '' : 's'} · ${formatMoney(customer.lifetimeSpend, merchant?.currency)} · avg ${formatMoney(customer.avgOrder, merchant?.currency)}`,
                     `${customer.bookedOrders} 个订单 · ${formatMoney(customer.lifetimeSpend, merchant?.currency)} · 平均 ${formatMoney(customer.avgOrder, merchant?.currency)}`,
                   )}
                 </span>
-                <span className="text-[12px] text-text-tertiary">
+                <span className="text-[12px] text-muted-foreground">
                   {t(
                     `Since ${fmtDate(customer.firstOrderAt)} · last ${agoLabel(customer.daysSinceLastOrder, t)}`,
                     `自 ${fmtDate(customer.firstOrderAt)} · 最近 ${agoLabel(customer.daysSinceLastOrder, t)}`,
@@ -416,16 +416,16 @@ function DrawerContents({
                       key={o.id}
                       type="button"
                       onClick={() => setSelectedOrder(o)}
-                      className="flex flex-col gap-1 w-full text-left rounded-lg border border-rose-border bg-cream px-3 py-2.5 hover:bg-oxblood-tint transition-colors"
+                      className="flex flex-col gap-1 w-full text-left rounded-lg border border-border bg-background px-3 py-2.5 hover:bg-brand-100 transition-colors"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-heading text-[14px] font-medium text-oxblood">{o.order_number || '—'}</span>
-                        <span className="tabular-nums text-[13px] font-medium text-ink">
+                        <span className="font-heading text-[14px] font-medium text-primary">{o.order_number || '—'}</span>
+                        <span className="tabular-nums text-[13px] font-medium text-foreground">
                           {formatMoney(o.total, o.currency ?? merchant?.currency)}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[12px] text-text-tertiary">{fmtDate(o.created_at)}</span>
+                        <span className="text-[12px] text-muted-foreground">{fmtDate(o.created_at)}</span>
                         <StatusBadge status={o.status || 'new'} t={t} />
                       </div>
                     </button>
@@ -482,12 +482,12 @@ function NotesPanel({
 
   if (!isPro) {
     return (
-      <div className="mx-4 my-4 rounded-lg border border-rose-border bg-surface-sunken px-3 py-3 text-center">
+      <div className="mx-4 my-4 rounded-lg border border-border bg-muted px-3 py-3 text-center">
         <div className="mb-1.5 flex items-center justify-center gap-2">
-          <span className="text-[13px] font-medium text-oxblood">{t('Notes & tags', '备注与标签')}</span>
+          <span className="text-[13px] font-medium text-primary">{t('Notes & tags', '备注与标签')}</span>
           <ProBadge />
         </div>
-        <p className="mb-3 text-[12px] leading-[1.6] text-text-secondary">
+        <p className="mb-3 text-[12px] leading-[1.6] text-muted-foreground">
           {t(
             'Keep a private note against a customer and tag your regulars. Only you can see it.',
             '为顾客保存私密备注并为常客添加标签，仅你可见。',
@@ -509,7 +509,7 @@ function NotesPanel({
           {customer.tags.map(tag => (
             <span
               key={tag}
-              className="inline-flex items-center gap-1 rounded-full border border-rose-border bg-oxblood-tint px-2.5 py-0.5 text-[12px] text-oxblood"
+              className="inline-flex items-center gap-1 rounded-pill border border-border bg-brand-100 px-2.5 py-0.5 text-[12px] text-primary"
             >
               <button type="button" onClick={() => onTagClicked(tag)} className="cursor-pointer">{tag}</button>
               <button
@@ -532,23 +532,25 @@ function NotesPanel({
             addTag(tagDraft.trim())
           }}
           placeholder={t('Add a tag, press Enter…', '添加标签，按回车…')}
-          className="bg-cream border-clay-border text-[13px]"
+          className="bg-background border-border text-[13px]"
         />
 
         {suggestions.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-text-tertiary">{t('Used before', '曾用标签')}</span>
+            <span className="text-[11px] text-muted-foreground">{t('Used before', '曾用标签')}</span>
             {suggestions.map(s => (
-              <button
+              <Button
                 key={s}
                 type="button"
+                variant="dashed"
+                size="none"
                 disabled={busy}
                 onClick={() => addTag(s)}
-                className="inline-flex items-center gap-1 rounded-full border border-dashed border-clay-border bg-cream px-2.5 py-0.5 text-[12px] text-text-secondary hover:border-rose-border hover:bg-oxblood-tint hover:text-oxblood transition-colors disabled:opacity-50"
+                className="gap-1 rounded-pill bg-background px-2.5 py-0.5 text-[12px] hover:border-border"
               >
                 <Plus size={10} />
                 {s}
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -560,7 +562,7 @@ function NotesPanel({
           onChange={e => setNote(e.target.value)}
           rows={3}
           placeholder={t('Private note — only your shop sees this…', '私密备注，仅本店可见…')}
-          className="bg-cream border-clay-border text-[13px]"
+          className="bg-background border-border text-[13px]"
         />
         {note !== (customer.note ?? '') && (
           <Button

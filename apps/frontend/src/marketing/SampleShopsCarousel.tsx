@@ -28,7 +28,7 @@ export default function SampleShopsCarousel({ shops }: { shops: SampleShop[] }) 
             {shop.screenshotPath ? (
               // Replaces the avatar+product-list block ENTIRELY — one card, one representation
               // of the shop, never both. A static <img>, same as every other card: no <a>/<Link>.
-              <div className="h-full overflow-hidden rounded-2xl border-[0.5px] border-clay-border bg-surface-raised shadow-elev-3">
+              <div className="h-full overflow-hidden rounded-2xl border-[0.5px] border-border bg-card shadow-elev-3">
                 <img
                   src={sampleShopScreenshotUrl(shop.screenshotPath)}
                   alt={shop.name}
@@ -36,8 +36,8 @@ export default function SampleShopsCarousel({ shops }: { shops: SampleShop[] }) 
                 />
               </div>
             ) : (
-              <div className="h-full rounded-2xl border-[0.5px] border-clay-border bg-surface-raised p-5 text-left shadow-elev-3">
-                <div className="flex items-center gap-3 pb-4 border-b border-divider">
+              <div className="h-full rounded-2xl border-[0.5px] border-border bg-card p-5 text-left shadow-elev-3">
+                <div className="flex items-center gap-3 pb-4 border-b border-border">
                   {shop.products[0]?.imagePath ? (
                     <img
                       src={productImageUrl(shop.products[0].imagePath)}
@@ -45,22 +45,22 @@ export default function SampleShopsCarousel({ shops }: { shops: SampleShop[] }) 
                       className="h-10 w-10 rounded-round object-cover shrink-0"
                     />
                   ) : (
-                    <span className="grid h-10 w-10 place-items-center rounded-round bg-oxblood-tint font-heading text-[15px] font-medium text-oxblood shrink-0">
+                    <span className="grid h-10 w-10 place-items-center rounded-round bg-brand-100 font-heading text-[15px] font-medium text-primary shrink-0">
                       {initials(shop.name)}
                     </span>
                   )}
-                  <p className="min-w-0 truncate font-heading text-[15px] font-medium text-ink leading-tight">
+                  <p className="min-w-0 truncate font-heading text-[15px] font-medium text-foreground leading-tight">
                     {shop.name}
                   </p>
                 </div>
                 {shop.products.length > 0 && (
-                  <ul className="list-none m-0 p-0 flex flex-col divide-y divide-divider">
+                  <ul className="list-none m-0 p-0 flex flex-col divide-y divide-border">
                     {shop.products.map((p) => (
                       <li key={p.id} className="flex items-center justify-between gap-3 py-3">
-                        <span className="text-[13.5px] text-ink truncate">
+                        <span className="text-[13.5px] text-foreground truncate">
                           {lang === 'zh' && p.nameZh ? p.nameZh : p.name}
                         </span>
-                        <span className="font-heading text-[13.5px] font-medium text-oxblood shrink-0">
+                        <span className="font-heading text-[13.5px] font-medium text-primary shrink-0">
                           {formatMoney(p.price, shop.currency)}
                         </span>
                       </li>

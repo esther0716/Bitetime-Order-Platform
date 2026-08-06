@@ -106,7 +106,7 @@ export default function VouchersManager() {
   }
 
   if (!rows) return (
-    <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
       <SkeletonText lines={4} />
     </div>
   )
@@ -114,18 +114,18 @@ export default function VouchersManager() {
   return (
     <div>
       {/* Your vouchers panel */}
-      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
-        <h3 className="font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2">
+      <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
+        <h3 className="font-heading text-[15px] font-medium text-primary mb-4 flex items-center gap-2">
           {t('Your vouchers', '您的优惠券')}
         </h3>
         {rows.length === 0 ? (
-          <Empty className="border-[0.5px] border-dashed border-clay-border bg-cream/50">
+          <Empty className="border-[0.5px] border-dashed border-border bg-background/50">
             <EmptyHeader>
-              <EmptyMedia variant="icon" className="bg-oxblood-tint text-oxblood">
+              <EmptyMedia variant="icon" className="bg-brand-100 text-primary">
                 <Ticket />
               </EmptyMedia>
-              <EmptyTitle className="text-oxblood">{t('No vouchers yet', '还没有优惠券')}</EmptyTitle>
-              <EmptyDescription className="text-rose-muted">
+              <EmptyTitle className="text-primary">{t('No vouchers yet', '还没有优惠券')}</EmptyTitle>
+              <EmptyDescription className="text-muted-foreground">
                 {t('Create your first voucher below to offer discounts at checkout.', '在下方创建第一张优惠券，为结账提供折扣。')}
               </EmptyDescription>
             </EmptyHeader>
@@ -135,10 +135,10 @@ export default function VouchersManager() {
             {rows.map((v: Voucher) => (
               <div
                 key={(v as any).id}
-                className="flex items-center gap-3 px-[14px] py-[10px] bg-cream border-[0.5px] border-clay-border rounded-lg transition-colors max-[480px]:flex-wrap"
+                className="flex items-center gap-3 px-[14px] py-[10px] bg-background border-[0.5px] border-border rounded-lg transition-colors max-[480px]:flex-wrap"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="text-[14px] font-medium text-ink flex items-center gap-2 flex-wrap">
+                  <div className="text-[14px] font-medium text-foreground flex items-center gap-2 flex-wrap">
                     {v.code}
                     {/* A voucher a shop's customers already hold, which no longer redeems
                         because the shop stepped down from Pro. Shown rather than hidden: the
@@ -150,14 +150,14 @@ export default function VouchersManager() {
                       </Badge>
                     )}
                   </div>
-                  <div className="text-[12px] text-rose-muted mt-0.5">{valueLabel(v)} · {usesLabel(v)}</div>
+                  <div className="text-[12px] text-muted-foreground mt-0.5">{valueLabel(v)} · {usesLabel(v)}</div>
                 </div>
                 <div className="flex gap-[6px] shrink-0 max-[480px]:w-full max-[480px]:justify-end">
                   <Button
                     type="button"
                     variant="outline"
                     size="none"
-                    className="rounded-pill py-[5px] px-3 text-[12px] bg-surface-raised whitespace-nowrap hover:border-oxblood hover:text-oxblood hover:bg-oxblood-tint"
+                    className="rounded-pill py-[5px] px-3 text-[12px] bg-card whitespace-nowrap hover:border-primary hover:text-primary hover:bg-brand-100"
                     onClick={() => setPendingDelete(v)}
                   >
                     {t('Delete', '删除')}
@@ -170,8 +170,8 @@ export default function VouchersManager() {
       </div>
 
       {/* Create a voucher panel */}
-      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
-        <h3 className="font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2">
+      <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
+        <h3 className="font-heading text-[15px] font-medium text-primary mb-4 flex items-center gap-2">
           {t('Create a voucher', '创建优惠券')}
         </h3>
         <form onSubmit={save}>
@@ -192,7 +192,7 @@ export default function VouchersManager() {
                   type="button"
                   variant="outline"
                   size="none"
-                  className="shrink-0 rounded-sm px-3 text-[12px] bg-surface-raised whitespace-nowrap hover:border-oxblood hover:text-oxblood hover:bg-oxblood-tint"
+                  className="shrink-0 rounded-sm px-3 text-[12px] bg-card whitespace-nowrap hover:border-primary hover:text-primary hover:bg-brand-100"
                   onClick={() => setForm({ ...form, code: generateVoucherCode(merchant!.slug) })}
                 >
                   {t('Generate', '生成')}
@@ -206,7 +206,7 @@ export default function VouchersManager() {
                 onValueChange={v => setForm({ ...form, kind: v ?? form.kind })}
                 items={kindItems}
               >
-                <SelectTrigger id="vm-kind" className="w-full bg-cream text-[13px]">
+                <SelectTrigger id="vm-kind" className="w-full bg-background text-[13px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

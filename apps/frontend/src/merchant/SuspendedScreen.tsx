@@ -31,7 +31,7 @@ export default function SuspendedScreen() {
     <div className="w-full max-w-[720px] mx-auto pt-8 px-4 pb-12">
       <div
         role="status"
-        className="flex items-center gap-3 flex-wrap px-4 py-3 mb-6 rounded-md border-[0.5px] text-[13px] leading-[1.5] bg-danger-bg text-danger-fg border-danger-fg/25"
+        className="flex items-center gap-3 flex-wrap px-4 py-3 mb-6 rounded-md border-[0.5px] text-[13px] leading-[1.5] bg-danger-100 text-danger-fg border-danger-fg/25"
       >
         <span className="flex-1 min-w-[200px] font-medium">
           {t('Your shop is suspended — your subscription has ended. Subscribe to reopen it.',
@@ -40,7 +40,7 @@ export default function SuspendedScreen() {
         <Button
           size="none"
           variant="outline"
-          className="py-[5px] px-3 rounded-pill text-[12px] whitespace-nowrap bg-surface-raised hover:bg-oxblood-tint hover:text-oxblood hover:border-oxblood"
+          className="py-[5px] px-3 rounded-pill text-[12px] whitespace-nowrap bg-card hover:bg-brand-100 hover:text-primary hover:border-primary"
           disabled={busy}
           onClick={reactivate}
         >
@@ -49,11 +49,11 @@ export default function SuspendedScreen() {
       </div>
       <TrialFeedbackPrompt />
       {err && (
-        <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-4 leading-[1.5]">
+        <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-4 leading-[1.5]">
           {err}
         </div>
       )}
-      <h2 className="font-heading text-[18px] font-medium text-oxblood mb-3">
+      <h2 className="font-heading text-[18px] font-medium text-primary mb-3">
         {t('Your orders', '您的订单')}
       </h2>
       <OrdersView readOnly />

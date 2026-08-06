@@ -24,10 +24,10 @@ function ShopUnreachable() {
     <div className="form-wrap text-center pt-8 pb-12">
       <div className="text-center mb-10">
         <h1><Wordmark className="h-8 mx-auto" /></h1>
-        <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
+        <p className="font-heading text-[13px] italic text-muted-foreground mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
-      <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-6 w-full box-border text-left">
-        <p className="text-rose-muted text-[14px] leading-[1.6] mt-1.5">
+      <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-6 w-full box-border text-left">
+        <p className="text-muted-foreground text-[14px] leading-[1.6] mt-1.5">
           {t(
             "We couldn't reach the server to load your shop. You are still signed in — this is on our side, not yours.",
             '我们暂时无法连接服务器来加载您的店铺。您仍处于登录状态——这是我们这边的问题。',

@@ -43,12 +43,12 @@ export default function ReleaseNotes() {
         <div className="text-center mb-10">
           <h1><Wordmark className="h-8 mx-auto" /></h1>
         </div>
-        <div className="bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border text-left">
-          <p className="text-rose-muted text-[14px] leading-[1.6] mt-1.5">
+        <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border text-left">
+          <p className="text-muted-foreground text-[14px] leading-[1.6] mt-1.5">
             {t("We couldn't find this release.", '未找到该更新记录。')}
           </p>
         </div>
-        <Link to="/" className="text-oxblood text-[13px]">{t('Back home', '返回首页')}</Link>
+        <Link to="/" className="text-primary text-[13px]">{t('Back home', '返回首页')}</Link>
       </div>
     )
   }
@@ -59,10 +59,10 @@ export default function ReleaseNotes() {
       <div className="mb-2">
         <Wordmark className="h-7" />
       </div>
-      <p className="text-[12px] text-rose-muted mb-6">
+      <p className="text-[12px] text-muted-foreground mb-6">
         {new Date(release.published_at).toLocaleDateString()}
       </p>
-      <h1 className="text-2xl font-heading text-ink mb-6">{release.title}</h1>
+      <h1 className="text-2xl font-heading text-foreground mb-6">{release.title}</h1>
       <ReleaseSummary text={release.summary} />
     </div>
   )

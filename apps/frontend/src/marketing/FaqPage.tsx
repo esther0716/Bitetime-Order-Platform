@@ -27,15 +27,15 @@ export default function FaqPage() {
 
   return (
     // Keep mm-land class — body:has(.mm-land) in index.css resets body padding/alignment
-    <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-ink bg-cream">
+    <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-foreground bg-background">
       <MarketingNav />
 
       {/* ── Header ── */}
       <section className="max-w-[720px] mx-auto px-8 pt-16 pb-4 text-center max-[600px]:px-5 max-[600px]:pt-10">
-        <h1 className="font-heading text-[clamp(1.9rem,4vw,2.75rem)] font-medium text-ink leading-[1.2] tracking-[-0.01em] mb-5">
+        <h1 className="font-heading text-[clamp(1.9rem,4vw,2.75rem)] font-medium text-foreground leading-[1.2] tracking-[-0.01em] mb-5">
           {t('Questions from shop owners, answered', '店主常见问题')}
         </h1>
-        <p className="text-base leading-[1.75] text-ink-soft max-w-[580px] mx-auto mb-4">
+        <p className="text-base leading-[1.75] text-ink-700 max-w-[580px] mx-auto mb-4">
           {t(
             'The things shop owners ask us before they sign up.',
             '店主在注册前最常问我们的问题。',
@@ -58,11 +58,11 @@ export default function FaqPage() {
               scrolling past nothing. */}
           <Accordion className="max-w-[640px] mx-auto" defaultValue={[FAQ[0].id]} hiddenUntilFound>
             {FAQ.map(entry => (
-              <AccordionItem key={entry.id} value={entry.id} className="border-clay-border">
-                <AccordionTrigger className="font-heading text-[15px] text-ink text-left py-4">
+              <AccordionItem key={entry.id} value={entry.id} className="border-border">
+                <AccordionTrigger className="font-heading text-[15px] text-foreground text-left py-4">
                   {t(entry.q.en, entry.q.zh)}
                 </AccordionTrigger>
-                <AccordionContent className="text-[14px] leading-[1.7] text-rose-muted pb-4">
+                <AccordionContent className="text-[14px] leading-[1.7] text-muted-foreground pb-4">
                   {t(entry.a.en, entry.a.zh)}
                 </AccordionContent>
               </AccordionItem>
@@ -72,9 +72,9 @@ export default function FaqPage() {
       </section>
 
       {/* ── Closing CTA ── */}
-      <section className="border-t border-clay-border px-8 py-16 text-center bg-oxblood-tint max-[600px]:px-5 max-[600px]:py-10">
+      <section className="border-t border-border px-8 py-16 text-center bg-brand-100 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
-          <h2 className="font-heading italic text-[18px] text-ink mb-6 max-w-[520px] mx-auto">
+          <h2 className="font-heading italic text-[18px] text-foreground mb-6 max-w-[520px] mx-auto">
             {t('Seven days, no card, and your own shop at the end of it.', '七天免费，无需信用卡，结束时你已经有了自己的店。')}
           </h2>
           <Link to="/merchant/signup" className={ctaPrimary}>
@@ -82,8 +82,8 @@ export default function FaqPage() {
           </Link>
           {/* Back up the tree: a page whose only outbound links point deeper is a dead end to a
               crawler working out which pages belong to which. */}
-          <p className="mt-6 mb-0 text-[13px] text-rose-muted">
-            <Link to="/" className="underline underline-offset-4 hover:text-oxblood">
+          <p className="mt-6 mb-0 text-[13px] text-muted-foreground">
+            <Link to="/" className="underline underline-offset-4 hover:text-primary">
               {t('See how TinyOrder works', '了解 TinyOrder 怎么运作')}
             </Link>
           </p>

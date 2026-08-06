@@ -86,7 +86,7 @@ export default function FinishSignupScreen() {
   const heading = (
     <div className="text-center mb-10">
       <h1><Wordmark className="h-8 mx-auto" /></h1>
-      <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
+      <p className="font-heading text-[13px] italic text-muted-foreground mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
     </div>
   )
 
@@ -107,13 +107,13 @@ export default function FinishSignupScreen() {
     <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
       {heading}
       <Card className="px-8 pt-8 pb-7 gap-0">
-        <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">{t('Finish setting up your shop', '完成店铺设置')}</h2>
-        <p className="text-[13px] text-rose-muted mb-6">
+        <h2 className="font-heading text-[20px] font-medium text-primary mb-1">{t('Finish setting up your shop', '完成店铺设置')}</h2>
+        <p className="text-[13px] text-muted-foreground mb-6">
           {t("Your account is confirmed, but your shop was never created. Tell us these two things and it's done.",
              '你的账号已确认，但店铺尚未创建。填写以下两项即可完成。')}
         </p>
         {msg && (
-          <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+          <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
             {msg}
           </div>
         )}
@@ -130,8 +130,8 @@ export default function FinishSignupScreen() {
             {busy ? t('Creating…', '创建中…') : t('Create my shop', '创建店铺')}
           </Button>
         </form>
-        <p className="text-[13px] text-rose-muted text-center mt-4">
-          <Link to="/" className="text-oxblood cursor-pointer underline">{t('Back to home', '返回首页')}</Link>
+        <p className="text-[13px] text-muted-foreground text-center mt-4">
+          <Link to="/" className="text-primary cursor-pointer underline">{t('Back to home', '返回首页')}</Link>
         </p>
       </Card>
     </div>

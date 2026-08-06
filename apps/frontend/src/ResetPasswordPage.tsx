@@ -73,12 +73,12 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="form-wrap pt-12 pb-24">
-      <h1 className="font-heading text-[22px] font-medium text-oxblood mb-1">
+      <h1 className="font-heading text-[22px] font-medium text-primary mb-1">
         {t('Set a new password', '设置新密码')}
       </h1>
 
       {done ? (
-        <p role="status" className="text-[13px] text-oxblood bg-rose-pale border border-rose-pale rounded-md px-[13px] py-[10px] mt-4 leading-[1.5]">
+        <p role="status" className="text-[13px] text-primary bg-danger-100 border border-danger-100 rounded-md px-[13px] py-[10px] mt-4 leading-[1.5]">
           {t(
             "Password updated. You're signed in — taking you back…",
             '密码已更新。你已登录——正在返回…',
@@ -90,23 +90,25 @@ export default function ResetPasswordPage() {
         // No session means the link was never valid, has already been used, or has expired. Say
         // which and offer the only useful next step — asking for a fresh one.
         <>
-          <p role="alert" className="text-[13px] text-danger bg-rose-pale border border-danger-border rounded-md px-[13px] py-[10px] mt-4 leading-[1.5]">
+          <p role="alert" className="text-[13px] text-danger bg-danger-100 border border-danger-500 rounded-md px-[13px] py-[10px] mt-4 leading-[1.5]">
             {t(
               'This link has expired or has already been used. Request a new one from the shop you were ordering from.',
               '此链接已过期或已被使用。请在你下单的店铺重新申请。',
             )}
           </p>
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={() => navigate(destination)}
-            className="text-[13px] text-oxblood underline underline-offset-2 mt-4 inline-block cursor-pointer"
+            className="text-[13px] mt-4 inline-block"
           >
             {shop ? t('Back to the shop', '返回店铺') : t('Back to sign in', '返回登录')}
-          </button>
+          </Button>
         </>
       ) : (
         <>
-          <p className="text-[13px] text-rose-muted leading-[1.5] mb-5">
+          <p className="text-[13px] text-muted-foreground leading-[1.5] mb-5">
             {t(
               'Choose a new password for your account. You’ll stay signed in on this device.',
               '为你的账户设置新密码。此设备将保持登录状态。',
@@ -114,7 +116,7 @@ export default function ResetPasswordPage() {
           </p>
 
           {error && (
-            <div role="alert" className="text-[13px] text-danger bg-rose-pale border border-danger-border rounded-md px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+            <div role="alert" className="text-[13px] text-danger bg-danger-100 border border-danger-500 rounded-md px-[13px] py-[10px] mb-[10px] leading-[1.5]">
               {error}
             </div>
           )}
@@ -130,12 +132,12 @@ export default function ResetPasswordPage() {
                 onChange={e => setPassword(e.target.value)}
                 required
               />
-              <p className="text-[12px] text-rose-muted">
+              <p className="text-[12px] text-muted-foreground">
                 {t(`At least ${MIN_PASSWORD_LENGTH} characters.`, `至少 ${MIN_PASSWORD_LENGTH} 个字符。`)}
               </p>
             </div>
             {/* Base UI's Button defaults to type="button" — explicit submit or the form never fires */}
-            <Button type="submit" disabled={busy} className="disabled:opacity-60">
+            <Button type="submit" disabled={busy}>
               {busy ? t('Saving…', '保存中…') : t('Set password', '设置密码')}
             </Button>
           </form>

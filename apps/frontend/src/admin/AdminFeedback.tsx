@@ -69,7 +69,7 @@ export default function AdminFeedback() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-heading text-[20px] text-oxblood">{t('Feedback', '反馈')}</h2>
+        <h2 className="font-heading text-[20px] text-primary">{t('Feedback', '反馈')}</h2>
         <Button
           variant="outline"
           size="sm"
@@ -80,10 +80,10 @@ export default function AdminFeedback() {
       </div>
 
       {error && <p className="text-[13px] text-danger-fg">{error}</p>}
-      {loading && <p className="text-[13px] text-text-tertiary">{t('Loading…', '加载中…')}</p>}
+      {loading && <p className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</p>}
 
       {!loading && items.length === 0 && (
-        <p className="text-[13px] text-text-tertiary">
+        <p className="text-[13px] text-muted-foreground">
           {openOnly
             ? t('No open feedback.', '没有未处理的反馈。')
             : t('No feedback yet.', '还没有反馈。')}
@@ -93,11 +93,11 @@ export default function AdminFeedback() {
       {items.map(item => (
         <Card key={item.id} className="p-4 flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-heading text-[15px] text-oxblood">
+            <span className="font-heading text-[15px] text-primary">
               {item.shop_name ?? t('Deleted shop', '已删除的店铺')}
             </span>
             {item.shop_slug && (
-              <span className="text-[12px] text-text-tertiary">/s/{item.shop_slug}</span>
+              <span className="text-[12px] text-muted-foreground">/s/{item.shop_slug}</span>
             )}
             <Badge variant="secondary">
               {t(CATEGORY_LABELS[item.category].en, CATEGORY_LABELS[item.category].zh)}
@@ -105,7 +105,7 @@ export default function AdminFeedback() {
             {item.status === 'resolved' && (
               <Badge variant="outline">{t('Resolved', '已处理')}</Badge>
             )}
-            <span className="ml-auto text-[12px] text-text-tertiary">{formatDate(item.created_at)}</span>
+            <span className="ml-auto text-[12px] text-muted-foreground">{formatDate(item.created_at)}</span>
           </div>
 
           {item.github_issue_url && (
@@ -113,13 +113,13 @@ export default function AdminFeedback() {
               href={item.github_issue_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[12px] text-oxblood underline w-fit"
+              className="text-[12px] text-primary underline w-fit"
             >
               {t('View issue', '查看 Issue')} #{item.github_issue_number} ↗
             </a>
           )}
 
-          <p className="text-[14px] text-ink whitespace-pre-wrap">{item.message}</p>
+          <p className="text-[14px] text-foreground whitespace-pre-wrap">{item.message}</p>
 
           <FeedbackImages item={item} />
 
@@ -192,7 +192,7 @@ function FeedbackImages({ item }: { item: FeedbackItem }) {
         </a>
       ))}
       {urls === null && (
-        <span className="self-center text-[12px] text-text-tertiary">
+        <span className="self-center text-[12px] text-muted-foreground">
           {t('Loading screenshots…', '正在加载截图…')}
         </span>
       )}

@@ -30,8 +30,8 @@ import { SkeletonText } from '../components/Loaders'
 // the thing the portal cannot say: that cancelling suspends this shop, on a named date, in the
 // merchant's own language.
 
-const CARD = 'bg-surface-raised border-[0.5px] border-rose-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4'
-const HEADING = 'font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2'
+const CARD = 'bg-card border-[0.5px] border-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4'
+const HEADING = 'font-heading text-[15px] font-medium text-primary mb-4 flex items-center gap-2'
 
 // What Pro adds, as it exists in code today — the gated surfaces and nothing else; the rest of
 // what the marketing page advertises is not built, and listing it here would be selling vapour.
@@ -193,13 +193,13 @@ function ConfirmAction({
           {severe && alert && (
             <div
               role="alert"
-              className="flex items-start gap-2 rounded-md border-[0.5px] border-danger-border bg-danger-bg text-danger-fg px-3 py-2 text-[13px] font-medium leading-[1.5]"
+              className="flex items-start gap-2 rounded-md border-[0.5px] border-danger-500 bg-danger-100 text-danger-fg px-3 py-2 text-[13px] font-medium leading-[1.5]"
             >
               <AlertTriangle size={15} strokeWidth={2.25} className="shrink-0 mt-[2px]" aria-hidden />
               <span>{alert}</span>
             </div>
           )}
-          <div id={descId} className="text-sm text-rose-muted flex flex-col gap-2">{body}</div>
+          <div id={descId} className="text-sm text-muted-foreground flex flex-col gap-2">{body}</div>
           <DialogFooter>
             <Button type="button" size="sm" variant="outline" onClick={() => setOpen(false)} disabled={busy}>
               {t('Never mind', '取消')}
@@ -299,7 +299,7 @@ function CancelBody({ renewsAt }: { renewsAt: string | null }) {
 function OwnerOnlyNote() {
   const { t } = useSession()
   return (
-    <p className="text-[12px] text-text-tertiary mt-3">
+    <p className="text-[12px] text-muted-foreground mt-3">
       {t('You are viewing this shop as an admin. Billing actions can only be taken by the shop owner.',
         '您正以管理员身份查看此店铺。账单操作仅限店主本人执行。')}
     </p>
@@ -322,19 +322,19 @@ function TrialBanner({ daysLeft, trialEndsAt, progress }: {
     : t('Your trial ends today', '试用今天结束')
   return (
     // CARD geometry, warm cream wash instead of the raised surface — an info tint, not the rose
-    // of the trouble states. Later class wins in Tailwind, so bg-cream overrides CARD's background.
-    <div className={`${CARD} bg-cream`}>
+    // of the trouble states. Later class wins in Tailwind, so bg-background overrides CARD's background.
+    <div className={`${CARD} bg-background`}>
       <div className="flex items-start gap-3">
-        <Timer size={20} strokeWidth={2} className="text-oxblood shrink-0 mt-[2px]" aria-hidden />
+        <Timer size={20} strokeWidth={2} className="text-primary shrink-0 mt-[2px]" aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className="font-heading text-[15px] font-medium text-oxblood">{heading}</p>
-          <p className="text-[13px] text-text-secondary mt-0.5">
+          <p className="font-heading text-[15px] font-medium text-primary">{heading}</p>
+          <p className="text-[13px] text-muted-foreground mt-0.5">
             {t(`Ending ${fmtDate(trialEndsAt)}.`, `${fmtDate(trialEndsAt)} 结束。`)}
           </p>
           {/* Draining bar: width tracks the fraction remaining. */}
-          <div className="mt-3 h-1.5 w-full rounded-full bg-rose-border/40 overflow-hidden">
+          <div className="mt-3 h-1.5 w-full rounded-pill bg-border/40 overflow-hidden">
             <div
-              className="h-full rounded-full bg-oxblood transition-[width] duration-300"
+              className="h-full rounded-pill bg-primary transition-[width] duration-300"
               style={{ width: `${Math.round(progress * 100)}%` }}
             />
           </div>
@@ -358,9 +358,11 @@ function SummaryGrid({ nextPayment, renewalLabel, renewalValue, readOnly }: {
 }) {
   const { t } = useSession()
   const { busy, toPortal } = useBillingPortal()
-  const label = 'text-[11px] font-medium uppercase tracking-[0.08em] text-text-tertiary'
-  const value = 'text-[14px] text-oxblood mt-1'
-  const portalLink = 'text-[14px] text-oxblood underline underline-offset-2 mt-1 text-left cursor-pointer disabled:opacity-60 disabled:cursor-default'
+  const label = 'text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground'
+  const value = 'text-[14px] text-primary mt-1'
+  /* Paired with variant="link", which brings the underline, the focus ring and the
+     disabled treatment — so this carries only what is specific to these two. */
+  const portalLink = 'text-[14px] mt-1 text-left disabled:cursor-default'
   return (
     <div className={CARD}>
       <h3 className={HEADING}>{t('Summary', '摘要')}</h3>
@@ -382,15 +384,15 @@ function SummaryGrid({ nextPayment, renewalLabel, renewalValue, readOnly }: {
           <>
             <div>
               <p className={label}>{t('Payment method', '付款方式')}</p>
-              <button type="button" className={portalLink} onClick={toPortal} disabled={busy}>
+              <Button type="button" variant="link" size="none" className={portalLink} onClick={toPortal} disabled={busy}>
                 {t('Manage in portal', '在门户中管理')}
-              </button>
+              </Button>
             </div>
             <div>
               <p className={label}>{t('Payment history', '付款记录')}</p>
-              <button type="button" className={portalLink} onClick={toPortal} disabled={busy}>
+              <Button type="button" variant="link" size="none" className={portalLink} onClick={toPortal} disabled={busy}>
                 {t('Billing portal', '账单门户')}
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -452,7 +454,7 @@ export default function SubscriptionTab() {
           <div className="min-w-0">
             <h3 className={HEADING}>{t('Your plan', '您的方案')}</h3>
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="font-heading text-[22px] text-oxblood">
+              <span className="font-heading text-[22px] text-primary">
                 {state.plan === 'pro' ? 'Pro' : t('Basic', '基础版')}
               </span>
               <Badge variant={state.plan === 'pro' ? 'default' : 'outline'} className="uppercase tracking-[0.08em]">
@@ -461,22 +463,22 @@ export default function SubscriptionTab() {
             </div>
             <a
               href="/#pricing" target="_blank" rel="noopener"
-              className="inline-flex items-center gap-1 text-[13px] text-oxblood underline underline-offset-2 mt-2"
+              className="inline-flex items-center gap-1 text-[13px] text-primary underline underline-offset-2 mt-2"
             >
               {t('Plan details', '方案详情')}
               <ExternalLink size={13} strokeWidth={2} aria-hidden />
             </a>
           </div>
-          <span className="font-heading text-[18px] text-oxblood whitespace-nowrap shrink-0">
+          <span className="font-heading text-[18px] text-primary whitespace-nowrap shrink-0">
             {/* A comped shop is Pro and pays nothing. Quoting the Pro price here — beside a Pro
                 badge, with no subscription behind it — reads as a bill. */}
             {state.comped
               ? t('Free', '免费')
-              : <>{formatMoney(planPrice, pricing.currency)}<span className="text-[13px] text-text-secondary">{per}</span></>}
+              : <>{formatMoney(planPrice, pricing.currency)}<span className="text-[13px] text-muted-foreground">{per}</span></>}
           </span>
         </div>
 
-        <p className="text-[13px] text-text-secondary leading-[1.6]">
+        <p className="text-[13px] text-muted-foreground leading-[1.6]">
           {state.kind === 'ending'
             ? (endsAt
                 ? t(`Your subscription ends on ${fmtDate(endsAt)}. Your shop stays open until then, and is suspended after that.`,
@@ -507,7 +509,7 @@ export default function SubscriptionTab() {
             and keeps being billed, at the lower tier — so it gets its own line rather than
             being folded into the sentence above. */}
         {state.pendingPlan === 'basic' && state.pendingAt && (
-          <p className="text-[13px] text-text-secondary leading-[1.6] mt-2">
+          <p className="text-[13px] text-muted-foreground leading-[1.6] mt-2">
             {t(`Switching to Basic on ${fmtDate(state.pendingAt)}. You keep Pro features until then.`,
               `将于 ${fmtDate(state.pendingAt)} 转为基础版。在此之前 Pro 功能仍可使用。`)}
           </p>
@@ -571,7 +573,7 @@ export default function SubscriptionTab() {
                 />
               )}
             </div>
-            <p className="text-[12px] text-text-tertiary mt-3">
+            <p className="text-[12px] text-muted-foreground mt-3">
               {t('Update your card or view invoices in the billing portal.',
                 '在账单门户中更新银行卡或查看账单。')}
             </p>
@@ -610,14 +612,14 @@ export default function SubscriptionTab() {
             {t('Upgrade to Pro', '升级到 Pro')}
             <Badge variant="default" className="uppercase tracking-[0.08em]">Pro</Badge>
           </h3>
-          <p className="text-[13px] text-text-secondary mb-4">
+          <p className="text-[13px] text-muted-foreground mb-4">
             {t(`${formatMoney(proPrice, pricing.currency)}${per} — everything in Basic, plus:`,
               `${formatMoney(proPrice, pricing.currency)}${per} — 包含基础版全部功能，另加：`)}
           </p>
           <ul className="flex flex-col gap-2 mb-5">
             {PRO_FEATURES.map(([en, zh]) => (
-              <li key={en} className="flex items-center gap-2 text-[13px] text-ink">
-                <Check size={15} strokeWidth={2} className="text-oxblood shrink-0" aria-hidden />
+              <li key={en} className="flex items-center gap-2 text-[13px] text-foreground">
+                <Check size={15} strokeWidth={2} className="text-primary shrink-0" aria-hidden />
                 {t(en, zh)}
               </li>
             ))}
@@ -636,7 +638,7 @@ export default function SubscriptionTab() {
           ) : state.canManage ? (
             <>
               <PortalButton label={t('Upgrade to Pro', '升级到 Pro')} />
-              <p className="text-[12px] text-text-tertiary mt-3">
+              <p className="text-[12px] text-muted-foreground mt-3">
                 {t('You will pick the Pro plan in the billing portal. You can step back down to Basic from this page later; that takes effect at the end of the period you have paid for.',
                   '您将在账单门户中选择 Pro 方案。日后可在此页面转回基础版，将在已付费周期结束时生效。')}
               </p>
@@ -644,7 +646,7 @@ export default function SubscriptionTab() {
           ) : (
             <>
               <CheckoutButton plan="pro" cycle={cycle} label={t('Upgrade to Pro', '升级到 Pro')} />
-              <p className="text-[12px] text-text-tertiary mt-3">
+              <p className="text-[12px] text-muted-foreground mt-3">
                 {t('This shop has no subscription yet, so this starts a new one at the Pro price.',
                   '此店铺尚无订阅，将以 Pro 价格开始新的订阅。')}
               </p>

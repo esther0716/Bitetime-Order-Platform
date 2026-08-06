@@ -202,22 +202,21 @@ export default function FeedbackFab() {
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        size="none"
         onClick={() => change(true)}
         aria-label={title}
         title={title}
         className={cn(
           'fixed z-30 bottom-6 right-6 max-sm:bottom-5 max-sm:right-5',
-          'flex items-center gap-2 rounded-full px-4 py-3',
-          'bg-oxblood text-cream shadow-lg cursor-pointer',
-          'transition-colors duration-150 hover:bg-oxblood-deep',
+          'gap-2 rounded-pill px-4 py-3 shadow-lg',
           '[@media(pointer:coarse)]:min-h-[48px]',
         )}
       >
         <MessageSquarePlus size={18} strokeWidth={1.75} />
-        <span className="text-[13px] font-sans font-medium max-sm:sr-only">{title}</span>
-      </button>
+        <span className="text-[13px] font-medium max-sm:sr-only">{title}</span>
+      </Button>
 
       <Dialog open={open} onOpenChange={change}>
         <DialogContent className="p-6">
@@ -230,7 +229,7 @@ export default function FeedbackFab() {
           </DialogHeader>
 
           {sent ? (
-            <div className="py-6 text-center text-[14px] text-ink">
+            <div className="py-6 text-center text-[14px] text-foreground">
               <p>{t('Thanks — we got it.', '谢谢，我们已收到。')}</p>
               {failedCount > 0 && (
                 <p className="mt-2 text-[13px] text-danger-fg">
@@ -270,7 +269,7 @@ export default function FeedbackFab() {
                 />
                 <div className={cn(
                   'mt-1 text-right text-[11px]',
-                  tooLong ? 'text-danger-fg' : 'text-text-tertiary',
+                  tooLong ? 'text-danger-fg' : 'text-muted-foreground',
                 )}>
                   {trimmed.length} / {FEEDBACK_MAX_LENGTH}
                 </div>
@@ -281,7 +280,7 @@ export default function FeedbackFab() {
                   <label
                     className={cn(
                       'inline-flex items-center gap-2 text-[13px] font-sans cursor-pointer',
-                      'text-oxblood transition-colors duration-150 hover:text-oxblood-deep',
+                      'text-primary transition-colors duration-150 hover:text-brand-600',
                       picked.length >= FEEDBACK_MAX_IMAGES && 'pointer-events-none opacity-50',
                     )}
                   >
@@ -297,7 +296,7 @@ export default function FeedbackFab() {
                       onChange={e => { pick(e.target.files); e.target.value = '' }}
                     />
                   </label>
-                  <span className="text-[11px] text-text-tertiary">
+                  <span className="text-[11px] text-muted-foreground">
                     {picked.length} / {FEEDBACK_MAX_IMAGES}
                   </span>
                 </div>
@@ -316,7 +315,7 @@ export default function FeedbackFab() {
                           onClick={() => removeFile(i)}
                           aria-label={t(`Remove ${p.file.name}`, `移除 ${p.file.name}`)}
                           className={cn(
-                            'absolute -top-1.5 -right-1.5 rounded-full bg-ink text-cream',
+                            'absolute -top-1.5 -right-1.5 rounded-pill bg-foreground text-background',
                             'flex items-center justify-center h-5 w-5 cursor-pointer',
                           )}
                         >

@@ -43,7 +43,7 @@ export default function ImageLightbox({
       <DialogContent className="sm:max-w-lg">
         <DialogTitle className="sr-only">{title || t('Product photos', '产品图片')}</DialogTitle>
         <div className="flex flex-col gap-3">
-          <div className="relative flex items-center justify-center bg-cream rounded-lg overflow-hidden">
+          <div className="relative flex items-center justify-center bg-background rounded-lg overflow-hidden">
             <img
               src={productImageUrl(paths[idx])}
               alt={title ? `${title} ${idx + 1}` : `${idx + 1}`}
@@ -55,13 +55,13 @@ export default function ImageLightbox({
                   type="button"
                   onClick={prev}
                   aria-label={t('Previous', '上一张')}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 size-9 rounded-full bg-surface-high/90 text-oxblood text-[18px] flex items-center justify-center shadow-sm hover:bg-surface-high cursor-pointer"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 size-9 rounded-pill bg-card/90 text-primary text-[18px] flex items-center justify-center shadow-sm hover:bg-card cursor-pointer"
                 >‹</button>
                 <button
                   type="button"
                   onClick={next}
                   aria-label={t('Next', '下一张')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 size-9 rounded-full bg-surface-high/90 text-oxblood text-[18px] flex items-center justify-center shadow-sm hover:bg-surface-high cursor-pointer"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 size-9 rounded-pill bg-card/90 text-primary text-[18px] flex items-center justify-center shadow-sm hover:bg-card cursor-pointer"
                 >›</button>
               </>
             )}
@@ -76,7 +76,7 @@ export default function ImageLightbox({
                   aria-label={t('View image', '查看图片') + ` ${n + 1}`}
                   className={cn(
                     'size-12 shrink-0 rounded-md overflow-hidden border-[0.5px] cursor-pointer',
-                    n === idx ? 'border-oxblood' : 'border-clay-border opacity-70 hover:opacity-100',
+                    n === idx ? 'border-primary' : 'border-border opacity-70 hover:opacity-100',
                   )}
                 >
                   <img src={productImageUrl(p)} alt="" className="size-full object-cover" />

@@ -14,36 +14,44 @@ import { PRICING_TIERS } from './pricingTiers'
 import { cardCtaPrimary, cardCtaGhost } from './ctaStyles'
 import { cn } from '../lib/utils'
 import { Reveal } from './LandingMotion'
+import { Button } from '../components/ui/button'
 
 export default function PricingCards() {
   const { t } = useSession()
   const { pricing } = usePlatformPricing()
   const [billing, setBilling] = useState<'monthly' | 'yearly'>('monthly')
 
+  /* Geometry only — the fill comes from the variant (`default` when selected, `ghost` when
+     not). The inactive text colour stays explicit because ghost's own muted-foreground is a
+     step lighter than this control wants against the card it sits on. */
   const toggleButton = (value: 'monthly' | 'yearly') =>
     cn(
-      'inline-flex items-center gap-2 py-2 px-[18px] border-0 rounded-pill font-sans text-sm font-medium cursor-pointer [transition:background_0.15s,color_0.15s]',
-      billing === value ? 'bg-oxblood text-cream' : 'bg-transparent text-ink-soft'
+      'py-2 px-[18px] rounded-pill text-sm',
+      billing === value ? '' : 'text-ink-700',
     )
 
   return (
     <div className="text-center">
       {/* Billing toggle */}
       <div
-        className="inline-flex gap-1 p-1 border-[0.5px] border-clay-border rounded-pill bg-surface-raised"
+        className="inline-flex gap-1 p-1 border-[0.5px] border-border rounded-pill bg-card"
         role="group"
         aria-label={t('Billing period', '付费周期')}
       >
-        <button
+        <Button
           type="button"
+          variant={billing === 'monthly' ? 'default' : 'ghost'}
+          size="none"
           className={toggleButton('monthly')}
           aria-pressed={billing === 'monthly'}
           onClick={() => setBilling('monthly')}
         >
           {t('Monthly', '按月')}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant={billing === 'yearly' ? 'default' : 'ghost'}
+          size="none"
           className={toggleButton('yearly')}
           aria-pressed={billing === 'yearly'}
           onClick={() => setBilling('yearly')}
@@ -53,13 +61,13 @@ export default function PricingCards() {
             className={cn(
               'text-[11px] font-medium py-[2px] px-2 rounded-pill',
               billing === 'yearly'
-                ? 'bg-[rgba(255,255,255,0.2)] text-cream'
-                : 'bg-oxblood-tint text-oxblood'
+                ? 'bg-[rgba(255,255,255,0.2)] text-background'
+                : 'bg-brand-100 text-primary'
             )}
           >
             {t('Save ~17%', '省约17%')}
           </span>
-        </button>
+        </Button>
       </div>
 
       <Reveal>
@@ -73,40 +81,40 @@ export default function PricingCards() {
               <div
                 key={tier.id}
                 className={cn(
-                  'flex flex-col p-7 rounded-lg bg-surface-raised',
+                  'flex flex-col p-7 rounded-lg bg-card',
                   tier.highlight
-                    ? 'border-[0.5px] border-oxblood shadow-[0_6px_24px_rgba(122,16,40,0.12)]'
-                    : 'border border-clay-border'
+                    ? 'border-[0.5px] border-primary shadow-[0_6px_24px_rgba(122,16,40,0.12)]'
+                    : 'border border-border'
                 )}
               >
                 {tier.badge && (
-                  <span className="self-start text-[11px] font-semibold py-[3px] px-[10px] mb-3 rounded-pill bg-oxblood text-cream">
+                  <span className="self-start text-[11px] font-semibold py-[3px] px-[10px] mb-3 rounded-pill bg-primary text-background">
                     {t(tier.badge.en, tier.badge.zh)}
                   </span>
                 )}
-                <h3 className="font-heading text-xl font-medium text-ink m-0">
+                <h3 className="font-heading text-xl font-medium text-foreground m-0">
                   {t(tier.name.en, tier.name.zh)}
                 </h3>
                 <div className="flex items-baseline gap-[0.35rem] mt-3">
-                  <span className="font-heading text-[34px] font-semibold text-oxblood leading-none">
+                  <span className="font-heading text-[34px] font-semibold text-primary leading-none">
                     {formatMoney(amount, pricing.currency)}
                   </span>
-                  <span className="text-sm text-rose-muted">{t('/mo', '/月')}</span>
+                  <span className="text-sm text-muted-foreground">{t('/mo', '/月')}</span>
                 </div>
                 {pricing.estimate && amount > 0 && (
-                  <p className="text-xs text-rose-muted mt-1 mb-0">
+                  <p className="text-xs text-muted-foreground mt-1 mb-0">
                     ≈ {formatMoney(amount * pricing.estimate.rate, pricing.estimate.currency)}{t('/mo', '/月')}
                   </p>
                 )}
-                <p className="min-h-[1.1em] text-xs text-rose-muted mt-[0.35rem] mb-0">
+                <p className="min-h-[1.1em] text-xs text-muted-foreground mt-[0.35rem] mb-0">
                   {billing === 'yearly' && amount > 0 ? t('billed yearly', '按年付费') : ' '}
                 </p>
-                <p className="text-sm leading-[1.6] text-ink-soft mt-3 mb-5">
+                <p className="text-sm leading-[1.6] text-ink-700 mt-3 mb-5">
                   {t(tier.blurb.en, tier.blurb.zh)}
                 </p>
                 {/* Inherited-tier label — a heading for the list, not a feature, so no ✓ */}
                 {tier.inherits && (
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-rose-muted mt-0 mb-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mt-0 mb-3">
                     {t(tier.inherits.en, tier.inherits.zh)}
                   </p>
                 )}
@@ -114,7 +122,7 @@ export default function PricingCards() {
                   {tier.features.map((f, i) => (
                     <li
                       key={i}
-                      className="relative pl-6 text-sm leading-[1.5] text-ink before:content-['✓'] before:absolute before:left-0 before:text-oxblood before:font-semibold"
+                      className="relative pl-6 text-sm leading-[1.5] text-foreground before:content-['✓'] before:absolute before:left-0 before:text-primary before:font-semibold"
                     >
                       {t(f.en, f.zh)}
                     </li>
@@ -132,14 +140,14 @@ export default function PricingCards() {
                 </Link>
                 {/* Risk reversal sits at the click, not at the foot of the section — and it is
                     per-tier, because only Basic has a trial to reverse the risk with */}
-                <p className="mt-2.5 mb-0 text-center text-xs text-rose-muted">
+                <p className="mt-2.5 mb-0 text-center text-xs text-muted-foreground">
                   {t(tier.note.en, tier.note.zh)}
                 </p>
               </div>
             )
           })}
         </div>
-        <p className="mt-8 text-[13px] text-rose-muted">
+        <p className="mt-8 text-[13px] text-muted-foreground">
           {t('Cancel anytime — no contracts, no lock-in.', '随时取消——无合约，不绑定。')}
         </p>
       </Reveal>

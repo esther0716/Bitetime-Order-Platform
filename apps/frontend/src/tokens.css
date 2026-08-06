@@ -3,12 +3,15 @@
    Canonical source: DESIGN.md. Edit there first, mirror here.
    Contract enforced by src/tokens.test.ts — every colour pair below clears AA.
 
-   NAMING, READ THIS FIRST: the `--color-cream` / `--color-oxblood` / `--color-clay-*`
-   names in the ALIAS block at the bottom are historical. They no longer describe their
-   values (`--color-cream` is zinc `#FAFAFA`, not cream). They exist only so this reskin
-   could land without editing 896 call sites, and they are deleted in the follow-up rename.
-   Do NOT add a new alias. New code uses the SEMANTIC tokens; primitives are the system's
-   own vocabulary and are for the cases the semantic layer does not name (DESIGN.md §6).
+   Two layers. PRIMITIVES (--ink-*, --brand-*, --cream, the status ramps) are the raw
+   palette. SEMANTICS (--color-bg, --color-text-muted, --color-border, …) are what product
+   code consumes, reaching Tailwind through the shadcn bridge in index.css as bg-background,
+   text-muted-foreground, border-border and so on. Reach for a semantic first; primitives
+   are for what the semantic layer does not name (DESIGN.md §6).
+
+   The warm alias names this file used to carry (--color-cream, --color-oxblood,
+   --color-clay-*) are gone. Do not reintroduce one: an alias whose name stops matching its
+   value is how `--color-cream` spent a release resolving to zinc.
    ────────────────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
@@ -149,71 +152,6 @@
   --z-modal-popover: 400;
   --z-toast: 500;
 
-  /* ══ ALIAS BLOCK — deleted by the follow-up rename. See the header note. ══
-     These names are what 896 call sites already say. Pointing them at Voltage
-     values is what reskins the app without touching a component. */
-  /* Truthful again: the canvas really is cream. */
-  --color-cream:              var(--cream);
-  --color-white:              var(--white);
-  --color-surface-raised:     var(--white);
-  --color-surface-high:       var(--white);
-  --color-surface-sunken:     var(--ink-100);
-  --color-surface-sunken-hover: var(--ink-200);
-  --color-surface-warm:       var(--ink-100);
-  --color-surface-warm-alt:   var(--ink-100);
-  --color-surface-cream-soft: var(--cream);
-  --color-divider:            var(--ink-200);
-
-  /* These four are TEXT aliases, so they take --ink-600, not the border grey. */
-  --color-ink:            var(--ink-900);
-  --color-ink-soft:       var(--ink-700);
-  --color-ink-faint:      var(--ink-600);
-  --color-text-tertiary:  var(--ink-600);
-
-  --color-oxblood:         var(--brand-500);
-  --color-oxblood-deep:    var(--brand-600);
-  --color-oxblood-deeper:  var(--brand-700);
-  --color-oxblood-light:   var(--brand-400);
-  --color-oxblood-tint:    var(--brand-100);
-  --color-oxblood-tint-soft: var(--brand-50);
-
-  --color-rose-muted:  var(--ink-600);
-  --color-rose-deep:   var(--ink-700);
-  --color-rose-border: var(--ink-200);
-  --color-rose-tint:   var(--ink-100);
-  --color-rose-pale:   var(--danger-100);
-  --color-rose-hover:  var(--ink-200);
-  --color-clay-muted:  var(--ink-400);
-  --color-clay-border: var(--ink-200);
-  --color-clay-rose:   var(--ink-400);
-  --color-clay-faint:  var(--ink-300);
-  --color-clay-warm:   var(--ink-300);
-  --color-clay-pale:   var(--ink-200);
-
-  --color-success-fg:       var(--success-fg);
-  --color-success-bg:       var(--success-100);
-  --color-success-strong:   var(--success-fg);
-  --color-success-deep:     var(--success-fg);
-  --color-success-border:   var(--success-500);
-  --color-success-bg-soft:  var(--success-100);
-  --color-success-bg-alt:   var(--success-100);
-  --color-info-fg:          var(--info-fg);
-  --color-info-bg:          var(--info-100);
-  --color-info-blue-fg:     var(--info-fg);
-  --color-info-blue-bg:     var(--info-100);
-  --color-prep-fg:          var(--info-fg);
-  --color-prep-bg:          var(--info-100);
-  --color-prep-fg-alt:      var(--info-fg);
-  --color-prep-bg-alt:      var(--info-100);
-  --color-warn-fg:          var(--warning-fg);
-  --color-warn-bg:          var(--warning-100);
-  --color-warn-fg-alt:      var(--warning-fg);
-  --color-warn-bg-alt:      var(--warning-100);
-  --color-status-done-fg:   var(--neutral-fg);
-  --color-danger-fg:        var(--danger-fg);
-  --color-danger-bg:        var(--danger-100);
-  --color-danger:           var(--danger-500);
-  --color-danger-border:    var(--danger-500);
 }
 
 /* ── Dark theme: semantic remap only, primitives untouched.

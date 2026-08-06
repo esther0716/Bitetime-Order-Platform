@@ -214,11 +214,25 @@ this is bounded by PR2 and recorded in the ADR.
 
 ### PR 2 — the rename
 
-896 occurrences, warm names → Voltage names, **zero visual change**. `cream`→`ink-50`,
-`surface-raised`→`bg-surface`, `oxblood`→`brand-500`, `clay-border`→`border`,
-`rose-muted`→`text-muted`, and the rest. Aliases deleted.
+1,236 occurrences across 88 files, **zero visual change**. Aliases deleted.
 
-Pass condition: a computed-style diff before and after is **empty**.
+**Amended during implementation.** This section originally said "warm names → Voltage
+names". Voltage's *CSS variable* names do not survive contact with Tailwind, which prefixes
+the token: `--color-bg-surface` would be written `bg-bg-surface`, `--color-text-muted` as
+`text-text-muted`. The primitives keep their own names (`bg-brand-500`, `text-ink-600`) and
+the semantic layer lands on **shadcn's** vocabulary instead — `bg-background`, `bg-card`,
+`bg-muted`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-primary` —
+which `index.css` already wires and which is not invented here.
+
+Every mapping preserves the **resolved value**, not the intent. `text-cream` became
+`text-background`, not `text-primary-foreground`: the latter is the shadcn idiom for a
+label on a primary fill, but it resolves to white where the pixels were cream, and would
+have repainted every primary button's label.
+
+Pass condition: a computed-style diff before and after is **empty**. It was.
+
+Scope note: the snapshot covers the seven public routes. The dashboard, settings,
+storefront and admin are auth-gated and were verified by hand instead.
 
 ## 7. Verification
 
