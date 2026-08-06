@@ -25,7 +25,7 @@ So the screenshots never leave the platform: a private bucket, read only through
 | Request shape | The existing `POST /api/merchants/:id/feedback` accepts `multipart/form-data` as well as JSON. One round trip, one failure to report |
 | Row before upload | Insert the feedback row first, then upload. A storage hiccup must never cost the merchant the message they typed |
 | Partial upload failure | Keep the report, tell them: `201` with `images_failed: <n>`, and the dialog says so |
-| GitHub issue body | Gains `Screenshots: <n> — view at <frontendUrl>/admin/feedback`. Count only, no image URLs. Omitted when there are none |
+| GitHub issue body | Gains `Screenshots: <n> — view at <frontendUrl>/admin#feedback`. Count only, no image URLs. Omitted when there are none |
 | Editing after submit | Out of scope. Feedback is a one-shot message today and stays one |
 
 ## Data model
@@ -156,7 +156,7 @@ buildIssueBody({ message, shopName, shopSlug, feedbackId, createdAt, imageCount,
 When `imageCount > 0` the body gains one line under the existing footer:
 
 ```
-Screenshots: 2 — view at https://tinyorder.vercel.app/admin/feedback
+Screenshots: 2 — view at https://tinyorder.vercel.app/admin#feedback
 ```
 
 At zero the line is omitted entirely, so every existing issue body stays byte-identical to what it is today. `adminUrl` is passed in by `app.ts` from `env.frontendUrl` — `github.ts` reads no env itself, which is what keeps it importable by `tests/unit` with zero vars set.
@@ -245,6 +245,32 @@ Each row with a non-empty `image_paths` renders that many thumbnails, fetched as
 - **Screenshots on the trial-experience survey** (`TrialFeedbackPrompt.tsx`). Different surface, different table, different question — a survey about the trial does not want a bug screenshot.
 - **Any storefront-side upload.** This is the merchant dashboard's feedback form only.
 - **Image URLs in the GitHub issue**, in any form, signed or not. The repo is public; see the constraint above.
+
+## What changed during implementation
+
+Three corrections to the design above, all made while building it. Recorded here rather than
+edited silently into the sections above, so the reasoning survives.
+
+**The admin link is `/admin#feedback`, not `/admin/feedback`.** There is no `/admin/feedback`
+route: the admin dashboard is a single `/admin` route whose sections live in the URL hash
+(`useDashboardSection`). The path form matches nothing and renders a blank page — which is
+exactly what it did until a run-and-verify pass opened the link. The tables above now say
+`#feedback`; `github.test.ts` pins the hash and rejects the path form.
+
+**`validateFeedbackImage` returns a CODE, not only a sentence.** The design had it return
+`{ ok: false, error: string }` and had the browser render that string. But `@bitetime/shared`
+cannot translate — `t(en, zh)` lives in `SessionContext` — so an English sentence from a shared
+module lands untranslated inside a Chinese merchant's dialog, against CLAUDE.md's rule that every
+user-facing string is `t(en, zh)`. The result now carries
+`code: 'unsupported_type' | 'empty' | 'too_large'`; `FeedbackFab` renders its own bilingual words
+and the English `error` remains the server's copy, for 400 bodies and log lines where there is no
+reader to translate for.
+
+**The count rule moved into the shared module too, as `validateFeedbackImages`.** The design left
+the caller to count files, which meant `store.ts` and the submit route each carried the same
+three lines and the same `3` — two chances to drift from the database's own
+`cardinality(image_paths) <= 3`. One call now judges a whole selection and returns the offending
+index, so both callers name the file themselves and neither restates the limit.
 
 ## Production note
 

@@ -436,7 +436,7 @@ describe('buildIssueBody', () => {
   it('states the count and where to look when there are some', () => {
     const body = buildIssueBody({ ...base, imageCount: 2 })
     expect(body).toContain('Screenshots: 2')
-    expect(body).toContain('https://tinyorder.vercel.app/admin/feedback')
+    expect(body).toContain('https://tinyorder.vercel.app/admin#feedback')
   })
 
   it('never puts an image URL in a public issue', () => {
@@ -485,7 +485,7 @@ export function buildIssueBody(input: {
   // there is something to go and look at. Omitted entirely at zero, so every issue body filed
   // before this shipped stays byte-identical.
   if (input.imageCount > 0) {
-    lines.push(`Screenshots: ${input.imageCount} — view at ${input.adminUrl}/admin/feedback`)
+    lines.push(`Screenshots: ${input.imageCount} — view at ${input.adminUrl}/admin#feedback`)
   }
   return lines.join('\n')
 }
@@ -1459,12 +1459,12 @@ Check each of these:
 3. Attach two more → the counter reads `3 / 3` and the attach control is disabled
 4. Try to attach a PDF → it is named and refused; the existing thumbnails survive
 5. Send → the thank-you appears and the dialog closes
-6. Sign in as the superadmin, open `/admin/feedback` → the row shows the thumbnails; clicking one opens it full size
+6. Sign in as the superadmin, open `/admin#feedback` → the row shows the thumbnails; clicking one opens it full size
 7. Sign out entirely and request `GET /api/admin/feedback/<id>/images/0` directly → `401`
 
 - [ ] **Step 3: Confirm nothing leaked into the issue body**
 
-If `GITHUB_TOKEN` is set locally, open the issue the submission filed and confirm the body reads `Screenshots: 3 — view at …/admin/feedback` and contains no image URL. If it is unset, `createIssue` returns `null` without a request — say so in the report rather than claiming it was checked.
+If `GITHUB_TOKEN` is set locally, open the issue the submission filed and confirm the body reads `Screenshots: 3 — view at …/admin#feedback` and contains no image URL. If it is unset, `createIssue` returns `null` without a request — say so in the report rather than claiming it was checked.
 
 - [ ] **Step 4: Document the bucket**
 
