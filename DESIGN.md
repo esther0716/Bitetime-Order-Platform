@@ -221,6 +221,8 @@ Six order statuses, four colour families. `new` and `preparing` share the info h
 
 **The Mono-Is-For-Codes Rule.** Monospace appears only where a string must be read character by character: the order number, voucher codes, AWB. It is never a stylistic choice.
 
+**The Pill-Is-For-Chips Rule.** `rounded-pill` is `9999px` — a stadium. It belongs on chips, badges and small controls, never on a card or panel. Under the old 20px value it doubled as a soft panel radius, and five auth cards used it that way; at 9999px those rendered as circles. Panels use `rounded-2xl`.
+
 ## 4. Elevation
 
 Flat by default. Depth comes from the surface ladder (`--ink-100` muted → `--ink-50` page → `#FFFFFF` raised) separated by `0.5px` `--ink-200` hairlines. Shadows are reserved for elements that genuinely float.

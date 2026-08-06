@@ -8,7 +8,9 @@ import { cn } from "@/lib/utils"
  * Screens pass className to override for variants:
  *   - rose border:   "border-rose-border"
  *   - oxblood tint:  "bg-oxblood-tint border-rose-border"
- *   - auth card:     "rounded-pill"
+ *   (Auth cards used to override to "rounded-pill". That token was 20px and read as a soft
+ *    panel; it is now 9999px and would render the whole card as a circle. They use the base
+ *    radius. `rounded-pill` is for chips and small controls only.)
  *   - how-to / cookie-card: "rounded-xl"
  */
 function Card({

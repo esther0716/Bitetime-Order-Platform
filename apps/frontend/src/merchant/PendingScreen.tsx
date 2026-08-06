@@ -44,7 +44,7 @@ export default function PendingScreen() {
         <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
-      <Card className="rounded-pill px-8 pt-8 pb-7 gap-0">
+      <Card className="px-8 pt-8 pb-7 gap-0">
         {hasPlan ? (
           <>
             {/* Pending badge: warn colours, pill, mb-4 */}

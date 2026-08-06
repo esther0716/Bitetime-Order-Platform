@@ -96,7 +96,7 @@ export default function FinishSignupScreen() {
     return (
       <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
         {heading}
-        <Card className="rounded-pill px-8 py-10 gap-0 items-center">
+        <Card className="px-8 py-10 gap-0 items-center">
           <Spinner label={t('Finishing your shop setup…', '正在完成店铺设置…')} />
         </Card>
       </div>
@@ -106,7 +106,7 @@ export default function FinishSignupScreen() {
   return (
     <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
       {heading}
-      <Card className="rounded-pill px-8 pt-8 pb-7 gap-0">
+      <Card className="px-8 pt-8 pb-7 gap-0">
         <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">{t('Finish setting up your shop', '完成店铺设置')}</h2>
         <p className="text-[13px] text-rose-muted mb-6">
           {t("Your account is confirmed, but your shop was never created. Tell us these two things and it's done.",

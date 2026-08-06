@@ -68,7 +68,7 @@ export default function LoginScreen() {
         <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
-      <Card className="rounded-pill px-8 pt-8 pb-7 gap-0">
+      <Card className="px-8 pt-8 pb-7 gap-0">
         <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">
           {forgot ? t('Reset your password', '重设密码') : t('Merchant login', '商家登录')}
         </h2>
