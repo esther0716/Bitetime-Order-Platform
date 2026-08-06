@@ -14,3 +14,6 @@ Disallow: /reset-password
 Disallow: /app.html
 
 Sitemap: https://tinyorder.shop/sitemap.xml
+
+# No standard directive names it, but LLM crawlers and agents read this file first and some follow
+# the path from here: https://tinyorder.shop/llms.txt
