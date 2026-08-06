@@ -398,3 +398,35 @@ tolerated, which is still the binding rule: the cutoff is shaped as **data the
 hot paths already read** — a column filter on a row the order transaction was
 loading anyway — precisely so that closing it needed no plan check inside the
 priced order transaction. That remains the thing that must not happen.
+
+## Storage buckets
+
+Five, and the split that matters is **which of them the browser can reach**. Every column that
+points at one holds a **path**, never a URL.
+
+| Bucket | Public? | Who writes | Who reads |
+|---|---|---|---|
+| `product-images` | yes | browser, direct, RLS-scoped to the merchant's own folder | anyone (the storefront needs it) |
+| `payment-qr` | yes | browser, direct, same folder policy | anyone (a guest sees it on the order-placed screen) |
+| `payment-proof` | **no** | backend, service role | backend, service role |
+| `sample-shop-screenshots` | yes | backend, service role (the weekly sweep) | anyone |
+| `feedback-images` | **no** | backend, service role | backend, service role |
+
+The two private buckets have **no `storage.objects` policies at all**. That is not an omission:
+with `public: false` and zero policies, `anon` and `authenticated` get nothing in either
+direction, and `tests/rls/payment-proof-storage.test.ts` and
+`tests/rls/feedback-images-storage.test.ts` are the proof — no app surface exercises either
+bucket from the browser, so a migration that flips one public is caught only there.
+
+`feedback-images` holds up to three screenshots per merchant feedback submission, at
+`{merchant_id}/{feedback_id}/{uuid}.{ext}`. Written by `POST /api/merchants/:id/feedback` after
+the row commits; read only by a superadmin through
+`GET /api/admin/feedback/:feedbackId/images/:index`, which indexes into the row's own
+`image_paths` array rather than accepting a path from the caller — that is what makes one
+feedback row's screenshots unreachable from another's.
+
+It is private for a reason worth stating plainly: **the platform repo is public**, feedback is
+auto-filed there as an issue, and a merchant's bug screenshot is usually their own dashboard —
+customer names, phone numbers, delivery addresses. The issue body states the screenshot count
+and links the admin dashboard (`/admin#feedback` — a hash, since the admin sections are hash
+segments of one route). It carries no image URL, signed or otherwise, and must not grow one.
