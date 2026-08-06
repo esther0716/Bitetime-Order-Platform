@@ -38,6 +38,30 @@ function patch(path: string, body: unknown, token?: string) {
 type FeedbackRow = {
   id: string; merchant_id: string; user_id: string
   category: string; message: string; status: string; resolved_at: string | null
+  image_paths: string[]
+}
+
+// Smallest valid PNG (1x1). The bucket enforces allowed_mime_types, so a fake body would be
+// refused by Storage for a reason that has nothing to do with the route under test.
+const PNG_1X1 = Uint8Array.from(
+  atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),
+  (c) => c.charCodeAt(0),
+)
+function pngFile(name: string) {
+  return new File([PNG_1X1], name, { type: 'image/png' })
+}
+
+// Multipart submit. No Content-Type header: Request writes the boundary itself, and setting the
+// header by hand produces a body the server cannot parse.
+function postForm(path: string, fields: Record<string, string>, files: File[], token?: string) {
+  const form = new FormData()
+  for (const [k, v] of Object.entries(fields)) form.append(k, v)
+  for (const f of files) form.append('images', f)
+  return app.request(path, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
 }
 
 describe('merchant feedback', () => {
@@ -92,6 +116,114 @@ describe('merchant feedback', () => {
     expect(row.message).toBe('the orders tab is blank on mobile')
     expect(row.status).toBe('open')
     expect(row.resolved_at).toBeNull()
+  })
+
+  it('stores a multipart submission and stamps one storage path per screenshot', async () => {
+    const res = await postForm(
+      `/api/merchants/${ownShopId}/feedback`,
+      { category: 'bug', message: 'the orders tab is blank on mobile' },
+      [pngFile('a.png'), pngFile('b.png')],
+      ownerToken,
+    )
+
+    expect(res.status).toBe(201)
+    const row = (await res.json()) as FeedbackRow & { images_failed: number }
+    expect(row.merchant_id).toBe(ownShopId)
+    expect(row.message).toBe('the orders tab is blank on mobile')
+    expect(row.images_failed).toBe(0)
+    expect(row.image_paths).toHaveLength(2)
+    // Merchant-first, feedback-id second — a prefix delete removes a merchant's screenshots,
+    // and one report's images are one folder.
+    for (const p of row.image_paths) {
+      expect(p.startsWith(`${ownShopId}/${row.id}/`)).toBe(true)
+      expect(p.endsWith('.png')).toBe(true)
+    }
+
+    // The paths are on the ROW, not just in the response — the response could be right while
+    // updateFeedbackImages silently failed.
+    const { data: stored } = await serviceClient()
+      .from('merchant_feedback').select('image_paths').eq('id', row.id).single()
+    expect(stored!.image_paths).toEqual(row.image_paths)
+
+    // And the bytes are really in the bucket, not just the paths in the row.
+    const { data, error } = await serviceClient().storage
+      .from('feedback-images').download(row.image_paths[0])
+    expect(error).toBeNull()
+    expect(data).not.toBeNull()
+  })
+
+  it('accepts a JSON submission with no screenshots, and stores an empty array', async () => {
+    const res = await post(`/api/merchants/${ownShopId}/feedback`, {
+      category: 'other', message: 'no screenshots here',
+    }, ownerToken)
+
+    expect(res.status).toBe(201)
+    const row = (await res.json()) as FeedbackRow & { images_failed: number }
+    expect(row.image_paths).toEqual([])
+    expect(row.images_failed).toBe(0)
+  })
+
+  it('refuses a fourth screenshot, and writes no row at all', async () => {
+    const before = await serviceClient()
+      .from('merchant_feedback').select('id').eq('merchant_id', ownShopId)
+
+    const res = await postForm(
+      `/api/merchants/${ownShopId}/feedback`,
+      { category: 'bug', message: 'four is too many' },
+      [pngFile('a.png'), pngFile('b.png'), pngFile('c.png'), pngFile('d.png')],
+      ownerToken,
+    )
+    expect(res.status).toBe(400)
+
+    const after = await serviceClient()
+      .from('merchant_feedback').select('id').eq('merchant_id', ownShopId)
+    expect(after.data!.length).toBe(before.data!.length)
+  })
+
+  it('refuses a file type the bucket would not take, and writes no row at all', async () => {
+    const before = await serviceClient()
+      .from('merchant_feedback').select('id').eq('merchant_id', ownShopId)
+
+    const res = await postForm(
+      `/api/merchants/${ownShopId}/feedback`,
+      { category: 'bug', message: 'wrong type' },
+      [new File([new Uint8Array([1, 2, 3])], 'notes.pdf', { type: 'application/pdf' })],
+      ownerToken,
+    )
+    expect(res.status).toBe(400)
+
+    const after = await serviceClient()
+      .from('merchant_feedback').select('id').eq('merchant_id', ownShopId)
+    expect(after.data!.length).toBe(before.data!.length)
+  })
+
+  it('still refuses a multipart submission against a shop the caller does not own', async () => {
+    const res = await postForm(
+      `/api/merchants/${strangerShopId}/feedback`,
+      { category: 'other', message: 'not my shop' },
+      [pngFile('a.png')],
+      ownerToken,
+    )
+    expect(res.status).toBe(403)
+  })
+
+  it('tells the GitHub issue how many screenshots landed', async () => {
+    let seenBody = ''
+    githubDeps.createIssue = async (_token, input) => {
+      seenBody = input.body
+      return { number: 1, html_url: 'https://example.test/issues/1' }
+    }
+
+    await postForm(
+      `/api/merchants/${ownShopId}/feedback`,
+      { category: 'bug', message: 'count check' },
+      [pngFile('a.png')],
+      ownerToken,
+    )
+
+    expect(seenBody).toContain('Screenshots: 1')
+    expect(seenBody).not.toMatch(/feedback-images/)
+    githubDeps.createIssue = origCreateIssue
   })
 
   it('refuses feedback filed against a shop the caller does not own', async () => {

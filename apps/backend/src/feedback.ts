@@ -13,6 +13,9 @@ export interface FeedbackRow {
   user_id: string
   category: FeedbackCategory
   message: string
+  // Storage paths in the PRIVATE `feedback-images` bucket, never URLs. Always an array — the
+  // column is `not null default '{}'`, so there is no null spelling of "no screenshots".
+  image_paths: string[]
   status: FeedbackStatus
   created_at: string
   resolved_at: string | null
@@ -79,6 +82,19 @@ export async function updateFeedbackStatus(
   if (!data) return null
   const { merchants, ...rest } = data as any
   return { ...rest, shop_name: merchants?.name ?? null, shop_slug: merchants?.slug ?? null }
+}
+
+// Best-effort in the same sense as updateFeedbackGithubIssue below: by the time this runs, the
+// feedback row is committed and the bytes are already in the bucket. A failure here means the
+// admin dashboard does not show screenshots that exist — recoverable by hand, and not worth
+// failing a submission the merchant has already been told succeeded.
+export async function updateFeedbackImages(id: string, paths: string[]): Promise<void> {
+  if (paths.length === 0) return
+  const { error } = await admin
+    .from('merchant_feedback')
+    .update({ image_paths: paths })
+    .eq('id', id)
+  if (error) console.error(`feedback ${id}: failed to record ${paths.length} image path(s):`, error.message)
 }
 
 // Best-effort link-back after a successful createGithubIssue call (github.ts). Failure

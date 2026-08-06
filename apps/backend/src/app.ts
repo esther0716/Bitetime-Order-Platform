@@ -44,7 +44,7 @@ import { estimateFor } from './fx.js'
 import { listReferredShops, listEarnedRewards } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
 import { placeOrder, OrderError, orderMerchantId, setOrderPaymentProof } from './orders.js'
-import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue } from './feedback.js'
+import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue, updateFeedbackImages } from './feedback.js'
 import {
   findDueTrials, claimSend, releaseSend,
   getOwnTrialFeedback, respondTrialFeedback, skipTrialFeedback, listTrialFeedbackForAdmin,
@@ -61,7 +61,7 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImage, FEEDBACK_MAX_IMAGES, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
@@ -1470,6 +1470,37 @@ export const githubDeps: {
 // one real submission proves as well as twenty. Nothing else may import it.
 export const feedbackWindow = createSlidingWindow({ limit: 20, windowMs: 60 * 60_000, now: () => Date.now() })
 
+const FEEDBACK_IMAGE_BUCKET = 'feedback-images'
+// MIME -> extension. Deliberately NOT in @bitetime/shared: the browser never derives an
+// extension, so this is not a rule both sides enforce — the same reason PAYMENT_PROOF_EXT
+// lives here. Its keys are the same three types FEEDBACK_IMAGE_TYPES lists, and the route
+// checks membership so the lookup is total and no `undefined` can reach a storage path.
+const FEEDBACK_IMAGE_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
+
+/**
+ * Reads the submit body ONCE, in whichever of the two spellings arrived, and normalizes to a
+ * shape validateFeedback can judge. The browser always sends multipart (even with no files);
+ * JSON stays accepted because it costs eight lines and is the honest no-image case that
+ * tests/api/feedback.test.ts already covers.
+ *
+ * parseBody({ all: true }) is what returns an ARRAY for a repeated `images` field rather than
+ * only the last one — without it, three attached screenshots silently become one.
+ */
+async function readFeedbackSubmission(c: Context): Promise<{ body: unknown; files: File[] }> {
+  const contentType = c.req.header('Content-Type') ?? ''
+  if (!contentType.startsWith('multipart/form-data')) {
+    return { body: await c.req.json().catch(() => ({})), files: [] }
+  }
+  const form = await c.req.parseBody({ all: true }).catch(() => ({} as Record<string, unknown>))
+  const images = form['images']
+  const files = (Array.isArray(images) ? images : [images]).filter((f): f is File => f instanceof File)
+  return { body: { category: form['category'], message: form['message'] }, files }
+}
+
 app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
   const user = c.get('user')
   const merchant = c.get('merchant')
@@ -1478,15 +1509,50 @@ app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
     return c.json({ error: 'Too many feedback submissions. Please try again later.' }, 429)
   }
 
-  const parsed = validateFeedback(await c.req.json().catch(() => ({})))
+  const { body, files } = await readFeedbackSubmission(c)
+
+  const parsed = validateFeedback(body)
   if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+
+  // Every file check runs BEFORE the insert, so a rejected submission leaves nothing behind —
+  // no row, no orphan object.
+  if (files.length > FEEDBACK_MAX_IMAGES) {
+    return c.json({ error: `Attach at most ${FEEDBACK_MAX_IMAGES} screenshots` }, 400)
+  }
+  for (const file of files) {
+    const check = validateFeedbackImage({ type: file.type, size: file.size })
+    if (!check.ok) return c.json({ error: `${check.error}: ${file.name}` }, 400)
+    // Redundant with the type check above (same three types) and kept anyway: it is what makes
+    // the extension lookup below total instead of producing "undefined" in a storage path.
+    if (!FEEDBACK_IMAGE_EXT[file.type]) return c.json({ error: `Unsupported image type: ${file.name}` }, 400)
+  }
 
   // merchant.id comes from the route the middleware already verified; user.id from the
   // JWT. Neither is ever read from the body — see tests/api/feedback.test.ts.
   const row = await insertFeedback({ merchantId: merchant.id, userId: user.id, draft: parsed.value })
 
+  // Upload AFTER the row is committed, on purpose. The reverse order trades an orphan object
+  // for an orphan row claiming images it does not have, and risks losing a message the merchant
+  // typed to a storage hiccup — the exact outcome FeedbackFab's error path exists to avoid.
+  const paths: string[] = []
+  let imagesFailed = 0
+  for (const file of files) {
+    const path = `${merchant.id}/${row.id}/${crypto.randomUUID()}.${FEEDBACK_IMAGE_EXT[file.type]}`
+    const { error } = await admin.storage
+      .from(FEEDBACK_IMAGE_BUCKET)
+      .upload(path, file, { contentType: file.type, upsert: true })
+    if (error) {
+      console.error(`feedback ${row.id}: screenshot upload failed:`, error.message)
+      imagesFailed++
+      continue
+    }
+    paths.push(path)
+  }
+  await updateFeedbackImages(row.id, paths)
+
   // Best-effort (github.ts). Never changes what the merchant gets back — the row below is
-  // the same whether or not this succeeds.
+  // the same whether or not this succeeds. The count is what ACTUALLY LANDED, so the issue
+  // never claims a screenshot that is not there.
   const issue = await githubDeps.createIssue(env.githubToken, {
     title: buildIssueTitle(parsed.value.category, merchant.name),
     body: buildIssueBody({
@@ -1495,12 +1561,16 @@ app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
       shopSlug: merchant.slug,
       feedbackId: row.id,
       createdAt: row.created_at,
+      imageCount: paths.length,
+      adminUrl: env.frontendUrl,
     }),
     labels: ['needs-triage', categoryToLabel(parsed.value.category)],
   })
   if (issue) await updateFeedbackGithubIssue(row.id, issue)
 
-  return c.json(row, 201)
+  // `row` was selected at insert time, before updateFeedbackImages ran, so its image_paths is
+  // still []. Override with what actually landed.
+  return c.json({ ...row, image_paths: paths, images_failed: imagesFailed }, 201)
 })
 
 app.get('/api/admin/feedback', requireSuperadmin, async (c) => {
