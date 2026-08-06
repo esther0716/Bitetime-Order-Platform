@@ -4,7 +4,11 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center gap-2 border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap [font-family:'DM_Sans',sans-serif] transition-all outline-none select-none cursor-pointer focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  // No font-family here — buttons inherit the one Latin family from `body`. This used to
+  // pin 'DM_Sans', which the reskin removed; the declaration survived and quietly resolved
+  // to the generic sans-serif on any machine without DM Sans installed, so buttons rendered
+  // in Helvetica while every other element rendered in Poppins.
+  "group/button inline-flex shrink-0 items-center justify-center gap-2 border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none cursor-pointer focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -34,10 +38,10 @@ const buttonVariants = cva(
           "text-oxblood underline-offset-4 hover:underline",
       },
       size: {
-        // .submit-btn — full-width, 14 px pad all sides, 15 px text, lg radius (12 px), letter-spacing
+        // .submit-btn — full-width, 14 px pad all sides, 15 px text, lg radius (8 px), letter-spacing
         default:
           "w-full p-[14px] text-[15px] rounded-lg tracking-[0.01em] pointer-coarse:min-h-11",
-        // .save-btn — full-width, 10 px pad all sides, 14 px text, md radius (10 px)
+        // .save-btn — full-width, 10 px pad all sides, 14 px text, md radius (4 px)
         // Note: .auth-btn uses padding: 12 px; screens should pass className="py-3" override
         md:
           "w-full p-[10px] text-sm rounded-md pointer-coarse:min-h-11",
@@ -45,7 +49,7 @@ const buttonVariants = cva(
         // Note: .add-btn uses py-[7px] px-[14px] w-full rounded-sm; screens must override
         sm:
           "px-[18px] py-[10px] text-sm rounded-md",
-        // .cust-account-btn — pill, 14 px H / 7 px V, 13 px text, pill radius (20 px)
+        // .cust-account-btn — pill, 14 px H / 7 px V, 13 px text, pill radius (9999 px = stadium)
         // Note: .lang-btn uses py-[5px] + bg-surface-raised; screens must override those
         pill:
           "px-[14px] py-[7px] text-[13px] rounded-pill",
