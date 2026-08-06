@@ -85,6 +85,10 @@ function loadSupabaseEnv() {
   // so a plain default — not a forced-empty like GOOGLE_MAPS_API_KEY — is enough.
   if (!process.env.TRIAL_FEEDBACK_SWEEP_SECRET) process.env.TRIAL_FEEDBACK_SWEEP_SECRET = 'test-sweep-secret-stub'
 
+  // Same reasoning again. The sweep's one Stripe call goes through `billingSweepDeps`, which the
+  // suite swaps — the secret only gates the door.
+  if (!process.env.BILLING_SWEEP_SECRET) process.env.BILLING_SWEEP_SECRET = 'test-billing-sweep-secret-stub'
+
   // Same reasoning as the TRIAL_FEEDBACK_SWEEP_SECRET stub just above: it only gates an
   // internal endpoint, no live-network risk, so a plain default is enough.
   if (!process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET) {
