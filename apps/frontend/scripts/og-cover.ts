@@ -1,5 +1,14 @@
 // One-off generator for the Open Graph share card. NOT run at build time —
-// run it manually to (re)produce public/og-cover.jpg, which is committed.
+// run it manually to (re)produce public/og-cover-v2.jpg, which is committed.
+//
+// The `-v2` is a cache bust, not a version number to keep incrementing by
+// habit. Facebook, WhatsApp and X cache og:image by URL and re-fetch on their
+// own schedule, so reprinting the card under its old name leaves the previous
+// artwork in circulation for weeks with no way to force a refresh (X and
+// Facebook have validators that refetch; WhatsApp has nothing). Rename ONLY
+// when the printed content changes in a way that must not linger — and change
+// the og:image and twitter:image tags in index.html in the same commit, or the
+// tags point at a file that no longer exists.
 //
 // Run from the repo root:
 //   pnpm dlx tsx apps/frontend/scripts/og-cover.ts
@@ -25,7 +34,7 @@ import { chromium } from 'playwright-core'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const TEMPLATE = join(HERE, 'og-cover.html')
 const LOGO = join(HERE, '..', 'src', 'assets', 'tinyorder-logo@2x.png')
-const OUT = join(HERE, '..', 'public', 'og-cover.jpg')
+const OUT = join(HERE, '..', 'public', 'og-cover-v2.jpg')
 
 const WIDTH = 1200
 const HEIGHT = 630
@@ -39,7 +48,7 @@ const FONTS = [
   {
     family: 'Lora',
     weight: 500,
-    text: 'Sell your food online — without the DM chaos.',
+    text: 'Sell what you make online — without the DM chaos.',
   },
   {
     // Uppercase, because the template sets text-transform: uppercase — the
