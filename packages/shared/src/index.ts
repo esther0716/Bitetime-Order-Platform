@@ -8,11 +8,12 @@ export { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from './currency.js'
 export type { CurrencyCode } from './currency.js'
 export { MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES, isCart } from './cart.js'
 export {
-  validateFeedback, isFeedbackCategory, isFeedbackStatus,
+  validateFeedback, isFeedbackCategory, isFeedbackStatus, validateFeedbackImage,
   FEEDBACK_CATEGORIES, FEEDBACK_STATUSES, FEEDBACK_MAX_LENGTH,
+  FEEDBACK_MAX_IMAGES, MAX_FEEDBACK_IMAGE_BYTES, FEEDBACK_IMAGE_TYPES,
 } from './feedback.js'
 export type {
-  FeedbackCategory, FeedbackStatus, FeedbackDraft, FeedbackValidation,
+  FeedbackCategory, FeedbackStatus, FeedbackDraft, FeedbackValidation, FeedbackImageValidation,
 } from './feedback.js'
 export {
   validateTrialFeedback,

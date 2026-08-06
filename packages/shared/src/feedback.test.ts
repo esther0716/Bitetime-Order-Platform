@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { validateFeedback, isFeedbackStatus, FEEDBACK_MAX_LENGTH } from './feedback.js'
+import {
+  validateFeedback, isFeedbackStatus, validateFeedbackImage,
+  FEEDBACK_MAX_LENGTH, FEEDBACK_MAX_IMAGES, MAX_FEEDBACK_IMAGE_BYTES,
+} from './feedback.js'
 
 describe('validateFeedback', () => {
   it('accepts a known category and a trimmed message', () => {
@@ -46,6 +49,41 @@ describe('validateFeedback', () => {
     expect(validateFeedback(null).ok).toBe(false)
     expect(validateFeedback('nope').ok).toBe(false)
     expect(validateFeedback(undefined).ok).toBe(false)
+  })
+})
+
+describe('validateFeedbackImage', () => {
+  it('accepts each type the bucket accepts', () => {
+    for (const type of ['image/jpeg', 'image/png', 'image/webp']) {
+      expect(validateFeedbackImage({ type, size: 1024 })).toEqual({ ok: true })
+    }
+  })
+
+  it('refuses a type the bucket would reject, naming what is allowed', () => {
+    const r = validateFeedbackImage({ type: 'application/pdf', size: 1024 })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/JPEG, PNG or WebP/)
+  })
+
+  it('refuses image/gif — an image type, but not one this bucket takes', () => {
+    expect(validateFeedbackImage({ type: 'image/gif', size: 1024 }).ok).toBe(false)
+  })
+
+  it('accepts a file exactly at the ceiling and refuses one byte over', () => {
+    expect(validateFeedbackImage({ type: 'image/png', size: MAX_FEEDBACK_IMAGE_BYTES }))
+      .toEqual({ ok: true })
+    const over = validateFeedbackImage({ type: 'image/png', size: MAX_FEEDBACK_IMAGE_BYTES + 1 })
+    expect(over.ok).toBe(false)
+    if (!over.ok) expect(over.error).toMatch(/5MB/)
+  })
+
+  it('refuses an empty file — the route would upload zero bytes and call it a screenshot', () => {
+    expect(validateFeedbackImage({ type: 'image/png', size: 0 }).ok).toBe(false)
+  })
+
+  it('pins the count and size ceilings the migration and the route also state', () => {
+    expect(FEEDBACK_MAX_IMAGES).toBe(3)
+    expect(MAX_FEEDBACK_IMAGE_BYTES).toBe(5 * 1024 * 1024)
   })
 })
 
