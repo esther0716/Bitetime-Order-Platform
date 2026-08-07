@@ -9,6 +9,7 @@ import { SkeletonText } from '../components/Loaders'
 import { formatMoney } from '../currency'
 import { fmtDate } from '../merchantDate'
 import { StatusBadge } from '../orderStatus'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -32,12 +33,24 @@ const TD = 'px-[14px] py-[12px] border-b border-muted text-foreground align-midd
 // Count cell — pixel-match of .mm-customers-count overrides
 const TD_COUNT = 'px-[14px] py-[12px] border-b border-muted text-primary font-semibold text-center align-middle group-hover:bg-brand-100'
 
-// One tag chip — the filter row's and the drawer's, so the two rows of pills cannot drift apart.
-// Colour is the caller's: it is what says selected from not.
-const CHIP = 'inline-flex items-center gap-1 rounded-pill border border-border px-2.5 py-0.5 text-[12px]'
+/**
+ * One tag chip, on `Badge` rather than hand-rolled — the filter row's, the table row's and the
+ * drawer's, so three sets of pills cannot drift apart.
+ *
+ * The geometry and type come from the primitive (pill, 11px semibold, `border border-transparent`
+ * so a bordered state costs no layout shift); this override supplies the padding and the brand
+ * tint, in the `.mm-badge--{status}` shape `AdminMerchants` already uses. **10px, not the base's
+ * 9px** — DESIGN.md's `status-chip` token is `3px 10px`. Brand 100 is the chip background and
+ * Brand 700 the text on it (DESIGN.md → Colour), so a tag is *not* `text-primary`.
+ *
+ * Hand-rolled, these were 12px regular with a resting border, which is a fourth chip style on a
+ * screen that already had three.
+ */
+const TAG_CHIP = 'px-[10px] border-transparent bg-brand-100 text-brand-700'
 
-// `button.tsx`'s focus treatment, borrowed for the raw buttons that cannot use it. A chip is a
-// control a keyboard reaches, and the UA outline is not this app's ring.
+// `button.tsx`'s focus treatment, borrowed for the raw buttons `Badge` cannot cover — the two
+// nested inside the drawer's chip. A control a keyboard reaches needs this app's ring, not the
+// UA outline.
 const FOCUS_RING = 'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
 
 // How many of a customer's tags their table row shows before it stops and counts the rest.
@@ -253,7 +266,7 @@ function RowTags({ tags }: { tags: string[] }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
       {shown.map(tag => (
-        <span key={tag} className={`${CHIP} bg-brand-100 text-primary`}>{tag}</span>
+        <Badge key={tag} className={TAG_CHIP}>{tag}</Badge>
       ))}
       {hidden > 0 && <span className="text-[11px] text-muted-foreground">+{hidden}</span>}
     </span>
@@ -343,22 +356,19 @@ function TagFilterRow({
       {chips.map(chip => {
         const on = chip === selectedTag
         return (
-          <button
+          <Badge
             key={chip}
-            type="button"
-            aria-pressed={on}
             // Clicking the selected chip clears the filter — the same act, reversed, so there is
             // one control and not a filter plus a separate way to undo it.
-            onClick={() => onSelect(on ? null : chip)}
-            className={`${CHIP} ${FOCUS_RING} transition-colors ${
-              on
-                ? 'bg-brand-100 text-primary'
-                : 'bg-background text-muted-foreground hover:border-primary hover:text-primary'
-            }`}
+            render={<button type="button" aria-pressed={on} onClick={() => onSelect(on ? null : chip)} />}
+            // Selected is a MATCHING-COLOUR border, which is DESIGN.md's own answer for a chip
+            // acting as a filter. Not `border-border`: a neutral hairline reads as the resting
+            // outline every other pill on this screen already wears.
+            className={`${TAG_CHIP} cursor-pointer ${on ? 'border-primary' : 'hover:border-border'}`}
           >
             {chip}
             {on && <X size={11} />}
-          </button>
+          </Badge>
         )
       })}
 
@@ -617,10 +627,7 @@ function NotesPanel({
       <div>
         <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
           {customer.tags.map(tag => (
-            <span
-              key={tag}
-              className={`${CHIP} bg-brand-100 text-primary`}
-            >
+            <Badge key={tag} className={TAG_CHIP}>
               <button
                 type="button"
                 onClick={() => onTagClicked(tag)}
@@ -636,7 +643,7 @@ function NotesPanel({
               >
                 <X size={11} />
               </button>
-            </span>
+            </Badge>
           ))}
         </div>
         <Input
