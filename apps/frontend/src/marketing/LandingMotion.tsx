@@ -12,19 +12,6 @@ import type { VerticalWord } from './verticals'
 // Editorial ease — slightly springier than the app's UI ease, still calm.
 const EASE = [0.16, 1, 0.3, 1] as const
 
-// ── Paper grain: fixed, pointer-events-none, painted once (perf guardrail) ──
-// The noise tile itself is `.grain-overlay` in index.css. It is a constant, and a constant in a
-// `style` attribute is ~470 bytes of percent-encoded SVG re-sent inside the HTML of every
-// prerendered page instead of once inside a cached stylesheet.
-export function GrainOverlay() {
-  return (
-    <div
-      aria-hidden
-      className="grain-overlay pointer-events-none fixed inset-0 -z-10 opacity-[0.035] mix-blend-multiply max-[600px]:opacity-[0.025]"
-    />
-  )
-}
-
 // ── Scroll reveal: fade + small rise once in view ───────────────────────────
 export function Reveal({
   children,
@@ -52,33 +39,45 @@ export function Reveal({
 }
 
 // ── Hero stagger: container reveals children in a gentle waterfall ───────────
-export const heroContainer = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.09, delayChildren: 0.05 } },
-}
-
-export function useHeroItem() {
-  const reduced = useReducedMotion()
-  return {
-    hidden: { opacity: 0, y: reduced ? 0 : 14 },
-    show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: EASE } },
-  }
-}
-
+//
+// CSS, not Motion, and the headline sits out of it entirely. Both halves of that are measured.
+//
+// `/` is prerendered (scripts/prerender.tsx), so the hero is painted markup before a line of the
+// app has run — a mobile Lighthouse trace put first contentful paint at 157ms. This stagger was a
+// Motion variant tree with `initial="hidden"` at `opacity: 0`, which React re-applied as an inline
+// style the moment it took the page over, and then spent the stagger's delay plus its 0.55s
+// duration fading back to the paint the visitor already had. LCP landed at 999ms: 842ms of it was
+// the page hiding work it had finished. A CSS keyframe cannot do that — its RESTING opacity is 1
+// and the keyframe only borrows it on the way in, which is the rule at the top of `motion.tsx` and
+// the same reason `.page-enter` exists.
+//
+// The headline gets NO entry animation, because it is the LCP element and an LCP element that
+// starts transparent is an LCP time that starts when the fade does. The eyebrow above it opens at
+// 50ms, so the reading order still holds; nothing else in the waterfall is the largest paint.
+//
+// Delays live in `index.css` on `.hero-item:nth-child(n)` and reproduce the old variant timing
+// exactly (delayChildren 0.05 + staggerChildren 0.09), so ORDER IS NOW LOAD-BEARING: reorder the
+// children in Landing.tsx and the waterfall reorders with them.
 export function HeroStagger({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <motion.div className={className} variants={heroContainer} initial="hidden" animate="show">
-      {children}
-    </motion.div>
-  )
+  return <div className={className}>{children}</div>
 }
 
-export function HeroItem({ children, className }: { children: ReactNode; className?: string }) {
-  const item = useHeroItem()
+export function HeroItem({
+  children,
+  className,
+  /** Opts this item out of the fade. Set on the item holding the LCP element — see above. */
+  instant = false,
+}: {
+  children: ReactNode
+  className?: string
+  instant?: boolean
+}) {
+  // The class is still present when `instant`: it is what keeps :nth-child counting, and index.css
+  // is what turns the animation off for it. A plain <div> would shift every later item's delay.
   return (
-    <motion.div className={className} variants={item}>
+    <div className={`hero-item${instant ? ' hero-item--instant' : ''}${className ? ` ${className}` : ''}`}>
       {children}
-    </motion.div>
+    </div>
   )
 }
 
@@ -162,45 +161,45 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
             initial={{ opacity: 0, y: -8, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 18 } }}
             exit={{ opacity: 0, y: -6, scale: 0.96, transition: { duration: 0.18 } }}
-            className="absolute -top-3 -right-2 z-10 flex items-center gap-2 rounded-pill border border-clay-border bg-surface-high py-1.5 px-3 shadow-[0_8px_24px_rgba(43,10,16,0.14)]"
+            className="absolute -top-3 -right-2 z-10 flex items-center gap-2 rounded-pill border border-border bg-card py-1.5 px-3 shadow-elev-2"
           >
-            <ReceiptText size={14} strokeWidth={1.5} className="text-oxblood" aria-hidden />
-            <span className="text-[12px] font-medium text-ink">{t('New order · BT-0242', '新订单 · BT-0242')}</span>
+            <ReceiptText size={14} strokeWidth={1.5} className="text-primary" aria-hidden />
+            <span className="text-[12px] font-medium text-foreground">{t('New order · BT-0242', '新订单 · BT-0242')}</span>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Card */}
-      <div className="rounded-2xl border-[1.5px] border-clay-border bg-surface-raised p-5 text-left shadow-[0_16px_40px_-18px_rgba(43,10,16,0.22)]">
+      <div className="rounded-2xl border-[0.5px] border-border bg-card p-5 text-left shadow-elev-3">
         {/* Shop header */}
-        <div className="flex items-center gap-3 pb-4 border-b border-divider">
-          <span className="grid h-10 w-10 place-items-center rounded-round bg-oxblood-tint font-heading text-[15px] font-medium text-oxblood">
+        <div className="flex items-center gap-3 pb-4 border-b border-border">
+          <span className="grid h-10 w-10 place-items-center rounded-round bg-brand-100 font-heading text-[15px] font-medium text-primary">
             NK
           </span>
           <div className="min-w-0">
-            <p className="font-heading text-[15px] font-medium text-ink leading-tight">
+            <p className="font-heading text-[15px] font-medium text-foreground leading-tight">
               {t('Nyonya Kueh by Mei', '美的娘惹糕')}
             </p>
-            <p className="text-[12px] text-rose-muted leading-tight">/s/nyonya-kueh</p>
+            <p className="text-[12px] text-muted-foreground leading-tight">/s/nyonya-kueh</p>
           </div>
-          <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-success-strong">
-            <span className="h-1.5 w-1.5 rounded-round bg-success-strong" aria-hidden />
+          <span className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-success-fg">
+            <span className="h-1.5 w-1.5 rounded-round bg-success-fg" aria-hidden />
             {t('Open', '营业中')}
           </span>
         </div>
 
         {/* Products */}
-        <ul className="list-none m-0 p-0 flex flex-col divide-y divide-divider">
+        <ul className="list-none m-0 p-0 flex flex-col divide-y divide-border">
           {products.map((p) => (
             <li key={p.name} className="flex items-center justify-between gap-3 py-3">
-              <span className="text-[13.5px] text-ink">{p.name}</span>
-              <span className="font-heading text-[13.5px] font-medium text-oxblood shrink-0">{p.price}</span>
+              <span className="text-[13.5px] text-foreground">{p.name}</span>
+              <span className="font-heading text-[13.5px] font-medium text-primary shrink-0">{p.price}</span>
             </li>
           ))}
         </ul>
 
         {/* Order bar (static mock) */}
-        <div className="mt-4 flex items-center justify-center rounded-md bg-oxblood py-2.5 text-[13px] font-medium text-cream">
+        <div className="mt-4 flex items-center justify-center rounded-md bg-primary py-2.5 text-[13px] font-medium text-background">
           {t('Place order', '下单')}
         </div>
       </div>
@@ -236,7 +235,7 @@ const WORD_INTERVAL_MS = 2600
 // the baseline — where the browser's own underline sits, measured against the h1's font.
 const WORD_RULE =
   'relative after:content-[\'\'] after:pointer-events-none after:absolute after:inset-x-0 ' +
-  'after:bottom-[0.145em] after:h-[0.055em] after:bg-oxblood/60'
+  'after:bottom-[0.145em] after:h-[0.055em] after:bg-primary/60'
 
 export const RotatingWord = memo(function RotatingWord({
   words,

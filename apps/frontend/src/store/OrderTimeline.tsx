@@ -43,7 +43,7 @@ export default function OrderTimeline({
   // A cancelled order never rejoins the flow — a greyed-out four-step line would imply it might.
   if (status === 'cancelled') {
     return (
-      <div className="flex items-center gap-2.5 rounded-lg border border-danger-border bg-rose-pale px-3 py-2.5 mt-3">
+      <div className="flex items-center gap-2.5 rounded-lg border border-danger-500 bg-danger-100 px-3 py-2.5 mt-3">
         <Ban className="size-4 shrink-0 text-danger" strokeWidth={1.75} />
         <span className="text-[13px] font-medium text-danger">{t('Order cancelled', '订单已取消')}</span>
       </div>
@@ -55,9 +55,9 @@ export default function OrderTimeline({
   // proof landing (or the merchant manually moving it on).
   if (status === 'pending_payment') {
     return (
-      <div className="flex items-center gap-2.5 rounded-lg border border-clay-border bg-surface-raised px-3 py-2.5 mt-3">
-        <Clock className="size-4 shrink-0 text-rose-muted" strokeWidth={1.75} />
-        <span className="text-[13px] font-medium text-rose-muted">
+      <div className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2.5 mt-3">
+        <Clock className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+        <span className="text-[13px] font-medium text-muted-foreground">
           {t('Awaiting payment confirmation', '等待付款确认')}
         </span>
       </div>
@@ -85,18 +85,18 @@ export default function OrderTimeline({
                 aria-hidden
                 className={cn(
                   'absolute right-1/2 top-[13px] h-0.5 w-full',
-                  reached ? 'bg-oxblood' : 'border-t-2 border-dashed border-clay-border',
+                  reached ? 'bg-primary' : 'border-t-2 border-dashed border-border',
                 )}
               />
             )}
             <span
               className={cn(
-                'relative z-[1] flex size-7 items-center justify-center rounded-full transition-colors',
+                'relative z-[1] flex size-7 items-center justify-center rounded-pill transition-colors',
                 reached
-                  ? 'bg-oxblood text-cream'
-                  : 'border-[1.5px] border-clay-border bg-surface-raised text-clay-muted',
+                  ? 'bg-primary text-background'
+                  : 'border-[0.5px] border-border bg-card text-ink-400',
                 // The live step gets a soft halo so the eye lands on it first.
-                current && 'ring-4 ring-oxblood/15',
+                current && 'ring-4 ring-primary/15',
               )}
             >
               <Icon className="size-[15px]" strokeWidth={2} />
@@ -104,7 +104,7 @@ export default function OrderTimeline({
             <span
               className={cn(
                 'text-center text-[11px] leading-tight',
-                reached ? 'font-medium text-oxblood' : 'text-rose-muted',
+                reached ? 'font-medium text-primary' : 'text-muted-foreground',
               )}
             >
               {step.label(t, delivery)}

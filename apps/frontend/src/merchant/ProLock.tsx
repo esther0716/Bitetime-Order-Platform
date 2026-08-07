@@ -52,17 +52,17 @@ export function UpgradeLink({ className }: { className?: string }) {
 export function ProLock({ what, why }: { what: string; why: string }) {
   const { t } = useSession()
   return (
-    <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-8 w-full box-border text-center max-sm:p-5">
-      <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-full bg-surface-sunken text-oxblood">
+    <div className="bg-card border-[0.5px] border-border rounded-2xl p-8 w-full box-border text-center max-sm:p-5">
+      <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-pill bg-muted text-primary">
         <Lock size={20} strokeWidth={1.75} />
       </div>
       <div className="flex items-center justify-center gap-2 mb-2">
-        <h3 className="font-heading text-[16px] font-medium text-oxblood">{what}</h3>
+        <h3 className="font-heading text-[16px] font-medium text-primary">{what}</h3>
         <ProBadge />
       </div>
-      <p className="text-[13px] text-text-secondary max-w-[380px] mx-auto mb-5 leading-[1.6]">{why}</p>
+      <p className="text-[13px] text-muted-foreground max-w-[380px] mx-auto mb-5 leading-[1.6]">{why}</p>
       <UpgradeLink />
-      <p className="text-[12px] text-text-tertiary mt-3">
+      <p className="text-[12px] text-muted-foreground mt-3">
         {t('See the price and what Pro adds in Settings → Subscription.', '在设置 → 订阅中查看价格和 Pro 功能。')}
       </p>
     </div>

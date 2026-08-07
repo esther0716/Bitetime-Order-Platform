@@ -24,9 +24,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
       style={
         {
           // Brand surface/border — matches `.notif-panel` floating surface
-          "--normal-bg":     "var(--color-surface-high)",
-          "--normal-text":   "var(--color-ink)",
-          "--normal-border": "var(--color-clay-border)",
+          "--normal-bg":     "var(--color-card)",
+          "--normal-text":   "var(--color-foreground)",
+          "--normal-border": "var(--color-border)",
           "--border-radius": "var(--radius-lg)",
           // z-toast (500) — above all overlays/modals
           "--z-index":       "var(--z-toast)",

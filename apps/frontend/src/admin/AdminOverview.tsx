@@ -27,12 +27,12 @@ export default function AdminOverview() {
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-1 min-[520px]:grid-cols-2 min-[900px]:grid-cols-4 gap-[10px]">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="bg-surface-raised border-[1.5px] border-rose-border rounded-xl py-4 px-5">
+          <div key={i} className="bg-card border-[0.5px] border-border rounded-xl py-4 px-5">
             <SkeletonText lines={2} />
           </div>
         ))}
       </div>
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-xl py-4 px-5">
+      <div className="bg-card border-[0.5px] border-border rounded-xl py-4 px-5">
         <SkeletonText lines={6} />
       </div>
     </div>
@@ -59,7 +59,7 @@ export default function AdminOverview() {
           exists to answer (#161), and a ranked bar list reads an order a donut cannot. */}
       <ChartPanel title={t('Merchants by industry', '商家行业')}>
         {stats.industries.length === 0
-          ? <p className="text-[13px] text-text-tertiary italic">{t('No merchants yet.', '暂无商家。')}</p>
+          ? <p className="text-[13px] text-muted-foreground italic">{t('No merchants yet.', '暂无商家。')}</p>
           : <BreakdownList rows={stats.industries.map(i => ({
               label: t(...businessNatureLabel(i.nature)),
               // Count first, percentage after: "which industry has the MOST merchants" is a
@@ -75,7 +75,7 @@ export default function AdminOverview() {
         </ChartPanel>
         <ChartPanel title={t('Recent sign-ups', '最近注册')}>
           {stats.recent.length === 0
-            ? <p className="text-[13px] text-text-tertiary italic">{t('No merchants yet.', '暂无商家。')}</p>
+            ? <p className="text-[13px] text-muted-foreground italic">{t('No merchants yet.', '暂无商家。')}</p>
             : <BreakdownList rows={stats.recent.map(m => ({
                 label: m.name,
                 value: statusLabel(m.status),

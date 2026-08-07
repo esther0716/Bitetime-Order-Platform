@@ -42,15 +42,36 @@ export function buildIssueBody(input: {
   shopSlug: string
   feedbackId: string
   createdAt: string
+  imageCount: number
+  adminUrl: string
 }): string {
-  return [
+  const lines = [
     input.message,
     '',
     '---',
     `Shop: ${input.shopName} (/s/${input.shopSlug})`,
     `Feedback ID: ${input.feedbackId}`,
     `Submitted: ${input.createdAt}`,
-  ].join('\n')
+  ]
+  // COUNT AND A DASHBOARD LINK ONLY — never an image URL, signed or otherwise. This repo is
+  // public (GITHUB_REPO above), and a merchant's bug screenshot is usually their own dashboard:
+  // customer names, phone numbers, delivery addresses. The bucket is private and the bytes come
+  // out through a superadmin-only route; this line exists so whoever triages the issue knows
+  // there is something to go and look at. Omitted entirely at zero, so every issue body filed
+  // before this shipped stays byte-identical.
+  //
+  // imageCount and adminUrl are REQUIRED, not optional: a caller that forgot them would quietly
+  // file an issue that hides the screenshots, which is the one failure this line exists to
+  // prevent. adminUrl is a parameter rather than an env read, same adapter discipline as the
+  // token — it is what keeps this module importable by tests/unit with zero env vars set.
+  //
+  // `/admin#feedback`, with a HASH: the admin dashboard is one route and its sections are hash
+  // segments (useDashboardSection). `/admin/feedback` is not a route — it matches nothing and
+  // renders a blank page, which is exactly what it did until a run-and-verify pass caught it.
+  if (input.imageCount > 0) {
+    lines.push(`Screenshots: ${input.imageCount} — view at ${input.adminUrl}/admin#feedback`)
+  }
+  return lines.join('\n')
 }
 
 export interface GithubIssue {

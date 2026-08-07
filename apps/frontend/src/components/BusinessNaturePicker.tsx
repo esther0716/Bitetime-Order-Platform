@@ -26,7 +26,7 @@ export default function BusinessNaturePicker({ id, value, onChange, className }:
       <Label htmlFor={id}>{label}</Label>
       <Select value={value} onValueChange={v => onChange(v ?? '')}>
         <SelectTrigger id={id} className={cn('w-full', className)} aria-label={label}>
-          <span className={cn('truncate', !value && 'text-rose-muted')}>
+          <span className={cn('truncate', !value && 'text-muted-foreground')}>
             {value ? t(...businessNatureLabel(value)) : t('Choose your business type', '选择业务类型')}
           </span>
         </SelectTrigger>

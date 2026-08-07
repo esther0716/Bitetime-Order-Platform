@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { paymentQrUrl, uploadPaymentQr, PAYMENT_QR_TYPES } from '../store'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { Button } from '../components/ui/button'
 
 type T = (en: string, zh: string) => string
 
@@ -47,38 +48,42 @@ export default function PaymentQrPicker({
             <img
               src={paymentQrUrl(value)}
               alt={t('Payment QR', '付款二维码')}
-              className="size-28 object-contain rounded-lg border-[1.5px] border-clay-border bg-white p-1"
+              className="size-28 object-contain rounded-lg border-[0.5px] border-border bg-white p-1"
             />
             <button
               type="button"
               disabled={busy}
               onClick={() => setConfirmRemove(true)}
               aria-label={t('Remove QR code', '删除二维码')}
-              className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-oxblood text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-oxblood/90 disabled:opacity-50 cursor-pointer"
+              className="absolute -top-1.5 -right-1.5 size-5 rounded-pill bg-primary text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-brand-600 disabled:bg-disabled-bg disabled:text-disabled-fg cursor-pointer"
             >
               ×
             </button>
           </div>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="dashed"
+            size="none"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="size-28 shrink-0 rounded-lg border-[1.5px] border-dashed border-clay-border text-rose-muted text-[11px] flex flex-col items-center justify-center gap-0.5 hover:border-oxblood hover:text-oxblood disabled:opacity-50 cursor-pointer"
+            className="size-28 shrink-0 rounded-lg border-[0.5px] text-[11px] flex-col gap-0.5"
           >
             <span className="text-[18px] leading-none">＋</span>
             {busy ? t('Uploading…', '上传中…') : t('QR code', '二维码')}
-          </button>
+          </Button>
         )}
         {value && (
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="text-[13px] text-oxblood underline disabled:opacity-50 cursor-pointer"
+            className="text-[13px]"
           >
             {busy ? t('Uploading…', '上传中…') : t('Replace', '更换')}
-          </button>
+          </Button>
         )}
       </div>
       <input

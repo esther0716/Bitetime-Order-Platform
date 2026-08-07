@@ -19,7 +19,7 @@ import { useTopOnRouteChange } from './useTopOnRouteChange'
 import PricingCards from './PricingCards'
 import { PLAN_COMPARISON_GROUPS, type ComparisonValue } from './pricingTiers'
 import { ctaPrimary, sectionTitle } from './ctaStyles'
-import { GrainOverlay, Reveal } from './LandingMotion'
+import { Reveal } from './LandingMotion'
 import { cn } from '../lib/utils'
 
 /**
@@ -32,7 +32,7 @@ function ComparisonCell({ value, t }: { value: ComparisonValue; t: (en: string, 
   if (typeof value === 'boolean') {
     return (
       <span className="flex items-center justify-center">
-        <span aria-hidden="true" className={value ? 'text-oxblood text-base font-semibold' : 'text-text-tertiary text-base'}>
+        <span aria-hidden="true" className={value ? 'text-primary text-base font-semibold' : 'text-muted-foreground text-base'}>
           {value ? '✓' : '–'}
         </span>
         <span className="sr-only">{value ? t('Included', '包含') : t('Not included', '不包含')}</span>
@@ -50,19 +50,18 @@ export default function Pricing() {
 
   return (
     // Keep mm-land class — body:has(.mm-land) in index.css resets body padding/alignment
-    <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-ink bg-cream">
-      <GrainOverlay />
+    <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-foreground bg-background">
       <MarketingNav />
 
       {/* ── Header ── */}
       <section className="max-w-[720px] mx-auto px-8 pt-16 pb-4 text-center max-[600px]:px-5 max-[600px]:pt-10">
-        <h1 className="font-heading text-[clamp(1.9rem,4vw,2.75rem)] font-medium text-ink leading-[1.2] tracking-[-0.01em] mb-5">
+        <h1 className="font-heading text-[clamp(1.9rem,4vw,2.75rem)] font-medium text-foreground leading-[1.2] tracking-[-0.01em] mb-5">
           {t(
             'One flat price. No commission on a single order.',
             '固定价格。订单一分钱都不抽成。',
           )}
         </h1>
-        <p className="text-base leading-[1.75] text-ink-soft max-w-[580px] mx-auto mb-4">
+        <p className="text-base leading-[1.75] text-ink-700 max-w-[580px] mx-auto mb-4">
           {t(
             'You pay a subscription and nothing else — the month your shop does well is the month you keep the difference. Start on Basic free for seven days, without a card, and move to Pro when the alerts and vouchers start earning their keep.',
             '你只需支付订阅费，不再有其他费用——生意好的那个月，多出来的部分全归你。基础版可免费试用七天，无需信用卡；等到即时通知与优惠券开始带来回报，再升级 Pro。',
@@ -79,7 +78,7 @@ export default function Pricing() {
       {/* The detail the landing summary does not carry, and the reason a visitor clicks through.
           Rows come from pricingTiers.ts, where each one is checked against what the backend
           actually gates — a ✓/✗ grid that disagrees with `requirePro` is a refund request. */}
-      <section className="border-t border-clay-border px-8 py-16 max-w-[860px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+      <section className="border-t border-border px-8 py-16 max-w-[860px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className={sectionTitle}>
             {t('What is in each plan', '两个方案分别包含什么')}
@@ -94,16 +93,16 @@ export default function Pricing() {
                 )}
               </caption>
               <thead>
-                <tr className="border-b-[1.5px] border-clay-border">
-                  <th scope="col" className="py-3 pr-4 font-heading text-[15px] font-medium text-ink">
+                <tr className="border-b-[0.5px] border-border">
+                  <th scope="col" className="py-3 pr-4 font-heading text-[15px] font-medium text-foreground">
                     {t('Feature', '功能')}
                   </th>
-                  <th scope="col" className="py-3 px-4 text-center font-heading text-[15px] font-medium text-ink">
+                  <th scope="col" className="py-3 px-4 text-center font-heading text-[15px] font-medium text-foreground">
                     {t('Basic', '基础版')}
                   </th>
                   {/* The tint wash carries down every Pro cell below, turning the column into the
                       same "this one's highlighted" read the Pro card gets in PricingCards. */}
-                  <th scope="col" className="py-3 px-4 text-center font-heading text-[15px] font-medium text-oxblood bg-oxblood-tint rounded-t-lg">
+                  <th scope="col" className="py-3 px-4 text-center font-heading text-[15px] font-medium text-primary bg-brand-100 rounded-t-lg">
                     Pro
                   </th>
                 </tr>
@@ -121,7 +120,7 @@ export default function Pricing() {
                         <th
                           scope="colgroup"
                           className={cn(
-                            'pb-1 font-sans text-[11px] font-semibold uppercase tracking-[0.08em] text-rose-muted text-left',
+                            'pb-1 font-sans text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground text-left',
                             isFirstGroup ? 'pt-3' : 'pt-7',
                           )}
                         >
@@ -130,7 +129,7 @@ export default function Pricing() {
                         <td className={cn('pb-1', isFirstGroup ? 'pt-3' : 'pt-7')} />
                         <td
                           className={cn(
-                            'pb-1 bg-oxblood-tint-soft',
+                            'pb-1 bg-brand-50',
                             isFirstGroup ? 'pt-3' : 'pt-7',
                           )}
                         />
@@ -138,16 +137,16 @@ export default function Pricing() {
                       {group.rows.map((row, ri) => {
                         const isLastRow = isLastGroup && ri === group.rows.length - 1
                         return (
-                          <tr key={row.id} className="border-b border-clay-border align-middle">
-                            <th scope="row" className="py-3 pr-4 font-normal text-ink leading-[1.55] text-left">
+                          <tr key={row.id} className="border-b border-border align-middle">
+                            <th scope="row" className="py-3 pr-4 font-normal text-foreground leading-[1.55] text-left">
                               {t(row.label.en, row.label.zh)}
                             </th>
-                            <td className="py-3 px-4 text-center text-ink-soft leading-[1.55]">
+                            <td className="py-3 px-4 text-center text-ink-700 leading-[1.55]">
                               <ComparisonCell value={row.basic} t={t} />
                             </td>
                             <td
                               className={cn(
-                                'py-3 px-4 text-center text-ink-soft leading-[1.55] bg-oxblood-tint-soft',
+                                'py-3 px-4 text-center text-ink-700 leading-[1.55] bg-brand-50',
                                 isLastRow && 'rounded-b-lg',
                               )}
                             >
@@ -169,12 +168,12 @@ export default function Pricing() {
       {/* Prose, not cards: this is one explanation in four moves, and every claim here is enforced
           somewhere real — the trial in signup, the proration rule in the subscription
           handling, the currency in the platform pricing endpoint. */}
-      <section className="border-t border-clay-border px-8 py-16 max-w-[720px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+      <section className="border-t border-border px-8 py-16 max-w-[720px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className={sectionTitle}>
             {t('How billing works', '扣款方式')}
           </h2>
-          <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-soft">
+          <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-700">
             <p className="m-0">
               {t(
                 'Basic starts with seven free days and asks for no card. The clock starts when you sign up, and your shop is open from that moment. We remind you before it ends. If you decide not to continue, it stops on its own and you are never charged.',
@@ -207,12 +206,12 @@ export default function Pricing() {
       {/* The competitive argument, stated once and only here. The landing page's "what it replaces"
           section makes the same point about marketplaces in passing; this is the version a visitor
           comparing two prices came to read. */}
-      <section className="border-t border-clay-border px-8 py-16 max-w-[720px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
+      <section className="border-t border-border px-8 py-16 max-w-[720px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className={sectionTitle}>
             {t('What we do not charge for', '我们不收费的部分')}
           </h2>
-          <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-soft">
+          <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-700">
             <p className="m-0">
               {t(
                 'No commission, on any order, ever. A marketplace takes a percentage of every sale for as long as you use it, which means the better your shop does the more it costs you. Your subscription here is the same number whether you take four orders this month or four hundred.',
@@ -236,9 +235,9 @@ export default function Pricing() {
       </section>
 
       {/* ── Closing CTA ── */}
-      <section className="border-t border-clay-border px-8 py-16 text-center bg-oxblood-tint max-[600px]:px-5 max-[600px]:py-10">
+      <section className="border-t border-border px-8 py-16 text-center bg-brand-100 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
-          <h2 className="font-heading italic text-[18px] text-ink mb-6 max-w-[520px] mx-auto">
+          <h2 className="font-heading italic text-[18px] text-foreground mb-6 max-w-[520px] mx-auto">
             {t(
               'Seven days, no card, and your own shop at the end of it.',
               '七天免费，无需信用卡，结束时你已经有了自己的店。',
@@ -249,8 +248,8 @@ export default function Pricing() {
           </Link>
           {/* Back up the tree: a page whose only outbound links point deeper is a dead end to a
               crawler working out which pages belong to which. */}
-          <p className="mt-6 mb-0 text-[13px] text-rose-muted">
-            <Link to="/" className="underline underline-offset-4 hover:text-oxblood">
+          <p className="mt-6 mb-0 text-[13px] text-muted-foreground">
+            <Link to="/" className="underline underline-offset-4 hover:text-primary">
               {t('See how TinyOrder works', '了解 TinyOrder 怎么运作')}
             </Link>
           </p>

@@ -68,7 +68,7 @@ export default function SpotlightTour({ targetSelector, stepLabel, title, body, 
     <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label={title}>
       {/* Transparent box with a massive shadow: dims everything but the target. */}
       <div
-        className="pointer-events-none absolute rounded-xl ring-2 ring-oxblood transition-all duration-200"
+        className="pointer-events-none absolute rounded-xl ring-2 ring-primary transition-all duration-200"
         style={{
           top: rect.top - PAD,
           left: rect.left - PAD,
@@ -78,7 +78,7 @@ export default function SpotlightTour({ targetSelector, stepLabel, title, body, 
         }}
       />
       <div
-        className="absolute rounded-2xl border-[1.5px] border-rose-border bg-surface-raised p-4 shadow-xl"
+        className="absolute rounded-2xl border-[0.5px] border-border bg-card p-4 shadow-xl"
         style={{
           width: TOOLTIP_W,
           left,
@@ -87,17 +87,19 @@ export default function SpotlightTour({ targetSelector, stepLabel, title, body, 
             : { bottom: window.innerHeight - rect.top + 12 }),
         }}
       >
-        <p className="text-[11px] font-medium uppercase tracking-[0.09em] text-oxblood">{stepLabel}</p>
-        <h4 className="mt-1 font-heading text-[15px] font-medium text-oxblood">{title}</h4>
-        <p className="mt-1 text-[13px] leading-[1.5] text-ink">{body}</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.09em] text-primary">{stepLabel}</p>
+        <h4 className="mt-1 font-heading text-[15px] font-medium text-primary">{title}</h4>
+        <p className="mt-1 text-[13px] leading-[1.5] text-foreground">{body}</p>
         <div className="mt-3 flex items-center justify-between gap-2">
-          <button
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={onSkip}
-            className="text-[13px] text-rose-muted underline underline-offset-2 hover:text-oxblood"
+            className="text-[13px] text-muted-foreground hover:text-primary"
           >
             {skipLabel}
-          </button>
+          </Button>
           <Button size="sm" className="w-auto" onClick={onNext}>{ctaLabel}</Button>
         </div>
       </div>

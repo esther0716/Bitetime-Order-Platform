@@ -52,14 +52,14 @@ export default function SuspendedScreen() {
     <div className="w-full max-w-[720px] mx-auto pt-8 px-4 pb-12">
       <div
         role="status"
-        className="px-4 py-3 mb-6 rounded-md border-[1.5px] text-[13px] leading-[1.5] bg-danger-bg text-danger-fg border-danger-fg/25 font-medium"
+        className="px-4 py-3 mb-6 rounded-md border-[0.5px] text-[13px] leading-[1.5] bg-danger-100 text-danger-fg border-danger-fg/25 font-medium"
       >
         {t('Your shop is suspended — your subscription has ended. Choose a plan below to reopen it.',
            '您的店铺已暂停——订阅已结束。请在下方选择方案以恢复营业。')}
       </div>
 
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4">
-        <h2 className="font-heading text-[15px] font-medium text-oxblood mb-4">
+      <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4">
+        <h2 className="font-heading text-[15px] font-medium text-primary mb-4">
           {t('Reopen your shop', '重新开张')}
         </h2>
 
@@ -68,7 +68,7 @@ export default function SuspendedScreen() {
         <div
           role="radiogroup"
           aria-label={t('Billing cycle', '付费周期')}
-          className="inline-flex p-[3px] mb-5 rounded-pill border-[1.5px] border-rose-border bg-surface"
+          className="inline-flex p-[3px] mb-5 rounded-pill border-[0.5px] border-border bg-card"
         >
           {(['monthly', 'yearly'] as Cycle[]).map((c) => (
             <button
@@ -78,14 +78,14 @@ export default function SuspendedScreen() {
               aria-checked={cycle === c}
               onClick={() => setCycle(c)}
               className={`py-[5px] px-4 rounded-pill text-[13px] cursor-pointer transition-colors ${
-                cycle === c ? 'bg-oxblood text-white' : 'text-text-secondary hover:text-oxblood'
+                cycle === c ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-primary'
               }`}
             >
               {c === 'monthly' ? t('Monthly', '按月') : t('Yearly', '按年')}
               {/* Only ever rendered from live prices, and only when there is a real saving to
                   claim — see yearlySavingPercent. */}
               {c === 'yearly' && saving !== null && (
-                <span className={cycle === c ? 'ml-1.5 opacity-90' : 'ml-1.5 text-oxblood'}>
+                <span className={cycle === c ? 'ml-1.5 opacity-90' : 'ml-1.5 text-primary'}>
                   {t(`− ${saving}%`, `省 ${saving}%`)}
                 </span>
               )}
@@ -104,29 +104,29 @@ export default function SuspendedScreen() {
                 role="radio"
                 aria-checked={selected}
                 onClick={() => setPlan(tier.id)}
-                className={`text-left w-full p-4 rounded-xl border-[1.5px] cursor-pointer transition-colors ${
-                  selected ? 'border-oxblood bg-oxblood-tint' : 'border-rose-border bg-surface hover:border-oxblood/40'
+                className={`text-left w-full p-4 rounded-xl border-[0.5px] cursor-pointer transition-colors ${
+                  selected ? 'border-primary bg-brand-100' : 'border-border bg-card hover:border-primary/40'
                 }`}
               >
                 <div className="flex items-baseline justify-between gap-3 mb-1">
-                  <span className="font-heading text-[15px] font-medium text-oxblood">
+                  <span className="font-heading text-[15px] font-medium text-primary">
                     {tier.name[lang]}
                   </span>
-                  <span className="text-[15px] font-medium text-ink">
+                  <span className="text-[15px] font-medium text-foreground">
                     {formatMoney(price, pricing.currency)}
-                    <span className="text-[12px] text-text-secondary">{per}</span>
+                    <span className="text-[12px] text-muted-foreground">{per}</span>
                   </span>
                 </div>
-                <p className="text-[12px] text-text-secondary mb-2">{tier.blurb[lang]}</p>
+                <p className="text-[12px] text-muted-foreground mb-2">{tier.blurb[lang]}</p>
                 {/* The Pro card lists only what Pro ADDS — its `inherits` line is what makes that
                     honest, and is why the tier data carries one. */}
                 {tier.inherits && (
-                  <p className="text-[12px] text-text-tertiary mb-1">{tier.inherits[lang]}</p>
+                  <p className="text-[12px] text-muted-foreground mb-1">{tier.inherits[lang]}</p>
                 )}
                 <ul className="flex flex-col gap-1">
                   {tier.features.map((f) => (
-                    <li key={f.en} className="flex items-start gap-1.5 text-[12px] text-ink">
-                      <Check size={13} strokeWidth={2} className="text-oxblood shrink-0 mt-[3px]" aria-hidden />
+                    <li key={f.en} className="flex items-start gap-1.5 text-[12px] text-foreground">
+                      <Check size={13} strokeWidth={2} className="text-primary shrink-0 mt-[3px]" aria-hidden />
                       {f[lang]}
                     </li>
                   ))}
@@ -144,7 +144,7 @@ export default function SuspendedScreen() {
         </Button>
         {/* Stated because it is the one thing a returning merchant is most likely to assume
             wrongly, and the backend enforces it regardless of what this screen says. */}
-        <p className="text-[12px] text-text-tertiary mt-3">
+        <p className="text-[12px] text-muted-foreground mt-3">
           {t('Reopening starts a new subscription and is charged today — the free trial is one per shop.',
              '恢复营业将开启新的订阅并于今日扣款——免费试用每家店铺仅一次。')}
         </p>
@@ -152,11 +152,11 @@ export default function SuspendedScreen() {
 
       <TrialFeedbackPrompt />
       {err && (
-        <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-4 leading-[1.5]">
+        <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-4 leading-[1.5]">
           {err}
         </div>
       )}
-      <h2 className="font-heading text-[18px] font-medium text-oxblood mb-3">
+      <h2 className="font-heading text-[18px] font-medium text-primary mb-3">
         {t('Your orders', '您的订单')}
       </h2>
       <OrdersView readOnly />

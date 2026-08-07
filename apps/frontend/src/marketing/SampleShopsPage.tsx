@@ -10,7 +10,7 @@ import { useSession } from '../SessionContext'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
 import { useSampleShops } from '../useSampleShops'
-import { GrainOverlay, Reveal } from './LandingMotion'
+import { Reveal } from './LandingMotion'
 import { sectionTitle } from './ctaStyles'
 import SampleShopsCarousel from './SampleShopsCarousel'
 
@@ -20,8 +20,7 @@ export default function SampleShopsPage() {
   useTopOnRouteChange()
 
   return (
-    <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-ink bg-cream">
-      <GrainOverlay />
+    <div className="mm-land relative isolate flex flex-col items-stretch min-h-screen font-sans text-foreground bg-background">
 
       <MarketingNav />
 
@@ -30,7 +29,7 @@ export default function SampleShopsPage() {
           <h1 className={sectionTitle}>
             {t('Real shops on TinyOrder', 'TinyOrder 上的真实店铺')}
           </h1>
-          <p className="-mt-6 mb-10 text-[15px] leading-[1.7] text-ink-soft text-center max-w-[560px] mx-auto">
+          <p className="-mt-6 mb-10 text-[15px] leading-[1.7] text-ink-700 text-center max-w-[560px] mx-auto">
             {t(
               'A few real shops built with TinyOrder, so you can see what yours could look like.',
               '看看用 TinyOrder 开的真实店铺，了解你的店铺可以是什么样子。',
@@ -39,7 +38,7 @@ export default function SampleShopsPage() {
           {shops.length > 0 ? (
             <SampleShopsCarousel shops={shops} />
           ) : !loading ? (
-            <p className="text-center text-[14px] text-rose-muted">
+            <p className="text-center text-[14px] text-muted-foreground">
               {t('No sample shops yet — check back soon.', '暂无示例店铺，请稍后再来看看。')}
             </p>
           ) : null}

@@ -1,4 +1,7 @@
-import { canonicalJson, optionGroupsFromRow, isTimezone } from '@bitetime/shared'
+import {
+  canonicalJson, optionGroupsFromRow, isTimezone,
+  menuCategoriesFromRow, validateMenuCategories,
+} from '@bitetime/shared'
 
 // Column allowlists for write endpoints. The service-role `admin` client bypasses RLS and the
 // guard_merchant_status / guard_profile_privileges triggers, so these picks are the ONLY thing
@@ -35,6 +38,11 @@ const MERCHANT_CONFIG_FIELDS = [
   // the public `payment-qr` bucket, never a URL — see isOwnStoragePath below for why it is
   // checked against the merchant it is being written for.
   'payment_qr',
+  // The sections a merchant arranges their menu into (ADR 0013). A jsonb list, and the only
+  // field in here that is Pro-gated — the gate itself is `menuCategoriesChanged`, at the route,
+  // because whether a shop may write this depends on its plan and on whether the value moved,
+  // neither of which an allowlist knows. What this allowlist owns is the SHAPE.
+  'product_categories',
 ] as const
 
 // A Storage object path the given merchant owns: `{merchantId}/{filename}`, one segment deep,
@@ -169,6 +177,17 @@ export function pickMerchantConfig(body: any, merchantId: string): PickResult {
     out.delivery_max_km = n
   }
 
+  // Menu categories (ADR 0013). REFUSED, never dropped, for the reason `tax_rate` is: the jsonb
+  // column holds only that this is an array, so a list that failed to save silently is a merchant
+  // watching their menu structure not stick behind a success toast. The validator is the only
+  // thing standing between a request body and the column, and naming its verdict in the error is
+  // what makes a 400 here debuggable — the alternative is a bare "Update failed" 500 from the
+  // one constraint Postgres does hold.
+  if (out.product_categories !== undefined) {
+    const bad = validateMenuCategories(out.product_categories)
+    if (bad) return { ok: false, error: `product_categories is invalid: ${bad}` }
+  }
+
   return { ok: true, patch: out }
 }
 
@@ -214,9 +233,14 @@ export function pickProfileFields(body: any): Record<string, unknown> {
 // The full-row spread on edit carries a `promo_sold` value along for the ride, and this
 // allowlist dropping it silently is now the ONLY thing stopping a crafted body from resetting or
 // inflating a promo's sold counter (Global Constraint 1).
+// `category_id` (ADR 0013) is which section this product sits in — a plain text id pointing into
+// `merchants.product_categories`, with no foreign key behind it. NOT validated against the shop's
+// list here on purpose: an id the list no longer holds is the load-bearing "uncategorized"
+// reading, not an error, and checking it would need the merchant row on a path that does not read
+// one. Pro-gated by `categoryChanged` at the route, the same way `option_groups` is.
 const PRODUCT_FIELDS = [
   'id', 'name', 'name_zh', 'descr', 'price', 'unit', 'unit_quantity', 'active',
-  'image_urls', 'promo_price', 'promo_limit', 'promo_end', 'option_groups',
+  'image_urls', 'promo_price', 'promo_limit', 'promo_end', 'option_groups', 'category_id',
 ] as const
 
 export function pickProductFields(body: any): Record<string, unknown> {
@@ -328,4 +352,54 @@ export function optionGroupsChanged(
   if (submitted === undefined) return false
   return canonicalJson(optionGroupsFromRow(submitted))
     !== canonicalJson(optionGroupsFromRow(stored?.option_groups ?? null))
+}
+
+/**
+ * Does this shop-config PATCH CHANGE the menu categories, versus the merchant row? (ADR 0013)
+ *
+ * `optionGroupsChanged`'s sibling one endpoint over, deliberately the same shape and for the same
+ * recorded reason: asking whether the field is PRESENT is the wrong question. `ShopSettings`
+ * resubmits a whole config bag, so presence would 403 a Basic ex-Pro shop editing its shipping
+ * rates — and the workaround (omit the field) would leave the shop's menu structure one payload
+ * mistake from being cleared behind a success toast.
+ *
+ * `canonicalJson` rather than `===` because the two sides do not arrive in the same shape: the
+ * browser sends an object graph in whatever key order it built it, PostgREST hands back parsed
+ * jsonb in Postgres's order, and a stored value can arrive as text.
+ *
+ * A REORDER IS A CHANGE, and must stay one — array order *is* display order here, so a serialiser
+ * that sorted its input before hashing would let a Basic shop rearrange its storefront for free.
+ * `canonicalJson` sorts KEYS, never array members, which is exactly the property needed.
+ *
+ * CLEARING IS A CHANGE. `[]` against a stored list is refused, so the categories a Basic shop may
+ * no longer edit stay put — hidden by the downgrade, never removable by ceasing to pay.
+ */
+export function menuCategoriesChanged(
+  patch: Record<string, unknown>,
+  stored: Record<string, any> | null,
+): boolean {
+  const submitted = patch.product_categories
+  if (submitted === undefined) return false
+  return canonicalJson(menuCategoriesFromRow(submitted))
+    !== canonicalJson(menuCategoriesFromRow(stored?.product_categories ?? null))
+}
+
+/**
+ * Does this product upsert CHANGE which section the product sits in? (ADR 0013)
+ *
+ * A string compare would do but for the two shapes "uncategorized" arrives in — `null` from
+ * Postgres, and `undefined` on a row written before the column existed. Those are ONE state, and
+ * calling them different would 403 a Basic shop renaming an old product, which is the failure
+ * `promoChanged` and `optionGroupsChanged` both exist to avoid.
+ *
+ * `stored` is null on the create path (`mayCreate`), where any category at all is new — so a
+ * Basic shop cannot be born filed, while a plain uncategorized product still saves.
+ */
+export function categoryChanged(
+  fields: Record<string, unknown>,
+  stored: Record<string, any> | null,
+): boolean {
+  const submitted = fields.category_id
+  if (submitted === undefined) return false
+  return (submitted ?? null) !== (stored?.category_id ?? null)
 }

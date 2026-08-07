@@ -11,23 +11,29 @@ export const STATUS_LABELS: Record<string, { en: string; zh: string }> = {
   cancelled: { en: 'Cancelled', zh: '已取消' },
 }
 
-type BadgeConfig = { variant?: 'infoBlue' | 'warn' | 'danger'; className?: string }
+type BadgeConfig = { className: string }
+
+/* An unrecognised status is not a colour decision — it is a status this file has not been
+   taught. It renders neutral, which is also `completed`'s treatment. */
+const NEUTRAL = 'bg-neutral-100 text-neutral-fg border-transparent'
+
+/* Four tone families, six statuses. `new` and `preparing` share the info hue and are
+   separated by FILL WEIGHT — solid vs subtle — rather than by a fifth colour. A merchant
+   scanning a busy table still sees two different things; the palette still has four
+   entries. Every pair here is asserted AA by tokens.test.ts. */
 export const STATUS_BADGE: Record<string, BadgeConfig> = {
-  // The plain warn variant (bg-warn-bg/text-warn-fg), not preparing's -alt pair below — same
-  // amber family AdminMerchants already uses for a merchant's own 'pending' status, but a
-  // distinct shade so the two order statuses never look like the same badge.
-  pending_payment: { variant: 'warn' },
-  new:       { variant: 'infoBlue' },
-  preparing: { className: 'bg-warn-bg-alt text-warn-fg-alt border-transparent' },
-  ready:     { className: 'bg-success-bg-soft text-success-deep border-transparent' },
-  completed: { className: 'bg-prep-bg-alt text-prep-fg-alt border-transparent' },
-  cancelled: { className: 'bg-danger-bg text-danger-fg border-transparent' },
+  pending_payment: { className: 'bg-warning-100 text-warning-fg border-transparent' },
+  new:             { className: 'bg-info-fg text-white border-transparent' },
+  preparing:       { className: 'bg-info-100 text-info-fg border-transparent' },
+  ready:           { className: 'bg-success-100 text-success-fg border-transparent' },
+  completed:       { className: NEUTRAL },
+  cancelled:       { className: 'bg-danger-100 text-danger-fg border-transparent' },
 }
 
 export function StatusBadge({ status, t }: { status: string; t: (en: string, zh: string) => string }) {
-  const badge = STATUS_BADGE[status] ?? { variant: 'infoBlue' as const }
+  const badge = STATUS_BADGE[status] ?? { className: NEUTRAL }
   return (
-    <Badge variant={badge.variant} className={badge.className}>
+    <Badge className={badge.className}>
       {t(STATUS_LABELS[status]?.en ?? status, STATUS_LABELS[status]?.zh ?? status)}
     </Badge>
   )

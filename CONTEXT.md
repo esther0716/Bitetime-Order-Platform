@@ -92,6 +92,22 @@ A question a merchant attaches to a product, and the answer a customer gives to 
 
 **Menu options are Pro**, and stepping down to Basic **hides rather than deletes** — `active: false` on every group, plus `active: false` on any product carrying a *required* group, because a product whose mandatory question can no longer be asked is unfulfillable, not merely degraded. See [ADR 0010](docs/adr/0010-menu-options-are-pro-and-downgrade-hides.md). The write gate refuses a submitted set of groups that **differs from the stored one**, compared with the same canonical serialiser the cart key uses — *not* a body that merely contains groups. That distinction is the bug the promo gate has: refusing on presence forced the dashboard to send explicit nulls, so an ex-Pro shop editing a product's **name** clears its sale.
 
+## Menu category
+
+A section of a shop's own menu, authored by the merchant and named in their own words — 饮料, 甜点, 蛋糕 — chosen once per product and rendered as a heading on the storefront. The domain type is **`MenuCategory`**, not `Category`, because `FeedbackCategory` already holds that word: that one is the platform's own bug/feature/billing/other vocabulary, a support term that never reaches a shopper, and the two are unrelated.
+
+**Exactly one per product, and a product may have none.** That is what makes this a *section* and not a tag: every product appears on the menu **once**, in one place, the way a printed menu is arranged. A product carrying no category — or carrying an id the shop's list no longer holds — is **uncategorized**, and uncategorized products render **last, under no heading at all**. So a shop that never authors a category has exactly the menu it had before this existed, rather than one whose every item now sits under a platform-supplied "Other".
+
+**A category with nothing live under it renders nothing.** The storefront already drops inactive products; this is the same rule one level up. It is what keeps three otherwise-visible blemishes off a merchant's shop: a category created ahead of the season, a category whose items are all deactivated, and the empty category left behind when a product save fails after its category was created inline.
+
+**The list belongs to the shop; the choice belongs to the product.** `merchants.product_categories` (jsonb) holds the ordered list — `[{ id, name, name_zh?, active }]` — and `products.category_id` points into it. **Array order is display order**, with no `sort` column and no tie-break, the same arrangement option groups use and for the same reason. `name_zh` is optional and falls back to the English string, matching `products.name_zh`. Names are unique within a shop on a **folded** key (case and punctuation folded away, Chinese preserved — the `matchKey` fold *Shop customer* uses for tags): two identical headings on one menu is broken in a way two spellings of one customer tag is not, so here the collision is refused rather than surfaced. See [ADR 0013](docs/adr/0013-menu-categories-live-on-the-merchant-row.md).
+
+**Deleting a category takes nothing with it.** It leaves its products pointing at an id the list no longer holds, which is the uncategorized reading above — the products stay on sale and fall to the trailing block. Nothing rewrites the products, so there is no multi-row write and no half-applied delete; the merchant is told how many products are about to become uncategorized before they confirm.
+
+**Menu categories are Pro**, and stepping down to Basic **hides rather than deletes** — `active: false` on every category and on **no product**. A category is decoration, not a fulfilment requirement: unlike a *required* option group, a product whose heading disappeared is still perfectly sellable, so [ADR 0010](docs/adr/0010-menu-options-are-pro-and-downgrade-hides.md)'s second clause has no analogue. All categories inactive is precisely the uncategorized shop above. The storefront reads `active` — a flag, never the plan, which is the constraint [ADR 0004](docs/adr/0004-plan-entitlement-follows-the-stripe-price.md) fixed. `active` is **also the merchant's own Hide control**, and that is what lets a re-upgrade need no resurrection logic: the merchant switches them back on. The write gate refuses a submitted list, or a `category_id`, that **differs from the stored one** — *not* a body that merely contains the field, which is the promo gate's recorded bug.
+
+**The order never carries it.** An order snapshots names and prices precisely so a merchant tidying their menu cannot rewrite last month's receipts; how the menu was *arranged* the day it was ordered from is not a fact about the order. Receipts, Telegram tickets and the xlsx report are unchanged by this.
+
 ## Order intake
 
 The flow that collects a cart and customer details and commits an order: `collect → priceOrder → placeOrder → notifyOrder`. The multi-tenant **Storefront** (`store/Storefront.tsx`) is the only intake path; the legacy single-tenant order form has been deleted. `notifyOrder` is a single post-commit call that fans out to three recipients — see *Order notifications*. Every way this flow can say no is named — see *Refusal* below.
@@ -173,6 +189,8 @@ One shop's record of one person who orders from it. **Not a `Customer`** — tha
 **What a shop may see is a boundary, not an accident.** Shop-scoped facts plus the has-an-account flag — and **no account email, no saved address, nothing from the global profile**. A WhatsApp number was volunteered to receive one order; an account email was volunteered to the *platform*, not to a shop. Cross-tenant leakage is structural rather than policed: the record is keyed by merchant, so a shop cannot learn that a diner also orders elsewhere.
 
 **Tags offer, they do not normalise** (#150). The drawer suggests every tag the shop has already written — `shopTags` on the list response, folded in the pure module from the records it has already loaded, so the vocabulary costs no second query and is neither filtered nor paged (it is what the tag filter *chooses from*). Suggestions match the draft case-insensitively, so a merchant halfway through `vip` is shown the `VIP` they used last time and can avoid the collision while it is still avoidable. What the platform does **not** do is lowercase on write: a tag is the merchant's own label in their own words, and silently rewriting it would merge two tags they may have meant to keep apart with no way back — the *refuse or offer, never normalise* instinct the cart key states under *Order pricing*. Consequence accepted: `vip` and `VIP` can still both exist, and merging them is a separate story.
+
+**The row is the choosing** (#205). That vocabulary is drawn as chips under the customer list, one tag active at a time, and clicking the active chip clears it — there is no separate clear control. Capped at ten with a `+N more`, and the selected tag is always drawn even when it sorts past the cap: a filter the merchant cannot see is a list that reads as missing rows. Before it existed the only way to set the filter was to open a customer's drawer and click one of *their* tags, so a merchant looking for their VIPs had to find a VIP first. Each customer's own tags also sit **on their row**, first three then a `+N`, as display and not a second control — the row already opens the drawer, and one pointer must not have two outcomes. **Basic shops see neither the row nor the column**, which inverts the shown-but-locked rule the sort control beside it follows and is the one place it should invert — tags survive a downgrade hidden-not-deleted, so a disabled row would print the very vocabulary the downgrade hides.
 
 The list itself stays **free** — it ships to basic shops today and withdrawing it would be a regression wearing a feature's clothes. Notes, tags, tag filtering and sorting are **Pro**. On stepping down, notes and tags **survive, hidden not deleted**, following `promo_price` rather than `vouchers.active`: a merchant's own words are their record, not a platform artifact (see *Plan entitlement*).
 
@@ -406,3 +424,35 @@ tolerated, which is still the binding rule: the cutoff is shaped as **data the
 hot paths already read** — a column filter on a row the order transaction was
 loading anyway — precisely so that closing it needed no plan check inside the
 priced order transaction. That remains the thing that must not happen.
+
+## Storage buckets
+
+Five, and the split that matters is **which of them the browser can reach**. Every column that
+points at one holds a **path**, never a URL.
+
+| Bucket | Public? | Who writes | Who reads |
+|---|---|---|---|
+| `product-images` | yes | browser, direct, RLS-scoped to the merchant's own folder | anyone (the storefront needs it) |
+| `payment-qr` | yes | browser, direct, same folder policy | anyone (a guest sees it on the order-placed screen) |
+| `payment-proof` | **no** | backend, service role | backend, service role |
+| `sample-shop-screenshots` | yes | backend, service role (the weekly sweep) | anyone |
+| `feedback-images` | **no** | backend, service role | backend, service role |
+
+The two private buckets have **no `storage.objects` policies at all**. That is not an omission:
+with `public: false` and zero policies, `anon` and `authenticated` get nothing in either
+direction, and `tests/rls/payment-proof-storage.test.ts` and
+`tests/rls/feedback-images-storage.test.ts` are the proof — no app surface exercises either
+bucket from the browser, so a migration that flips one public is caught only there.
+
+`feedback-images` holds up to three screenshots per merchant feedback submission, at
+`{merchant_id}/{feedback_id}/{uuid}.{ext}`. Written by `POST /api/merchants/:id/feedback` after
+the row commits; read only by a superadmin through
+`GET /api/admin/feedback/:feedbackId/images/:index`, which indexes into the row's own
+`image_paths` array rather than accepting a path from the caller — that is what makes one
+feedback row's screenshots unreachable from another's.
+
+It is private for a reason worth stating plainly: **the platform repo is public**, feedback is
+auto-filed there as an issue, and a merchant's bug screenshot is usually their own dashboard —
+customer names, phone numbers, delivery addresses. The issue body states the screenshot count
+and links the admin dashboard (`/admin#feedback` — a hash, since the admin sections are hash
+segments of one route). It carries no image URL, signed or otherwise, and must not grow one.

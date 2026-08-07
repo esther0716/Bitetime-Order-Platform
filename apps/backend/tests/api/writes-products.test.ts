@@ -6,11 +6,23 @@
 // row. See CLAUDE.md → Backend, Global Constraint 2.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { app } from '../../src/app.js'
+import { revokeProArtifacts } from '../../src/billing.js'
 import { makeUser, seedMerchant, seedProduct, serviceClient, resetMerchant } from '../rls/helpers.js'
 
 async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
   const { data } = await client.auth.getSession()
   return { token: data.session!.access_token, userId: data.session!.user.id }
+}
+
+function patch(path: string, body: unknown, token?: string) {
+  return app.request(path, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  })
 }
 
 function put(path: string, body: unknown, token?: string) {
@@ -494,5 +506,281 @@ describe('PUT /api/merchants/:id/products/:productId — option groups', () => {
     const { data } = await serviceClient()
       .from('products').select('option_groups').eq('id', productId).single()
     expect(data!.option_groups).toEqual(MILK)
+  })
+})
+
+// Menu categories (ADR 0013) are Pro on BOTH endpoints they touch, and the gate is the same
+// shape as the option-groups one above: it asks whether the value CHANGED, never whether the
+// body contained it. The two are tested together because they are one feature — a merchant can
+// only file a product into a section their shop is allowed to have.
+describe('menu categories — the Pro gate on both endpoints', () => {
+  const CAKES = [{ id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: true }]
+
+  let basic: { id: string; token: string }
+  let pro: { id: string; token: string }
+
+  async function makeShop(slug: string, email: string, plan: 'basic' | 'pro') {
+    await resetMerchant(slug)
+    const owner = await makeUser(email, 'password123')
+    const { token, userId } = await tokenOf(owner)
+    return { id: await seedMerchant({ slug, owner_id: userId, plan }), token }
+  }
+
+  beforeAll(async () => {
+    basic = await makeShop('cat-basic-shop', 'cat-basic@example.com', 'basic')
+    pro = await makeShop('cat-pro-shop', 'cat-pro@example.com', 'pro')
+  })
+
+  afterAll(async () => {
+    await resetMerchant('cat-basic-shop')
+    await resetMerchant('cat-pro-shop')
+  })
+
+  /** Seeded past the gate, exactly as a shop that WAS Pro would have it. */
+  async function seedCategories(merchantId: string) {
+    await serviceClient().from('merchants').update({ product_categories: CAKES }).eq('id', merchantId)
+  }
+
+  it('403 requires_pro when a basic shop authors categories, and writes nothing', async () => {
+    const res = await patch(`/api/merchants/${basic.id}`, { product_categories: CAKES }, basic.token)
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'requires_pro' })
+    const { data } = await serviceClient()
+      .from('merchants').select('product_categories').eq('id', basic.id).single()
+    expect(data!.product_categories).toEqual([])
+  })
+
+  // The reason the gate compares rather than sniffs: ShopSettings resubmits a whole config bag,
+  // so a presence check would refuse a Basic ex-Pro shop an ordinary shipping edit.
+  it('lets a basic shop edit its config while resubmitting unchanged categories', async () => {
+    await seedCategories(basic.id)
+
+    const res = await patch(`/api/merchants/${basic.id}`, {
+      product_categories: CAKES, tax_rate: 6, tax_enabled: true,
+    }, basic.token)
+
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('merchants').select('product_categories, tax_rate').eq('id', basic.id).single()
+    expect(data!.product_categories).toEqual(CAKES)
+    expect(Number(data!.tax_rate)).toBe(6)
+  })
+
+  it('403 requires_pro when a basic shop tries to CLEAR its categories', async () => {
+    await seedCategories(basic.id)
+
+    const res = await patch(`/api/merchants/${basic.id}`, { product_categories: [] }, basic.token)
+
+    expect(res.status).toBe(403)
+    const { data } = await serviceClient()
+      .from('merchants').select('product_categories').eq('id', basic.id).single()
+    expect(data!.product_categories).toEqual(CAKES)
+  })
+
+  // ADR 0013 traded every check constraint for a write path that already existed and appointed
+  // `validateMenuCategories` as the sole replacement. It must ANSWER, not throw, on a body
+  // nothing has checked.
+  it('400s a Pro shop’s duplicate or malformed categories instead of storing them', async () => {
+    const dupe = await patch(`/api/merchants/${pro.id}`, {
+      product_categories: [...CAKES, { id: 'c2', name: 'CAKES', active: true }],
+    }, pro.token)
+    expect(dupe.status).toBe(400)
+    expect(await dupe.json()).toEqual({ error: expect.stringContaining('duplicate_category_name') })
+
+    const malformed = await patch(`/api/merchants/${pro.id}`, {
+      product_categories: [{}],
+    }, pro.token)
+    expect(malformed.status).toBe(400)
+    expect(await malformed.json()).toEqual({ error: expect.stringContaining('malformed_category') })
+
+    const { data } = await serviceClient()
+      .from('merchants').select('product_categories').eq('id', pro.id).single()
+    expect(data!.product_categories).toEqual([])
+  })
+
+  it('lets a Pro shop save, reorder and hide its categories', async () => {
+    const two = [...CAKES, { id: 'c2', name: 'Tea', active: true }]
+    expect((await patch(`/api/merchants/${pro.id}`, { product_categories: two }, pro.token)).status).toBe(200)
+
+    // Array order IS display order, so a reorder is a real write and must land as sent.
+    const reordered = [two[1], two[0]]
+    expect((await patch(`/api/merchants/${pro.id}`, { product_categories: reordered }, pro.token)).status).toBe(200)
+
+    const { data } = await serviceClient()
+      .from('merchants').select('product_categories').eq('id', pro.id).single()
+    expect(data!.product_categories).toEqual(reordered)
+  })
+
+  it('403 requires_pro when a basic shop files a product into a category', async () => {
+    const productId = crypto.randomUUID()
+    const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
+      name: 'Roll', price: 10, category_id: 'c1',
+    }, basic.token)
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'requires_pro' })
+    const { data } = await serviceClient().from('products').select('id').eq('id', productId).maybeSingle()
+    expect(data).toBeNull()
+  })
+
+  // `null` and an absent column are ONE state — uncategorized — so neither is a change, and a
+  // basic shop must still be able to save an ordinary unfiled product.
+  it('lets a basic shop save an uncategorized product', async () => {
+    const productId = crypto.randomUUID()
+    const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
+      name: 'Roll', price: 10, category_id: null,
+    }, basic.token)
+
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('products').select('category_id').eq('id', productId).single()
+    expect(data!.category_id).toBeNull()
+  })
+
+  it('lets a basic shop rename a product while resubmitting its unchanged category', async () => {
+    const productId = crypto.randomUUID()
+    await serviceClient().from('products')
+      .insert({ id: productId, merchant_id: basic.id, name: 'Roll', price: 10, category_id: 'c1' })
+
+    const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
+      name: 'Swiss Roll', price: 10, category_id: 'c1',
+    }, basic.token)
+
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('products').select('name, category_id').eq('id', productId).single()
+    expect(data!.name).toBe('Swiss Roll')
+    expect(data!.category_id).toBe('c1')
+  })
+
+  // The bug this pair exists to pin. A Pro shop deletes a category; its products keep the dead
+  // id. The shop then drops to Basic and the merchant renames one of those products. If the
+  // dashboard "tidies" the dangling id to null on the way out, `categoryChanged` calls that a
+  // change and refuses an ORDINARY RENAME with 403 — the exact failure `categoryChanged`'s doc
+  // says it exists to prevent. The fix is in ProductsManager (the dead id round-trips verbatim);
+  // these two assert the gate's half of the contract, which is what the fix depends on.
+  it('lets a basic shop rename a product carrying a DANGLING category id', async () => {
+    const productId = crypto.randomUUID()
+    await serviceClient().from('products')
+      .insert({ id: productId, merchant_id: basic.id, name: 'Roll', price: 10, category_id: 'deleted-cat' })
+
+    const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
+      name: 'Swiss Roll', price: 10, category_id: 'deleted-cat',
+    }, basic.token)
+
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('products').select('name, category_id').eq('id', productId).single()
+    expect(data!.name).toBe('Swiss Roll')
+    expect(data!.category_id).toBe('deleted-cat')
+  })
+
+  it('403s a basic shop that CLEARS a dangling category id — unfiling is still a change', async () => {
+    const productId = crypto.randomUUID()
+    await serviceClient().from('products')
+      .insert({ id: productId, merchant_id: basic.id, name: 'Roll', price: 10, category_id: 'deleted-cat' })
+
+    const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
+      name: 'Swiss Roll', price: 10, category_id: null,
+    }, basic.token)
+
+    expect(res.status).toBe(403)
+    const { data } = await serviceClient()
+      .from('products').select('name, category_id').eq('id', productId).single()
+    expect(data!.name).toBe('Roll')
+    expect(data!.category_id).toBe('deleted-cat')
+  })
+
+  // Nothing checks a product's category id against the shop's list, on purpose: a stale
+  // dashboard filing into a just-deleted category must save, because a dangling id IS the
+  // uncategorized state rather than an error. Refusing it would turn the delete story inside out.
+  it('accepts a category id the shop no longer holds', async () => {
+    const productId = crypto.randomUUID()
+    const res = await put(`/api/merchants/${pro.id}/products/${productId}`, {
+      name: 'Ghost', price: 10, category_id: 'long-deleted',
+    }, pro.token)
+
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('products').select('category_id').eq('id', productId).single()
+    expect(data!.category_id).toBe('long-deleted')
+  })
+})
+
+// The downgrade half of ADR 0013, which nothing else exercises: `revokeProArtifacts` is what a
+// step down to Basic runs, and its category clause is the one that must HIDE without dismantling.
+describe('revokeProArtifacts — menu categories', () => {
+  let shop: string
+  let productId: string
+
+  beforeAll(async () => {
+    await resetMerchant('cat-revoke-shop')
+    const owner = await makeUser('cat-revoke@example.com', 'password123')
+    const { userId } = await tokenOf(owner)
+    shop = await seedMerchant({ slug: 'cat-revoke-shop', owner_id: userId, plan: 'pro' })
+    productId = crypto.randomUUID()
+    await serviceClient().from('products')
+      .insert({ id: productId, merchant_id: shop, name: 'Roll', price: 10, active: true, category_id: 'c1' })
+  })
+
+  afterAll(async () => { await resetMerchant('cat-revoke-shop') })
+
+  it('hides every category, keeps the list, and takes NO product off sale', async () => {
+    await serviceClient().from('merchants').update({
+      product_categories: [
+        { id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: true },
+        { id: 'c2', name: 'Tea', active: true },
+      ],
+    }).eq('id', shop)
+
+    await revokeProArtifacts(shop)
+
+    const { data } = await serviceClient()
+      .from('merchants').select('product_categories').eq('id', shop).single()
+    // Hidden, never deleted — names, Chinese names and ORDER all survive, because a shop that
+    // stopped paying must be downgraded rather than dismantled.
+    expect(data!.product_categories).toEqual([
+      { id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: false },
+      { id: 'c2', name: 'Tea', active: false },
+    ])
+
+    // A category is decoration, not a fulfilment requirement — unlike a required option group,
+    // it takes nothing off sale. The product keeps its id and falls to the trailing block.
+    const { data: p } = await serviceClient()
+      .from('products').select('active, category_id').eq('id', productId).single()
+    expect(p!.active).toBe(true)
+    expect(p!.category_id).toBe('c1')
+  })
+
+  // A replayed webhook must not re-hide a category the merchant has since switched back on —
+  // the same property the voucher revoke gets from filtering on `active = true`.
+  it('is idempotent: a replay leaves a re-shown category alone', async () => {
+    await serviceClient().from('merchants').update({
+      product_categories: [{ id: 'c1', name: 'Cakes', active: false }],
+    }).eq('id', shop)
+    // The merchant is Basic and switches one back on (they cannot, but a re-upgrade then a
+    // second lapse reaches the same state — this asserts the filter, not the UI).
+    await serviceClient().from('merchants').update({
+      product_categories: [{ id: 'c1', name: 'Cakes', active: false }, { id: 'c2', name: 'Tea', active: true }],
+    }).eq('id', shop)
+
+    await revokeProArtifacts(shop)
+    await revokeProArtifacts(shop)
+
+    const { data } = await serviceClient()
+      .from('merchants').select('product_categories').eq('id', shop).single()
+    expect(data!.product_categories).toEqual([
+      { id: 'c1', name: 'Cakes', active: false },
+      { id: 'c2', name: 'Tea', active: false },
+    ])
+  })
+
+  it('does nothing to a shop that never authored a category', async () => {
+    await serviceClient().from('merchants').update({ product_categories: [] }).eq('id', shop)
+    await revokeProArtifacts(shop)
+    const { data } = await serviceClient()
+      .from('merchants').select('product_categories').eq('id', shop).single()
+    expect(data!.product_categories).toEqual([])
   })
 })

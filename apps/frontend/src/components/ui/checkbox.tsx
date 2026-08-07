@@ -15,15 +15,15 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        // .cookie-check-badge — xs radius (4px), 1.5px clay border, white bg
-        "peer relative flex size-4 shrink-0 items-center justify-center rounded-xs border-[1.5px] border-clay-border bg-white transition-colors outline-none cursor-pointer",
+        // .cookie-check-badge — xs radius (2px), hairline border, white bg
+        "peer relative flex size-4 shrink-0 items-center justify-center rounded-xs border-[0.5px] border-border bg-white transition-colors outline-none cursor-pointer",
         "after:absolute after:-inset-x-3 after:-inset-y-2",
-        "focus-visible:border-oxblood focus-visible:ring-3 focus-visible:ring-oxblood/10",
+        "focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/10",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "group-has-disabled/field:opacity-50",
         "aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20",
         // checked: .cookie-card.selected .cookie-check-badge — oxblood fill
-        "data-checked:border-oxblood data-checked:bg-oxblood data-checked:text-cream",
+        "data-checked:border-primary data-checked:bg-primary data-checked:text-background",
         className
       )}
       {...props}

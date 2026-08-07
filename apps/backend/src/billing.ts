@@ -1,4 +1,7 @@
-import { optionGroupsFromRow, deactivateGroups, hasActiveGroup, hasRequiredGroup } from '@bitetime/shared'
+import {
+  optionGroupsFromRow, deactivateGroups, hasActiveGroup, hasRequiredGroup,
+  menuCategoriesFromRow, deactivateCategories,
+} from '@bitetime/shared'
 import type Stripe from 'stripe'
 import { admin } from './supabase.js'
 import { env } from './env.js'
@@ -131,6 +134,37 @@ export async function revokeProArtifacts(merchantId: string) {
   if (promoErr) throw promoErr
 
   await revokeOptionGroups(merchantId)
+  await revokeMenuCategories(merchantId)
+}
+
+/**
+ * Switch a shop's menu sections off (ADR 0013).
+ *
+ * `revokeOptionGroups`' sibling, and cheaper in the one way that matters: NO PRODUCT IS TOUCHED.
+ * A category is decoration, not a fulfilment requirement — a cake whose heading disappeared is
+ * still priced, still in stock, still sellable — so ADR 0010's second clause has no analogue
+ * here. Every category inactive is precisely the uncategorized shop: one flat menu, which is what
+ * every shop had before this feature existed.
+ *
+ * Nothing is destroyed, for the reason the two revocations above give: the list lives in a jsonb
+ * column, so a delete would be unrecoverable and a shop that stopped paying would be dismantled
+ * rather than downgraded. The merchant's own Hide toggle writes this same flag, which is what
+ * makes a re-upgrade need no resurrection path — they switch them back on.
+ *
+ * Idempotent by skipping a shop with nothing active left, exactly as the voucher update filters
+ * `active = true`: a replayed webhook must not re-hide a category the merchant has since shown.
+ * One row, so no paging — the list is capped at 20 and lives on the merchant.
+ */
+async function revokeMenuCategories(merchantId: string) {
+  const { data, error } = await admin
+    .from('merchants').select('product_categories').eq('id', merchantId).single()
+  if (error) throw error
+  const categories = menuCategoriesFromRow(data?.product_categories)
+  if (!categories.some(cat => cat.active)) return
+  const { error: err } = await admin
+    .from('merchants').update({ product_categories: deactivateCategories(categories) })
+    .eq('id', merchantId)
+  if (err) throw err
 }
 
 /**

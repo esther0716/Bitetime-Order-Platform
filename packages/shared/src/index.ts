@@ -9,10 +9,13 @@ export type { CurrencyCode } from './currency.js'
 export { MAX_CART_QTY, MAX_CART_LINES, MAX_CART_ENTRIES, isCart } from './cart.js'
 export {
   validateFeedback, isFeedbackCategory, isFeedbackStatus,
+  validateFeedbackImage, validateFeedbackImages,
   FEEDBACK_CATEGORIES, FEEDBACK_STATUSES, FEEDBACK_MAX_LENGTH,
+  FEEDBACK_MAX_IMAGES, MAX_FEEDBACK_IMAGE_BYTES, FEEDBACK_IMAGE_TYPES,
 } from './feedback.js'
 export type {
   FeedbackCategory, FeedbackStatus, FeedbackDraft, FeedbackValidation,
+  FeedbackImageValidation, FeedbackImagesValidation, FeedbackImageError,
 } from './feedback.js'
 export {
   validateTrialFeedback,
@@ -58,3 +61,8 @@ export type {
   Option, OptionGroup, Selection, CartLine, PickSnapshot,
   SelectionError, GroupConfigError,
 } from './options.js'
+export {
+  validateMenuCategories, menuCategoriesFromRow, deactivateCategories,
+  MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
+} from './menuCategories.js'
+export type { MenuCategory, CategoryConfigError } from './menuCategories.js'

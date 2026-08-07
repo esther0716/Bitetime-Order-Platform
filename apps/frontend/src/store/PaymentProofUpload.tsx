@@ -62,7 +62,7 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
         <button
           type="button"
           onClick={() => setLightboxOpen(true)}
-          className="block w-full max-w-[160px] rounded-md bg-white p-1.5 border border-divider cursor-pointer"
+          className="block w-full max-w-[160px] rounded-md bg-white p-1.5 border border-border cursor-pointer"
         >
           <img
             src={previewUrl}
@@ -73,7 +73,7 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
       )}
       <label
         htmlFor={inputId}
-        className="text-[13px] font-medium text-oxblood underline cursor-pointer"
+        className="text-[13px] font-medium text-primary underline cursor-pointer"
       >
         {state === 'uploaded'
           ? t('Replace payment proof', '替换付款凭证')
@@ -91,10 +91,10 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
         }}
       />
       {state === 'uploading' && (
-        <span className="text-[12px] text-rose-muted">{t('Uploading…', '上传中…')}</span>
+        <span className="text-[12px] text-muted-foreground">{t('Uploading…', '上传中…')}</span>
       )}
       {state === 'uploaded' && (
-        <span className="text-[12px] text-rose-muted">
+        <span className="text-[12px] text-muted-foreground">
           {t('Uploaded ✓ · tap to enlarge', '已上传 ✓ · 点击放大')}
         </span>
       )}
@@ -103,7 +103,7 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
         <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
           <DialogContent className="sm:max-w-lg">
             <DialogTitle className="sr-only">{t('Payment proof', '付款凭证')}</DialogTitle>
-            <div className="flex items-center justify-center bg-cream rounded-lg overflow-hidden">
+            <div className="flex items-center justify-center bg-background rounded-lg overflow-hidden">
               <img
                 src={previewUrl}
                 alt={t('Payment proof', '付款凭证')}

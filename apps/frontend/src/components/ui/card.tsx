@@ -4,11 +4,13 @@ import { cn } from "@/lib/utils"
 
 /**
  * Card — brand-themed to `.settings-section` / `.auth-card` / `.how-to` family.
- * Base: bg-surface-raised, border-clay-border, rounded-2xl, p-5 (1.25rem).
+ * Base: bg-card, border-border, rounded-2xl, p-5 (1.25rem).
  * Screens pass className to override for variants:
- *   - rose border:   "border-rose-border"
- *   - oxblood tint:  "bg-oxblood-tint border-rose-border"
- *   - auth card:     "rounded-pill"
+ *   - rose border:   "border-border"
+ *   - oxblood tint:  "bg-brand-100 border-border"
+ *   (Auth cards used to override to "rounded-pill". That token was 20px and read as a soft
+ *    panel; it is now 9999px and would render the whole card as a circle. They use the base
+ *    radius. `rounded-pill` is for chips and small controls only.)
  *   - how-to / cookie-card: "rounded-xl"
  */
 function Card({
@@ -21,7 +23,7 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl border-[1.5px] border-clay-border bg-surface-raised py-(--card-spacing) text-sm text-ink [--card-spacing:--spacing(5)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-2xl *:[img:last-child]:rounded-b-2xl",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl border-[0.5px] border-border bg-card py-(--card-spacing) text-sm text-foreground [--card-spacing:--spacing(5)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-2xl *:[img:last-child]:rounded-b-2xl",
         className
       )}
       {...props}
@@ -59,7 +61,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      className={cn("text-sm text-rose-muted", className)}
+      className={cn("text-sm text-muted-foreground", className)}
       {...props}
     />
   )
@@ -93,7 +95,7 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-footer"
       className={cn(
-        "flex items-center rounded-b-2xl border-t border-clay-border bg-surface-sunken p-(--card-spacing)",
+        "flex items-center rounded-b-2xl border-t border-border bg-muted p-(--card-spacing)",
         className
       )}
       {...props}

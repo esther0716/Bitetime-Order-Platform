@@ -42,17 +42,17 @@ export default function PendingScreen() {
     <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-8">
       <div className="text-center mb-10">
         <h1><Wordmark className="h-8 mx-auto" /></h1>
-        <p className="font-heading text-[13px] italic text-rose-muted mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
+        <p className="font-heading text-[13px] italic text-muted-foreground mt-[5px]">{t('Merchant Portal', '商家入口')}</p>
       </div>
-      <Card className="rounded-pill px-8 pt-8 pb-7 gap-0">
+      <Card className="px-8 pt-8 pb-7 gap-0">
         {hasPlan ? (
           <>
             {/* Pending badge: warn colours, pill, mb-4 */}
-            <span className="inline-flex items-center gap-[5px] px-3 py-[4px] rounded-pill bg-warn-bg text-warn-fg text-[12px] font-semibold tracking-[0.04em] mb-4">
+            <span className="inline-flex items-center gap-[5px] px-3 py-[4px] rounded-pill bg-warning-100 text-warning-fg text-[12px] font-semibold tracking-[0.04em] mb-4">
               ⏳ {t('Almost there', '即将完成')}
             </span>
-            <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">{t('Finish setting up your shop', '完成店铺设置')}</h2>
-            <p className="text-[13px] text-rose-muted mb-6">
+            <h2 className="font-heading text-[20px] font-medium text-primary mb-1">{t('Finish setting up your shop', '完成店铺设置')}</h2>
+            <p className="text-[13px] text-muted-foreground mb-6">
               <strong>{merchant?.name}</strong>{' '}
               {t(
                 'is ready — complete payment to activate it.',
@@ -60,7 +60,7 @@ export default function PendingScreen() {
               )}
             </p>
             {err && (
-              <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+              <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
                 {err}
               </div>
             )}
@@ -70,11 +70,11 @@ export default function PendingScreen() {
           </>
         ) : (
           <>
-            <span className="inline-flex items-center gap-[5px] px-3 py-[4px] rounded-pill bg-warn-bg text-warn-fg text-[12px] font-semibold tracking-[0.04em] mb-4">
+            <span className="inline-flex items-center gap-[5px] px-3 py-[4px] rounded-pill bg-warning-100 text-warning-fg text-[12px] font-semibold tracking-[0.04em] mb-4">
               ⏳ {t('Finishing setup', '正在完成设置')}
             </span>
-            <h2 className="font-heading text-[20px] font-medium text-oxblood mb-1">{t('One step left', '还差一步')}</h2>
-            <p className="text-[13px] text-rose-muted mb-6">
+            <h2 className="font-heading text-[20px] font-medium text-primary mb-1">{t('One step left', '还差一步')}</h2>
+            <p className="text-[13px] text-muted-foreground mb-6">
               <strong>{merchant?.name}</strong>{' '}
               {t(
                 'is created, but we could not start your free trial just now. Try again and your shop opens straight away.',
@@ -82,7 +82,7 @@ export default function PendingScreen() {
               )}
             </p>
             {err && (
-              <div className="text-[13px] text-ink-soft bg-oxblood-tint border border-rose-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+              <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
                 {err}
               </div>
             )}
@@ -92,9 +92,9 @@ export default function PendingScreen() {
           </>
         )}
         {merchant?.slug && (
-          <p className="text-[13px] text-rose-muted mt-4">
+          <p className="text-[13px] text-muted-foreground mt-4">
             {t('Store URL', '店铺网址')}:{' '}
-            <a href={`/s/${merchant.slug}`} className="text-oxblood no-underline font-medium hover:underline">/s/{merchant.slug}</a>
+            <a href={`/s/${merchant.slug}`} className="text-primary no-underline font-medium hover:underline">/s/{merchant.slug}</a>
           </p>
         )}
       </Card>

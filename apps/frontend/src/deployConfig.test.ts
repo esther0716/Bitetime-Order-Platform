@@ -32,9 +32,21 @@ describe('vercel.json', () => {
     // `max-age=0, must-revalidate` for every chunk — a conditional request per file per visit,
     // which on a phone is a round trip each for the CSS, the entry chunk and every route chunk
     // already sitting in the cache.
+    //
+    // `/fonts/` is the SAME rule for files Vite does NOT fingerprint. The self-hosted Poppins
+    // woff2s live in `public/`, which Vite copies verbatim, so they reach the deployment with the
+    // names src/index.css and the index.html preloads spell out — and without a rule of their own
+    // they would be revalidated on every visit, which is exactly the round trip the preload exists
+    // to remove. Their names carry family, weight and subset but no content hash, so THE FILES ARE
+    // IMMUTABLE BY CONVENTION: replacing a face means giving it a new file name, not overwriting
+    // one that visitors have frozen for a year.
     expect(config.headers).toEqual([
       {
         source: '/assets/(.*)',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
+        source: '/fonts/(.*)',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
       },
     ])

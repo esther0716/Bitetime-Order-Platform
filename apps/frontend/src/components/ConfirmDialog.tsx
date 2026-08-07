@@ -61,7 +61,7 @@ export default function ConfirmDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <div id={descId} className="text-sm text-rose-muted flex flex-col gap-2">{body}</div>
+        <div id={descId} className="text-sm text-muted-foreground flex flex-col gap-2">{body}</div>
         <DialogFooter>
           <Button type="button" size="sm" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             {cancelLabel ?? t('Never mind', '取消')}

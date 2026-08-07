@@ -45,7 +45,7 @@ export default function ShareStorefront() {
         <CardDescription>{t('Share this link with your customers so they can order.', '把这个链接分享给顾客即可下单。')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <div className="rounded-lg border-[1.5px] border-clay-border bg-surface-sunken px-3 py-2 font-mono text-[13px] break-all text-ink">
+        <div className="rounded-lg border-[0.5px] border-border bg-muted px-3 py-2 font-mono text-[13px] break-all text-foreground">
           {url}
         </div>
         {isActive ? (
@@ -61,7 +61,7 @@ export default function ShareStorefront() {
             </Button>
           </div>
         ) : (
-          <p className="text-[13px] text-rose-muted">{t('Storefront goes live after approval.', '店铺获批后上线。')}</p>
+          <p className="text-[13px] text-muted-foreground">{t('Storefront goes live after approval.', '店铺获批后上线。')}</p>
         )}
       </CardContent>
 
@@ -74,7 +74,7 @@ export default function ShareStorefront() {
             <div className="rounded-lg bg-white p-3">
               <QRCodeSVG value={url} size={180} />
             </div>
-            <p className="font-mono text-[12px] break-all text-center text-rose-muted">{url}</p>
+            <p className="font-mono text-[12px] break-all text-center text-muted-foreground">{url}</p>
           </div>
         </DialogContent>
       </Dialog>

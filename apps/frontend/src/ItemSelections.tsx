@@ -26,7 +26,7 @@ export function ItemSelections({ item, className = '' }: { item: OrderItem; clas
   if (picks.length === 0) return null
 
   return (
-    <span className={`block text-[12px] text-text-tertiary ${className}`}>
+    <span className={`block text-[12px] text-muted-foreground ${className}`}>
       {picks
         .map((p: Record<string, unknown>) => {
           const name = (lang === 'zh' && p.optionName_zh) ? p.optionName_zh : p.optionName

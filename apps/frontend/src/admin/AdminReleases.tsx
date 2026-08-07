@@ -95,7 +95,7 @@ const columns: ColumnDef<AdminRelease>[] = [
                 <Button
                   variant="ghost"
                   size="none"
-                  className="size-8 p-0 rounded-full cursor-pointer hover:bg-oxblood-tint hover:text-oxblood"
+                  className="size-8 p-0 rounded-pill cursor-pointer hover:bg-brand-100 hover:text-primary"
                   disabled={busy === r.id}
                   aria-label={t('Actions', '操作')}
                 />
@@ -182,18 +182,18 @@ export default function AdminReleases() {
   const data = useMemo(() => rows ?? [], [rows])
 
   if (!rows) return (
-    <p className="text-[13px] text-text-tertiary italic pt-4">{t('Loading…', '加载中…')}</p>
+    <p className="text-[13px] text-muted-foreground italic pt-4">{t('Loading…', '加载中…')}</p>
   )
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-heading text-ink">{t('Releases', '更新日志')}</h2>
+        <h2 className="text-lg font-heading text-foreground">{t('Releases', '更新日志')}</h2>
         <Button variant="default" size="sm" onClick={pull} disabled={pulling}>
           {pulling ? t('Pulling…', '拉取中…') : t('Pull releases from GitHub', '从 GitHub 拉取更新')}
         </Button>
       </div>
-      <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border">
+      <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
         <DataTable
           columns={columns}
           data={data}

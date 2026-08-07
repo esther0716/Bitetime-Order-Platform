@@ -87,7 +87,7 @@ export default function OptionGroupsEditor({
   }
 
   return (
-    <div className="flex flex-col gap-4 border border-clay-border rounded-md p-3 min-w-0">
+    <div className="flex flex-col gap-4 border border-border rounded-md p-3 min-w-0">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[13px] font-medium">{t('Options', '选项')}</span>
         {copyFrom.length > 0 && value.length === 0 && (
@@ -127,7 +127,7 @@ export default function OptionGroupsEditor({
       </div>
 
       {value.map((group, gi) => (
-        <div key={group.id} className="relative flex flex-col gap-2 border-t border-divider pt-3 first:border-t-0 first:pt-0 min-w-0">
+        <div key={group.id} className="relative flex flex-col gap-2 border-t border-border pt-3 first:border-t-0 first:pt-0 min-w-0">
           <div className="absolute top-2 right-0 flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger
@@ -147,7 +147,7 @@ export default function OptionGroupsEditor({
                 render={
                   <Button
                     type="button" variant="ghost" size="iconRound"
-                    className="text-text-tertiary hover:text-danger"
+                    className="text-muted-foreground hover:text-danger"
                     onClick={() => setPendingDelete({ kind: 'group', gi })}
                     aria-label={t('Remove question', '删除问题')}
                   />
@@ -229,7 +229,7 @@ export default function OptionGroupsEditor({
                   onChange={e => patchOption(gi, oi, { name_zh: e.target.value || null })}
                 />
                 <div className="flex items-center gap-1 shrink-0">
-                  <span className="text-[12px] text-text-tertiary whitespace-nowrap">+{currency ?? ''}</span>
+                  <span className="text-[12px] text-muted-foreground whitespace-nowrap">+{currency ?? ''}</span>
                   <Input
                     className="w-24 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     type="number" min={0} step="0.01" value={option.delta === 0 ? '' : option.delta}
@@ -264,7 +264,7 @@ export default function OptionGroupsEditor({
                     render={
                       <Button
                         type="button" variant="ghost" size="iconRound"
-                        className="text-text-tertiary hover:text-danger"
+                        className="text-muted-foreground hover:text-danger"
                         onClick={() => setPendingDelete({ kind: 'option', gi, oi })}
                         aria-label={t('Remove choice', '删除选项')}
                       />

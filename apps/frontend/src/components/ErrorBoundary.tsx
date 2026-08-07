@@ -1,6 +1,7 @@
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import Wordmark from './Wordmark'
+import { Button } from './ui/button'
 
 // Top-level catch-all. Without a boundary above `createRoot`, any uncaught throw
 // during render unmounts the whole tree to a blank #root — recoverable only by a
@@ -31,20 +32,21 @@ export default class ErrorBoundary extends Component<Props, State> {
     if (!this.state.hasError) return this.props.children
     return (
       <div className="min-h-screen w-full flex items-center justify-center p-6">
-        <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-6 max-w-[420px] w-full box-border text-center">
+        <div className="bg-card border-[0.5px] border-border rounded-2xl p-6 max-w-[420px] w-full box-border text-center">
           <h1><Wordmark className="h-7 mx-auto" /></h1>
-          <p className="text-rose-muted text-[14px] leading-[1.6] mt-3">
+          <p className="text-muted-foreground text-[14px] leading-[1.6] mt-3">
             Something went wrong loading the page.
             <br />
-            <span className="text-rose-muted/80">页面加载出错了。</span>
+            <span className="text-muted-foreground/80">页面加载出错了。</span>
           </p>
-          <button
+          <Button
             type="button"
+            size="none"
             onClick={() => window.location.reload()}
-            className="mt-5 inline-flex items-center justify-center rounded-full bg-oxblood text-cream text-[14px] font-medium px-5 py-2.5 hover:opacity-90 transition-opacity"
+            className="mt-5 rounded-pill text-[14px] px-5 py-2.5"
           >
             Reload · 重新加载
-          </button>
+          </Button>
         </div>
       </div>
     )

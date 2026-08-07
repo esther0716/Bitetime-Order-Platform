@@ -61,15 +61,26 @@ The receipt's left edge carries nothing — no icon column, no rail. Print disci
 |---|---|---|
 | `TINYORDER` lockup | the real `tinyorder-logo.png`, h ≈ 34px | oxblood |
 | rule | dotted, 2px dash / 6px gap | `--color-clay-border` `#C9A090` |
-| `Sell your food online — without the DM chaos.` | Lora 500, 52px, `line-height: 1.14`, `letter-spacing: -0.01em` | `--color-ink` `#2B0A10` |
+| `Sell what you make online — without the DM chaos.` | Lora 500, 52px, `line-height: 1.14`, `letter-spacing: -0.01em` | `--color-ink` `#2B0A10` |
 | rule | dotted | `--color-clay-border` |
 | `1  YOUR OWN STOREFRONT LINK`<br>`1  EVERY ORDER IN ONE PLACE`<br>`1  BILINGUAL · 中英双语` | DM Sans 500, 17px, uppercase, `letter-spacing: 0.08em`; qty column left, label right | `--color-rose-muted` `#7A4F55` |
 | rule | dotted | `--color-clay-border` |
 | `TOTAL` … `7 DAYS FREE` | DM Sans 500, 20px, justified to both edges | `--color-oxblood` `#7A1028` |
 
-The headline is lifted verbatim from the live landing page's `h1`. The other three
-lines are condensed from it to receipt length rather than quoted verbatim: the landing
-page's *Simple order management* (`Landing.tsx:246`) and *Bilingual, out of the box*
+The headline follows the landing page's `h1` but cannot quote it. That heading rotates a
+vertical through a slot — *Sell your **food** online*, then bakes, art, clothes, crafts
+(`src/marketing/verticals.ts`) — and a static share card has no slot to rotate. It used
+to freeze the rotation at index 0 and print *food*, which read as the only thing
+TinyOrder sells. It now uses the abstract phrasing the rest of the landing copy already
+uses for the same reason — *what you make* — so the card claims the product's real reach
+without naming a vertical. Everything else on the card was already vertical-neutral.
+
+At 52px the line now breaks after *online* rather than after the em dash, leaving the
+dash to open the second line. That is the natural break, and the two lines come out
+close to equal width; do not chase the old break by shrinking the type.
+
+The other three lines are condensed to receipt length rather than quoted verbatim: the
+landing page's *Simple order management* (`Landing.tsx:246`) and *Bilingual, out of the box*
 (`:250`) become the tighter "Every order in one place" and "Bilingual · 中英双语", and
 its *7-day free trial — no card required* (`:264`) becomes "7 days free". Nothing on
 the card asserts a claim the landing page doesn't make, but the wording is not pinned
@@ -114,8 +125,17 @@ script entry implies something CI might run.
   copy on every run rather than from a stale committed binary.
 - **`apps/frontend/scripts/og-cover.ts`** — viewport `1200×630`,
   `deviceScaleFactor: 2`, `screenshot({ type: 'jpeg', quality: 92 })` →
-  `public/og-cover.jpg`. Run with
+  `public/og-cover-v2.jpg`. Run with
   `pnpm dlx tsx apps/frontend/scripts/og-cover.ts` from the repo root.
+- **The `-v2` in that filename is a cache bust, not a version counter.** Facebook,
+  WhatsApp and X key their `og:image` cache on the URL and re-fetch on a schedule of
+  their own; reprinting the card under its old name leaves the previous artwork in
+  circulation for weeks. X and Facebook at least publish validators that force a
+  refetch — WhatsApp publishes nothing, so the URL is the only lever there is. Rename
+  when the printed content changes in a way that must not linger, and change `og:image`
+  and `twitter:image` in `index.html` in the same commit. The old file is deleted, not
+  kept: leaving it served is leaving the superseded card reachable, which is the exact
+  thing the rename exists to stop.
 - **`apps/frontend/package.json`** — adds `playwright-core` as a devDependency, not
   `playwright`. `playwright-core` ships no browser binaries, so it costs every
   `pnpm install` about 2MB instead of a ~150MB Chromium download; the script launches
@@ -154,11 +174,11 @@ fetched, which is correct on every route. Do not add it back without per-route m
 
 Per `CLAUDE.md`, UI is verified by running the app. For this change that means:
 
-1. `pnpm dlx tsx apps/frontend/scripts/og-cover.ts` writes `public/og-cover.jpg`;
+1. `pnpm dlx tsx apps/frontend/scripts/og-cover.ts` writes `public/og-cover-v2.jpg`;
    confirm the file is 1200×630 and under 300KB.
 2. Open the rendered JPEG and check it at full size and scaled to ~200px wide — the
    headline must still be legible at thumbnail size.
-3. Run the app and confirm `/og-cover.jpg` is served.
+3. Run the app and confirm `/og-cover-v2.jpg` is served.
 4. After deploy, run the URL through a scraper preview (e.g. opengraph.xyz) to confirm
    the card renders in the WhatsApp/Facebook/Twitter previews.
 

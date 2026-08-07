@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { BUSINESS_NATURES } from '@bitetime/shared'
-import { pickMerchantConfig, promoChanged, optionGroupsChanged } from '../../src/writes.js'
+import { pickMerchantConfig, promoChanged, optionGroupsChanged, menuCategoriesChanged, categoryChanged } from '../../src/writes.js'
 
 // The shop being written. Only `payment_qr` is judged against it (a Storage path belongs to one
 // merchant's folder); every other field in this file is tenant-agnostic, so these cases pass the
@@ -296,5 +296,120 @@ describe('pickMerchantConfig — payment QR (#156)', () => {
   // refused rather than written unchecked.
   it('refuses a QR path when the merchant id is blank', () => {
     expect(pickMerchantConfig({ payment_qr: `${M}/qr.png` }, '')).toEqual({ ok: false, error: expect.any(String) })
+  })
+})
+
+// Menu categories (ADR 0013). The list is shop-level config on the merchant row, so it goes
+// through pickMerchantConfig — but unlike every other field there it is a Pro feature, and the
+// gate that decides that is `menuCategoriesChanged` below. The allowlist's job here is only to
+// refuse a list Postgres would happily store: ADR 0013 bought a write path that already existed
+// and paid for it in check constraints, and `validateMenuCategories` is what stands there.
+describe('pickMerchantConfig — menu categories (ADR 0013)', () => {
+  const cakes = [{ id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: true }]
+
+  it('accepts a well-formed list, and an empty one', () => {
+    expect(pickMerchantConfig({ product_categories: cakes }, SHOP))
+      .toEqual({ ok: true, patch: { product_categories: cakes } })
+    expect(pickMerchantConfig({ product_categories: [] }, SHOP))
+      .toEqual({ ok: true, patch: { product_categories: [] } })
+  })
+
+  // Refused, never dropped — same rule as tax_rate. A list that silently failed to save is a
+  // merchant watching their menu structure not stick, with a success toast on top of it.
+  it('refuses a list the validator rejects, rather than dropping it', () => {
+    expect(pickMerchantConfig({ product_categories: 'nope' }, SHOP).ok).toBe(false)
+    expect(pickMerchantConfig({ product_categories: [{}] }, SHOP).ok).toBe(false)
+    expect(pickMerchantConfig({ product_categories: [{ id: 'c1', name: '  ', active: true }] }, SHOP).ok).toBe(false)
+    expect(pickMerchantConfig({
+      product_categories: [{ id: 'c1', name: 'Cakes', active: true }, { id: 'c2', name: 'cakes', active: true }],
+    }, SHOP).ok).toBe(false)
+  })
+
+  it('names the offending rule in the error', () => {
+    const r = pickMerchantConfig({
+      product_categories: [{ id: 'c1', name: 'Cakes', active: true }, { id: 'c2', name: 'CAKES', active: true }],
+    }, SHOP)
+    expect(r).toEqual({ ok: false, error: expect.stringContaining('duplicate_category_name') })
+  })
+})
+
+// `optionGroupsChanged`'s sibling, one endpoint over. Same question, same jsonb comparison, and
+// the same load-bearing distinction: the gate asks whether the list CHANGED, never whether the
+// body contained it — a Basic shop editing its shipping rates resubmits its whole config, and
+// refusing on presence would 403 that, or (worse) teach the dashboard to omit the field and put
+// the shop's menu structure one payload mistake from being cleared.
+describe('menuCategoriesChanged', () => {
+  const cakes = [{ id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: true }]
+
+  it('is false when the column is not submitted at all', () => {
+    expect(menuCategoriesChanged({ tax_rate: 6 }, { product_categories: cakes })).toBe(false)
+  })
+
+  it('is false on an unchanged resubmit, through key order and a text-typed stored value', () => {
+    expect(menuCategoriesChanged({ product_categories: cakes }, { product_categories: cakes })).toBe(false)
+    expect(menuCategoriesChanged(
+      { product_categories: [{ active: true, name_zh: '蛋糕', name: 'Cakes', id: 'c1' }] },
+      { product_categories: cakes },
+    )).toBe(false)
+    expect(menuCategoriesChanged({ product_categories: cakes }, { product_categories: JSON.stringify(cakes) })).toBe(false)
+  })
+
+  it('is true when a name, an order, a hide or a membership moves', () => {
+    expect(menuCategoriesChanged({ product_categories: [{ ...cakes[0], name: 'Cake' }] }, { product_categories: cakes })).toBe(true)
+    expect(menuCategoriesChanged({ product_categories: [{ ...cakes[0], active: false }] }, { product_categories: cakes })).toBe(true)
+    expect(menuCategoriesChanged({ product_categories: [...cakes, { id: 'c2', name: 'Tea', active: true }] }, { product_categories: cakes })).toBe(true)
+  })
+
+  // Array order IS display order, so a reorder is a change — the one way this differs from a
+  // comparison that sorted its input before hashing.
+  it('is true when only the order moved', () => {
+    const tea = { id: 'c2', name: 'Tea', active: true }
+    expect(menuCategoriesChanged({ product_categories: [tea, cakes[0]] }, { product_categories: [cakes[0], tea] })).toBe(true)
+  })
+
+  // Clearing is a change. A Pro feature must not be removable by the act of ceasing to pay for
+  // it — the merchant's authored list outlives the subscription, hidden rather than gone.
+  it('is true when a Basic shop clears the list', () => {
+    expect(menuCategoriesChanged({ product_categories: [] }, { product_categories: cakes })).toBe(true)
+  })
+
+  // `stored` is a shop that predates the column, so its list reads as empty. A shop cannot be
+  // born categorized on Basic, and a no-op empty submit is still not a change.
+  it('treats an absent stored column as no categories', () => {
+    expect(menuCategoriesChanged({ product_categories: [] }, {})).toBe(false)
+    expect(menuCategoriesChanged({ product_categories: cakes }, {})).toBe(true)
+  })
+})
+
+// The product side of the same gate: which section this product sits in. A plain string compare
+// would do, except for the two shapes "no category" arrives in — `null` from Postgres, and the
+// `undefined` of a row written before the column existed. Those are ONE state (uncategorized),
+// and calling them different would 403 a Basic shop renaming an old product.
+describe('categoryChanged', () => {
+  it('is false when the column is not submitted at all', () => {
+    expect(categoryChanged({ name: 'Latte' }, { category_id: 'c1' })).toBe(false)
+  })
+
+  it('is false on an unchanged resubmit', () => {
+    expect(categoryChanged({ category_id: 'c1' }, { category_id: 'c1' })).toBe(false)
+  })
+
+  it('reads null and an absent column as the same uncategorized state', () => {
+    expect(categoryChanged({ category_id: null }, { category_id: null })).toBe(false)
+    expect(categoryChanged({ category_id: null }, {})).toBe(false)
+    expect(categoryChanged({ category_id: null }, { category_id: undefined })).toBe(false)
+  })
+
+  it('is true when the product is filed, refiled, or unfiled', () => {
+    expect(categoryChanged({ category_id: 'c1' }, { category_id: null })).toBe(true)
+    expect(categoryChanged({ category_id: 'c2' }, { category_id: 'c1' })).toBe(true)
+    expect(categoryChanged({ category_id: null }, { category_id: 'c1' })).toBe(true)
+  })
+
+  // The create path (`mayCreate`) has no stored row — any category at all is new, so a Basic
+  // shop cannot be born with one, while a plain uncategorized product still saves.
+  it('treats a create as new only when a category is actually set', () => {
+    expect(categoryChanged({ category_id: 'c1' }, null)).toBe(true)
+    expect(categoryChanged({ category_id: null }, null)).toBe(false)
   })
 })

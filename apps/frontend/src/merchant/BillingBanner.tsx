@@ -55,8 +55,8 @@ export default function BillingBanner() {
     <div
       role="status"
       className={cn(
-        'flex items-center gap-3 flex-wrap px-4 py-3 mb-5 rounded-md border-[1.5px] text-[13px] leading-[1.5]',
-        urgent ? 'bg-danger-bg text-danger-fg border-danger-fg/25' : 'bg-warn-bg text-warn-fg border-warn-fg/25',
+        'flex items-center gap-3 flex-wrap px-4 py-3 mb-5 rounded-md border-[0.5px] text-[13px] leading-[1.5]',
+        urgent ? 'bg-danger-100 text-danger-fg border-danger-fg/25' : 'bg-warning-100 text-warning-fg border-warning-fg/25',
       )}
     >
       <span className="flex-1 min-w-[200px] font-medium">
@@ -86,7 +86,7 @@ export default function BillingBanner() {
         <Button
           size="none"
           variant="outline"
-          className="py-[5px] px-3 rounded-pill text-[12px] whitespace-nowrap bg-surface-raised hover:bg-oxblood-tint hover:text-oxblood hover:border-oxblood"
+          className="py-[5px] px-3 rounded-pill text-[12px] whitespace-nowrap bg-card hover:bg-brand-100 hover:text-primary hover:border-primary"
           disabled={busy}
           // An ending subscription is the one state Stripe's portal cannot resolve: the way back
           // is undoing the cancellation, and that button lives on the Subscription tab.

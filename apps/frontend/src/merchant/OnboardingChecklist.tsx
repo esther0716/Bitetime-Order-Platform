@@ -184,26 +184,28 @@ export default function OnboardingChecklist({ section, onNavigate }: { section: 
               key={r.section + r.label}
               type="button"
               onClick={() => onNavigate(r.section)}
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] text-ink transition-colors hover:bg-surface-sunken"
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] text-foreground transition-colors hover:bg-muted"
             >
               {r.done
-                ? <CheckCircle2 {...ICON} className="shrink-0 text-oxblood" />
-                : <Circle {...ICON} className="shrink-0 text-rose-muted" />}
-              <span className={r.done ? 'text-rose-muted line-through' : ''}>{r.label}</span>
-              {!r.done && <ChevronRight size={16} strokeWidth={1.75} className="ml-auto shrink-0 text-rose-muted" />}
+                ? <CheckCircle2 {...ICON} className="shrink-0 text-primary" />
+                : <Circle {...ICON} className="shrink-0 text-muted-foreground" />}
+              <span className={r.done ? 'text-muted-foreground line-through' : ''}>{r.label}</span>
+              {!r.done && <ChevronRight size={16} strokeWidth={1.75} className="ml-auto shrink-0 text-muted-foreground" />}
             </button>
           ))}
           <div className="mt-2 flex items-center justify-between px-3">
-            <p className="text-[13px] font-medium text-oxblood">
+            <p className="text-[13px] font-medium text-primary">
               {t(`Progress · ${state.doneCount} / 3 Complete`, `进度 · ${state.doneCount} / 3 完成`)}
             </p>
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="none"
               onClick={() => goToStep(0)}
-              className="flex items-center gap-1 text-[13px] text-rose-muted underline underline-offset-2 hover:text-oxblood"
+              className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-primary"
             >
               <Sparkles size={14} strokeWidth={1.75} /> {t('Show me around', '带我了解一下')}
-            </button>
+            </Button>
           </div>
         </CardContent>
       </Card>

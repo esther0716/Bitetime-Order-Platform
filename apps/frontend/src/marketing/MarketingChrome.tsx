@@ -24,16 +24,21 @@ import { cn } from '../lib/utils'
 
 // Shared nav-link style (Pricing + Merchant log in)
 const navLink =
-  'text-[13px] text-rose-muted no-underline font-medium [transition:color_0.15s] hover:text-oxblood'
+  'text-[13px] text-muted-foreground no-underline font-medium [transition:color_0.15s] hover:text-primary'
 
 // Account dropdown menu-item (Link or button)
 const menuItem =
-  'block w-full box-border text-left py-[9px] px-3 border-0 rounded-sm bg-transparent text-rose-muted text-[13px] font-sans font-medium no-underline cursor-pointer [transition:all_0.15s] hover:bg-oxblood-tint hover:text-oxblood'
+  'block w-full box-border text-left py-[9px] px-3 border-0 rounded-sm bg-transparent text-muted-foreground text-[13px] font-sans font-medium no-underline cursor-pointer [transition:all_0.15s] hover:bg-brand-100 hover:text-primary'
 
-const footerLink = 'hover:text-oxblood underline underline-offset-4'
+const footerLink = 'hover:text-primary underline underline-offset-4'
 
-const footerColumnHeading = 'text-[11px] font-medium uppercase tracking-[0.09em] text-ink-soft mb-3'
-const footerColumnLink = 'block py-1 text-text-tertiary no-underline [transition:color_0.15s] hover:text-oxblood'
+// Customer service line. Two forms because they are read by different things: wa.me accepts only
+// digits with the country code and no `+`, while the visible text is what a human dials.
+const SUPPORT_WHATSAPP = '6588425267'
+const SUPPORT_WHATSAPP_DISPLAY = '+65 8842 5267'
+
+const footerColumnHeading = 'text-[11px] font-medium uppercase tracking-[0.09em] text-ink-700 mb-3'
+const footerColumnLink = 'block py-1 text-muted-foreground no-underline [transition:color_0.15s] hover:text-primary'
 
 function FooterColumn({ heading, children }: { heading: string; children: ReactNode }) {
   return (
@@ -65,7 +70,7 @@ export function MarketingNav() {
         : null
 
   return (
-    <nav className="flex items-center justify-between px-8 py-5 border-b border-clay-border max-[600px]:px-5 max-[600px]:py-4">
+    <nav className="flex items-center justify-between px-8 py-5 border-b border-border max-[600px]:px-5 max-[600px]:py-4">
       {/* The wordmark links home from every page except the home page, where it is the page you
           are on. Landing keeps it as a plain mark; here it is the way back. */}
       <Link to="/" aria-label={t('TinyOrder home', 'TinyOrder 首页')}>
@@ -108,7 +113,7 @@ export function MarketingNav() {
                   onClick={() => setMenuOpen(false)}
                 />
                 <div
-                  className="absolute top-[calc(100%+8px)] right-0 z-[var(--z-modal-popover)] min-w-[160px] bg-surface-high border-[1.5px] border-clay-border rounded-lg shadow-[0_8px_24px_rgba(43,10,16,0.16)] overflow-hidden p-1"
+                  className="absolute top-[calc(100%+8px)] right-0 z-[var(--z-modal-popover)] min-w-[160px] bg-card border-[0.5px] border-border rounded-lg shadow-elev-2 overflow-hidden p-1"
                   role="menu"
                 >
                   {portal && (
@@ -147,7 +152,7 @@ export function MarketingFooter() {
   const { t } = useSession()
 
   return (
-    <footer className="mt-auto border-t border-clay-border">
+    <footer className="mt-auto border-t border-border">
       {/* Grouped columns, not a single wrapped row: same links as before, same crawler-visible
           structure (still Link/`<a>` in the prerendered markup), just organised so a visitor
           scanning the footer can find "the legal stuff" or "the product stuff" at a glance. */}
@@ -176,6 +181,20 @@ export function MarketingFooter() {
             {t('Privacy', '隐私政策')}
           </Link>
         </FooterColumn>
+        <FooterColumn heading={t('Support', '客服')}>
+          {/* The support number is a wa.me link, not a tel: — customer service runs on WhatsApp,
+              and wa.me opens the app on a phone and web.whatsapp.com on a desktop, so one href
+              works everywhere. The href carries the number in wa.me's required form (digits only,
+              country code, no +); the visible text keeps the readable spacing. */}
+          <a
+            href={`https://wa.me/${SUPPORT_WHATSAPP}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={footerColumnLink}
+          >
+            {t('WhatsApp', 'WhatsApp')} {SUPPORT_WHATSAPP_DISPLAY}
+          </a>
+        </FooterColumn>
         <FooterColumn heading={t('Connect', '关注我们')}>
           <a
             href="https://www.facebook.com/profile.php?id=61592788340403"
@@ -187,9 +206,9 @@ export function MarketingFooter() {
           </a>
         </FooterColumn>
       </div>
-      <div className="px-8 py-5 border-t border-clay-border flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-text-tertiary max-[600px]:px-5">
+      <div className="px-8 py-5 border-t border-border flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-muted-foreground max-[600px]:px-5">
         <Wordmark className="h-[18px]" />
-        <span className="text-clay-border">·</span>
+        <span className="text-border">·</span>
         <span>{t('Built for small businesses', '专为小生意打造')}</span>
         {/* Maker's credit, not a policy link — separated by a dot so it doesn't read as one more
             legal page, and carrying ?ref=tinyorder so Praxor can attribute the visit. */}

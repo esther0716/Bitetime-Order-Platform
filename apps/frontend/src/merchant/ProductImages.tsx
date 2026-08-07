@@ -8,6 +8,7 @@ import {
   PRODUCT_IMAGE_TYPES,
 } from '../store'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { Button } from '../components/ui/button'
 
 type T = (en: string, zh: string) => string
 
@@ -74,29 +75,31 @@ export default function ImagePicker({
             <img
               src={productImageUrl(path)}
               alt=""
-              className="size-16 object-cover rounded-lg border-[1.5px] border-clay-border"
+              className="size-16 object-cover rounded-lg border-[0.5px] border-border"
             />
             <button
               type="button"
               disabled={busy}
               onClick={() => setPendingDelete(path)}
               aria-label={t('Remove image', '删除图片')}
-              className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-oxblood text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-oxblood/90 disabled:opacity-50 cursor-pointer"
+              className="absolute -top-1.5 -right-1.5 size-5 rounded-pill bg-primary text-white text-[12px] leading-none flex items-center justify-center shadow-sm hover:bg-brand-600 disabled:bg-disabled-bg disabled:text-disabled-fg cursor-pointer"
             >
               ×
             </button>
           </div>
         ))}
         {!full && (
-          <button
+          <Button
             type="button"
+            variant="dashed"
+            size="none"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
-            className="size-16 shrink-0 rounded-lg border-[1.5px] border-dashed border-clay-border text-rose-muted text-[11px] flex flex-col items-center justify-center gap-0.5 hover:border-oxblood hover:text-oxblood disabled:opacity-50 cursor-pointer"
+            className="size-16 shrink-0 rounded-lg border-[0.5px] text-[11px] flex-col gap-0.5"
           >
             <span className="text-[18px] leading-none">＋</span>
             {busy ? t('…', '…') : t('Photo', '图片')}
-          </button>
+          </Button>
         )}
       </div>
       <input
@@ -121,7 +124,7 @@ export default function ImagePicker({
               <img
                 src={productImageUrl(pendingDelete)}
                 alt=""
-                className="size-16 shrink-0 object-cover rounded-lg border-[1.5px] border-clay-border"
+                className="size-16 shrink-0 object-cover rounded-lg border-[0.5px] border-border"
               />
             )}
             <p>{t('The photo is deleted for good. You can upload it again afterwards.', '该图片将被永久删除。之后可以重新上传。')}</p>

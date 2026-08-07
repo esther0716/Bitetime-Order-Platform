@@ -9,6 +9,7 @@ import { SkeletonText } from '../components/Loaders'
 import { formatMoney } from '../currency'
 import { fmtDate } from '../merchantDate'
 import { StatusBadge } from '../orderStatus'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -17,20 +18,43 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import OrderDetailSheet from './OrderDetailSheet'
 import { ProBadge, UpgradeLink } from './ProLock'
-import { mergeShopTags, tagSuggestions } from './tagSuggestions'
+import { filterChips, mergeShopTags, TAG_CHIP_CAP, tagSuggestions } from './tagSuggestions'
 import WaLink from './WaLink'
 
 // Self-contained panel — pixel-match of .admin-panel
-const PANEL = 'bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border'
+const PANEL = 'bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border'
 
 // Table header cell — pixel-match of .mm-customers-table th
-const TH = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-oxblood px-[14px] py-[10px] border-b-[1.5px] border-rose-border text-left whitespace-nowrap'
+const TH = 'text-[10px] font-semibold uppercase tracking-[0.08em] text-primary px-[14px] py-[10px] border-b-[0.5px] border-border text-left whitespace-nowrap'
 
 // Table data cell (base) — pixel-match of .mm-customers-table td + hover
-const TD = 'px-[14px] py-[12px] border-b border-surface-warm-alt text-ink align-middle group-hover:bg-oxblood-tint'
+const TD = 'px-[14px] py-[12px] border-b border-muted text-foreground align-middle group-hover:bg-brand-100'
 
 // Count cell — pixel-match of .mm-customers-count overrides
-const TD_COUNT = 'px-[14px] py-[12px] border-b border-surface-warm-alt text-oxblood font-semibold text-center align-middle group-hover:bg-oxblood-tint'
+const TD_COUNT = 'px-[14px] py-[12px] border-b border-muted text-primary font-semibold text-center align-middle group-hover:bg-brand-100'
+
+/**
+ * One tag chip, on `Badge` rather than hand-rolled — the filter row's, the table row's and the
+ * drawer's, so three sets of pills cannot drift apart.
+ *
+ * The geometry and type come from the primitive (pill, 11px semibold, `border border-transparent`
+ * so a bordered state costs no layout shift); this override supplies the padding and the brand
+ * tint, in the `.mm-badge--{status}` shape `AdminMerchants` already uses. **10px, not the base's
+ * 9px** — DESIGN.md's `status-chip` token is `3px 10px`. Brand 100 is the chip background and
+ * Brand 700 the text on it (DESIGN.md → Colour), so a tag is *not* `text-primary`.
+ *
+ * Hand-rolled, these were 12px regular with a resting border, which is a fourth chip style on a
+ * screen that already had three.
+ */
+const TAG_CHIP = 'px-[10px] border-transparent bg-brand-100 text-brand-700'
+
+// `button.tsx`'s focus treatment, borrowed for the raw buttons `Badge` cannot cover — the two
+// nested inside the drawer's chip. A control a keyboard reaches needs this app's ring, not the
+// UA outline.
+const FOCUS_RING = 'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
+
+// How many of a customer's tags their table row shows before it stops and counts the rest.
+const ROW_TAG_CAP = 3
 
 const PAGE_SIZE = 50
 
@@ -64,10 +88,15 @@ export default function CustomersView() {
 
   const [selected, setSelected] = useState<ShopCustomer | null>(null)
 
+  // The filter goes with the entitlement, and it is DERIVED rather than cleared in an effect: a
+  // plan can go stale mid-session (see `plan.ts`), and a basic shop still sending a tag is a 403
+  // on every load — the error panel, with the row that would have cleared it already gone.
+  const activeTag = isPro ? tag : null
+
   const load = useCallback(async () => {
     const r = await fetchShopCustomers(merchantId, {
       sort,
-      tag: tag ?? undefined,
+      tag: activeTag ?? undefined,
       search,
       page,
       pageSize: PAGE_SIZE,
@@ -78,7 +107,7 @@ export default function CustomersView() {
     setShopTags(r.data.shopTags)
     setTotal(r.data.total)
     setUnattributed(r.data.unattributedOrders)
-  }, [merchantId, sort, tag, search, page])
+  }, [merchantId, sort, activeTag, search, page])
 
   // Debounced so typing a name is one request per pause, not one per keystroke.
   useEffect(() => {
@@ -108,13 +137,13 @@ export default function CustomersView() {
 
   if (failed) {
     return (
-      <div className={`${PANEL} text-center text-rose-muted text-sm`}>
+      <div className={`${PANEL} text-center text-muted-foreground text-sm`}>
         <p>{t('Could not load your customers. Try again in a moment.', '无法加载顾客名单，请稍后再试。')}</p>
       </div>
     )
   }
 
-  const narrowed = search.trim() !== '' || tag !== null
+  const narrowed = search.trim() !== '' || activeTag !== null
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
@@ -124,25 +153,23 @@ export default function CustomersView() {
           value={search}
           onChange={e => narrow(setSearch)(e.target.value)}
           placeholder={t('Search by name or WhatsApp…', '按姓名或 WhatsApp 搜索…')}
-          className="max-w-sm bg-cream border-clay-border text-[13px]"
+          className="max-w-sm bg-background border-border text-[13px]"
         />
 
         <SortControl sort={sort} onSort={narrow(setSort)} isPro={isPro} />
-
-        {tag && (
-          <button
-            type="button"
-            onClick={() => narrow(setTag)(null)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-rose-border bg-oxblood-tint px-3 py-1 text-[12px] text-oxblood"
-          >
-            {tag}
-            <X size={12} />
-          </button>
-        )}
       </div>
 
+      {/* `|| activeTag !== null` is not belt-and-braces. A shop whose whole vocabulary was the one tag
+          currently filtering loses it the moment its last holder does: the next load answers
+          `shopTags: []`, and on `shopTags.length > 0` alone the row would vanish while the filter
+          stayed on — an empty table, "No customers match that", and nothing on screen to clear it
+          with. That is the dead end `filterChips` keeps an unrecognised selection for. */}
+      {isPro && (shopTags.length > 0 || activeTag !== null) && (
+        <TagFilterRow shopTags={shopTags} selectedTag={activeTag} onSelect={narrow(setTag)} />
+      )}
+
       {customers!.length === 0 ? (
-        <div className={`${PANEL} text-center text-rose-muted text-sm`}>
+        <div className={`${PANEL} text-center text-muted-foreground text-sm`}>
           <p>
             {narrowed
               ? t('No customers match that.', '没有符合条件的顾客。')
@@ -151,7 +178,7 @@ export default function CustomersView() {
         </div>
       ) : (
         // pixel-match of .admin-panel + .mm-customers-wrap (padding: 0; overflow: hidden)
-        <div className="bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-0 mb-3 w-full box-border overflow-hidden">
+        <div className="bg-card border-[0.5px] border-border rounded-2xl p-0 mb-3 w-full box-border overflow-hidden">
           {/* pixel-match of .mm-customers-table-wrap */}
           <div className="overflow-x-auto">
             {/* pixel-match of .mm-customers-table */}
@@ -163,6 +190,7 @@ export default function CustomersView() {
                   <th className={TH}>{t('Orders', '订单数')}</th>
                   <th className={TH}>{t('Spent', '消费额')}</th>
                   <th className={TH}>{t('Last Order', '最近订单')}</th>
+                  {isPro && <th className={TH}>{t('Tags', '标签')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -185,9 +213,10 @@ export default function CustomersView() {
                     <td className={TD}>
                       <span className="flex flex-col">
                         <span>{fmtDate(c.lastOrderAt)}</span>
-                        <span className="text-[11px] text-text-tertiary">{agoLabel(c.daysSinceLastOrder, t)}</span>
+                        <span className="text-[11px] text-muted-foreground">{agoLabel(c.daysSinceLastOrder, t)}</span>
                       </span>
                     </td>
+                    {isPro && <td className={TD}><RowTags tags={c.tags} /></td>}
                   </tr>
                 ))}
               </tbody>
@@ -217,12 +246,39 @@ export default function CustomersView() {
   )
 }
 
+/**
+ * What the merchant has written against one customer, on their row.
+ *
+ * **Display, not a control.** The whole row opens the drawer, and a tag that also filtered would
+ * put two different outcomes under one pointer — the filter already has its own row of chips
+ * above the table, and the drawer's copies stay clickable for the merchant who is already there.
+ *
+ * Capped at three with a `+N`, because a customer may carry up to `MAX_TAGS` (20) and one such
+ * row would set the height of every row around it. Which three is the merchant's own order —
+ * tags are stored as written, and re-sorting here would be a second opinion nothing asked for.
+ *
+ * Pro-only, and gated by the CALLER rather than here: a basic shop must not render this column at
+ * all, header included, or the table grows an empty column that says a feature is missing.
+ */
+function RowTags({ tags }: { tags: string[] }) {
+  const shown = tags.slice(0, ROW_TAG_CAP)
+  const hidden = tags.length - shown.length
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {shown.map(tag => (
+        <Badge key={tag} className={TAG_CHIP}>{tag}</Badge>
+      ))}
+      {hidden > 0 && <span className="text-[11px] text-muted-foreground">+{hidden}</span>}
+    </span>
+  )
+}
+
 /** The has-an-account marker. Says who receives an order confirmation email — nothing more. */
 function AccountMark() {
   const { t } = useSession()
   return (
     <Tooltip>
-      <TooltipTrigger render={<span className="text-text-tertiary" />}>
+      <TooltipTrigger render={<span className="text-muted-foreground" />}>
         <UserCheck size={13} strokeWidth={2} />
       </TooltipTrigger>
       <TooltipContent>
@@ -250,7 +306,7 @@ function SortControl({
   return (
     <div className="flex items-center gap-2">
       <Select value={sort} onValueChange={v => onSort(v as ShopCustomerSort)} disabled={!isPro} items={sortItems}>
-        <SelectTrigger className="w-[190px] bg-cream border-clay-border text-[13px]">
+        <SelectTrigger className="w-[190px] bg-background border-border text-[13px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -270,6 +326,70 @@ function SortControl({
 }
 
 /**
+ * The shop's own tags, as a row of filters (#205).
+ *
+ * The filter is not new — the endpoint has taken `tag` since #143 and the list response has
+ * carried `shopTags` since #150, described in CONTEXT.md as "what the tag filter chooses from".
+ * What was missing was the choosing: the only way to set a tag was to open a customer's drawer
+ * and click one of theirs, so a merchant looking for their VIPs had to find a VIP first.
+ *
+ * A chip row rather than a dropdown because the gap being closed is DISCOVERABILITY — the
+ * vocabulary has to be visible without a click, or the merchant still does not know the filter
+ * is there.
+ *
+ * Basic shops render nothing here, which inverts the shown-but-locked rule the sort control
+ * beside it follows, and deliberately: notes and tags survive a downgrade hidden-not-deleted,
+ * so a disabled chip row would print the very vocabulary the downgrade hides. The pitch is not
+ * lost — it lives in the drawer's Notes & tags panel and in the sort control's own badge.
+ */
+function TagFilterRow({
+  shopTags, selectedTag, onSelect,
+}: { shopTags: string[]; selectedTag: string | null; onSelect: (tag: string | null) => void }) {
+  const { t } = useSession()
+  const [expanded, setExpanded] = useState(false)
+  const { chips, hidden } = filterChips(shopTags, selectedTag, expanded)
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">{t('Tags', '标签')}</span>
+
+      {chips.map(chip => {
+        const on = chip === selectedTag
+        return (
+          <Badge
+            key={chip}
+            // Clicking the selected chip clears the filter — the same act, reversed, so there is
+            // one control and not a filter plus a separate way to undo it.
+            render={<button type="button" aria-pressed={on} onClick={() => onSelect(on ? null : chip)} />}
+            // Selected is a MATCHING-COLOUR border, which is DESIGN.md's own answer for a chip
+            // acting as a filter. Not `border-border`: a neutral hairline reads as the resting
+            // outline every other pill on this screen already wears.
+            className={`${TAG_CHIP} cursor-pointer ${on ? 'border-primary' : 'hover:border-border'}`}
+          >
+            {chip}
+            {on && <X size={11} />}
+          </Badge>
+        )
+      })}
+
+      {hidden > 0 && (
+        <Button type="button" variant="link" size="none" onClick={() => setExpanded(true)} className="text-[12px]">
+          {t(`+${hidden} more`, `还有 ${hidden} 个`)}
+        </Button>
+      )}
+
+      {/* Guarded on the cap, not on `expanded` alone: a vocabulary that shrank below the cap
+          while expanded would otherwise offer to collapse a row that is already whole. */}
+      {expanded && shopTags.length > TAG_CHIP_CAP && (
+        <Button type="button" variant="link" size="none" onClick={() => setExpanded(false)} className="text-[12px]">
+          {t('Show fewer', '收起')}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/**
  * The count, the pager, and the one line that keeps the numbers honest.
  *
  * `unattributed` is not a footnote for tidiness: without it a merchant comparing this screen to
@@ -281,7 +401,7 @@ function ListFooter({
   const { t } = useSession()
   return (
     <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
-      <div className="text-[12px] text-text-tertiary">
+      <div className="text-[12px] text-muted-foreground">
         <p>{t(`${total} customer${total === 1 ? '' : 's'}`, `${total} 位顾客`)}</p>
         {unattributed > 0 && (
           <p className="mt-1">
@@ -298,7 +418,7 @@ function ListFooter({
           <Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => onPage(page - 1)}>
             {t('Previous', '上一页')}
           </Button>
-          <span className="text-[12px] text-text-tertiary tabular-nums">{page} / {pageCount}</span>
+          <span className="text-[12px] text-muted-foreground tabular-nums">{page} / {pageCount}</span>
           <Button type="button" size="sm" variant="outline" disabled={page >= pageCount} onClick={() => onPage(page + 1)}>
             {t('Next', '下一页')}
           </Button>
@@ -378,19 +498,19 @@ function DrawerContents({
 
   return (
     <>
-              <SheetHeader className="border-b border-surface-sunken">
+              <SheetHeader className="border-b border-muted">
                 <SheetTitle className="text-[15px] flex items-center gap-1.5">
                   {customer.name || '—'}
                   {customer.hasAccount && <AccountMark />}
                 </SheetTitle>
                 {customer.wa && <span className="text-[13px]"><WaLink wa={customer.wa} /></span>}
-                <span className="text-[12px] text-text-tertiary">
+                <span className="text-[12px] text-muted-foreground">
                   {t(
                     `${customer.bookedOrders} order${customer.bookedOrders === 1 ? '' : 's'} · ${formatMoney(customer.lifetimeSpend, merchant?.currency)} · avg ${formatMoney(customer.avgOrder, merchant?.currency)}`,
                     `${customer.bookedOrders} 个订单 · ${formatMoney(customer.lifetimeSpend, merchant?.currency)} · 平均 ${formatMoney(customer.avgOrder, merchant?.currency)}`,
                   )}
                 </span>
-                <span className="text-[12px] text-text-tertiary">
+                <span className="text-[12px] text-muted-foreground">
                   {t(
                     `Since ${fmtDate(customer.firstOrderAt)} · last ${agoLabel(customer.daysSinceLastOrder, t)}`,
                     `自 ${fmtDate(customer.firstOrderAt)} · 最近 ${agoLabel(customer.daysSinceLastOrder, t)}`,
@@ -416,16 +536,16 @@ function DrawerContents({
                       key={o.id}
                       type="button"
                       onClick={() => setSelectedOrder(o)}
-                      className="flex flex-col gap-1 w-full text-left rounded-lg border border-rose-border bg-cream px-3 py-2.5 hover:bg-oxblood-tint transition-colors"
+                      className="flex flex-col gap-1 w-full text-left rounded-lg border border-border bg-background px-3 py-2.5 hover:bg-brand-100 transition-colors"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-heading text-[14px] font-medium text-oxblood">{o.order_number || '—'}</span>
-                        <span className="tabular-nums text-[13px] font-medium text-ink">
+                        <span className="font-heading text-[14px] font-medium text-primary">{o.order_number || '—'}</span>
+                        <span className="tabular-nums text-[13px] font-medium text-foreground">
                           {formatMoney(o.total, o.currency ?? merchant?.currency)}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[12px] text-text-tertiary">{fmtDate(o.created_at)}</span>
+                        <span className="text-[12px] text-muted-foreground">{fmtDate(o.created_at)}</span>
                         <StatusBadge status={o.status || 'new'} t={t} />
                       </div>
                     </button>
@@ -482,12 +602,12 @@ function NotesPanel({
 
   if (!isPro) {
     return (
-      <div className="mx-4 my-4 rounded-lg border border-rose-border bg-surface-sunken px-3 py-3 text-center">
+      <div className="mx-4 my-4 rounded-lg border border-border bg-muted px-3 py-3 text-center">
         <div className="mb-1.5 flex items-center justify-center gap-2">
-          <span className="text-[13px] font-medium text-oxblood">{t('Notes & tags', '备注与标签')}</span>
+          <span className="text-[13px] font-medium text-primary">{t('Notes & tags', '备注与标签')}</span>
           <ProBadge />
         </div>
-        <p className="mb-3 text-[12px] leading-[1.6] text-text-secondary">
+        <p className="mb-3 text-[12px] leading-[1.6] text-muted-foreground">
           {t(
             'Keep a private note against a customer and tag your regulars. Only you can see it.',
             '为顾客保存私密备注并为常客添加标签，仅你可见。',
@@ -507,20 +627,23 @@ function NotesPanel({
       <div>
         <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
           {customer.tags.map(tag => (
-            <span
-              key={tag}
-              className="inline-flex items-center gap-1 rounded-full border border-rose-border bg-oxblood-tint px-2.5 py-0.5 text-[12px] text-oxblood"
-            >
-              <button type="button" onClick={() => onTagClicked(tag)} className="cursor-pointer">{tag}</button>
+            <Badge key={tag} className={TAG_CHIP}>
+              <button
+                type="button"
+                onClick={() => onTagClicked(tag)}
+                className={`cursor-pointer rounded-pill ${FOCUS_RING}`}
+              >
+                {tag}
+              </button>
               <button
                 type="button"
                 aria-label={t(`Remove tag ${tag}`, `移除标签 ${tag}`)}
                 onClick={() => save({ note: customer.note, tags: customer.tags.filter(x => x !== tag) })}
-                className="cursor-pointer opacity-60 hover:opacity-100"
+                className={`cursor-pointer rounded-pill opacity-60 hover:opacity-100 ${FOCUS_RING}`}
               >
                 <X size={11} />
               </button>
-            </span>
+            </Badge>
           ))}
         </div>
         <Input
@@ -532,23 +655,25 @@ function NotesPanel({
             addTag(tagDraft.trim())
           }}
           placeholder={t('Add a tag, press Enter…', '添加标签，按回车…')}
-          className="bg-cream border-clay-border text-[13px]"
+          className="bg-background border-border text-[13px]"
         />
 
         {suggestions.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] text-text-tertiary">{t('Used before', '曾用标签')}</span>
+            <span className="text-[11px] text-muted-foreground">{t('Used before', '曾用标签')}</span>
             {suggestions.map(s => (
-              <button
+              <Button
                 key={s}
                 type="button"
+                variant="dashed"
+                size="none"
                 disabled={busy}
                 onClick={() => addTag(s)}
-                className="inline-flex items-center gap-1 rounded-full border border-dashed border-clay-border bg-cream px-2.5 py-0.5 text-[12px] text-text-secondary hover:border-rose-border hover:bg-oxblood-tint hover:text-oxblood transition-colors disabled:opacity-50"
+                className="gap-1 rounded-pill bg-background px-2.5 py-0.5 text-[12px] hover:border-border"
               >
                 <Plus size={10} />
                 {s}
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -560,7 +685,7 @@ function NotesPanel({
           onChange={e => setNote(e.target.value)}
           rows={3}
           placeholder={t('Private note — only your shop sees this…', '私密备注，仅本店可见…')}
-          className="bg-cream border-clay-border text-[13px]"
+          className="bg-background border-border text-[13px]"
         />
         {note !== (customer.note ?? '') && (
           <Button

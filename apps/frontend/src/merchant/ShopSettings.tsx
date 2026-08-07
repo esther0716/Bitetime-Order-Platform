@@ -88,18 +88,29 @@ export default function ShopSettings() {
   return (
     <div className="w-full">
       <Tabs value={tab} onValueChange={(v) => changeTab(v as TabKey)} className="mb-6">
-        {/* Mobile: 4 nowrap tabs exceed the narrow column, so scroll horizontally
-            with natural widths instead of clipping the last tab off-screen. */}
-        <TabsList className="max-sm:justify-start max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:[&::-webkit-scrollbar]:hidden">
+        {/* Six nowrap tabs outgrow the column long before any phone width, so the rail WRAPS
+            rather than scrolls. A scrolling rail hid two things at once: the merchant had no
+            way to know the tabs continued past the edge, and — worse — Base UI's tabs do not
+            scroll the active tab into view, so a deep link at `#settings/subscription` (which
+            is where every Pro CTA points, #112) opened the Subscription panel under a rail
+            still showing Shipping. Wrapping removes both: nothing is off-screen, so there is
+            no affordance to signal and nothing to scroll to.
+
+            No breakpoint on purpose. The triggers keep `flex-1`, so while all six fit they are
+            one stretched row exactly as before; past that they wrap and each row fills. The
+            width where that happens depends on the dashboard column, not on the viewport, so
+            a `max-sm:` here would leave the tablet widths overflowing — which is the bug this
+            replaced. */}
+        <TabsList className="flex-wrap">
           {TABS.map(({ key, label, tag }) => (
-            <TabsTrigger key={key} value={key} className="group/tab max-sm:flex-none">
+            <TabsTrigger key={key} value={key} className="group/tab">
               {label}
-              {/* The active trigger fills with oxblood, so the outline badge's `text-ink` would
+              {/* The active trigger fills with oxblood, so the outline badge's `text-foreground` would
                   sit near-invisible on it — invert to cream while the tab is selected. */}
               {tag && (
                 <Badge
                   variant="outline"
-                  className="ml-2 uppercase tracking-[0.08em] group-data-active/tab:border-cream/40 group-data-active/tab:text-cream"
+                  className="ml-2 uppercase tracking-[0.08em] group-data-active/tab:border-background/40 group-data-active/tab:text-background"
                 >
                   {tag}
                 </Badge>
@@ -130,8 +141,8 @@ export default function ShopSettings() {
 
 interface TabProps { onDirtyChange: (dirty: boolean) => void }
 
-const CARD = 'bg-surface-raised border-[1.5px] border-rose-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
-const HEADING = 'font-heading text-[15px] font-medium text-oxblood mb-4 flex items-center gap-2'
+const CARD = 'bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
+const HEADING = 'font-heading text-[15px] font-medium text-primary mb-4 flex items-center gap-2'
 
 // `SettingsFields`' index signature is `string | boolean | undefined`, wide enough to cover
 // every tab in this file, but a key with no EXPLICIT declaration there resolves to that whole
@@ -293,15 +304,15 @@ function ShippingTab({ onDirtyChange }: TabProps) {
       <div className={CARD} data-tour="set-shipping">
         <h3 className={HEADING}>{t('What customers can choose', '顾客可选的方式')}</h3>
         <div className="flex flex-col gap-2">
-          <label className="flex items-start gap-2 text-[14px] text-ink">
-            <input type="checkbox" className="mt-1"
+          <label className="flex items-start gap-2 text-[14px] text-foreground">
+            <input type="checkbox" className="mt-1 accent-primary"
               checked={fields.pickupEnabled}
               disabled={onlyMethod === 'pickup'}
               onChange={e => setFields(f => ({ ...f, pickupEnabled: e.target.checked }))} />
             <span>{t('Pickup — customers collect from you.', '自取 — 顾客自行前来领取。')}</span>
           </label>
-          <label className="flex items-start gap-2 text-[14px] text-ink">
-            <input type="checkbox" className="mt-1"
+          <label className="flex items-start gap-2 text-[14px] text-foreground">
+            <input type="checkbox" className="mt-1 accent-primary"
               checked={fields.deliveryEnabled}
               disabled={onlyMethod === 'delivery'}
               onChange={e => setFields(f => ({ ...f, deliveryEnabled: e.target.checked }))} />
@@ -310,8 +321,8 @@ function ShippingTab({ onDirtyChange }: TabProps) {
                  '送货 — 西马一个统一运费，东马一个。')}
             </span>
           </label>
-          <label className="flex items-start gap-2 text-[14px] text-ink">
-            <input type="checkbox" className="mt-1"
+          <label className="flex items-start gap-2 text-[14px] text-foreground">
+            <input type="checkbox" className="mt-1 accent-primary"
               checked={fields.expressEnabled}
               disabled={onlyMethod === 'express'}
               onChange={e => setFields(f => ({ ...f, expressEnabled: e.target.checked }))} />
@@ -321,12 +332,12 @@ function ShippingTab({ onDirtyChange }: TabProps) {
             </span>
           </label>
           {fields.expressEnabled && !fields.originPlaceId && (
-            <p className="text-[12px] text-oxblood leading-[1.5]">
+            <p className="text-[12px] text-primary leading-[1.5]">
               {t('Express delivery needs a delivery from address. Pick one below to save.',
                  '快速配送需要一个出发地址，请在下方选择后保存。')}
             </p>
           )}
-          <p className="text-[12px] text-rose-muted leading-[1.5]">
+          <p className="text-[12px] text-muted-foreground leading-[1.5]">
             {t('You must offer at least one. A method you switch off keeps its settings.',
                '至少须提供一种。关闭的方式会保留其设置。')}
           </p>
@@ -363,7 +374,7 @@ function ShippingTab({ onDirtyChange }: TabProps) {
               <Label htmlFor="shop-em">{t(`East Malaysia (${symbol})`, `东马运费 (${symbol})`)}</Label>
               <Input id="shop-em" type="number" step="0.01" value={fields.em}
                 onChange={e => setFields(f => ({ ...f, em: e.target.value }))} variant="compact" />
-              <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+              <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
                 {t('Blank East Malaysia charges the same as West Malaysia. Enter 0 for free East Malaysia delivery.',
                    '东马留空则按西马运费收取。填 0 表示东马免运费。')}
               </p>
@@ -396,11 +407,11 @@ function ShippingTab({ onDirtyChange }: TabProps) {
           }))}
         />
         {fields.originPlaceId && (
-          <p className="text-[12px] text-rose-muted mt-2 leading-[1.5]">
+          <p className="text-[12px] text-muted-foreground mt-2 leading-[1.5]">
             {t('Routes are measured from: ', '距离从此地址起算：')}<strong>{fields.originAddress}</strong>
           </p>
         )}
-        <p className="text-[12px] text-rose-muted mt-2 leading-[1.5]">
+        <p className="text-[12px] text-muted-foreground mt-2 leading-[1.5]">
           {t('This is separate from your pickup address above, which is free text and is only shown to pickup customers.',
              '此地址与上方的自取地址不同 — 自取地址是纯文字，仅显示给自取顾客。')}
         </p>
@@ -415,7 +426,7 @@ function ShippingTab({ onDirtyChange }: TabProps) {
               <Label htmlFor="shop-base-fee">{t(`Base fee (${symbol})`, `基本运费 (${symbol})`)}</Label>
               <Input id="shop-base-fee" type="number" step="0.01" min="0" value={fields.baseFee}
                 onChange={e => setFields(f => ({ ...f, baseFee: e.target.value }))} variant="compact" />
-              <p className="text-[12px] text-rose-muted leading-[1.5]">
+              <p className="text-[12px] text-muted-foreground leading-[1.5]">
                 {t('Charged on every delivery, before distance. Enter 0 to charge purely per kilometre.',
                    '每单固定收取，与距离无关。填 0 则纯按公里收费。')}
               </p>
@@ -429,12 +440,12 @@ function ShippingTab({ onDirtyChange }: TabProps) {
               <Label htmlFor="shop-max-km">{t('Maximum distance (km)', '最远配送距离 (公里)')}</Label>
               <Input id="shop-max-km" type="number" step="0.1" min="0.1" value={fields.maxKm}
                 onChange={e => setFields(f => ({ ...f, maxKm: e.target.value }))} variant="compact" />
-              <p className="text-[12px] text-rose-muted leading-[1.5]">
+              <p className="text-[12px] text-muted-foreground leading-[1.5]">
                 {t('Leave blank to deliver anywhere with a road. Customers past this distance are told you do not deliver to them.',
                    '留空表示只要有路就送。超过此距离的顾客会被告知不在配送范围。')}
               </p>
             </div>
-            <p className="text-[12px] text-rose-muted leading-[1.5]">
+            <p className="text-[12px] text-muted-foreground leading-[1.5]">
               {t(`Example: ${symbol}${fields.baseFee || 0} + ${symbol}${fields.ratePerKm || 0}/km means a 10 km delivery costs ${symbol}${(Number(fields.baseFee || 0) + Number(fields.ratePerKm || 0) * 10).toFixed(2)}.`,
                  `例如：${symbol}${fields.baseFee || 0} + ${symbol}${fields.ratePerKm || 0}/公里，10 公里配送为 ${symbol}${(Number(fields.baseFee || 0) + Number(fields.ratePerKm || 0) * 10).toFixed(2)}。`)}
             </p>
@@ -527,7 +538,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+          <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
             {t('The unit for your prices and what customers see. Chosen when you signed up.',
                 '您的价格和顾客看到的金额单位。注册时选定。')}
           </p>
@@ -536,9 +547,10 @@ function PaymentTab({ onDirtyChange }: TabProps) {
       <div className={CARD}>
         <h3 className={HEADING}>{t('Tax', '税')}</h3>
         <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-[14px] text-ink">
+          <label className="flex items-center gap-2 text-[14px] text-foreground">
             <input
               type="checkbox"
+              className="accent-primary"
               checked={fields.taxEnabled}
               onChange={e => setFields(f => ({ ...f, taxEnabled: e.target.checked }))}
             />
@@ -553,7 +565,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
               onChange={e => setFields(f => ({ ...f, taxRate: e.target.value }))}
               variant="compact"
             />
-            <p className="text-[12px] text-rose-muted mt-1 leading-[1.5]">
+            <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
               {t('Added on top of your item prices, after any voucher discount. Delivery fees are not taxed. Leave blank, or enter 0, to turn tax off.',
                  '在商品价格之上加收，扣除优惠券后计算。运费不征税。留空或填 0 即可关闭税费。')}
             </p>
@@ -584,7 +596,7 @@ function PaymentTab({ onDirtyChange }: TabProps) {
               onChange={path => setFields(f => ({ ...f, qr: path }))}
               t={t}
             />
-            <p className="text-[12px] text-rose-muted leading-[1.5]">
+            <p className="text-[12px] text-muted-foreground leading-[1.5]">
               {t('A photo or screenshot of your DuitNow QR. Customers see it on the order-placed screen, so they can pay you straight away. PNG, JPG or WebP, up to 2MB. Remember to save.',
                  '您的 DuitNow 二维码照片或截图。顾客下单后会在确认页看到，可立即付款。支持 PNG、JPG、WebP，最大 2MB。请记得保存。')}
             </p>
@@ -641,14 +653,16 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
       <div className={CARD}>
         <h3 className={HEADING}>{t('Order notifications', '订单通知')}</h3>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-[11px] font-medium text-oxblood uppercase tracking-[0.09em]">Telegram</p>
-          <button
+          <p className="text-[11px] font-medium text-primary uppercase tracking-[0.09em]">Telegram</p>
+          <Button
             type="button"
+            variant="link"
+            size="none"
             onClick={() => setGuideOpen(true)}
-            className="text-[12px] font-medium text-oxblood underline underline-offset-2 hover:text-ink"
+            className="text-[12px] font-medium hover:text-foreground"
           >
             {t('How to set this up', '如何设置')}
-          </button>
+          </Button>
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex flex-col gap-[6px]">
@@ -674,13 +688,13 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
 function BotFatherMockup() {
   return (
     <svg viewBox="0 0 400 92" className="w-full h-auto" role="img" aria-hidden="true">
-      <rect x="0" y="0" width="400" height="92" rx="10" className="fill-surface-sunken" />
-      <circle cx="24" cy="24" r="12" className="fill-oxblood/20" />
-      <text x="44" y="21" className="fill-oxblood text-[11px] font-medium" style={{ fontFamily: 'inherit' }}>BotFather</text>
-      <rect x="44" y="30" width="330" height="46" rx="10" className="fill-surface-raised stroke-clay-border" strokeWidth="1.5" />
-      <text x="56" y="48" className="fill-ink text-[10px]" style={{ fontFamily: 'inherit' }}>Done! Use this token to access the HTTP API:</text>
-      <rect x="56" y="55" width="228" height="15" rx="4" className="fill-oxblood/10" />
-      <text x="62" y="65.5" className="fill-oxblood text-[10px] font-mono font-medium">123456789:AAHexampleToken_9x2K</text>
+      <rect x="0" y="0" width="400" height="92" rx="10" className="fill-muted" />
+      <circle cx="24" cy="24" r="12" className="fill-primary/20" />
+      <text x="44" y="21" className="fill-primary text-[11px] font-medium" style={{ fontFamily: 'inherit' }}>BotFather</text>
+      <rect x="44" y="30" width="330" height="46" rx="10" className="fill-card stroke-border" strokeWidth="1.5" />
+      <text x="56" y="48" className="fill-foreground text-[10px]" style={{ fontFamily: 'inherit' }}>Done! Use this token to access the HTTP API:</text>
+      <rect x="56" y="55" width="228" height="15" rx="4" className="fill-primary/10" />
+      <text x="62" y="65.5" className="fill-primary text-[10px] font-mono font-medium">123456789:AAHexampleToken_9x2K</text>
     </svg>
   )
 }
@@ -690,15 +704,15 @@ function BotFatherMockup() {
 function GetUpdatesMockup() {
   return (
     <svg viewBox="0 0 400 108" className="w-full h-auto" role="img" aria-hidden="true">
-      <rect x="0" y="0" width="400" height="108" rx="10" className="fill-ink" />
-      <circle cx="16" cy="16" r="4" className="fill-cream/30" />
-      <circle cx="30" cy="16" r="4" className="fill-cream/30" />
-      <circle cx="44" cy="16" r="4" className="fill-cream/30" />
-      <text x="16" y="38" className="fill-cream/70 text-[10px] font-mono">{'{"result":[{"message":{'}</text>
-      <text x="16" y="54" className="fill-cream/70 text-[10px] font-mono">{'  "text":"hi","'}</text>
-      <rect x="16" y="60" width="176" height="17" rx="4" className="fill-rose-muted/40" />
-      <text x="22" y="72.5" className="fill-cream text-[10px] font-mono font-medium">{'"chat":{"id":987654321,…}'}</text>
-      <text x="16" y="94" className="fill-cream/70 text-[10px] font-mono">{'}}]}'}</text>
+      <rect x="0" y="0" width="400" height="108" rx="10" className="fill-foreground" />
+      <circle cx="16" cy="16" r="4" className="fill-background/30" />
+      <circle cx="30" cy="16" r="4" className="fill-background/30" />
+      <circle cx="44" cy="16" r="4" className="fill-background/30" />
+      <text x="16" y="38" className="fill-background/70 text-[10px] font-mono">{'{"result":[{"message":{'}</text>
+      <text x="16" y="54" className="fill-background/70 text-[10px] font-mono">{'  "text":"hi","'}</text>
+      <rect x="16" y="60" width="176" height="17" rx="4" className="fill-muted-foreground/40" />
+      <text x="22" y="72.5" className="fill-background text-[10px] font-mono font-medium">{'"chat":{"id":987654321,…}'}</text>
+      <text x="16" y="94" className="fill-background/70 text-[10px] font-mono">{'}}]}'}</text>
     </svg>
   )
 }
@@ -712,9 +726,9 @@ function GetUpdatesMockup() {
 function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t } = useSession()
   const stepClass = 'flex gap-3'
-  const numClass = 'shrink-0 w-5 h-5 rounded-full bg-oxblood text-cream text-[11px] font-medium flex items-center justify-center'
-  const textClass = 'text-[13px] text-ink leading-[1.5]'
-  const mockupWrapClass = 'ml-8 rounded-lg overflow-hidden border-[1.5px] border-clay-border -mt-1'
+  const numClass = 'shrink-0 w-5 h-5 rounded-pill bg-primary text-background text-[11px] font-medium flex items-center justify-center'
+  const textClass = 'text-[13px] text-foreground leading-[1.5]'
+  const mockupWrapClass = 'ml-8 rounded-lg overflow-hidden border-[0.5px] border-border -mt-1'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -727,7 +741,7 @@ function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChang
             <span className={numClass}>1</span>
             <p className={textClass}>
               {t('In Telegram, open a chat with ', '在 Telegram 中，打开与 ')}
-              <a href="https://t.me/BotFather" target="_blank" rel="noopener" className="underline underline-offset-2 font-medium text-oxblood">@BotFather</a>
+              <a href="https://t.me/BotFather" target="_blank" rel="noopener" className="underline underline-offset-2 font-medium text-primary">@BotFather</a>
               {t(' and send /newbot. Follow the prompts to name your bot.',
                 ' 的对话并发送 /newbot，按提示为机器人命名。')}
             </p>
@@ -754,7 +768,7 @@ function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChang
                 '然后在浏览器打开以下链接，把 <TOKEN> 换成您的令牌：')}
             </p>
           </div>
-          <p className="font-mono text-[12px] break-all rounded-lg border-[1.5px] border-clay-border bg-surface-sunken px-3 py-2 text-ink -mt-2 ml-8">
+          <p className="font-mono text-[12px] break-all rounded-lg border-[0.5px] border-border bg-muted px-3 py-2 text-foreground -mt-2 ml-8">
             https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
           </p>
           <div className={stepClass}>

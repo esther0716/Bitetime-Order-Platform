@@ -1,6 +1,55 @@
 # TinyOrder
 
-> TinyOrder lets home kitchens and small food businesses run their own online food ordering shop and keep every order in one place. Each shop gets its own storefront, menu, and order management — no commission on orders.
+> TinyOrder is online ordering software for **home businesses and small independent sellers** —
+> home kitchens and bakers first, and equally anyone selling what they make: handmade goods, crafts,
+> art, clothing. Each shop gets its own storefront link, its own product list and its own order
+> list. TinyOrder charges a flat subscription and takes **no commission** on orders; customers pay
+> the shop directly and TinyOrder never handles the money. The dashboard and every storefront work
+> in both English and Chinese.
 
-- [Home](https://tinyorder.shop/): what TinyOrder is, who it's for
-- [Pricing](https://tinyorder.shop/pricing): Basic and Pro plans, free 7-day trial, no card required
+TinyOrder is **software a shop runs itself**, not a marketplace and not a delivery app. There is no
+shared customer marketplace to be listed in, no rider network, and no payment processing — the shop
+shares its own link, shows its own payment instructions, and is paid directly.
+
+Who it is for: anyone selling their own products direct to customers and currently taking orders by
+hand in WhatsApp groups, Instagram DMs or Google Forms. Food is where most shops start — home
+bakers, home kitchens, frozen-food and meal-prep sellers, market stalls, small cafés — and nothing
+in the product is food-only: a maker selling craft, art, clothing or any other small-batch goods
+uses the same storefront, the same delivery pricing and the same order list.
+
+What a shop gets: a storefront page with photos, prices and per-unit pricing (per piece, box, set,
+pack, dozen, bottle, jar, tray, slice, kg or g); product names and descriptions in English, Chinese
+or both; delivery fees that are flat, by region, or a base fee plus a rate per kilometre of real
+road distance from the shop's address;
+pickup, delivery or both; numbered orders in one list with the customer's name, WhatsApp number,
+items, wanted date and total; order status (preparing / ready / done); customer self-service order
+lookup by order number; an email alert on every order on every plan; and a customer list the shop
+builds automatically from its orders.
+
+Plans: **Basic** and **Pro**. Pro adds instant Telegram alerts, discount vouchers, promotional
+prices on individual items, and priority support. Billing is monthly or yearly, with two months
+free on yearly; amounts are shown per region on the pricing page and are deliberately not repeated
+here. Basic starts with a **free 7-day trial that needs no card**; starting on Pro pays up front.
+A shop and its order page go live the moment the owner signs up — there is no approval wait.
+Cancel any time from the dashboard; the shop runs to the end of the paid period.
+
+Each shop is served at `https://tinyorder.shop/s/<shop-slug>`. Shop slugs are chosen at signup and
+are not listed here or in the sitemap — they appear and change without a deploy.
+
+## Pages
+
+- [Home](https://tinyorder.shop/): what TinyOrder is, who it is for, and how a shop gets started
+- [Features](https://tinyorder.shop/features): the storefront, delivery pricing, order handling, alerts, and the customer list, in full
+- [Pricing](https://tinyorder.shop/pricing): current Basic and Pro amounts for your region, the full plan comparison, and the 7-day cardless trial
+- [FAQ](https://tinyorder.shop/faq): cost, trial, how customers pay, whether a website is needed, what Pro adds, cancelling, Chinese support, and how fast a shop goes live
+
+## Start a shop
+
+- [Sign up](https://tinyorder.shop/merchant/signup): create a shop; the storefront link is live immediately
+- [Log in](https://tinyorder.shop/merchant/login): existing shop owners
+
+## Optional
+
+- [Terms](https://tinyorder.shop/terms): terms of service
+- [Privacy](https://tinyorder.shop/privacy): privacy policy
+- [Sitemap](https://tinyorder.shop/sitemap.xml): every platform URL that exists without a database behind it

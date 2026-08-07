@@ -46,7 +46,7 @@ import { estimateFor } from './fx.js'
 import { listReferredShops, listEarnedRewards } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
 import { placeOrder, OrderError, orderMerchantId, setOrderPaymentProof } from './orders.js'
-import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue } from './feedback.js'
+import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue, updateFeedbackImages } from './feedback.js'
 import {
   findDueTrials, claimSend, releaseSend,
   getOwnTrialFeedback, respondTrialFeedback, skipTrialFeedback, listTrialFeedbackForAdmin,
@@ -63,11 +63,11 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
-import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
+import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, menuCategoriesChanged, categoryChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
 
@@ -82,6 +82,26 @@ app.use('/api/*', cors({
 }))
 
 const ORDER_HISTORY_LIMIT = 20
+
+/**
+ * Streams one object out of a PRIVATE bucket, with the type Storage recorded for it.
+ *
+ * The private buckets (`payment-proof`, `feedback-images`) have no storage.objects policies at
+ * all, so the browser cannot fetch these bytes directly in either direction — a backend route
+ * reading them with the service-role client is the only way out, and every such route ended up
+ * writing the same download-then-arrayBuffer tail. Three copies was the point to stop.
+ *
+ * Callers do the AUTHORISATION. This function proves nothing about who may see the object; it is
+ * only the transport, and it must never be handed a path that came from a request.
+ */
+async function streamPrivateObject(bucket: string, path: string): Promise<Response> {
+  const { data, error } = await admin.storage.from(bucket).download(path)
+  if (error || !data) return Response.json({ error: 'download_failed' }, { status: 500 })
+  return new Response(await data.arrayBuffer(), {
+    status: 200,
+    headers: { 'Content-Type': data.type || 'application/octet-stream' },
+  })
+}
 
 app.get('/health', (c) => c.json({ ok: true }))
 
@@ -230,6 +250,15 @@ app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
   // WHY, in time for the merchant still looking at the form, instead of a bare 500 out of
   // PostgREST.
   const stored = c.get('merchant')
+  // Menu categories are Pro, gated the same way `option_groups` is one endpoint over and for the
+  // same recorded reason (ADR 0013): the question is whether the list CHANGED, never whether the
+  // body carried it. ShopSettings resubmits a whole config bag, so a presence check would refuse
+  // a Basic ex-Pro shop editing its shipping rates. Clearing counts as a change, so a shop that
+  // stepped down cannot delete the categories it can no longer edit — the downgrade hides them,
+  // and ceasing to pay must not be a way to destroy them.
+  if (menuCategoriesChanged(patch, stored) && !(await hasProAccess(c))) {
+    return c.json({ error: REQUIRES_PRO }, 403)
+  }
   const merged = {
     pickup: patch.pickup_enabled ?? stored.pickup_enabled,
     delivery: patch.delivery_enabled ?? stored.delivery_enabled,
@@ -738,13 +767,24 @@ app.put('/api/merchants/:id/products/:productId', requireMerchantOwns, requireOw
   const id = c.req.param('id')
   const productId = c.req.param('productId')
   const fields = pickProductFields(await c.req.json().catch(() => ({})))
-  if (promoChanged(fields, c.get('child')) && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
-  }
-  // Menu options are Pro, gated the same way and for the same reason (ADR 0010). Clearing counts
-  // as a change, so a shop that stepped down to basic cannot delete the groups it can no longer
-  // edit — a Pro feature must not be removable by the act of ceasing to pay for it.
-  if (optionGroupsChanged(fields, c.get('child')) && !(await hasProAccess(c))) {
+  // THREE Pro columns on one endpoint, asked as one question. Each is change-based for the same
+  // recorded reason (the promo comment above), and they share an answer, so they share the plan
+  // lookup — three separate `await hasProAccess(c)` calls asked billing the same thing three
+  // times to reach one 403.
+  //
+  //   * `optionGroupsChanged` — menu options, ADR 0010.
+  //   * `categoryChanged` — which section the product sits in, ADR 0013. The submitted id is
+  //     deliberately NOT checked against the shop's category list: an id the list no longer
+  //     holds is the "uncategorized" reading the whole delete story rests on, so validating it
+  //     here would turn a stale dashboard into a refused save.
+  //
+  // Clearing counts as a change in all three, so a shop that stepped down to basic cannot delete
+  // what it can no longer edit — a Pro feature must not be removable by ceasing to pay for it.
+  const child = c.get('child')
+  const touchesPro = promoChanged(fields, child)
+    || optionGroupsChanged(fields, child)
+    || categoryChanged(fields, child)
+  if (touchesPro && !(await hasProAccess(c))) {
     return c.json({ error: REQUIRES_PRO }, 403)
   }
   // ADR 0008 traded every `check` constraint on these groups for atomic saves and a jsonb column
@@ -856,14 +896,7 @@ app.get(
     const path = order?.payment_proof as string | null | undefined
     if (!path) return c.json({ error: 'not_found' }, 404)
 
-    const { data, error } = await admin.storage.from('payment-proof').download(path)
-    if (error || !data) return c.json({ error: 'download_failed' }, 500)
-
-    const buffer = await data.arrayBuffer()
-    return new Response(buffer, {
-      status: 200,
-      headers: { 'Content-Type': data.type || 'application/octet-stream' },
-    })
+    return streamPrivateObject('payment-proof', path)
   },
 )
 
@@ -882,14 +915,7 @@ app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
   const path = order.payment_proof as string | null
   if (!path) return c.json({ error: 'not_found' }, 404)
 
-  const { data, error: downloadError } = await admin.storage.from('payment-proof').download(path)
-  if (downloadError || !data) return c.json({ error: 'download_failed' }, 500)
-
-  const buffer = await data.arrayBuffer()
-  return new Response(buffer, {
-    status: 200,
-    headers: { 'Content-Type': data.type || 'application/octet-stream' },
-  })
+  return streamPrivateObject('payment-proof', path)
 })
 
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
@@ -1500,6 +1526,37 @@ export const githubDeps: {
 // one real submission proves as well as twenty. Nothing else may import it.
 export const feedbackWindow = createSlidingWindow({ limit: 20, windowMs: 60 * 60_000, now: () => Date.now() })
 
+const FEEDBACK_IMAGE_BUCKET = 'feedback-images'
+// MIME -> extension. Deliberately NOT in @bitetime/shared: the browser never derives an
+// extension, so this is not a rule both sides enforce — the same reason PAYMENT_PROOF_EXT
+// lives here. Its keys are the same three types FEEDBACK_IMAGE_TYPES lists, and the route
+// checks membership so the lookup is total and no `undefined` can reach a storage path.
+const FEEDBACK_IMAGE_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
+
+/**
+ * Reads the submit body ONCE, in whichever of the two spellings arrived, and normalizes to a
+ * shape validateFeedback can judge. The browser always sends multipart (even with no files);
+ * JSON stays accepted because it costs eight lines and is the honest no-image case that
+ * tests/api/feedback.test.ts already covers.
+ *
+ * parseBody({ all: true }) is what returns an ARRAY for a repeated `images` field rather than
+ * only the last one — without it, three attached screenshots silently become one.
+ */
+async function readFeedbackSubmission(c: Context): Promise<{ body: unknown; files: File[] }> {
+  const contentType = c.req.header('Content-Type') ?? ''
+  if (!contentType.startsWith('multipart/form-data')) {
+    return { body: await c.req.json().catch(() => ({})), files: [] }
+  }
+  const form = await c.req.parseBody({ all: true }).catch(() => ({} as Record<string, unknown>))
+  const images = form['images']
+  const files = (Array.isArray(images) ? images : [images]).filter((f): f is File => f instanceof File)
+  return { body: { category: form['category'], message: form['message'] }, files }
+}
+
 app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
   const user = c.get('user')
   const merchant = c.get('merchant')
@@ -1508,15 +1565,52 @@ app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
     return c.json({ error: 'Too many feedback submissions. Please try again later.' }, 429)
   }
 
-  const parsed = validateFeedback(await c.req.json().catch(() => ({})))
+  const { body, files } = await readFeedbackSubmission(c)
+
+  const parsed = validateFeedback(body)
   if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+
+  // The whole selection — count and every file — judged BEFORE the insert, so a rejected
+  // submission leaves nothing behind: no row, no orphan object. One shared call rather than a
+  // hand-rolled loop, so this and store.ts cannot drift from each other or from the database's
+  // own cardinality CHECK.
+  const images = validateFeedbackImages(files.map(f => ({ type: f.type, size: f.size })))
+  if (!images.ok) {
+    const name = images.index === null ? null : files[images.index]?.name
+    return c.json({ error: name ? `${images.error}: ${name}` : images.error }, 400)
+  }
+  // Redundant with the type rule above (same three types) and kept anyway: it is what makes the
+  // extension lookup below total instead of producing "undefined" in a storage path.
+  for (const file of files) {
+    if (!FEEDBACK_IMAGE_EXT[file.type]) return c.json({ error: `Unsupported image type: ${file.name}` }, 400)
+  }
 
   // merchant.id comes from the route the middleware already verified; user.id from the
   // JWT. Neither is ever read from the body — see tests/api/feedback.test.ts.
   const row = await insertFeedback({ merchantId: merchant.id, userId: user.id, draft: parsed.value })
 
+  // Upload AFTER the row is committed, on purpose. The reverse order trades an orphan object
+  // for an orphan row claiming images it does not have, and risks losing a message the merchant
+  // typed to a storage hiccup — the exact outcome FeedbackFab's error path exists to avoid.
+  const paths: string[] = []
+  let imagesFailed = 0
+  for (const file of files) {
+    const path = `${merchant.id}/${row.id}/${crypto.randomUUID()}.${FEEDBACK_IMAGE_EXT[file.type]}`
+    const { error } = await admin.storage
+      .from(FEEDBACK_IMAGE_BUCKET)
+      .upload(path, file, { contentType: file.type, upsert: true })
+    if (error) {
+      console.error(`feedback ${row.id}: screenshot upload failed:`, error.message)
+      imagesFailed++
+      continue
+    }
+    paths.push(path)
+  }
+  await updateFeedbackImages(row.id, paths)
+
   // Best-effort (github.ts). Never changes what the merchant gets back — the row below is
-  // the same whether or not this succeeds.
+  // the same whether or not this succeeds. The count is what ACTUALLY LANDED, so the issue
+  // never claims a screenshot that is not there.
   const issue = await githubDeps.createIssue(env.githubToken, {
     title: buildIssueTitle(parsed.value.category, merchant.name),
     body: buildIssueBody({
@@ -1525,12 +1619,16 @@ app.post('/api/merchants/:id/feedback', requireMerchantOwns, async (c) => {
       shopSlug: merchant.slug,
       feedbackId: row.id,
       createdAt: row.created_at,
+      imageCount: paths.length,
+      adminUrl: env.frontendUrl,
     }),
     labels: ['needs-triage', categoryToLabel(parsed.value.category)],
   })
   if (issue) await updateFeedbackGithubIssue(row.id, issue)
 
-  return c.json(row, 201)
+  // `row` was selected at insert time, before updateFeedbackImages ran, so its image_paths is
+  // still []. Override with what actually landed.
+  return c.json({ ...row, image_paths: paths, images_failed: imagesFailed }, 201)
 })
 
 app.get('/api/admin/feedback', requireSuperadmin, async (c) => {
@@ -1539,6 +1637,36 @@ app.get('/api/admin/feedback', requireSuperadmin, async (c) => {
     return c.json({ error: 'Unknown feedback status' }, 400)
   }
   return c.json(await listFeedback(status))
+})
+
+/**
+ * One screenshot from one feedback row, for the superadmin inbox. Same shape as the
+ * payment-proof download: the backend reads the private bucket with the service-role client
+ * and streams the bytes, because the browser has no access to that bucket in either direction
+ * (20260806120000 gives it no policies at all).
+ *
+ * The caller names an INDEX, never a path. The path comes out of the row's own image_paths
+ * array, so there is no path for a caller to point somewhere else — which is the whole
+ * security property of this route, not a convenience.
+ *
+ * Missing feedback, an out-of-range index and a non-numeric index all return the same 404:
+ * a distinguishable error here would be an oracle for which feedback ids exist.
+ */
+app.get('/api/admin/feedback/:feedbackId/images/:index', requireSuperadmin, async (c) => {
+  const { data: row, error } = await admin
+    .from('merchant_feedback')
+    .select('image_paths')
+    .eq('id', c.req.param('feedbackId'))
+    .maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+
+  const paths = (row?.image_paths ?? []) as string[]
+  const index = Number(c.req.param('index'))
+  if (!Number.isInteger(index) || index < 0 || index >= paths.length) {
+    return c.json({ error: 'not_found' }, 404)
+  }
+
+  return streamPrivateObject(FEEDBACK_IMAGE_BUCKET, paths[index])
 })
 
 app.patch('/api/admin/feedback/:feedbackId', requireSuperadmin, async (c) => {
