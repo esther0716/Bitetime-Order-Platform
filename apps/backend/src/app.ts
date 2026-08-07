@@ -66,7 +66,7 @@ import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOpt
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
-import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
+import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, menuCategoriesChanged, categoryChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
 
@@ -249,6 +249,15 @@ app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
   // WHY, in time for the merchant still looking at the form, instead of a bare 500 out of
   // PostgREST.
   const stored = c.get('merchant')
+  // Menu categories are Pro, gated the same way `option_groups` is one endpoint over and for the
+  // same recorded reason (ADR 0013): the question is whether the list CHANGED, never whether the
+  // body carried it. ShopSettings resubmits a whole config bag, so a presence check would refuse
+  // a Basic ex-Pro shop editing its shipping rates. Clearing counts as a change, so a shop that
+  // stepped down cannot delete the categories it can no longer edit — the downgrade hides them,
+  // and ceasing to pay must not be a way to destroy them.
+  if (menuCategoriesChanged(patch, stored) && !(await hasProAccess(c))) {
+    return c.json({ error: REQUIRES_PRO }, 403)
+  }
   const merged = {
     pickup: patch.pickup_enabled ?? stored.pickup_enabled,
     delivery: patch.delivery_enabled ?? stored.delivery_enabled,
@@ -757,13 +766,24 @@ app.put('/api/merchants/:id/products/:productId', requireMerchantOwns, requireOw
   const id = c.req.param('id')
   const productId = c.req.param('productId')
   const fields = pickProductFields(await c.req.json().catch(() => ({})))
-  if (promoChanged(fields, c.get('child')) && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
-  }
-  // Menu options are Pro, gated the same way and for the same reason (ADR 0010). Clearing counts
-  // as a change, so a shop that stepped down to basic cannot delete the groups it can no longer
-  // edit — a Pro feature must not be removable by the act of ceasing to pay for it.
-  if (optionGroupsChanged(fields, c.get('child')) && !(await hasProAccess(c))) {
+  // THREE Pro columns on one endpoint, asked as one question. Each is change-based for the same
+  // recorded reason (the promo comment above), and they share an answer, so they share the plan
+  // lookup — three separate `await hasProAccess(c)` calls asked billing the same thing three
+  // times to reach one 403.
+  //
+  //   * `optionGroupsChanged` — menu options, ADR 0010.
+  //   * `categoryChanged` — which section the product sits in, ADR 0013. The submitted id is
+  //     deliberately NOT checked against the shop's category list: an id the list no longer
+  //     holds is the "uncategorized" reading the whole delete story rests on, so validating it
+  //     here would turn a stale dashboard into a refused save.
+  //
+  // Clearing counts as a change in all three, so a shop that stepped down to basic cannot delete
+  // what it can no longer edit — a Pro feature must not be removable by ceasing to pay for it.
+  const child = c.get('child')
+  const touchesPro = promoChanged(fields, child)
+    || optionGroupsChanged(fields, child)
+    || categoryChanged(fields, child)
+  if (touchesPro && !(await hasProAccess(c))) {
     return c.json({ error: REQUIRES_PRO }, 403)
   }
   // ADR 0008 traded every `check` constraint on these groups for atomic saves and a jsonb column

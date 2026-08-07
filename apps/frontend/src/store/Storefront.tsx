@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
@@ -12,13 +12,14 @@ import { useDeliveryQuote } from './useDeliveryQuote'
 import { submitGate } from './submitGate'
 import { pruneCart, pruneMessage, nextCart, repairCart, plainQty, cartRefusalMessage } from './cartRules'
 import type { CartTarget } from './cartRules'
-import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, optionGroupsFromRow, cartLineKey, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, optionGroupsFromRow, menuCategoriesFromRow, cartLineKey, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { FulfilmentMethod, CartLine, PickSnapshot } from '@bitetime/shared'
 import { prefillFromProfile, savedDetailsFromOrder, carriesAddress } from '../savedDetails'
 import { fulfilmentLabel, feeLineLabel } from '../fulfilmentLabel'
 import { formatMoney } from '../currency'
 import { formatTaxRate } from '../receipt'
 import { formatUnit } from '../productUnit'
+import { menuSections } from '../menuGroups'
 import { useServerClock } from '../serverClock'
 import { lookupPostcode } from '../postcodes'
 import { MY_STATES } from '../states-my'
@@ -201,6 +202,11 @@ export default function Storefront() {
   }
 
   const activeProducts = products.filter(p => p.active)
+  // The shop's menu sections (ADR 0013), already on the merchant row `MerchantProvider` loaded —
+  // no second request. `menuSections` decides everything about how they render, including the
+  // three ways a product ends up in the trailing un-headed block; a shop with none gets one
+  // section holding its whole menu, which is the storefront that existed before this feature.
+  const sections = menuSections(activeProducts, menuCategoriesFromRow(merchant?.product_categories))
   // The rates come from the SAME function the backend prices with: it commits at its own
   // total and refuses a quote that disagrees (`price_changed`), so a fallback that differed
   // by a ringgit would not be a display bug — it would refuse the checkout.
@@ -1013,7 +1019,18 @@ export default function Storefront() {
               </p>
             ) : (
               <div className="flex flex-col gap-[10px]">
-                {activeProducts.map(p => (
+                {sections.map(section => (
+                  <Fragment key={section.category?.id ?? ''}>
+                    {/* The trailing block is deliberately un-headed: its members are the products
+                        this shop has not filed, and naming them would be inventing a section the
+                        merchant never authored. A shop with no categories has exactly one section,
+                        and it is this one — so its menu is unchanged by all of this. */}
+                    {section.category && (
+                      <div className="text-[13px] font-semibold text-foreground mt-2 first:mt-0">
+                        {(lang === 'zh' && section.category.name_zh) || section.category.name}
+                      </div>
+                    )}
+                {section.products.map(p => (
                   <div
                     key={p.id}
                     className={cn(
@@ -1138,6 +1155,8 @@ export default function Storefront() {
                     </div>
                     )}
                   </div>
+                ))}
+                  </Fragment>
                 ))}
               </div>
             )}

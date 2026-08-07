@@ -32,6 +32,10 @@ export interface Merchant {
   created_at?: string
   /** Landing-page sample-shops carousel flag (#107). Toggled only from /admin/merchants. */
   is_sample?: boolean
+  /** The shop's menu sections, in display order (ADR 0013). Read through
+   *  `menuCategoriesFromRow`, never directly — the drivers disagree about whether jsonb arrives
+   *  parsed, and anything unreadable must fall back to "no categories", not throw. */
+  product_categories?: unknown
   /** Whether this shop charges tax. See `shopTax` — never read this without it. */
   tax_enabled?: boolean
   /** A PERCENTAGE: 6 means 6%. PostgREST sends a number; read via `shopTax`. */
@@ -103,6 +107,10 @@ export interface Product {
   price: number
   unit?: string
   unit_quantity?: number  // display-only quantity paired with unit; defaults to 1
+  // Which menu section this sits in (ADR 0013) — an id in the shop's own
+  // `merchants.product_categories`, with no foreign key behind it. `null`, absent, and an id the
+  // shop no longer holds are ONE state: uncategorized. See menuGroups.ts.
+  category_id?: string | null
   sort?: number
   image_urls?: string[]
   created_at?: string

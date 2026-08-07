@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { MoreHorizontal, Package } from 'lucide-react'
+import { MoreHorizontal, Package, Lock } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
-import { lookupProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl } from '../store'
+import { lookupProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl, updateMerchantConfig } from '../store'
 import { coerceQuantity, formatUnit } from '../productUnit'
 import { formatMoney, currencyDef } from '../currency'
 import { promoEndFromDate, promoEndToDate } from '../promoEnd'
@@ -22,10 +22,36 @@ import { DataTable, SortableHeader } from '../components/ui/data-table'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../components/ui/empty'
 import ImagePicker from './ProductImages'
 import OptionGroupsEditor from './OptionGroupsEditor'
+import MenuCategoriesDialog, { blankCategory, categoryProblem } from './MenuCategoriesDialog'
 import { UpgradeLink } from './ProLock'
+import { useUpgradeNav } from './UpgradeNav'
+import { Tooltip, TooltipTrigger, TooltipContent } from '../components/ui/tooltip'
 import { useProAccess, isRequiresPro } from '../plan'
-import { optionGroupsFromRow } from '@bitetime/shared'
-import type { OptionGroup } from '@bitetime/shared'
+import { findCategory } from '../menuGroups'
+import {
+  optionGroupsFromRow, menuCategoriesFromRow, validateMenuCategories,
+  MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
+} from '@bitetime/shared'
+import type { OptionGroup, MenuCategory } from '@bitetime/shared'
+
+// The picker's "create one" entry. A sentinel rather than a real id: it must not collide with a
+// category id, and a UUID never starts with a space.
+const NEW_CATEGORY = ' new '
+
+/**
+ * Has this product's sale already finished? Read once, when the edit dialog opens.
+ *
+ * MODULE SCOPE on purpose. `Date.now()` is impure, and the React Compiler refuses one called from
+ * anything it compiles — which `openEdit` became once it started reading a value derived during
+ * render. Outside the component the call is opaque to the compiler and the rule is satisfied
+ * honestly rather than silenced.
+ *
+ * Display-only, so the device clock is an acceptable stand-in for the server's here — unlike the
+ * storefront's price quote (#68), this never becomes an order, so a merchant's laptop being a few
+ * minutes off makes the hint early or late, never a wrong price.
+ */
+const promoHasEnded = (promoEnd: unknown): boolean =>
+  !!promoEnd && new Date(promoEnd as string).getTime() < Date.now()
 
 // Canonical unit options (value stored as-is; label is bilingual).
 const UNITS: { value: string; en: string; zh: string }[] = [
@@ -42,16 +68,22 @@ const UNITS: { value: string; en: string; zh: string }[] = [
   { value: 'g', en: 'g', zh: '克' },
 ]
 
+// `category_id: ''` is the form's "no category". It becomes NULL on the way out — the column has
+// no empty-string state, and the two must not be allowed to diverge into "unfiled" and "filed
+// under nothing".
 const BLANK = {
   name: '', name_zh: '', descr: '', price: '', unit: 'pcs', unit_quantity: 1, active: true,
-  promo_price: '', promo_limit: '', promo_end: '',
+  promo_price: '', promo_limit: '', promo_end: '', category_id: '',
 }
 
 // Handlers + language + currency ride on table.options.meta so the column defs stay
 // stable (defined once) and never reset sorting when a row action refetches.
 interface ProductTableMeta {
   t: (en: string, zh: string) => string
+  lang: string
   currency?: string
+  /** The shop's own sections, so the Category column can name one — hidden ones included. */
+  categories: MenuCategory[]
   onEdit: (p: any) => void
   onRemove: (p: any) => void
 }
@@ -88,6 +120,34 @@ const columns: ColumnDef<any>[] = [
           {p.name_zh ? <span className="text-muted-foreground font-normal"> / {p.name_zh}</span> : null}
           {!p.active && <em className="italic text-[12px] text-muted-foreground"> · {t('hidden', '已隐藏')}</em>}
         </div>
+      )
+    },
+  },
+  {
+    // Which section the product sits in — and, more usefully, which products are still in none.
+    // A new product falls to the bottom of the storefront's un-headed trailing block, and this
+    // column is where a merchant notices that rather than mistaking it for a save that failed.
+    id: 'category',
+    // NOT sortable, and that is a deliberate trade rather than an omission. The label a merchant
+    // would want to sort on is resolved from the shop's category list, which lives on
+    // `table.options.meta` — reachable from a cell, but not from a `sortingFn`. Threading it in
+    // would mean rebuilding these column defs whenever the merchant row changes, which is the one
+    // thing the stability comment above exists to prevent (it resets the table's sort).
+    enableSorting: false,
+    header: ({ table }) => (
+      <span className="whitespace-nowrap">{(table.options.meta as ProductTableMeta).t('Category', '分类')}</span>
+    ),
+    cell: ({ row, table }) => {
+      const { t, lang, categories } = table.options.meta as ProductTableMeta
+      // Hidden categories resolve too: a merchant needs to see where an item is filed even while
+      // that section is switched off. Only an id the shop no longer holds reads as unfiled.
+      const c = findCategory(categories, row.original.category_id)
+      if (!c) return <span className="text-[13px] text-muted-foreground italic">{t('None', '未分类')}</span>
+      return (
+        <span className="text-[13px] text-muted-foreground whitespace-nowrap">
+          {(lang === 'zh' && c.name_zh) || c.name}
+          {!c.active && <em className="italic"> · {t('hidden', '已隐藏')}</em>}
+        </span>
       )
     },
   },
@@ -138,7 +198,8 @@ const columns: ColumnDef<any>[] = [
 ]
 
 export default function ProductsManager() {
-  const { t, lang, merchant } = useSession()
+  const { t, lang, merchant, refreshMerchant } = useSession()
+  const { goToSubscription } = useUpgradeNav()
   const [rows, setRows] = useState<any[] | null>(null)
   const [form, setForm] = useState<any>(BLANK)
   const [busy, setBusy] = useState(false)
@@ -152,6 +213,15 @@ export default function ProductsManager() {
   const [images, setImages] = useState<string[]>([])
   // Saved by the product's own upsert, not by a second write — see ADR 0008.
   const [optionGroups, setOptionGroups] = useState<OptionGroup[]>([])
+  // The shop's menu sections (ADR 0013). Read off the merchant row the session already holds —
+  // no request — and written back through `PATCH /api/merchants/:id`, so `refreshMerchant` is
+  // what makes a save visible rather than a local copy that could drift from the row.
+  const categories = menuCategoriesFromRow(merchant?.product_categories)
+  const [categoriesOpen, setCategoriesOpen] = useState(false)
+  const [categoriesSaving, setCategoriesSaving] = useState(false)
+  // The inline "+ New category…" draft in the product form. `null` is "not creating one" — an
+  // empty string is a merchant who opened it and has not typed yet, and the two are different.
+  const [newCategory, setNewCategory] = useState<string | null>(null)
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
   // Promos are Pro-only (#110); ordinary product editing is not. This flag locks the promo
@@ -187,10 +257,18 @@ export default function ProductsManager() {
       promo_price: p.promo_price === null || p.promo_price === undefined ? '' : String(p.promo_price),
       promo_limit: p.promo_limit === null || p.promo_limit === undefined ? '' : String(p.promo_limit),
       promo_end: promoEndToDate(p.promo_end),
+      // THE STORED VALUE, VERBATIM, dangling id and all. Mapping a dead id to '' here looked
+      // tidy and was a bug: `save` sends `form.category_id || null`, so a Basic ex-Pro shop
+      // renaming a product whose category was deleted would submit `null` against a stored id,
+      // `categoryChanged` would call that a change, and an ordinary rename would be refused with
+      // `403 requires_pro` — the exact failure `categoryChanged`'s own doc says it exists to
+      // prevent. `categoryItems` keeps the dead id selectable instead, the way `unitItems` keeps
+      // a legacy unit selectable, so the round-trip is byte-identical.
+      category_id: p.category_id ?? '',
     })
     setImages(p.image_urls ?? [])
     setOptionGroups(optionGroupsFromRow(p.option_groups))
-    setPromoEnded(!!p.promo_end && new Date(p.promo_end).getTime() < Date.now())
+    setPromoEnded(promoHasEnded(p.promo_end))
     setFormOpen(true)
   }
 
@@ -273,6 +351,10 @@ export default function ProductsManager() {
           option_groups: optionGroups,
           price: Number(form.price) || 0,
           unit_quantity: coerceQuantity(form.unit_quantity),
+          // '' is the form's "no category" and NULL is the column's; the picker's create sentinel
+          // is intercepted before it can land here, and this is the belt to that brace — a
+          // sentinel written as an id would be a product filed under a category nobody can name.
+          category_id: form.category_id && form.category_id !== NEW_CATEGORY ? form.category_id : null,
         })
       : await upsertProduct({
           ...form,
@@ -282,6 +364,10 @@ export default function ProductsManager() {
           option_groups: optionGroups,
           price: Number(form.price) || 0,
           unit_quantity: coerceQuantity(form.unit_quantity),
+          // '' is the form's "no category" and NULL is the column's; the picker's create sentinel
+          // is intercepted before it can land here, and this is the belt to that brace — a
+          // sentinel written as an id would be a product filed under a category nobody can name.
+          category_id: form.category_id && form.category_id !== NEW_CATEGORY ? form.category_id : null,
           merchant_id: merchant!.id,
         })
     if (r.ok) {
@@ -300,12 +386,20 @@ export default function ProductsManager() {
       // The promo fields are locked for a basic shop, so this is the fallback for a `plan` that
       // moved under a long-open tab — an upgrade prompt, not the bare error code (#110).
       if (isRequiresPro(err)) {
-        // Both promos and options are Pro and share this endpoint, so name the one they were
-        // actually reaching for — being told about a "promo price" while adding flavours reads
-        // as the wrong error, which is worse than a vague one.
+        // Promos, options and categories are all Pro and all share this endpoint, so name the one
+        // they were actually reaching for — being told about a "promo price" while adding flavours
+        // reads as the wrong error, which is worse than a vague one.
+        // Compared against the STORED row, not read off the form, and for the same reason the
+        // backend's gate is: the form's value and the row's agreeing is the ordinary case, and
+        // it is the disagreement that was refused. Reading `form.category_id` alone named the
+        // wrong feature whenever the category being moved away from was the one that mattered.
+        const categoryMoved = (form.category_id || null) !== (editingProduct?.category_id ?? null)
         setMsg(optionGroups.length > 0
           ? t('Menu options are a Pro feature. Upgrade to Pro to let customers choose sizes, flavours or add-ons.',
               '商品选项是 Pro 功能。升级到 Pro 即可让顾客选择规格、口味或加料。')
+          : categoryMoved
+          ? t('Menu categories are a Pro feature. Upgrade to Pro to sort your menu into sections.',
+              '菜单分类是 Pro 功能。升级到 Pro 即可将菜单分成不同类别。')
           : t('Putting an item on sale is a Pro feature. Upgrade to Pro to set a promo price.',
               '限时优惠是 Pro 功能。升级到 Pro 即可设置优惠价。'))
       } else if (err.message.includes('products_promo_below_price')) {
@@ -335,11 +429,93 @@ export default function ProductsManager() {
     await load(); toast.success(t('Product deleted', '产品已删除'))
   }
 
+  /**
+   * Write the whole category list back, in one PATCH.
+   *
+   * `refreshMerchant` rather than a local copy: this list lives on the merchant row that the
+   * session holds and that the storefront reads, so keeping a second copy here would leave the
+   * two able to disagree about what the shop's menu looks like.
+   */
+  async function saveCategories(next: MenuCategory[]): Promise<boolean> {
+    setCategoriesSaving(true)
+    const r = await updateMerchantConfig(merchant!.id, { product_categories: next })
+    setCategoriesSaving(false)
+    if (!r.ok) {
+      toast.error(isRequiresPro(r.error)
+        ? t('Menu categories are a Pro feature.', '菜单分类是 Pro 功能。')
+        : r.error.message || t('Could not save categories', '无法保存分类'))
+      return false
+    }
+    await refreshMerchant()
+    toast.success(t('Categories saved', '分类已保存'))
+    return true
+  }
+
+  // How many products each category holds, so the delete confirm can say what it costs. Counted
+  // over ALL products, hidden ones included: a merchant deleting a category is told about every
+  // row that points at it, not only the ones currently on sale.
+  const categoryCounts = (rows ?? []).reduce<Record<string, number>>((acc, p) => {
+    if (p.category_id) acc[p.category_id] = (acc[p.category_id] ?? 0) + 1
+    return acc
+  }, {})
+
   const meta: ProductTableMeta = {
-    t, currency,
+    t, lang, currency, categories,
     onEdit: openEdit,
     onRemove: setPendingDelete,
   }
+
+  /**
+   * Create one category from the product form, without leaving it.
+   *
+   * A SECOND write, and knowingly so: the list lives on the merchant row and the product on its
+   * own, so there is no single upsert that could carry both (the arrangement ADR 0008 had for
+   * option groups and ADR 0013 gives up here). What that costs is an empty category left behind
+   * if the product save then fails — benign, because a category holding nothing renders nothing.
+   *
+   * Appended, never inserted: array order is display order, and a new section quietly landing in
+   * the middle of a menu the merchant arranged is worse than one landing at the end.
+   */
+  async function createCategory() {
+    const name = (newCategory ?? '').trim()
+    if (!name) return
+    const created = { ...blankCategory(), name }
+    const next = [...categories, created]
+    const bad = validateMenuCategories(next)
+    if (bad) { toast.error(categoryProblem(bad, t)); return }
+    if (await saveCategories(next)) {
+      setForm((f: any) => ({ ...f, category_id: created.id }))
+      setNewCategory(null)
+    }
+  }
+
+  /**
+   * What the picker offers. The leading entry is "no category" — the state most products are in
+   * and the one a merchant must be able to get back to, which is why it is an option rather than
+   * an empty selection.
+   *
+   * Hidden categories are OFFERED, marked as hidden: a merchant filing a product into a section
+   * they have switched off is a legitimate thing to do (arranging next month's menu), and
+   * removing the option would leave a product already in one unable to be re-selected.
+   */
+  const categoryItems = [
+    { value: '', label: t('No category', '不分类') },
+    // The leading entry keeps a DANGLING id selectable — its category was deleted, and the
+    // product still carries the id. Exactly the reason `unitItems` below keeps a legacy unit:
+    // dropping it would silently rewrite the column on the next save, which here means a Basic
+    // ex-Pro shop being refused an ordinary rename (`categoryChanged` sees null vs the stored id).
+    ...(form.category_id && !findCategory(categories, form.category_id)
+      ? [{ value: form.category_id as string, label: t('Deleted category', '已删除的分类') }]
+      : []),
+    ...categories.map(c => ({
+      value: c.id,
+      label: ((lang === 'zh' && c.name_zh) || c.name)
+        + (c.active ? '' : ` · ${t('hidden', '已隐藏')}`),
+    })),
+    ...(categories.length < MAX_MENU_CATEGORIES
+      ? [{ value: NEW_CATEGORY, label: t('+ New category…', '+ 新建分类…') }]
+      : []),
+  ]
 
   // `items` feeds the trigger's label lookup and the rendered list from one expression.
   // The leading entry keeps a legacy value (e.g. an old "pc") selectable so existing rows
@@ -363,10 +539,55 @@ export default function ProductsManager() {
         <h3 className="font-heading text-[15px] font-medium text-primary flex items-center gap-2">
           {t('Your products', '您的产品')}
         </h3>
-        <Button data-tour="add-product" type="button" size="none" className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
-          {t('+ Add product', '+ 添加产品')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Shown to EVERY shop and locked for Basic — the show-but-lock rule (#110). Hiding it
+              would read as a missing feature and leave nothing to sell against, which is the
+              opposite of what the Pro gate is for. A Basic shop gets the padlock and the upgrade
+              CTA; the gate itself is the backend's 403, which `saveCategories` also handles for
+              the plan that moved under a long-open tab. */}
+          {pro ? (
+            <Button
+              type="button" variant="soft" size="none"
+              className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap"
+              onClick={() => setCategoriesOpen(true)}
+            >
+              {t('Categories', '分类')}
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button" variant="soft" size="none"
+                    className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap text-muted-foreground"
+                    onClick={goToSubscription}
+                  />
+                }
+              >
+                <Lock className="size-[13px] mr-1" strokeWidth={2} />
+                {t('Categories', '分类')}
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('Menu categories are a Pro feature — sort your menu into sections.',
+                   '菜单分类是 Pro 功能 — 可将菜单分成不同类别。')}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          <Button data-tour="add-product" type="button" size="none" className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
+            {t('+ Add product', '+ 添加产品')}
+          </Button>
+        </div>
       </div>
+
+      <MenuCategoriesDialog
+        open={categoriesOpen}
+        onOpenChange={setCategoriesOpen}
+        value={categories}
+        counts={categoryCounts}
+        saving={categoriesSaving}
+        onSave={saveCategories}
+        t={t}
+      />
 
       {rows.length === 0 ? (
         <Empty className="border-[0.5px] border-dashed border-border bg-background/50">
@@ -585,6 +806,58 @@ export default function ProductsManager() {
                   t={t}
                 />
               </div>
+              {pro && (
+              <div className="flex flex-col gap-[6px] min-w-0">
+                <Label htmlFor="pm-category">{t('Category (optional)', '分类（可选）')}</Label>
+                <Select
+                  value={form.category_id}
+                  onValueChange={v => {
+                    // The inline create. Writing the shop's list mid-product-edit is a second,
+                    // separate save, so a product save that then fails leaves an empty category
+                    // behind — benign, because a category holding nothing renders nothing.
+                    if (v === NEW_CATEGORY) { setNewCategory(''); return }
+                    setNewCategory(null)
+                    setForm({ ...form, category_id: v ?? '' })
+                  }}
+                  items={categoryItems}
+                >
+                  <SelectTrigger id="pm-category" className="bg-background border-border text-[13px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="z-modal-popover">
+                    {categoryItems.map(c => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {newCategory !== null && (
+                  <div className="flex gap-2">
+                    <Input
+                      variant="compact"
+                      autoFocus
+                      value={newCategory}
+                      maxLength={MENU_CATEGORY_NAME_MAX}
+                      onChange={e => setNewCategory(e.target.value)}
+                      // Enter inside a form submits it, and the product is not what is being
+                      // saved here. Create the category instead.
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void createCategory() } }}
+                      placeholder={t('New category name', '新分类名称')}
+                      aria-label={t('New category name', '新分类名称')}
+                    />
+                    <Button
+                      type="button" size="none"
+                      className="rounded-lg px-[14px] text-[13px] whitespace-nowrap"
+                      disabled={categoriesSaving || newCategory.trim() === ''}
+                      onClick={() => void createCategory()}
+                    >{categoriesSaving ? t('Saving…', '保存中…') : t('Create', '创建')}</Button>
+                  </div>
+                )}
+                <span className="text-[12px] text-muted-foreground">
+                  {t('Products with no category are listed last on your storefront, without a heading.',
+                     '未分类的产品会排在店面最后，且不带标题。')}
+                </span>
+              </div>
+              )}
               {pro && (
               <div className="flex flex-col gap-[6px] min-w-0">
                 <Label>{t('Options (optional)', '选项（可选）')}</Label>

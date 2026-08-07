@@ -61,3 +61,8 @@ export type {
   Option, OptionGroup, Selection, CartLine, PickSnapshot,
   SelectionError, GroupConfigError,
 } from './options.js'
+export {
+  validateMenuCategories, menuCategoriesFromRow, deactivateCategories,
+  MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
+} from './menuCategories.js'
+export type { MenuCategory, CategoryConfigError } from './menuCategories.js'
