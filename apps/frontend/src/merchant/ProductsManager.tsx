@@ -654,6 +654,62 @@ export default function ProductsManager() {
                   placeholder="e.g. 焦化奶油曲奇"
                 />
               </div>
+              {/* Up here with the names, not down beside Photos. Which section a product belongs
+                  to is part of WHAT IT IS, and it was landing below the promo block and the photo
+                  picker — past the fold on a laptop, so the merchant met it only after they had
+                  finished thinking about the product. Identity first, then price, then media. */}
+              {pro && (
+              <div className="flex flex-col gap-[6px] min-w-0">
+                <Label htmlFor="pm-category">{t('Category (optional)', '分类（可选）')}</Label>
+                <Select
+                  value={form.category_id}
+                  onValueChange={v => {
+                    // The inline create. Writing the shop's list mid-product-edit is a second,
+                    // separate save, so a product save that then fails leaves an empty category
+                    // behind — benign, because a category holding nothing renders nothing.
+                    if (v === NEW_CATEGORY) { setNewCategory(''); return }
+                    setNewCategory(null)
+                    setForm({ ...form, category_id: v ?? '' })
+                  }}
+                  items={categoryItems}
+                >
+                  <SelectTrigger id="pm-category" className="bg-background border-border text-[13px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="z-modal-popover">
+                    {categoryItems.map(c => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {newCategory !== null && (
+                  <div className="flex gap-2">
+                    <Input
+                      variant="compact"
+                      autoFocus
+                      value={newCategory}
+                      maxLength={MENU_CATEGORY_NAME_MAX}
+                      onChange={e => setNewCategory(e.target.value)}
+                      // Enter inside a form submits it, and the product is not what is being
+                      // saved here. Create the category instead.
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void createCategory() } }}
+                      placeholder={t('New category name', '新分类名称')}
+                      aria-label={t('New category name', '新分类名称')}
+                    />
+                    <Button
+                      type="button" size="none"
+                      className="rounded-lg px-[14px] text-[13px] whitespace-nowrap"
+                      disabled={categoriesSaving || newCategory.trim() === ''}
+                      onClick={() => void createCategory()}
+                    >{categoriesSaving ? t('Saving…', '保存中…') : t('Create', '创建')}</Button>
+                  </div>
+                )}
+                <span className="text-[12px] text-muted-foreground">
+                  {t('Products with no category are listed last on your storefront, without a heading.',
+                     '未分类的产品会排在店面最后，且不带标题。')}
+                </span>
+              </div>
+              )}
               <div className="flex flex-col gap-[6px]">
                 <Label htmlFor="pm-3">{t('Description', '描述')}</Label>
                 <Textarea
@@ -806,58 +862,6 @@ export default function ProductsManager() {
                   t={t}
                 />
               </div>
-              {pro && (
-              <div className="flex flex-col gap-[6px] min-w-0">
-                <Label htmlFor="pm-category">{t('Category (optional)', '分类（可选）')}</Label>
-                <Select
-                  value={form.category_id}
-                  onValueChange={v => {
-                    // The inline create. Writing the shop's list mid-product-edit is a second,
-                    // separate save, so a product save that then fails leaves an empty category
-                    // behind — benign, because a category holding nothing renders nothing.
-                    if (v === NEW_CATEGORY) { setNewCategory(''); return }
-                    setNewCategory(null)
-                    setForm({ ...form, category_id: v ?? '' })
-                  }}
-                  items={categoryItems}
-                >
-                  <SelectTrigger id="pm-category" className="bg-background border-border text-[13px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="z-modal-popover">
-                    {categoryItems.map(c => (
-                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {newCategory !== null && (
-                  <div className="flex gap-2">
-                    <Input
-                      variant="compact"
-                      autoFocus
-                      value={newCategory}
-                      maxLength={MENU_CATEGORY_NAME_MAX}
-                      onChange={e => setNewCategory(e.target.value)}
-                      // Enter inside a form submits it, and the product is not what is being
-                      // saved here. Create the category instead.
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void createCategory() } }}
-                      placeholder={t('New category name', '新分类名称')}
-                      aria-label={t('New category name', '新分类名称')}
-                    />
-                    <Button
-                      type="button" size="none"
-                      className="rounded-lg px-[14px] text-[13px] whitespace-nowrap"
-                      disabled={categoriesSaving || newCategory.trim() === ''}
-                      onClick={() => void createCategory()}
-                    >{categoriesSaving ? t('Saving…', '保存中…') : t('Create', '创建')}</Button>
-                  </div>
-                )}
-                <span className="text-[12px] text-muted-foreground">
-                  {t('Products with no category are listed last on your storefront, without a heading.',
-                     '未分类的产品会排在店面最后，且不带标题。')}
-                </span>
-              </div>
-              )}
               {pro && (
               <div className="flex flex-col gap-[6px] min-w-0">
                 <Label>{t('Options (optional)', '选项（可选）')}</Label>
