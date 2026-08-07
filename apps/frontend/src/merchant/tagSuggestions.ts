@@ -54,3 +54,38 @@ export function mergeShopTags(known: string[], added: string[]): string[] {
     (a, b) => a.toLowerCase().localeCompare(b.toLowerCase()) || (a < b ? -1 : a > b ? 1 : 0),
   )
 }
+
+/** How many chips the filter row shows before it has to be asked for the rest (#205). */
+export const TAG_CHIP_CAP = 10
+
+/**
+ * Which of the shop's tags the filter row draws, and how many it is holding back.
+ *
+ * The cap exists because a shop's vocabulary is unbounded — twenty tags wrap the row over four
+ * lines on a phone and push the table it filters below the fold.
+ *
+ * Two rules earn their place:
+ *
+ *   * The SELECTED tag is always drawn, even when it sorts past the cap. A filter the merchant
+ *     cannot see is a list that reads as missing rows, with nothing on screen to explain it.
+ *   * It is APPENDED, never moved to the front. A row that reshuffles the moment you click it
+ *     is a row you cannot click twice, and clicking a selected chip is how the filter clears.
+ *
+ * `hidden` is counted against what is actually drawn rather than derived from the cap, so a
+ * pulled-in tag is not still counted as hidden — `+5 more` above a row already showing one of
+ * those five is a number the merchant can see is wrong.
+ *
+ * A `selected` tag absent from `shopTags` survives, because `mergeShopTags` is additive: the
+ * vocabulary can run ahead of the server but never behind it, so a tag whose last holder just
+ * lost it lingers until the next list load. Dropping the chip would strand the filter with
+ * nothing to clear it with. Order is the caller's, as it is for `tagSuggestions`.
+ */
+export function filterChips(
+  shopTags: string[],
+  selected: string | null,
+  expanded: boolean,
+): { chips: string[]; hidden: number } {
+  const visible = expanded ? shopTags : shopTags.slice(0, TAG_CHIP_CAP)
+  const chips = selected !== null && !visible.includes(selected) ? [...visible, selected] : visible
+  return { chips, hidden: shopTags.filter(tag => !chips.includes(tag)).length }
+}
