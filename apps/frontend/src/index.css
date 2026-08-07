@@ -1,11 +1,81 @@
-/* The webfonts are requested from index.html, NOT from here.
-   An `@import url(https://fonts.googleapis.com/…)` at the top of this file is the worst place a
-   font request can sit: this stylesheet is render-blocking, and the import inside it is invisible
-   to the browser's preload scanner, so the request is only discovered after the whole bundle has
-   downloaded AND parsed. That makes the critical path four serial trips — HTML → app CSS → Google's
-   CSS (cold origin) → the font file on a second cold origin — and nothing paints until it finishes.
-   In <head> the same two requests are found immediately and warmed by preconnect. */
+/* The Latin webfont is SELF-HOSTED, from `public/fonts/`, and declared below rather than fetched
+   from Google. Two reasons, and the first is the whole point:
+
+   · fonts.googleapis.com's stylesheet is render-blocking and sits on a cold third-party origin.
+     Measured on a mobile Lighthouse run of `/`, it was 793ms of the 2.75s FCP — for 1KB of CSS —
+     because the browser cannot paint until it has done DNS + TLS + a round trip to an origin it
+     has never spoken to, and preconnect only overlaps part of that. Serving the @font-face rules
+     from our own already-open connection removes the hop entirely, and the woff2 files that used
+     to come from fonts.gstatic.com (a SECOND cold origin, one trip further down the chain) now
+     come from the same one, warmed by the document itself.
+   · The font file's URL is now stable and known at build time, which is what lets index.html
+     `<link rel="preload">` the two faces above the fold. From Google's stylesheet it could not:
+     the file name is inside a stylesheet the preload scanner has not fetched yet.
+
+   The subsets kept are LATIN and LATIN-EXT only, at the three weights the app uses. Google's css2
+   also serves a devanagari subset for this family; nothing here renders Devanagari, and a
+   unicode-range no glyph on the page falls into is a file that is never downloaded but is still
+   three @font-face rules the parser walks. Chinese is unaffected — it is a separate family fetched
+   on demand (src/cjkFont.ts).
+
+   TO UPDATE THE FILES: they are Google's own woff2 payloads for Poppins v24, downloaded once. Fetch
+   `https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap` with a modern
+   browser UA, take the `latin` and `latin-ext` src URLs, and re-measure the fallback metrics below
+   if the family or its weights change. */
 @import 'tailwindcss';
+
+/* `swap`, matching what Google's stylesheet asked for and what the metric-matched fallback below
+   is built around: text paints immediately in the fallback and is replaced when the real face
+   lands. The unicode-ranges are Google's own, unchanged — they are what keeps a page of plain
+   English from downloading the latin-ext file at all. */
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/poppins-400-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/poppins-400-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/poppins-500-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/poppins-500-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/poppins-600-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/poppins-600-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 
 /* ── Metric-matched fallbacks ──────────────────────────────────────────────────────────────────
    The webfonts are requested `display=swap`, so text paints in a system face and is replaced when
@@ -245,6 +315,41 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ── Hero waterfall ──────────────────────────────────────────────────────────
+   The landing hero's entry, driven from here rather than from a Motion variant tree. Why it moved
+   is in the HeroStagger comment in marketing/LandingMotion.tsx: `/` is prerendered, so the hero is
+   on screen before any script runs, and a JS `initial: { opacity: 0 }` re-hid it the moment React
+   took over — LCP 999ms against a 157ms first paint.
+
+   `backwards` is the one fill mode this can use and it is deliberate. The stagger IS the delays,
+   and with the default `none` an item would sit at its resting opacity 1 until its delay elapsed
+   and then snap to 0 — a flicker per item, which is worse than no animation. `backwards` holds the
+   `from` frame through the delay only; once the animation ends the element is back to the resting
+   style, so nothing here can strand the hero transparent the way `forwards` (or Motion's inline
+   `initial`) can. Keep it off `forwards`.
+
+   Timing reproduces the variant tree it replaced exactly: delayChildren 0.05 + staggerChildren
+   0.09, 0.55s per item, on marketing's editorial ease (EASE in LandingMotion.tsx — springier than
+   the app's UI ease). The nth-child rules mean CHILD ORDER IS THE ANIMATION ORDER; reordering the
+   hero in Landing.tsx reorders this.
+
+   The reduced-motion query below collapses every duration to 0.01ms, which lands each item on its
+   resting style immediately — the delays go with it. */
+@keyframes hero-item-enter { from { opacity: 0; transform: translateY(14px); } }
+
+.hero-item { animation: hero-item-enter 0.55s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+.hero-item:nth-child(1) { animation-delay: 0.05s; }
+.hero-item:nth-child(2) { animation-delay: 0.14s; }
+.hero-item:nth-child(3) { animation-delay: 0.23s; }
+.hero-item:nth-child(4) { animation-delay: 0.32s; }
+.hero-item:nth-child(5) { animation-delay: 0.41s; }
+.hero-item:nth-child(6) { animation-delay: 0.50s; }
+
+/* The LCP element's wrapper. It keeps the class so :nth-child keeps counting for everything after
+   it, and gives up only the animation: an element that starts transparent does not become the
+   largest contentful paint until it stops being transparent. */
+.hero-item--instant { animation: none; }
 
 /* @keyframes shimmer (above) and @keyframes spin (below) are kept —
    both are referenced by Tailwind arbitrary animate-[…] utilities in Loaders.tsx. */

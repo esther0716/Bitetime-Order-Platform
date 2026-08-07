@@ -2,22 +2,30 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Fonts first, and from HERE rather than from an @import at the top of src/index.css.
-         Inside the stylesheet the request is invisible to the preload scanner and is only made
-         after the whole CSS bundle has downloaded and parsed, which puts two cold origins in
-         series behind it and holds first paint on all four trips. Here both are found in the
-         first bytes of the document and the handshakes overlap the app CSS download.
+    <!-- Fonts first. The @font-face rules themselves live in src/index.css and point at
+         /fonts/*.woff2 in our own origin — there is no fonts.googleapis.com stylesheet to fetch
+         any more, and so no preconnect to two cold origins to pay for. See the comment at the top
+         of src/index.css for why, and for how to refresh the files.
 
-         ONLY the Latin faces are here. The Chinese ones are requested by src/cjkFont.ts when the
-         visitor is actually reading Chinese — unconditionally they were the largest single layout
-         shift on the page, because a Latin page still reaches a CJK face for the odd glyph its own
-         faces lack and every one of those re-measures when the font lands. -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap"
-    />
+         What is left here is the part only the DOCUMENT can do. A font declared in a stylesheet is
+         not requested until that stylesheet has downloaded, parsed, AND matched a rule to real
+         text — so the render-blocking CSS and the font it needs are two serial trips, not one.
+         These preloads are found by the preload scanner in the first bytes of the document, so the
+         two faces the top of every page is set in are already in flight while the CSS downloads.
+
+         ONLY the two LATIN faces above the fold, and that restriction is the whole reason this
+         works: a preload is a promise that the file is needed NOW, and preloading the latin-ext
+         and 600 faces as well would put ~26KB of files most visitors never render a glyph from in
+         front of the ones they do, on the same narrow mobile pipe. `crossorigin` is required even
+         same-origin — fonts are fetched in CORS mode, and a preload without it is a second,
+         uncredited request rather than a cache hit (Chrome warns about exactly this).
+
+         The Chinese faces are requested by src/cjkFont.ts when the visitor is actually reading
+         Chinese — unconditionally they were the largest single layout shift on the page, because a
+         Latin page still reaches a CJK face for the odd glyph its own faces lack and every one of
+         those re-measures when the font lands. -->
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/poppins-400-latin.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/poppins-500-latin.woff2" crossorigin />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />

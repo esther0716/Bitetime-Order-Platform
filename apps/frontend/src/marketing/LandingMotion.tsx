@@ -39,33 +39,45 @@ export function Reveal({
 }
 
 // ── Hero stagger: container reveals children in a gentle waterfall ───────────
-export const heroContainer = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.09, delayChildren: 0.05 } },
-}
-
-export function useHeroItem() {
-  const reduced = useReducedMotion()
-  return {
-    hidden: { opacity: 0, y: reduced ? 0 : 14 },
-    show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: EASE } },
-  }
-}
-
+//
+// CSS, not Motion, and the headline sits out of it entirely. Both halves of that are measured.
+//
+// `/` is prerendered (scripts/prerender.tsx), so the hero is painted markup before a line of the
+// app has run — a mobile Lighthouse trace put first contentful paint at 157ms. This stagger was a
+// Motion variant tree with `initial="hidden"` at `opacity: 0`, which React re-applied as an inline
+// style the moment it took the page over, and then spent the stagger's delay plus its 0.55s
+// duration fading back to the paint the visitor already had. LCP landed at 999ms: 842ms of it was
+// the page hiding work it had finished. A CSS keyframe cannot do that — its RESTING opacity is 1
+// and the keyframe only borrows it on the way in, which is the rule at the top of `motion.tsx` and
+// the same reason `.page-enter` exists.
+//
+// The headline gets NO entry animation, because it is the LCP element and an LCP element that
+// starts transparent is an LCP time that starts when the fade does. The eyebrow above it opens at
+// 50ms, so the reading order still holds; nothing else in the waterfall is the largest paint.
+//
+// Delays live in `index.css` on `.hero-item:nth-child(n)` and reproduce the old variant timing
+// exactly (delayChildren 0.05 + staggerChildren 0.09), so ORDER IS NOW LOAD-BEARING: reorder the
+// children in Landing.tsx and the waterfall reorders with them.
 export function HeroStagger({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <motion.div className={className} variants={heroContainer} initial="hidden" animate="show">
-      {children}
-    </motion.div>
-  )
+  return <div className={className}>{children}</div>
 }
 
-export function HeroItem({ children, className }: { children: ReactNode; className?: string }) {
-  const item = useHeroItem()
+export function HeroItem({
+  children,
+  className,
+  /** Opts this item out of the fade. Set on the item holding the LCP element — see above. */
+  instant = false,
+}: {
+  children: ReactNode
+  className?: string
+  instant?: boolean
+}) {
+  // The class is still present when `instant`: it is what keeps :nth-child counting, and index.css
+  // is what turns the animation off for it. A plain <div> would shift every later item's delay.
   return (
-    <motion.div className={className} variants={item}>
+    <div className={`hero-item${instant ? ' hero-item--instant' : ''}${className ? ` ${className}` : ''}`}>
       {children}
-    </motion.div>
+    </div>
   )
 }
 

@@ -46,7 +46,10 @@ export default function Landing() {
               {t('We know what it\'s like to run a business out of your DMs.', '我们懂，用聊天窗口接单有多累。')}
             </p>
           </HeroItem>
-          <HeroItem>
+          {/* `instant`: this is the page's LCP element and it is already in the prerendered HTML.
+              Fading it in would move largest-contentful-paint to the end of the fade — 842ms of
+              the measured 999ms. See HeroStagger in LandingMotion.tsx. */}
+          <HeroItem instant>
             {/* aria-label carries the sentence as one static string: the visible word changes every
                 2.6s, and a screen reader re-announcing the h1 that often is noise. It also
                 overrides descendant content for the accessible name, so nothing inside needs
