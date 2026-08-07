@@ -193,6 +193,27 @@ export async function startCheckout({ plan, billing }: { plan: string; billing: 
   return mapOk(r, (d) => d.url)
 }
 
+/** Why a sync changed nothing — mirrors `SyncReason` in the backend's billingSync.ts. */
+export type BillingSyncReason =
+  | 'no_billing' | 'comped' | 'no_subscription' | 'not_live' | 'suspended_by_admin'
+
+export interface BillingSync {
+  /** The shop's status AFTER the call — authoritative, so the caller need not re-read it. */
+  merchantStatus: string
+  subscriptionStatus: string | null
+  /** True only when this call opened the shop. */
+  activated: boolean
+  reason?: BillingSyncReason
+}
+
+// Ask the backend to re-read this shop's subscription from Stripe and make the database agree.
+// The recovery for a `checkout.session.completed` that never arrived: without it the only thing
+// that could open a shop after a paid Checkout was that one webhook. Idempotent — safe to call
+// on a shop that is already open, where it reports `activated: false`.
+export async function syncBilling(): Promise<Result<BillingSync>> {
+  return apiSend<BillingSync>('/api/billing/sync', 'POST', undefined, { auth: 'required' })
+}
+
 // Platform subscription pricing from the backend, always in MYR. `country` is an
 // optional override forwarded as `?country=` (used to preview an estimate locally / in QA).
 export interface PlatformPricing {

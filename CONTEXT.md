@@ -273,6 +273,14 @@ renewals go `past_due` (red banner) and ride Stripe dunning. Stripe is the
 single source of billing truth; `merchant_billing` mirrors it. Pure seams:
 `billingLifecycle` (backend) and `billingBannerState` (frontend).
 
+Opening a paid shop does **not** depend on a webhook arriving. Back from
+Checkout, the dashboard calls `POST /api/billing/sync` (`billingSync.ts`) on a
+bounded schedule — it re-reads the subscription from Stripe and makes the
+database agree, so a lost `checkout.session.completed` no longer strands a
+charged merchant on a screen that polls forever. Narrower than the webhook: a
+shop suspended while its subscription still runs was closed by a human and is
+not reopened by paying. See ADR 0014.
+
 ## Trial feedback
 
 A one-time, platform-initiated survey — not to be confused with the
