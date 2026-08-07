@@ -32,6 +32,11 @@ const menuItem =
 
 const footerLink = 'hover:text-primary underline underline-offset-4'
 
+// Customer service line. Two forms because they are read by different things: wa.me accepts only
+// digits with the country code and no `+`, while the visible text is what a human dials.
+const SUPPORT_WHATSAPP = '6588425267'
+const SUPPORT_WHATSAPP_DISPLAY = '+65 8842 5267'
+
 const footerColumnHeading = 'text-[11px] font-medium uppercase tracking-[0.09em] text-ink-700 mb-3'
 const footerColumnLink = 'block py-1 text-muted-foreground no-underline [transition:color_0.15s] hover:text-primary'
 
@@ -175,6 +180,20 @@ export function MarketingFooter() {
           <Link to="/privacy" className={footerColumnLink}>
             {t('Privacy', '隐私政策')}
           </Link>
+        </FooterColumn>
+        <FooterColumn heading={t('Support', '客服')}>
+          {/* The support number is a wa.me link, not a tel: — customer service runs on WhatsApp,
+              and wa.me opens the app on a phone and web.whatsapp.com on a desktop, so one href
+              works everywhere. The href carries the number in wa.me's required form (digits only,
+              country code, no +); the visible text keeps the readable spacing. */}
+          <a
+            href={`https://wa.me/${SUPPORT_WHATSAPP}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={footerColumnLink}
+          >
+            {t('WhatsApp', 'WhatsApp')} {SUPPORT_WHATSAPP_DISPLAY}
+          </a>
         </FooterColumn>
         <FooterColumn heading={t('Connect', '关注我们')}>
           <a
