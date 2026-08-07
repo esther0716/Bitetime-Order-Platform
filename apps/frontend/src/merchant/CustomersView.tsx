@@ -32,6 +32,14 @@ const TD = 'px-[14px] py-[12px] border-b border-muted text-foreground align-midd
 // Count cell — pixel-match of .mm-customers-count overrides
 const TD_COUNT = 'px-[14px] py-[12px] border-b border-muted text-primary font-semibold text-center align-middle group-hover:bg-brand-100'
 
+// One tag chip — the filter row's and the drawer's, so the two rows of pills cannot drift apart.
+// Colour is the caller's: it is what says selected from not.
+const CHIP = 'inline-flex items-center gap-1 rounded-pill border border-border px-2.5 py-0.5 text-[12px]'
+
+// `button.tsx`'s focus treatment, borrowed for the raw buttons that cannot use it. A chip is a
+// control a keyboard reaches, and the UA outline is not this app's ring.
+const FOCUS_RING = 'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
+
 const PAGE_SIZE = 50
 
 /**
@@ -64,10 +72,15 @@ export default function CustomersView() {
 
   const [selected, setSelected] = useState<ShopCustomer | null>(null)
 
+  // The filter goes with the entitlement, and it is DERIVED rather than cleared in an effect: a
+  // plan can go stale mid-session (see `plan.ts`), and a basic shop still sending a tag is a 403
+  // on every load — the error panel, with the row that would have cleared it already gone.
+  const activeTag = isPro ? tag : null
+
   const load = useCallback(async () => {
     const r = await fetchShopCustomers(merchantId, {
       sort,
-      tag: tag ?? undefined,
+      tag: activeTag ?? undefined,
       search,
       page,
       pageSize: PAGE_SIZE,
@@ -78,7 +91,7 @@ export default function CustomersView() {
     setShopTags(r.data.shopTags)
     setTotal(r.data.total)
     setUnattributed(r.data.unattributedOrders)
-  }, [merchantId, sort, tag, search, page])
+  }, [merchantId, sort, activeTag, search, page])
 
   // Debounced so typing a name is one request per pause, not one per keystroke.
   useEffect(() => {
@@ -114,7 +127,7 @@ export default function CustomersView() {
     )
   }
 
-  const narrowed = search.trim() !== '' || tag !== null
+  const narrowed = search.trim() !== '' || activeTag !== null
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
@@ -130,8 +143,13 @@ export default function CustomersView() {
         <SortControl sort={sort} onSort={narrow(setSort)} isPro={isPro} />
       </div>
 
-      {isPro && shopTags.length > 0 && (
-        <TagFilterRow shopTags={shopTags} selected={tag} onSelect={narrow(setTag)} />
+      {/* `|| activeTag !== null` is not belt-and-braces. A shop whose whole vocabulary was the one tag
+          currently filtering loses it the moment its last holder does: the next load answers
+          `shopTags: []`, and on `shopTags.length > 0` alone the row would vanish while the filter
+          stayed on — an empty table, "No customers match that", and nothing on screen to clear it
+          with. That is the dead end `filterChips` keeps an unrecognised selection for. */}
+      {isPro && (shopTags.length > 0 || activeTag !== null) && (
+        <TagFilterRow shopTags={shopTags} selectedTag={activeTag} onSelect={narrow(setTag)} />
       )}
 
       {customers!.length === 0 ? (
@@ -280,18 +298,18 @@ function SortControl({
  * lost — it lives in the drawer's Notes & tags panel and in the sort control's own badge.
  */
 function TagFilterRow({
-  shopTags, selected, onSelect,
-}: { shopTags: string[]; selected: string | null; onSelect: (tag: string | null) => void }) {
+  shopTags, selectedTag, onSelect,
+}: { shopTags: string[]; selectedTag: string | null; onSelect: (tag: string | null) => void }) {
   const { t } = useSession()
   const [expanded, setExpanded] = useState(false)
-  const { chips, hidden } = filterChips(shopTags, selected, expanded)
+  const { chips, hidden } = filterChips(shopTags, selectedTag, expanded)
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-1.5">
       <span className="text-[11px] text-muted-foreground">{t('Tags', '标签')}</span>
 
       {chips.map(chip => {
-        const on = chip === selected
+        const on = chip === selectedTag
         return (
           <button
             key={chip}
@@ -300,10 +318,10 @@ function TagFilterRow({
             // Clicking the selected chip clears the filter — the same act, reversed, so there is
             // one control and not a filter plus a separate way to undo it.
             onClick={() => onSelect(on ? null : chip)}
-            className={`inline-flex items-center gap-1 rounded-pill border px-2.5 py-0.5 text-[12px] transition-colors ${
+            className={`${CHIP} ${FOCUS_RING} transition-colors ${
               on
-                ? 'border-primary bg-brand-100 text-primary'
-                : 'border-border bg-background text-muted-foreground hover:border-primary hover:text-primary'
+                ? 'bg-brand-100 text-primary'
+                : 'bg-background text-muted-foreground hover:border-primary hover:text-primary'
             }`}
           >
             {chip}
@@ -569,14 +587,20 @@ function NotesPanel({
           {customer.tags.map(tag => (
             <span
               key={tag}
-              className="inline-flex items-center gap-1 rounded-pill border border-border bg-brand-100 px-2.5 py-0.5 text-[12px] text-primary"
+              className={`${CHIP} bg-brand-100 text-primary`}
             >
-              <button type="button" onClick={() => onTagClicked(tag)} className="cursor-pointer">{tag}</button>
+              <button
+                type="button"
+                onClick={() => onTagClicked(tag)}
+                className={`cursor-pointer rounded-pill ${FOCUS_RING}`}
+              >
+                {tag}
+              </button>
               <button
                 type="button"
                 aria-label={t(`Remove tag ${tag}`, `移除标签 ${tag}`)}
                 onClick={() => save({ note: customer.note, tags: customer.tags.filter(x => x !== tag) })}
-                className="cursor-pointer opacity-60 hover:opacity-100"
+                className={`cursor-pointer rounded-pill opacity-60 hover:opacity-100 ${FOCUS_RING}`}
               >
                 <X size={11} />
               </button>
