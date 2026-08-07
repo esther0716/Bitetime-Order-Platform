@@ -81,6 +81,15 @@ describe('light-theme text clears AA', () => {
     expect(contrastRatio(token('--ink-500'), token('--cream'))).toBeLessThan(AA_TEXT)
   })
 
+  /* --ink-500 is the border/icon grey on cream, but it DOES clear AA on white (4.83:1) — and
+     that is what lets Input/Textarea set their placeholder a step lighter than muted copy, so a
+     hint stops reading as a value. Pinned in both directions: the assertion above forbids it as
+     text on the canvas, this one keeps the placeholder treatment legal on the surface it
+     actually sits on. Lighten --ink-500 and one of the two fails. */
+  it('the border grey IS viable as placeholder text on a raised surface', () => {
+    expect(contrastRatio(token('--ink-500'), token('--white'))).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+
   it('the accent on the page background', () => {
     expect(contrastRatio(token('--brand-500'), token('--cream'))).toBeGreaterThanOrEqual(AA_TEXT)
   })

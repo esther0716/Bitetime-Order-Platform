@@ -297,8 +297,13 @@ html { scroll-behavior: smooth; }
 }
 
 body { font-family: 'Poppins', 'Poppins Fallback', 'Noto Sans SC', system-ui, sans-serif; background: var(--color-bg); color: var(--color-text); min-height: 100vh; padding: 2rem 1rem 4rem; display: flex; flex-direction: column; align-items: center; scrollbar-gutter: stable; overflow-x: hidden; }
-/* AA-passing placeholder (the browser default fails contrast on the page background) */
-input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); opacity: 1; }
+/* AA-passing placeholder (the browser default fails contrast on the page background).
+   This is the floor for RAW inputs — the Input/Textarea components override it a step lighter
+   on their white surface, where that is legal. It named `--color-text-tertiary` for a release,
+   a token this codebase never defined, so the declaration was invalid and the rule did nothing:
+   every raw placeholder fell back to the browser's own grey, which is the thing it exists to
+   replace. `--color-text-subtle` is not available here either (the Subtle-Is-Not-Text Rule). */
+input::placeholder, textarea::placeholder { color: var(--color-text-muted); opacity: 1; }
 .form-wrap { max-width: 600px; width: calc(100vw - 2rem); }
 .form-wrap--wide { max-width: 900px; }
 body:has(.form-wrap--wide) { padding-left: 0.5rem; padding-right: 0.5rem; }

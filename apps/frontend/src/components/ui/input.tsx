@@ -29,7 +29,15 @@ function Input({
       className={cn(
         // .field input — full-width, 13px H-pad, raised bg, clay border, md radius
         "w-full min-w-0 rounded-md border border-border bg-card px-[13px] py-2.5 text-[16px] text-foreground transition-colors outline-none",
-        "placeholder:text-muted-foreground",
+        // A PLACEHOLDER MUST NOT READ AS A VALUE. On `--color-text-muted` (--ink-600) it is the
+        // same grey as secondary copy, so a short hint — "e.g. Beverage" — looks like a name
+        // already typed in, and two empty fields look like two filled ones. --ink-500 is a step
+        // lighter and clears AA on white at 4.83:1 (tokens.css says so; tokens.test.ts pins it).
+        //
+        // NOT for the compact variant, which sits on the CREAM canvas where --ink-500 falls to
+        // 4.06:1 — the Subtle-Is-Not-Text Rule, and the reason this is per-variant rather than
+        // one class. The default variant's own `bg-card` is what makes the lighter grey legal.
+        "placeholder:text-ink-500 data-[variant=compact]:placeholder:text-muted-foreground",
         "focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/10",
         "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
         "aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20",
