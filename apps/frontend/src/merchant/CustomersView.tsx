@@ -17,7 +17,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import OrderDetailSheet from './OrderDetailSheet'
 import { ProBadge, UpgradeLink } from './ProLock'
-import { mergeShopTags, tagSuggestions } from './tagSuggestions'
+import { filterChips, mergeShopTags, TAG_CHIP_CAP, tagSuggestions } from './tagSuggestions'
 import WaLink from './WaLink'
 
 // Self-contained panel — pixel-match of .admin-panel
@@ -128,18 +128,11 @@ export default function CustomersView() {
         />
 
         <SortControl sort={sort} onSort={narrow(setSort)} isPro={isPro} />
-
-        {tag && (
-          <button
-            type="button"
-            onClick={() => narrow(setTag)(null)}
-            className="inline-flex items-center gap-1.5 rounded-pill border border-border bg-brand-100 px-3 py-1 text-[12px] text-primary"
-          >
-            {tag}
-            <X size={12} />
-          </button>
-        )}
       </div>
+
+      {isPro && shopTags.length > 0 && (
+        <TagFilterRow shopTags={shopTags} selected={tag} onSelect={narrow(setTag)} />
+      )}
 
       {customers!.length === 0 ? (
         <div className={`${PANEL} text-center text-muted-foreground text-sm`}>
@@ -264,6 +257,73 @@ function SortControl({
           <TooltipTrigger render={<span />}><ProBadge /></TooltipTrigger>
           <TooltipContent>{t('Sorting and tags are a Pro feature.', '排序和标签是 Pro 功能。')}</TooltipContent>
         </Tooltip>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The shop's own tags, as a row of filters (#205).
+ *
+ * The filter is not new — the endpoint has taken `tag` since #143 and the list response has
+ * carried `shopTags` since #150, described in CONTEXT.md as "what the tag filter chooses from".
+ * What was missing was the choosing: the only way to set a tag was to open a customer's drawer
+ * and click one of theirs, so a merchant looking for their VIPs had to find a VIP first.
+ *
+ * A chip row rather than a dropdown because the gap being closed is DISCOVERABILITY — the
+ * vocabulary has to be visible without a click, or the merchant still does not know the filter
+ * is there.
+ *
+ * Basic shops render nothing here, which inverts the shown-but-locked rule the sort control
+ * beside it follows, and deliberately: notes and tags survive a downgrade hidden-not-deleted,
+ * so a disabled chip row would print the very vocabulary the downgrade hides. The pitch is not
+ * lost — it lives in the drawer's Notes & tags panel and in the sort control's own badge.
+ */
+function TagFilterRow({
+  shopTags, selected, onSelect,
+}: { shopTags: string[]; selected: string | null; onSelect: (tag: string | null) => void }) {
+  const { t } = useSession()
+  const [expanded, setExpanded] = useState(false)
+  const { chips, hidden } = filterChips(shopTags, selected, expanded)
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">{t('Tags', '标签')}</span>
+
+      {chips.map(chip => {
+        const on = chip === selected
+        return (
+          <button
+            key={chip}
+            type="button"
+            aria-pressed={on}
+            // Clicking the selected chip clears the filter — the same act, reversed, so there is
+            // one control and not a filter plus a separate way to undo it.
+            onClick={() => onSelect(on ? null : chip)}
+            className={`inline-flex items-center gap-1 rounded-pill border px-2.5 py-0.5 text-[12px] transition-colors ${
+              on
+                ? 'border-primary bg-brand-100 text-primary'
+                : 'border-border bg-background text-muted-foreground hover:border-primary hover:text-primary'
+            }`}
+          >
+            {chip}
+            {on && <X size={11} />}
+          </button>
+        )
+      })}
+
+      {hidden > 0 && (
+        <Button type="button" variant="link" size="none" onClick={() => setExpanded(true)} className="text-[12px]">
+          {t(`+${hidden} more`, `还有 ${hidden} 个`)}
+        </Button>
+      )}
+
+      {/* Guarded on the cap, not on `expanded` alone: a vocabulary that shrank below the cap
+          while expanded would otherwise offer to collapse a row that is already whole. */}
+      {expanded && shopTags.length > TAG_CHIP_CAP && (
+        <Button type="button" variant="link" size="none" onClick={() => setExpanded(false)} className="text-[12px]">
+          {t('Show fewer', '收起')}
+        </Button>
       )}
     </div>
   )
