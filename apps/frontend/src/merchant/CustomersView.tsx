@@ -9,6 +9,7 @@ import { SkeletonText } from '../components/Loaders'
 import { formatMoney } from '../currency'
 import { fmtDate } from '../merchantDate'
 import { StatusBadge } from '../orderStatus'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -17,7 +18,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import OrderDetailSheet from './OrderDetailSheet'
 import { ProBadge, UpgradeLink } from './ProLock'
-import { mergeShopTags, tagSuggestions } from './tagSuggestions'
+import { filterChips, mergeShopTags, TAG_CHIP_CAP, tagSuggestions } from './tagSuggestions'
 import WaLink from './WaLink'
 
 // Self-contained panel — pixel-match of .admin-panel
@@ -31,6 +32,29 @@ const TD = 'px-[14px] py-[12px] border-b border-muted text-foreground align-midd
 
 // Count cell — pixel-match of .mm-customers-count overrides
 const TD_COUNT = 'px-[14px] py-[12px] border-b border-muted text-primary font-semibold text-center align-middle group-hover:bg-brand-100'
+
+/**
+ * One tag chip, on `Badge` rather than hand-rolled — the filter row's, the table row's and the
+ * drawer's, so three sets of pills cannot drift apart.
+ *
+ * The geometry and type come from the primitive (pill, 11px semibold, `border border-transparent`
+ * so a bordered state costs no layout shift); this override supplies the padding and the brand
+ * tint, in the `.mm-badge--{status}` shape `AdminMerchants` already uses. **10px, not the base's
+ * 9px** — DESIGN.md's `status-chip` token is `3px 10px`. Brand 100 is the chip background and
+ * Brand 700 the text on it (DESIGN.md → Colour), so a tag is *not* `text-primary`.
+ *
+ * Hand-rolled, these were 12px regular with a resting border, which is a fourth chip style on a
+ * screen that already had three.
+ */
+const TAG_CHIP = 'px-[10px] border-transparent bg-brand-100 text-brand-700'
+
+// `button.tsx`'s focus treatment, borrowed for the raw buttons `Badge` cannot cover — the two
+// nested inside the drawer's chip. A control a keyboard reaches needs this app's ring, not the
+// UA outline.
+const FOCUS_RING = 'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
+
+// How many of a customer's tags their table row shows before it stops and counts the rest.
+const ROW_TAG_CAP = 3
 
 const PAGE_SIZE = 50
 
@@ -64,10 +88,15 @@ export default function CustomersView() {
 
   const [selected, setSelected] = useState<ShopCustomer | null>(null)
 
+  // The filter goes with the entitlement, and it is DERIVED rather than cleared in an effect: a
+  // plan can go stale mid-session (see `plan.ts`), and a basic shop still sending a tag is a 403
+  // on every load — the error panel, with the row that would have cleared it already gone.
+  const activeTag = isPro ? tag : null
+
   const load = useCallback(async () => {
     const r = await fetchShopCustomers(merchantId, {
       sort,
-      tag: tag ?? undefined,
+      tag: activeTag ?? undefined,
       search,
       page,
       pageSize: PAGE_SIZE,
@@ -78,7 +107,7 @@ export default function CustomersView() {
     setShopTags(r.data.shopTags)
     setTotal(r.data.total)
     setUnattributed(r.data.unattributedOrders)
-  }, [merchantId, sort, tag, search, page])
+  }, [merchantId, sort, activeTag, search, page])
 
   // Debounced so typing a name is one request per pause, not one per keystroke.
   useEffect(() => {
@@ -114,7 +143,7 @@ export default function CustomersView() {
     )
   }
 
-  const narrowed = search.trim() !== '' || tag !== null
+  const narrowed = search.trim() !== '' || activeTag !== null
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
@@ -128,18 +157,16 @@ export default function CustomersView() {
         />
 
         <SortControl sort={sort} onSort={narrow(setSort)} isPro={isPro} />
-
-        {tag && (
-          <button
-            type="button"
-            onClick={() => narrow(setTag)(null)}
-            className="inline-flex items-center gap-1.5 rounded-pill border border-border bg-brand-100 px-3 py-1 text-[12px] text-primary"
-          >
-            {tag}
-            <X size={12} />
-          </button>
-        )}
       </div>
+
+      {/* `|| activeTag !== null` is not belt-and-braces. A shop whose whole vocabulary was the one tag
+          currently filtering loses it the moment its last holder does: the next load answers
+          `shopTags: []`, and on `shopTags.length > 0` alone the row would vanish while the filter
+          stayed on — an empty table, "No customers match that", and nothing on screen to clear it
+          with. That is the dead end `filterChips` keeps an unrecognised selection for. */}
+      {isPro && (shopTags.length > 0 || activeTag !== null) && (
+        <TagFilterRow shopTags={shopTags} selectedTag={activeTag} onSelect={narrow(setTag)} />
+      )}
 
       {customers!.length === 0 ? (
         <div className={`${PANEL} text-center text-muted-foreground text-sm`}>
@@ -163,6 +190,7 @@ export default function CustomersView() {
                   <th className={TH}>{t('Orders', '订单数')}</th>
                   <th className={TH}>{t('Spent', '消费额')}</th>
                   <th className={TH}>{t('Last Order', '最近订单')}</th>
+                  {isPro && <th className={TH}>{t('Tags', '标签')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -188,6 +216,7 @@ export default function CustomersView() {
                         <span className="text-[11px] text-muted-foreground">{agoLabel(c.daysSinceLastOrder, t)}</span>
                       </span>
                     </td>
+                    {isPro && <td className={TD}><RowTags tags={c.tags} /></td>}
                   </tr>
                 ))}
               </tbody>
@@ -214,6 +243,33 @@ export default function CustomersView() {
         onTagClicked={next => { setSelected(null); narrow(setTag)(next) }}
       />
     </>
+  )
+}
+
+/**
+ * What the merchant has written against one customer, on their row.
+ *
+ * **Display, not a control.** The whole row opens the drawer, and a tag that also filtered would
+ * put two different outcomes under one pointer — the filter already has its own row of chips
+ * above the table, and the drawer's copies stay clickable for the merchant who is already there.
+ *
+ * Capped at three with a `+N`, because a customer may carry up to `MAX_TAGS` (20) and one such
+ * row would set the height of every row around it. Which three is the merchant's own order —
+ * tags are stored as written, and re-sorting here would be a second opinion nothing asked for.
+ *
+ * Pro-only, and gated by the CALLER rather than here: a basic shop must not render this column at
+ * all, header included, or the table grows an empty column that says a feature is missing.
+ */
+function RowTags({ tags }: { tags: string[] }) {
+  const shown = tags.slice(0, ROW_TAG_CAP)
+  const hidden = tags.length - shown.length
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {shown.map(tag => (
+        <Badge key={tag} className={TAG_CHIP}>{tag}</Badge>
+      ))}
+      {hidden > 0 && <span className="text-[11px] text-muted-foreground">+{hidden}</span>}
+    </span>
   )
 }
 
@@ -264,6 +320,70 @@ function SortControl({
           <TooltipTrigger render={<span />}><ProBadge /></TooltipTrigger>
           <TooltipContent>{t('Sorting and tags are a Pro feature.', '排序和标签是 Pro 功能。')}</TooltipContent>
         </Tooltip>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The shop's own tags, as a row of filters (#205).
+ *
+ * The filter is not new — the endpoint has taken `tag` since #143 and the list response has
+ * carried `shopTags` since #150, described in CONTEXT.md as "what the tag filter chooses from".
+ * What was missing was the choosing: the only way to set a tag was to open a customer's drawer
+ * and click one of theirs, so a merchant looking for their VIPs had to find a VIP first.
+ *
+ * A chip row rather than a dropdown because the gap being closed is DISCOVERABILITY — the
+ * vocabulary has to be visible without a click, or the merchant still does not know the filter
+ * is there.
+ *
+ * Basic shops render nothing here, which inverts the shown-but-locked rule the sort control
+ * beside it follows, and deliberately: notes and tags survive a downgrade hidden-not-deleted,
+ * so a disabled chip row would print the very vocabulary the downgrade hides. The pitch is not
+ * lost — it lives in the drawer's Notes & tags panel and in the sort control's own badge.
+ */
+function TagFilterRow({
+  shopTags, selectedTag, onSelect,
+}: { shopTags: string[]; selectedTag: string | null; onSelect: (tag: string | null) => void }) {
+  const { t } = useSession()
+  const [expanded, setExpanded] = useState(false)
+  const { chips, hidden } = filterChips(shopTags, selectedTag, expanded)
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">{t('Tags', '标签')}</span>
+
+      {chips.map(chip => {
+        const on = chip === selectedTag
+        return (
+          <Badge
+            key={chip}
+            // Clicking the selected chip clears the filter — the same act, reversed, so there is
+            // one control and not a filter plus a separate way to undo it.
+            render={<button type="button" aria-pressed={on} onClick={() => onSelect(on ? null : chip)} />}
+            // Selected is a MATCHING-COLOUR border, which is DESIGN.md's own answer for a chip
+            // acting as a filter. Not `border-border`: a neutral hairline reads as the resting
+            // outline every other pill on this screen already wears.
+            className={`${TAG_CHIP} cursor-pointer ${on ? 'border-primary' : 'hover:border-border'}`}
+          >
+            {chip}
+            {on && <X size={11} />}
+          </Badge>
+        )
+      })}
+
+      {hidden > 0 && (
+        <Button type="button" variant="link" size="none" onClick={() => setExpanded(true)} className="text-[12px]">
+          {t(`+${hidden} more`, `还有 ${hidden} 个`)}
+        </Button>
+      )}
+
+      {/* Guarded on the cap, not on `expanded` alone: a vocabulary that shrank below the cap
+          while expanded would otherwise offer to collapse a row that is already whole. */}
+      {expanded && shopTags.length > TAG_CHIP_CAP && (
+        <Button type="button" variant="link" size="none" onClick={() => setExpanded(false)} className="text-[12px]">
+          {t('Show fewer', '收起')}
+        </Button>
       )}
     </div>
   )
@@ -507,20 +627,23 @@ function NotesPanel({
       <div>
         <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
           {customer.tags.map(tag => (
-            <span
-              key={tag}
-              className="inline-flex items-center gap-1 rounded-pill border border-border bg-brand-100 px-2.5 py-0.5 text-[12px] text-primary"
-            >
-              <button type="button" onClick={() => onTagClicked(tag)} className="cursor-pointer">{tag}</button>
+            <Badge key={tag} className={TAG_CHIP}>
+              <button
+                type="button"
+                onClick={() => onTagClicked(tag)}
+                className={`cursor-pointer rounded-pill ${FOCUS_RING}`}
+              >
+                {tag}
+              </button>
               <button
                 type="button"
                 aria-label={t(`Remove tag ${tag}`, `移除标签 ${tag}`)}
                 onClick={() => save({ note: customer.note, tags: customer.tags.filter(x => x !== tag) })}
-                className="cursor-pointer opacity-60 hover:opacity-100"
+                className={`cursor-pointer rounded-pill opacity-60 hover:opacity-100 ${FOCUS_RING}`}
               >
                 <X size={11} />
               </button>
-            </span>
+            </Badge>
           ))}
         </div>
         <Input

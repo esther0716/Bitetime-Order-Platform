@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tagSuggestions, mergeShopTags } from './tagSuggestions'
+import { tagSuggestions, mergeShopTags, filterChips, TAG_CHIP_CAP } from './tagSuggestions'
 
 describe('tagSuggestions', () => {
   it('offers the whole vocabulary before the merchant types anything', () => {
@@ -69,5 +69,56 @@ describe('mergeShopTags', () => {
 
   it('is additive — removing a tag from a customer does not retire it mid-session', () => {
     expect(mergeShopTags(['office', 'vip'], [])).toEqual(['office', 'vip'])
+  })
+})
+
+describe('filterChips', () => {
+  const many = Array.from({ length: 15 }, (_, i) => `tag${i}`)
+
+  it('shows the whole vocabulary when it fits under the cap', () => {
+    expect(filterChips(['office', 'vip'], null, false)).toEqual({ chips: ['office', 'vip'], hidden: 0 })
+  })
+
+  it('shows nothing when the shop has written nothing', () => {
+    expect(filterChips([], null, false)).toEqual({ chips: [], hidden: 0 })
+  })
+
+  it('caps the row and counts what it held back', () => {
+    const { chips, hidden } = filterChips(many, null, false)
+    expect(chips).toEqual(many.slice(0, TAG_CHIP_CAP))
+    expect(hidden).toBe(5)
+  })
+
+  // A filter the merchant cannot see is a list that looks like it is missing rows.
+  it('pulls the selected tag in when it sorts past the cap', () => {
+    const { chips } = filterChips(many, 'tag12', false)
+    expect(chips).toContain('tag12')
+  })
+
+  // Appended, not moved: a row that reshuffles when you click it is a row you cannot click twice.
+  it('appends the pulled-in tag rather than reordering the row', () => {
+    const { chips } = filterChips(many, 'tag12', false)
+    expect(chips).toEqual([...many.slice(0, TAG_CHIP_CAP), 'tag12'])
+  })
+
+  it('does not still count the pulled-in tag as hidden', () => {
+    expect(filterChips(many, 'tag12', false).hidden).toBe(4)
+  })
+
+  it('leaves the row alone when the selected tag is already visible', () => {
+    const { chips, hidden } = filterChips(many, 'tag3', false)
+    expect(chips).toEqual(many.slice(0, TAG_CHIP_CAP))
+    expect(hidden).toBe(5)
+  })
+
+  it('shows everything once expanded, with nothing left to ask for', () => {
+    expect(filterChips(many, null, true)).toEqual({ chips: many, hidden: 0 })
+  })
+
+  // mergeShopTags is additive, so the vocabulary can run ahead of the server but never behind
+  // it — and a selected tag the list no longer holds must stay clickable, or the filter is
+  // stuck with nothing on screen to clear it with.
+  it('keeps a selected tag the vocabulary no longer holds', () => {
+    expect(filterChips(['office'], 'retired', false)).toEqual({ chips: ['office', 'retired'], hidden: 0 })
   })
 })
