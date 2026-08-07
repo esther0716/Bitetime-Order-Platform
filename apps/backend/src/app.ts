@@ -22,6 +22,7 @@ import { downgradePhases, ScheduleError, type LivePhase } from './subscriptionSc
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
 import { startCardlessTrial } from './trialSubscription.js'
 import { runBillingSweep } from './billingSweep.js'
+import { syncMerchantBilling } from './billingSync.js'
 import { resendSend } from './email.js'
 import { notifyOrderPlaced, telegramSend } from './notify.js'
 import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
@@ -954,6 +955,30 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
   })
 
   return c.json({ url: session.url })
+})
+
+// ── Reconcile the signed-in merchant's own subscription from Stripe ────────────
+// The recovery path for the route above. Checkout redirects to `?checkout=success`, and until
+// this existed the only thing that could open the shop behind that redirect was one delivery of
+// `checkout.session.completed` — so a webhook that never arrived left a merchant who had just
+// been charged staring at "Setting up your subscription…" with nothing on either side able to
+// move it. billingSync.ts holds the rule; see its header for why the sweep does not cover this.
+//
+// Rate-limited per SHOP rather than per IP: it costs a Stripe API call and its only legitimate
+// caller is one dashboard retrying for a few seconds. Ten a minute is far above that and far
+// below anything worth Stripe's notice.
+const billingSyncWindow = createSlidingWindow({ limit: 10, windowMs: 60_000, now: () => Date.now() })
+
+app.post('/api/billing/sync', requireOwnMerchant, async (c) => {
+  const merchant = c.get('merchant')
+  if (!billingSyncWindow.allow(merchant.id)) return c.json({ error: 'rate_limited' }, 429)
+  try {
+    return c.json(await syncMerchantBilling(merchant.id, merchant.status))
+  } catch (err) {
+    if (isStripeError(err)) return stripeFailed(c, `billing sync for merchant ${merchant.id}`, err)
+    console.error(`Billing sync failed for merchant ${merchant.id}:`, err instanceof Error ? err.message : String(err))
+    return c.json({ error: 'sync_failed' }, 500)
+  }
 })
 
 // ── Superadmin: push a stuck merchant through to active ────────────────────────

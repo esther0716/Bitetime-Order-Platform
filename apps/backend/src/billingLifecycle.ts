@@ -32,6 +32,33 @@ export function isLapsed(status: string | null | undefined): boolean {
 /** The billing-row statuses this sweep considers still-running, and so worth re-checking. */
 const RUNNING = ['trialing', 'active', 'past_due']
 
+/** The shape `pickSubscription` decides on — everything else about a Stripe subscription is noise. */
+export interface SubscriptionChoice {
+  id: string
+  status: string
+  /** Stripe's creation timestamp, in seconds. */
+  created?: number | null
+}
+
+/**
+ * Which of a customer's subscriptions the shop is actually paying for.
+ *
+ * A LIVE one wins over any other, and the newest live one wins among those. Recency alone is
+ * wrong, and so is trusting the stored `stripe_subscription_id`: a shop reactivating after a
+ * lapse has a brand-new live subscription sitting beside the canceled one that closed it, and
+ * the stored id still names the OLD one until a webhook overwrites it — which, on the path
+ * billingSync.ts exists for, never happened. Asking Stripe about the stored id would read
+ * "canceled" and leave the shop shut on a payment that went through.
+ *
+ * With no live candidate it returns the newest of what there is, so the billing row is still
+ * brought up to date and the merchant can be told which non-running state they are in.
+ */
+export function pickSubscription<T extends SubscriptionChoice>(subs: T[]): T | null {
+  if (subs.length === 0) return null
+  const newestFirst = [...subs].sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
+  return newestFirst.find(s => RUNNING.includes(s.status)) ?? newestFirst[0]
+}
+
 /**
  * Is this billing row worth asking Stripe about?
  *
