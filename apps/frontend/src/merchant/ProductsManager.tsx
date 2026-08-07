@@ -911,8 +911,11 @@ export default function ProductsManager() {
             {!pro && (
               <div className="mt-4 flex items-center justify-between gap-3 flex-wrap rounded-lg bg-muted px-3 py-2.5">
                 <span className="text-[12px] text-muted-foreground">
-                  {t('Sale prices and customer options are Pro features.',
-                     '优惠价与商品选项为 Pro 功能。')}
+                  {/* Names all THREE things this form hides from a Basic shop. It listed two for
+                      a release after categories shipped, which made the missing Category picker
+                      look like a bug rather than something to buy. */}
+                  {t('Sale prices, menu categories and customer options are Pro features.',
+                     '优惠价、菜单分类与商品选项为 Pro 功能。')}
                 </span>
                 <UpgradeLink className="px-3 py-[6px] text-[12px]" />
               </div>
