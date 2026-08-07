@@ -145,7 +145,11 @@ export default function MenuCategoriesDialog({
                   value={c.name}
                   maxLength={MENU_CATEGORY_NAME_MAX}
                   onChange={e => patch(i, { name: e.target.value })}
-                  placeholder={t('Beverage', 'Beverage')}
+                  // `e.g. …`, not a bare noun. "Beverage" alone read as a value already typed in
+                  // — two empty rows looked like two saved categories with the same name — and
+                  // it was English on a Chinese dialog besides. The idiom the rest of the app
+                  // uses for an example is `e.g. X` / `如：X`.
+                  placeholder={t('e.g. Beverage', '如：饮料')}
                   aria-label={t('Category name', '分类名称')}
                 />
                 <Input
@@ -153,6 +157,8 @@ export default function MenuCategoriesDialog({
                   maxLength={MENU_CATEGORY_NAME_MAX}
                   onChange={e => patchZh(i, e.target.value)}
                   placeholder={t('Chinese name (optional)', '中文名称（可选）')}
+                  // Descriptive rather than an example, and deliberately unlike the field above:
+                  // this one is optional, and naming that is worth more than showing a specimen.
                   aria-label={t('Category name in Chinese', '分类中文名称')}
                 />
               </div>
