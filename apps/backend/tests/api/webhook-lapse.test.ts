@@ -8,11 +8,40 @@
 // for unrelated reasons.
 //
 // Network-free by construction, exactly as webhook-plan.test.ts is: `generateTestHeaderString`
-// signs offline, and this branch of the handler never calls Stripe.
-import { describe, it, expect } from 'vitest'
+// signs offline, and the one Stripe call this branch makes — "is the customer still paying
+// through some other subscription?" — goes through `billingSyncDeps`, which every case here
+// answers itself. A suite that let that call reach the network would decide whether it closes a
+// shop from whatever a stub key happened to return.
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Stripe from 'stripe'
 import { app } from '../../src/app.js'
+import { billingSyncDeps } from '../../src/billingSync.js'
 import { makeUser, seedMerchant, serviceClient, resetMerchant } from '../rls/helpers.js'
+
+const REAL_LIST = billingSyncDeps.listSubscriptions
+
+/** Answer "this customer has nothing else running" — the ordinary lapse. */
+function noOtherSubscription() {
+  billingSyncDeps.listSubscriptions = async () => ({ data: [] }) as never
+}
+
+/** Answer with a live subscription alongside the one that just ended. */
+function alsoLive(id: string, priceId: string) {
+  billingSyncDeps.listSubscriptions = async () => ({
+    data: [{
+      id,
+      object: 'subscription',
+      customer: 'cus_test_lapse',
+      status: 'active',
+      created: 2_000,
+      trial_end: null,
+      cancel_at_period_end: false,
+      default_payment_method: 'pm_test',
+      metadata: {},
+      items: { object: 'list', data: [{ id: 'si_live', price: { id: priceId }, current_period_end: 1893456000 }] },
+    }],
+  }) as never
+}
 
 async function userIdOf(client: Awaited<ReturnType<typeof makeUser>>) {
   const { data } = await client.auth.getSession()
@@ -58,6 +87,9 @@ async function shopOf(merchantId: string) {
 }
 
 describe('POST /api/stripe/webhook — a subscription ending', () => {
+  beforeEach(noOtherSubscription)
+  afterEach(() => { billingSyncDeps.listSubscriptions = REAL_LIST })
+
   it('suspends the shop and returns it to basic', async () => {
     await resetMerchant('lapse-pro-shop')
     const owner = await makeUser('lapse-pro@example.com', 'password123')
@@ -145,6 +177,37 @@ describe('POST /api/stripe/webhook — a subscription ending', () => {
     expect((await postWebhook(subscriptionDeleted(id, 'sub_lapse_old'))).status).toBe(200)
 
     expect(await shopOf(id)).toEqual({ status: 'active', plan: 'pro' })
+
+    await svc.from('merchants').delete().eq('id', id)
+  })
+
+  // The case above only holds while `merchant_billing` is CURRENT, and it is kept current by the
+  // activation events. In production those were being POSTed to a path that 404s, so the row
+  // still named the old trial when its cancellation arrived — the stored-id check matched, and
+  // the shop was suspended on the very day its owner paid for a replacement.
+  //
+  // Stripe is asked directly for that reason. This is also what makes replaying a backlog safe:
+  // whether the cancellation or the new Checkout is redelivered first no longer decides whether
+  // the shop ends up open.
+  it('does not close a shop whose customer is still paying through a newer subscription', async () => {
+    await resetMerchant('lapse-replaced-shop')
+    const owner = await makeUser('lapse-replaced@example.com', 'password123')
+    const id = await seedMerchant({ slug: 'lapse-replaced-shop', owner_id: await userIdOf(owner), plan: 'basic' })
+    const svc = serviceClient()
+    // Exactly the shape production was in: the row still names the trial that is ending, because
+    // nothing ever recorded the subscription bought to replace it.
+    await svc.from('merchant_billing').upsert({
+      merchant_id: id, status: 'trialing', stripe_subscription_id: 'sub_lapse_replaced_old',
+    })
+    alsoLive('sub_lapse_replaced_new', process.env.STRIPE_PRICE_PRO_MONTHLY!)
+
+    expect((await postWebhook(subscriptionDeleted(id, 'sub_lapse_replaced_old'))).status).toBe(200)
+
+    // Open, and reconciled to what it is actually paying for — not merely spared.
+    expect(await shopOf(id)).toEqual({ status: 'active', plan: 'pro' })
+    const { data: billing } = await svc
+      .from('merchant_billing').select('status, stripe_subscription_id').eq('merchant_id', id).single()
+    expect(billing).toEqual({ status: 'active', stripe_subscription_id: 'sub_lapse_replaced_new' })
 
     await svc.from('merchants').delete().eq('id', id)
   })

@@ -9,3 +9,7 @@ Activation here is deliberately **narrower than the webhook's**. `checkout.sessi
 The subscription is chosen from the customer's whole list rather than from the stored `stripe_subscription_id`, because on the path this exists for that id is the stale one: a shop reactivating after a lapse still names the canceled subscription that closed it, and asking Stripe about that id would read `canceled` and leave a paid shop shut.
 
 Running out of attempts is a state the merchant is shown — payment received, confirmation still missing, retry, and an address to write to — not an ellipsis that never resolves.
+
+The same reasoning applies in reverse to `customer.subscription.deleted`, which decided whether to close a shop by comparing the ended subscription against the id stored on `merchant_billing`. That id is written by the activation events, so losing them makes the comparison lie in the dangerous direction: the row still names the old trial, its cancellation matches, and a shop that has just paid for a replacement is suspended. It now asks Stripe whether the customer holds any other live subscription before closing anything, and reconciles to that one instead — which is also what makes replaying a backlog safe, since the order the events come back in no longer decides whether the shop ends up open.
+
+This was found in production on 2026-08-07: the live-mode webhook endpoint was configured as `/api/v1/stripe/webhook`, a path that does not exist, so every billing event had been answered `404 Not Found` by Hono and nothing webhook-driven had run at all.

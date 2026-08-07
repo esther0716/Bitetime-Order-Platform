@@ -127,6 +127,28 @@ export async function syncMerchantBilling(
 }
 
 /**
+ * Is this customer still paying through some OTHER subscription than the one that just ended?
+ *
+ * `customer.subscription.deleted` decides whether to close a shop, and it decided by comparing
+ * the ended subscription against the id stored on `merchant_billing`. That comparison is only as
+ * good as the stored id — and the stored id is written by the ACTIVATION events. Lose those (a
+ * webhook endpoint pointed at a path that 404s is how this was found in production) and the row
+ * still names the old trial, so the old trial's cancellation matches, and a shop that has just
+ * paid for a new subscription is suspended by the death of the one it replaced.
+ *
+ * Asking Stripe removes the dependency on our own row being current. Only called once the cheap
+ * stored-id check has already failed to rule the event out, so a healthy lapse costs one extra
+ * API call and a replayed backlog stops being order-dependent.
+ */
+export async function liveSubscriptionBesides(sub: Stripe.Subscription): Promise<Stripe.Subscription | null> {
+  const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id
+  if (!customerId) return null
+  const list = await billingSyncDeps.listSubscriptions(customerId)
+  const others = (list.data ?? []).filter(s => s.id !== sub.id && LIVE_STATUSES.includes(s.status))
+  return pickSubscription(others)
+}
+
+/**
  * Everything Stripe holds for this shop's customer, narrowed by `pickSubscription`.
  *
  * The customer list is asked FIRST and the stored id is only the fallback, for the reason

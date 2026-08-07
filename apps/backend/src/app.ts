@@ -22,7 +22,7 @@ import { downgradePhases, ScheduleError, type LivePhase } from './subscriptionSc
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
 import { startCardlessTrial } from './trialSubscription.js'
 import { runBillingSweep } from './billingSweep.js'
-import { syncMerchantBilling } from './billingSync.js'
+import { syncMerchantBilling, liveSubscriptionBesides } from './billingSync.js'
 import { resendSend } from './email.js'
 import { notifyOrderPlaced, telegramSend } from './notify.js'
 import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
@@ -2210,6 +2210,22 @@ app.post('/api/stripe/webhook', async (c) => {
             .eq('merchant_id', merchantId)
             .maybeSingle()
           if (current?.stripe_subscription_id && current.stripe_subscription_id !== sub.id) break
+
+          // The stored id said this IS the current subscription — but it says that from a row
+          // only the activation events keep current, and those are exactly what goes missing.
+          // So confirm against Stripe before closing anything: a customer still holding a live
+          // subscription is a shop that is still paying, whatever our row believes.
+          const replacement = await liveSubscriptionBesides(sub)
+          if (replacement) {
+            await upsertBilling(merchantId, billingFromSubscription(replacement))
+            await reconcileMerchantPlan(merchantId, replacement)
+            console.log(
+              `Subscription ${sub.id} ended for merchant ${merchantId}, but ${replacement.id} is ` +
+                `live — reconciled to it instead of closing the shop.`,
+            )
+            break
+          }
+
           await upsertBilling(merchantId, billingFromSubscription(sub))
           // Suspends AND returns the shop to basic — see lapseMerchant. Shared with the
           // reconciliation sweep so a shop closed by either road is closed the same way.
