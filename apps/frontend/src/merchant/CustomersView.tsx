@@ -40,6 +40,9 @@ const CHIP = 'inline-flex items-center gap-1 rounded-pill border border-border p
 // control a keyboard reaches, and the UA outline is not this app's ring.
 const FOCUS_RING = 'outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
 
+// How many of a customer's tags their table row shows before it stops and counts the rest.
+const ROW_TAG_CAP = 3
+
 const PAGE_SIZE = 50
 
 /**
@@ -174,6 +177,7 @@ export default function CustomersView() {
                   <th className={TH}>{t('Orders', '订单数')}</th>
                   <th className={TH}>{t('Spent', '消费额')}</th>
                   <th className={TH}>{t('Last Order', '最近订单')}</th>
+                  {isPro && <th className={TH}>{t('Tags', '标签')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -199,6 +203,7 @@ export default function CustomersView() {
                         <span className="text-[11px] text-muted-foreground">{agoLabel(c.daysSinceLastOrder, t)}</span>
                       </span>
                     </td>
+                    {isPro && <td className={TD}><RowTags tags={c.tags} /></td>}
                   </tr>
                 ))}
               </tbody>
@@ -225,6 +230,33 @@ export default function CustomersView() {
         onTagClicked={next => { setSelected(null); narrow(setTag)(next) }}
       />
     </>
+  )
+}
+
+/**
+ * What the merchant has written against one customer, on their row.
+ *
+ * **Display, not a control.** The whole row opens the drawer, and a tag that also filtered would
+ * put two different outcomes under one pointer — the filter already has its own row of chips
+ * above the table, and the drawer's copies stay clickable for the merchant who is already there.
+ *
+ * Capped at three with a `+N`, because a customer may carry up to `MAX_TAGS` (20) and one such
+ * row would set the height of every row around it. Which three is the merchant's own order —
+ * tags are stored as written, and re-sorting here would be a second opinion nothing asked for.
+ *
+ * Pro-only, and gated by the CALLER rather than here: a basic shop must not render this column at
+ * all, header included, or the table grows an empty column that says a feature is missing.
+ */
+function RowTags({ tags }: { tags: string[] }) {
+  const shown = tags.slice(0, ROW_TAG_CAP)
+  const hidden = tags.length - shown.length
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {shown.map(tag => (
+        <span key={tag} className={`${CHIP} bg-brand-100 text-primary`}>{tag}</span>
+      ))}
+      {hidden > 0 && <span className="text-[11px] text-muted-foreground">+{hidden}</span>}
+    </span>
   )
 }
 
