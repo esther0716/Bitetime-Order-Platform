@@ -664,3 +664,139 @@ describe('PATCH /api/merchants/:id (shipping policy)', () => {
     })
   })
 })
+
+// Custom order dates (#210, ADR 0015). Two things are being pinned here and they pull in
+// opposite directions: a Basic shop must not be able to SET custom dates, and a Basic shop must
+// still be able to save everything else while its body CARRIES the dates it already has —
+// ShopSettings resubmits the whole config bag. That is why the gate compares rather than sniffs.
+describe('PATCH /api/merchants/:id (custom order dates)', () => {
+  let merchantId: string
+  let ownerToken: string
+
+  // Dates computed from the run's own clock, so this suite cannot rot into the past.
+  const iso = (offsetDays: number) => {
+    const d = new Date(Date.now() + offsetDays * 86_400_000)
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+  }
+
+  beforeEach(async () => {
+    await resetMerchant('cfg-dates-shop')
+    const client = await makeUser('cfg-dates@example.com', 'password123')
+    const { token, userId } = await tokenOf(client)
+    merchantId = await seedMerchant({ slug: 'cfg-dates-shop', owner_id: userId })
+    ownerToken = token
+  })
+
+  const setPlan = (plan: 'basic' | 'pro') =>
+    serviceClient().from('merchants').update({ plan }).eq('id', merchantId)
+
+  const setStored = (fulfilment: Record<string, unknown>) =>
+    serviceClient().from('merchants').update({ config: { fulfilment } }).eq('id', merchantId)
+
+  const save = (fulfilment: Record<string, unknown>) =>
+    patch(`/api/merchants/${merchantId}`, { config: { fulfilment } }, ownerToken)
+
+  it('lets a Pro shop switch to custom dates', async () => {
+    await setPlan('pro')
+    const res = await save({ mode: 'custom', custom_dates: [iso(7)] })
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as any
+    expect(row.config.fulfilment.mode).toBe('custom')
+    expect(row.config.fulfilment.custom_dates).toEqual([iso(7)])
+  })
+
+  it('refuses a Basic shop switching to custom dates', async () => {
+    await setPlan('basic')
+    const res = await save({ mode: 'custom', custom_dates: [iso(7)] })
+    expect(res.status).toBe(403)
+    expect(((await res.json()) as any).error).toBe('requires_pro')
+  })
+
+  it('lets a Basic ex-Pro shop confirm its paused window without touching the dates', async () => {
+    // The failure this prevents: a presence-based gate would 403 the ONE write a paused Basic
+    // shop must be able to make — clearing needs_review to reopen.
+    await setPlan('basic')
+    await setStored({ mode: 'rolling', custom_dates: [iso(7)], needs_review: true })
+    const res = await save({ mode: 'rolling', custom_dates: [iso(7)], needs_review: false })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).config.fulfilment.needs_review).toBe(false)
+  })
+
+  it('refuses a Basic shop CLEARING the dates it may no longer edit', async () => {
+    await setPlan('basic')
+    await setStored({ mode: 'rolling', custom_dates: [iso(7)] })
+    const res = await save({ mode: 'rolling', custom_dates: [] })
+    expect(res.status).toBe(403)
+  })
+
+  it('refuses a custom save with no dates — the merchant cannot pause their own shop from the form', async () => {
+    await setPlan('pro')
+    const res = await save({ mode: 'custom', custom_dates: [] })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toBe('no_dates')
+  })
+
+  it('refuses a date beyond the 90-day horizon', async () => {
+    await setPlan('pro')
+    const res = await save({ mode: 'custom', custom_dates: [iso(120)] })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toBe('beyond_horizon')
+  })
+
+  it('normalises the bag it stores rather than trusting the body', async () => {
+    await setPlan('pro')
+    const res = await patch(`/api/merchants/${merchantId}`, {
+      config: { fulfilment: { mode: 'custom', custom_dates: [iso(9), iso(7), iso(7)], junk: 'x', window_days: 9999 } },
+    }, ownerToken)
+    expect(res.status).toBe(200)
+    const f = ((await res.json()) as any).config.fulfilment
+    expect(f.custom_dates).toEqual([iso(7), iso(9)])   // sorted, deduped
+    expect(f.window_days).toBe(90)                     // clamped to the horizon
+    expect(f.junk).toBeUndefined()                     // unknown keys do not survive
+  })
+
+  // Found in review. `fulfilmentConfig` reads a bag with no `fulfilment` key as DEFAULT_FULFILMENT,
+  // so normalising on the PRESENCE of `config` writes that default over the row — clearing the
+  // dates and lifting the ADR 0015 pause behind a success toast. Latent (only FulfilmentTab sends
+  // `config` today, and it spreads the stored bag) but it is the presence-vs-change mistake sitting
+  // one function away from the gate that exists to avoid it.
+  it('carries the stored fulfilment forward when a config PATCH does not mention it', async () => {
+    await setPlan('pro')
+    await setStored({ mode: 'rolling', custom_dates: [iso(7)], needs_review: true })
+    const res = await patch(`/api/merchants/${merchantId}`, { config: { something_else: 1 } }, ownerToken)
+    expect(res.status).toBe(200)
+    const f = ((await res.json()) as any).config.fulfilment
+    expect(f.needs_review).toBe(true)          // the pause survives a write that never named it
+    expect(f.custom_dates).toEqual([iso(7)])
+  })
+
+  it('leaves a shop with no stored fulfilment alone rather than inventing one', async () => {
+    await setPlan('pro')
+    await serviceClient().from('merchants').update({ config: {} }).eq('id', merchantId)
+    const res = await patch(`/api/merchants/${merchantId}`, { config: { something_else: 1 } }, ownerToken)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).config.fulfilment).toBeUndefined()
+  })
+
+  // Found in review. `fulfilmentConfig` caps the array at MAX_CUSTOM_DATES, so validating the
+  // ALREADY-TRUNCATED list could never report `too_many` — a 200-date body saved 91 silently,
+  // which is exactly the "refused, never trimmed" rule the handler states one line above.
+  it('refuses an over-long allowlist rather than truncating it', async () => {
+    await setPlan('pro')
+    const many = Array.from({ length: 95 }, (_, i) => iso(i + 1))
+    const res = await save({ mode: 'custom', custom_dates: many })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toBe('too_many')
+  })
+
+  it('normalises the fulfilment key without disturbing the rest of the config bag', async () => {
+    await setPlan('pro')
+    const res = await patch(`/api/merchants/${merchantId}`, {
+      config: { fulfilment: { lead_days: 3 }, something_else: { kept: true } },
+    }, ownerToken)
+    expect(res.status).toBe(200)
+    const cfg = ((await res.json()) as any).config
+    expect(cfg.fulfilment.lead_days).toBe(3)
+    expect(cfg.something_else).toEqual({ kept: true })
+  })
+})

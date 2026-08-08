@@ -588,3 +588,49 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
     border: 1px solid #000;
   }
 }
+
+/* The merchant's custom-order-dates calendar (#210).
+   `react-day-picker/style.css` ships a blue accent and styles a selected day as a bordered
+   circle with `font-size: large`, which is a second type scale inside a form that already has
+   one. Retheming it here rather than passing `classNames` keeps the override in the same file
+   as the tokens it reads, and scoped to the one component that mounts it.
+   The selected chip is deliberately the SAME shape as the closed-days buttons above it in the
+   tab — brand fill, primary border, primary text — so two controls that mean "picked" in one
+   form do not look like two different systems.
+   The variables must be set ON `.rdp-root`, not on the wrapper: the library declares them on
+   that element itself, and a declaration on the element always beats a value inherited from an
+   ancestor — set them on the wrapper and the calendar stays library-blue. */
+.custom-dates-calendar .rdp-root {
+  --rdp-accent-color: var(--primary);
+  --rdp-accent-background-color: var(--brand-100);
+  --rdp-day-height: 40px;
+  --rdp-day-width: 40px;
+  --rdp-day_button-height: 38px;
+  --rdp-day_button-width: 38px;
+  --rdp-day_button-border-radius: var(--radius-md);
+  --rdp-selected-border: 1px solid var(--primary);
+}
+
+/* The 14px drop is scoped to the DAY GRID, which is the dense compact variant DESIGN.md's body
+   floor carves out — not to the month caption, which is running copy and stays at 16px. */
+.custom-dates-calendar .rdp-day,
+.custom-dates-calendar .rdp-weekday {
+  font-size: 14px;
+}
+
+.custom-dates-calendar .rdp-selected {
+  font-weight: 500;
+  font-size: inherit;
+}
+
+.custom-dates-calendar .rdp-selected .rdp-day_button {
+  background: var(--brand-100);
+  color: var(--primary);
+}
+
+/* A day the shop cannot take — past, or beyond the 90-day horizon. Visible but plainly
+   unavailable: hiding it reads as a broken calendar, and the horizon is only legible if the
+   merchant can see where it falls. */
+.custom-dates-calendar .rdp-disabled {
+  cursor: not-allowed;
+}

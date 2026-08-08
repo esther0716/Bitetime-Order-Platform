@@ -78,6 +78,13 @@ export const PRICING_TIERS: PricingTier[] = [
         zh: '内建优惠券，让客人主动回购',
       },
       {
+        // "90 days", not "3 months", though the request was worded in months: the horizon is
+        // FULFILMENT_HORIZON_DAYS and 90 days is short of three calendar months for most of the
+        // year. A pre-purchase promise has to be true on the date the merchant reads it.
+        en: 'Take orders only on the dates you pick — tick your delivery days up to 90 days ahead',
+        zh: '只在你勾选的日期接单——最多可预订未来 90 天',
+      },
+      {
         en: 'Priority support — your questions jump the queue',
         zh: '优先支持——你的问题优先处理',
       },
@@ -164,6 +171,15 @@ export const PLAN_COMPARISON_GROUPS: ComparisonGroup[] = [
         label: { en: 'Delivery tracking — flat, by region, or by road distance', zh: '运费——统一、按地区，或按实际路程' },
         basic: true,
         pro: true,
+      },
+      {
+        // Text, not a ✓/✗ pair: both plans let a customer pick a date, so a cross against Basic
+        // would read as "no order dates at all". What differs is the KIND of range — the case
+        // this file's ComparisonValue doc names.
+        id: 'orderdates',
+        label: { en: 'Dates customers can order for', zh: '顾客可选的日期' },
+        basic: { en: 'A rolling window you set', zh: '你设定的滚动日期范围' },
+        pro: { en: 'A rolling window, or the exact dates you tick', zh: '滚动日期范围，或你逐一勾选的日期' },
       },
       {
         id: 'tracking',

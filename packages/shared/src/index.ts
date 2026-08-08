@@ -38,9 +38,12 @@ export type {
 export {
   fulfilmentConfig, isTimezone, todayInZone,
   isDateSelectable, selectableDates,
+  customDateBounds, pruneCustomDates, validateCustomDates,
+  fulfilmentWarning, pauseFulfilment, resumeFulfilment,
   DEFAULT_FULFILMENT, DEFAULT_TIMEZONE,
+  FULFILMENT_HORIZON_DAYS, MAX_CUSTOM_DATES, DATES_ENDING_SOON_DAYS,
 } from './fulfilment.js'
-export type { FulfilmentConfig } from './fulfilment.js'
+export type { FulfilmentConfig, FulfilmentMode, CustomDatesError, FulfilmentWarning } from './fulfilment.js'
 export { REFUSAL_STATUS, ORDER_REFUSALS, QUOTE_REFUSAL_STATUS, QUOTE_REFUSALS } from './refusal.js'
 export type { OrderRefusal, QuoteRefusal } from './refusal.js'
 export {

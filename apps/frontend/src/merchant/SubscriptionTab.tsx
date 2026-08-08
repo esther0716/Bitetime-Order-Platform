@@ -9,6 +9,7 @@ import {
 import type { Result } from '../api'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
+import { fulfilmentConfig } from '@bitetime/shared'
 import { fmtDate } from '../merchantDate'
 import { subscriptionTabState, type SubscriptionSnapshot } from './subscriptionTabState'
 import { billingErrorMessage } from './billingErrors'
@@ -43,6 +44,7 @@ const PRO_FEATURES: [string, string][] = [
   ['Telegram order alerts', 'Telegram 订单通知'],
   ['Discount vouchers', '优惠券'],
   ['Product promo pricing', '商品优惠价'],
+  ['Specific order dates', '指定可选日期'],
   ['Revenue reports as Excel', '营收报表导出 Excel'],
 ]
 
@@ -231,11 +233,22 @@ function ConfirmAction({
  * Mirrors the PRO_FEATURES the upgrade pitch lists, phrased as losses.
  */
 function DowngradeBody({ renewsAt }: { renewsAt: string | null }) {
-  const { t } = useSession()
+  const { t, merchant } = useSession()
+  // Read through `fulfilmentConfig` rather than poking at the raw bag, so this asks the same
+  // question the storefront and the backend do.
+  const usesCustomDates = fulfilmentConfig(merchant?.config).mode === 'custom'
   const stops: [string, string][] = [
     ['Telegram order alerts stop', 'Telegram 订单通知将停止'],
     ['Your discount vouchers stop working', '优惠券将失效'],
     ['Any running promo prices end', '进行中的优惠价将结束'],
+    // The only entry on this list that STOPS THE SHOP rather than removing a feature from it, so
+    // it says so. A shop on specific dates reverts to its rolling window and pauses until its
+    // owner confirms that window — the alternative was selling on dates they never chose
+    // (ADR 0015). Shown only to a shop this can actually happen to.
+    ...(usesCustomDates
+      ? [['Specific order dates stop — your shop pauses until you confirm its dates',
+          '指定日期功能将停止——店铺将暂停接单，直至你确认可选日期'] as [string, string]]
+      : []),
     // The dashboard keeps showing the revenue chart on Basic — only the download goes.
     ['You can no longer download revenue reports', '将无法下载营收报表'],
   ]

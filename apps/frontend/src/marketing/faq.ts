@@ -78,8 +78,8 @@ export const FAQ: FaqEntry[] = [
       zh: 'Pro 版多了什么？',
     },
     a: {
-      en: 'Instant Telegram alerts, discount vouchers, promotional pricing on individual items, and priority support. Everything else — your order page, your full product list, delivery fees, order emails — is on Basic.',
-      zh: 'Telegram 即时通知、优惠券、单品促销价，以及优先支持。其余功能——订单页面、完整产品列表、配送费、订单电邮——基础版都有。',
+      en: 'Instant Telegram alerts, discount vouchers, promotional pricing on individual items, the option to take orders only on specific dates you pick, and priority support. Everything else — your order page, your full product list, delivery fees, order emails — is on Basic.',
+      zh: 'Telegram 即时通知、优惠券、单品促销价、只在你指定日期接单的选项，以及优先支持。其余功能——订单页面、完整产品列表、配送费、订单电邮——基础版都有。',
     },
   },
   {
