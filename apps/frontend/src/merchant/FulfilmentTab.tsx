@@ -262,6 +262,14 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
           come back exactly as they were the moment the merchant returns to a rolling window. */}
       <div className={CARD}>
         <h3 className={HEADING}>{t('Closed days', '休息日')}</h3>
+        {/* Live in BOTH modes, and deliberately not disabled in custom.
+            Greying these out took the documented disabled treatment (one grey for every control),
+            which erased WHICH days were closed — the merchant could not see their own setting
+            until they switched back. Every other dormant setting in this dashboard stays legible:
+            a disabled tax still shows its rate, and the express fee fields stay editable while
+            express is off. So does this. Toggling here while custom dates are on is a real edit
+            to what applies the moment the shop returns to a rolling window; the line below is
+            what says it is not in effect right now. */}
         <div className="flex flex-wrap gap-2" role="group" aria-label={t('Closed days', '休息日')}>
           {WEEKDAYS.map(d => {
             const on = fields.closed.includes(d.value)
@@ -270,20 +278,13 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
                 key={d.value}
                 type="button"
                 aria-pressed={on}
-                disabled={custom}
                 onClick={() => toggleDay(d.value)}
                 className={
-                  'border rounded-md py-2 px-[14px] pointer-coarse:min-h-11 text-[14px] font-sans transition-all ' +
-                  'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 ' +
-                  // A selected day is a BRAND FILL, so it takes the documented disabled treatment
-                  // (grey fill, grey label, transparent border) rather than a fade: oxblood at 50%
-                  // over cream composites to a mauve in no palette, and a tint of the accent reads
-                  // as some other state rather than as inert. DESIGN.md → Components → Disabled.
-                  (custom
-                    ? 'cursor-not-allowed border-transparent bg-disabled-bg text-disabled-fg'
-                    : 'cursor-pointer hover:border-primary ' + (on
-                        ? 'border-[0.5px] border-primary bg-brand-100 text-primary font-medium'
-                        : 'border-border bg-card text-foreground'))
+                  'border rounded-md py-2 px-[14px] pointer-coarse:min-h-11 cursor-pointer text-[14px] font-sans transition-all ' +
+                  'hover:border-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 ' +
+                  (on
+                    ? 'border-[0.5px] border-primary bg-brand-100 text-primary font-medium'
+                    : 'border-border bg-card text-foreground')
                 }
               >
                 {t(d.en, d.zh)}
@@ -293,7 +294,8 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
         </div>
         <p className="text-[12px] text-muted-foreground mt-3 leading-[1.5]">
           {custom
-            ? t('Closed days do not apply while you are picking specific dates.', '使用指定日期时，休息日设置不适用。')
+            ? t('Not in effect while you are picking specific dates. These apply again if you switch back to a rolling window.',
+                 '使用指定日期期间不生效。切换回滚动日期范围后将重新适用。')
             : allClosed
               ? t('Every day is marked closed — customers would have no date to pick.', '所有日期都标记为休息，顾客将无日期可选。')
               : t('Days you take no orders. Customers cannot pick these.', '不接单的日子，顾客无法选择。')}
