@@ -596,8 +596,11 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
    as the tokens it reads, and scoped to the one component that mounts it.
    The selected chip is deliberately the SAME shape as the closed-days buttons above it in the
    tab — brand fill, primary border, primary text — so two controls that mean "picked" in one
-   form do not look like two different systems. */
-.custom-dates-calendar {
+   form do not look like two different systems.
+   The variables must be set ON `.rdp-root`, not on the wrapper: the library declares them on
+   that element itself, and a declaration on the element always beats a value inherited from an
+   ancestor — set them on the wrapper and the calendar stays library-blue. */
+.custom-dates-calendar .rdp-root {
   --rdp-accent-color: var(--primary);
   --rdp-accent-background-color: var(--brand-100);
   --rdp-day-height: 40px;
