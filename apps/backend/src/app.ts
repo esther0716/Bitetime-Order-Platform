@@ -63,11 +63,11 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor, fulfilmentConfig, validateCustomDates } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
-import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, menuCategoriesChanged, categoryChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
+import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, menuCategoriesChanged, customDatesChanged, categoryChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
 
@@ -258,6 +258,31 @@ app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
   // and ceasing to pay must not be a way to destroy them.
   if (menuCategoriesChanged(patch, stored) && !(await hasProAccess(c))) {
     return c.json({ error: REQUIRES_PRO }, 403)
+  }
+  // Custom order dates are Pro, gated the same way and for the same recorded reason (ADR 0015).
+  // `needs_review` sits OUTSIDE the comparison so a paused Basic shop can still press Confirm and
+  // reopen — see customDatesChanged.
+  if (customDatesChanged(patch, stored) && !(await hasProAccess(c))) {
+    return c.json({ error: REQUIRES_PRO }, 403)
+  }
+  // The body is merchant-controlled and `admin` bypasses RLS, so the fulfilment bag that lands in
+  // the row is the one THIS function produces, never the one that arrived: sorted, deduped,
+  // clamped, unknown keys dropped. One writer, one reader — the storefront can never read back a
+  // shape the settings form did not save.
+  if (patch.config !== undefined) {
+    const fulfilment = fulfilmentConfig(patch.config)
+    if (fulfilment.mode === 'custom') {
+      // The horizon needs a clock, so it cannot live in `fulfilmentConfig`. Refused here rather
+      // than silently trimmed: a merchant who ticked a date past it must be told it did not save,
+      // not discover months later that it never did.
+      // The SUBMITTED timezone wins over the stored one: the Fulfilment tab saves the clock and
+      // the dates in one body, and judging tomorrow's date against yesterday's zone is how an
+      // honest save gets refused on the horizon's edge.
+      const tz = (patch.timezone as string | undefined) ?? stored.timezone ?? DEFAULT_TIMEZONE
+      const bad = validateCustomDates(fulfilment.custom_dates, tz, new Date())
+      if (bad) return c.json({ error: bad }, 400)
+    }
+    patch.config = { ...(patch.config as Record<string, unknown>), fulfilment }
   }
   const merged = {
     pickup: patch.pickup_enabled ?? stored.pickup_enabled,

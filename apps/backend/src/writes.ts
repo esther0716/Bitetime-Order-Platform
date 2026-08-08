@@ -1,6 +1,6 @@
 import {
   canonicalJson, optionGroupsFromRow, isTimezone,
-  menuCategoriesFromRow, validateMenuCategories,
+  menuCategoriesFromRow, validateMenuCategories, fulfilmentConfig,
 } from '@bitetime/shared'
 
 // Column allowlists for write endpoints. The service-role `admin` client bypasses RLS and the
@@ -382,6 +382,35 @@ export function menuCategoriesChanged(
   if (submitted === undefined) return false
   return canonicalJson(menuCategoriesFromRow(submitted))
     !== canonicalJson(menuCategoriesFromRow(stored?.product_categories ?? null))
+}
+
+/**
+ * Does this shop-config PATCH CHANGE the shop's custom order dates? (ADR 0015)
+ *
+ * `menuCategoriesChanged`'s sibling, same shape and same recorded reason: asking whether the
+ * field is PRESENT is the wrong question, because `ShopSettings` resubmits a whole config bag.
+ *
+ * The compared slice is deliberately `{ mode, custom_dates }` and NOTHING ELSE. `needs_review` is
+ * excluded on purpose: clearing it is exactly what a downgraded BASIC shop must be able to do to
+ * reopen, and folding it into this comparison would lock a paused shop out of its own
+ * confirmation — the one write here that is not a Pro capability.
+ *
+ * Both sides go through `fulfilmentConfig` rather than being compared raw, so a body that merely
+ * re-orders or re-spells the same allowlist is not a change. That is the same courtesy the other
+ * three gates extend, and it is what lets a Basic ex-Pro shop keep saving its other settings.
+ *
+ * CLEARING IS A CHANGE, as everywhere else: the dates a Basic shop may no longer edit stay put
+ * until it is Pro again. A Pro feature must not be removable by ceasing to pay for it.
+ */
+export function customDatesChanged(
+  patch: Record<string, unknown>,
+  stored: Record<string, any> | null,
+): boolean {
+  if (patch.config === undefined) return false
+  const a = fulfilmentConfig(patch.config)
+  const b = fulfilmentConfig(stored?.config ?? null)
+  return canonicalJson({ mode: a.mode, custom_dates: a.custom_dates })
+    !== canonicalJson({ mode: b.mode, custom_dates: b.custom_dates })
 }
 
 /**
