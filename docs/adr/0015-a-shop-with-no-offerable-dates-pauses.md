@@ -1,7 +1,7 @@
 # 15. A shop with no offerable dates pauses, and never falls back to a window nobody chose
 
 Date: 2026-08-08
-Status: Accepted. Not yet implemented — the build is #210.
+Status: Accepted and implemented (#210).
 
 ## Context
 
@@ -26,7 +26,11 @@ The opposite answer — go dark and stay dark — is honest and costs the mercha
 
 **Downgrade pauses with a review.** `revokeProArtifacts` forces `mode` to `rolling` and sets `needs_review`, keeping `custom_dates`. The shop does not sell until the merchant opens the Fulfilment tab and confirms, with an alert above the values explaining why they are being asked. **The confirmation is a press, not an edit.** Requiring the merchant to change something cannot distinguish "reviewed and agreed" from "fiddled and reverted" — a change-then-revert leaves the form clean — and it forces a merchant whose window was already correct to make it wrong first. What the rule is actually buying is that the merchant is *looking at* `lead_days`, `window_days` and `closed_weekdays` at the moment they take responsibility for them, and a confirm button rendered directly beneath those three fields buys that.
 
-**Re-subscribing restores custom mode and clears `needs_review`**, on the surviving dates. This is a **deliberate break with vouchers, promos and option groups**, where a step back up switches nothing on and [ADR 0010](0010-menu-options-are-pro-and-downgrade-hides.md) says so explicitly. The asymmetry there is safe because a dormant voucher costs the merchant nothing while it waits. Here the dormant state is a **stopped shop**, and there is no ambiguity to resolve on the way back — the dates are the merchant's own list, unchanged, minus the ones that expired on their own. Making a paying shop stay dark for want of a click is not a rule worth having for consistency's sake.
+**Re-subscribing restores custom mode and clears `needs_review`**, on the surviving dates. A
+paused shop holding NO dates at all is the one exception and is not resumed: there is nothing to
+go back to, so the review still stands. (A shop whose dates have all merely *expired* is resumed —
+it lands in the ordinary dry state, red banner and all, which is the honest reading of what its
+owner configured.) This is a **deliberate break with vouchers, promos and option groups**, where a step back up switches nothing on and [ADR 0010](0010-menu-options-are-pro-and-downgrade-hides.md) says so explicitly. The asymmetry there is safe because a dormant voucher costs the merchant nothing while it waits. Here the dormant state is a **stopped shop**, and there is no ambiguity to resolve on the way back — the dates are the merchant's own list, unchanged, minus the ones that expired on their own. Making a paying shop stay dark for want of a click is not a rule worth having for consistency's sake.
 
 Rejected:
 
@@ -38,7 +42,7 @@ Rejected:
 - **Reusing the suspended-shop screen** — conflates a config gap with something the platform did to you, and throws away the menu.
 - **A new refusal code for "this shop has no dates"** — `fulfil_date_unavailable` is already true of it, and the refusal vocabulary is worth keeping small.
 - **Custom dates as an additive layer or a blackout list on top of the rolling window** — both keep closed weekdays live, which is the opposite of what was asked, and neither expresses "these dates and no others".
-- **Three calendar months rather than 90 days** — a second horizon concept and month arithmetic in a module deliberately built from day counts. `WINDOW_MAX` was already 90.
+- **Three calendar months rather than 90 days** — a second horizon concept and month arithmetic in a module deliberately built from day counts. the cap the rolling window already used was 90, now named `FULFILMENT_HORIZON_DAYS`.
 
 ## Consequences
 
@@ -47,4 +51,10 @@ Rejected:
 - **The plan→pro path gains a restore hook it does not have today.** `revokeProArtifacts` has no counterpart; this is the first thing that comes back on re-subscribe, and it must be idempotent against a replayed webhook like its opposite number is.
 - **The Fulfilment tab now has a transient state**, and it is the only screen in the dashboard whose submit button changes meaning. Worth keeping that confined to the tab rather than growing a general "shop needs attention" mechanism for one case.
 - **`window_days`, `lead_days` and `closed_weekdays` now live under a mode not named "window"** — `rolling` was chosen because it is the merchant's own register, matching `custom`. A mild dissonance in the config bag, accepted knowingly; renaming the fields would rewrite every saved merchant row for cosmetics.
+- **Writing the config bag is as load-bearing as reading it.** The pause lives in a jsonb key, and
+  `config` is written as a whole column, so any handler that derives the bag from an incomplete body
+  erases `needs_review` and lifts the pause behind a success toast. Normalisation must therefore key
+  on whether the body CARRIES a `fulfilment` bag, never on whether it carries a `config` — the same
+  presence-versus-change distinction the Pro gate is built on. Both review axes found this latent on
+  first implementation; it is the likeliest way this decision gets quietly undone.
 - **Zero future dates is refused at save**, mirroring the existing all-seven-days-closed refusal, so the merchant cannot walk into the paused state from the form itself — only time or billing can put them there.

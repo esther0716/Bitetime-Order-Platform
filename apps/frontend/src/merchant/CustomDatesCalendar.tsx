@@ -7,6 +7,9 @@ import { enGB, zhCN } from 'react-day-picker/locale'
 // the dashboard's own chunk and off the storefront's critical path entirely. The theming that
 // makes it look like the rest of the app stays in `index.css`, beside the tokens it reads.
 import 'react-day-picker/style.css'
+// The `YYYY-MM-DD` ↔ local-midnight `Date` bridge, extracted so it can be tested as a pair of
+// exact inverses — see calendarDate.ts for why local and not UTC.
+import { toDate, toIso } from './calendarDate'
 
 interface Props {
   /** The ticked dates, `YYYY-MM-DD`, sorted. */
@@ -18,26 +21,6 @@ interface Props {
   t: (en: string, zh: string) => string
   lang: 'en' | 'zh'
 }
-
-/**
- * The ONE place in this codebase allowed to hold a `Date` for a calendar date.
- *
- * `DayPicker` speaks `Date`, the rest of the app speaks `YYYY-MM-DD`, and the conversion between
- * them is where a day gets lost. Both directions go through LOCAL midnight — `new Date(y, m, d)`
- * and the local getters — never UTC and never `Date.parse`, so the two are exact inverses in
- * whatever zone the merchant's browser happens to be in. Mixing the two conventions is what puts
- * a tick on the wrong day, and a wrong day here is a date the shop bakes for and nobody ordered.
- *
- * The SHOP's clock does not come into it: `first` and `last` are computed from the shop timezone
- * by the caller and arrive here already as strings.
- */
-const toDate = (iso: string): Date => {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-
-const toIso = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 export default function CustomDatesCalendar({ value, onChange, first, last, t, lang }: Props) {
   const selected = useMemo(() => value.map(toDate), [value])

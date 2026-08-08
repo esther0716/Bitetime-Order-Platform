@@ -260,30 +260,34 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
           come back exactly as they were the moment the merchant returns to a rolling window. */}
       <div className={CARD}>
         <h3 className={HEADING}>{t('Closed days', '休息日')}</h3>
-        <div className={custom ? 'opacity-50 pointer-events-none' : undefined}>
-          <div className="flex flex-wrap gap-2" role="group" aria-label={t('Closed days', '休息日')}>
-            {WEEKDAYS.map(d => {
-              const on = fields.closed.includes(d.value)
-              return (
-                <button
-                  key={d.value}
-                  type="button"
-                  aria-pressed={on}
-                  disabled={custom}
-                  onClick={() => toggleDay(d.value)}
-                  className={
-                    'border rounded-md py-2 px-[14px] pointer-coarse:min-h-11 cursor-pointer text-[14px] font-sans transition-all ' +
-                    'hover:border-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 ' +
-                    (on
-                      ? 'border-[0.5px] border-primary bg-brand-100 text-primary font-medium'
-                      : 'border-border bg-card text-foreground')
-                  }
-                >
-                  {t(d.en, d.zh)}
-                </button>
-              )
-            })}
-          </div>
+        <div className="flex flex-wrap gap-2" role="group" aria-label={t('Closed days', '休息日')}>
+          {WEEKDAYS.map(d => {
+            const on = fields.closed.includes(d.value)
+            return (
+              <button
+                key={d.value}
+                type="button"
+                aria-pressed={on}
+                disabled={custom}
+                onClick={() => toggleDay(d.value)}
+                className={
+                  'border rounded-md py-2 px-[14px] pointer-coarse:min-h-11 text-[14px] font-sans transition-all ' +
+                  'focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 ' +
+                  // A selected day is a BRAND FILL, so it takes the documented disabled treatment
+                  // (grey fill, grey label, transparent border) rather than a fade: oxblood at 50%
+                  // over cream composites to a mauve in no palette, and a tint of the accent reads
+                  // as some other state rather than as inert. DESIGN.md → Components → Disabled.
+                  (custom
+                    ? 'cursor-not-allowed border-transparent bg-disabled-bg text-disabled-fg'
+                    : 'cursor-pointer hover:border-primary ' + (on
+                        ? 'border-[0.5px] border-primary bg-brand-100 text-primary font-medium'
+                        : 'border-border bg-card text-foreground'))
+                }
+              >
+                {t(d.en, d.zh)}
+              </button>
+            )
+          })}
         </div>
         <p className="text-[12px] text-muted-foreground mt-3 leading-[1.5]">
           {custom

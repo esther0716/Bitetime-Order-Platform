@@ -63,7 +63,7 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor, fulfilmentConfig, validateCustomDates } from '@bitetime/shared'
+import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
@@ -269,20 +269,40 @@ app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
   // the row is the one THIS function produces, never the one that arrived: sorted, deduped,
   // clamped, unknown keys dropped. One writer, one reader — the storefront can never read back a
   // shape the settings form did not save.
+  //
+  // Keyed on whether the body actually CARRIES a fulfilment bag, never on whether it carries a
+  // `config` — the same distinction `customDatesChanged` is built on, three lines up. Deriving
+  // the bag from an absent key reads as DEFAULT_FULFILMENT and writes it over the row, which
+  // clears `custom_dates` and lifts the ADR 0015 pause behind a success toast. `config` is a
+  // whole-column overwrite, so an untouched bag has to be carried forward explicitly.
   if (patch.config !== undefined) {
-    const fulfilment = fulfilmentConfig(patch.config)
-    if (fulfilment.mode === 'custom') {
-      // The horizon needs a clock, so it cannot live in `fulfilmentConfig`. Refused here rather
-      // than silently trimmed: a merchant who ticked a date past it must be told it did not save,
-      // not discover months later that it never did.
-      // The SUBMITTED timezone wins over the stored one: the Fulfilment tab saves the clock and
-      // the dates in one body, and judging tomorrow's date against yesterday's zone is how an
-      // honest save gets refused on the horizon's edge.
-      const tz = (patch.timezone as string | undefined) ?? stored.timezone ?? DEFAULT_TIMEZONE
-      const bad = validateCustomDates(fulfilment.custom_dates, tz, new Date())
-      if (bad) return c.json({ error: bad }, 400)
+    const submitted = { ...(patch.config as Record<string, unknown>) }
+    const storedConfig = (stored.config ?? null) as Record<string, unknown> | null
+    if (submitted.fulfilment !== undefined) {
+      const fulfilment = fulfilmentConfig(submitted)
+      if (fulfilment.mode === 'custom') {
+        // Counted on the RAW array, before `fulfilmentConfig` caps it: validating the truncated
+        // list could never report `too_many`, so a 200-date body saved 91 of them silently —
+        // the exact "trimmed, not refused" outcome the rule below exists to prevent.
+        const raw = (submitted.fulfilment as Record<string, unknown>)?.custom_dates
+        if (Array.isArray(raw) && raw.length > MAX_CUSTOM_DATES) {
+          return c.json({ error: 'too_many' }, 400)
+        }
+        // The horizon needs a clock, so it cannot live in `fulfilmentConfig`. Refused here rather
+        // than silently trimmed: a merchant who ticked a date past it must be told it did not save,
+        // not discover months later that it never did.
+        // The SUBMITTED timezone wins over the stored one: the Fulfilment tab saves the clock and
+        // the dates in one body, and judging tomorrow's date against yesterday's zone is how an
+        // honest save gets refused on the horizon's edge.
+        const tz = (patch.timezone as string | undefined) ?? stored.timezone ?? DEFAULT_TIMEZONE
+        const bad = validateCustomDates(fulfilment.custom_dates, tz, new Date())
+        if (bad) return c.json({ error: bad }, 400)
+      }
+      submitted.fulfilment = fulfilment
+    } else if (storedConfig?.fulfilment !== undefined) {
+      submitted.fulfilment = fulfilmentConfig(storedConfig)
     }
-    patch.config = { ...(patch.config as Record<string, unknown>), fulfilment }
+    patch.config = submitted
   }
   const merged = {
     pickup: patch.pickup_enabled ?? stored.pickup_enabled,

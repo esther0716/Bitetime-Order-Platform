@@ -755,6 +755,40 @@ describe('PATCH /api/merchants/:id (custom order dates)', () => {
     expect(f.junk).toBeUndefined()                     // unknown keys do not survive
   })
 
+  // Found in review. `fulfilmentConfig` reads a bag with no `fulfilment` key as DEFAULT_FULFILMENT,
+  // so normalising on the PRESENCE of `config` writes that default over the row — clearing the
+  // dates and lifting the ADR 0015 pause behind a success toast. Latent (only FulfilmentTab sends
+  // `config` today, and it spreads the stored bag) but it is the presence-vs-change mistake sitting
+  // one function away from the gate that exists to avoid it.
+  it('carries the stored fulfilment forward when a config PATCH does not mention it', async () => {
+    await setPlan('pro')
+    await setStored({ mode: 'rolling', custom_dates: [iso(7)], needs_review: true })
+    const res = await patch(`/api/merchants/${merchantId}`, { config: { something_else: 1 } }, ownerToken)
+    expect(res.status).toBe(200)
+    const f = ((await res.json()) as any).config.fulfilment
+    expect(f.needs_review).toBe(true)          // the pause survives a write that never named it
+    expect(f.custom_dates).toEqual([iso(7)])
+  })
+
+  it('leaves a shop with no stored fulfilment alone rather than inventing one', async () => {
+    await setPlan('pro')
+    await serviceClient().from('merchants').update({ config: {} }).eq('id', merchantId)
+    const res = await patch(`/api/merchants/${merchantId}`, { config: { something_else: 1 } }, ownerToken)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).config.fulfilment).toBeUndefined()
+  })
+
+  // Found in review. `fulfilmentConfig` caps the array at MAX_CUSTOM_DATES, so validating the
+  // ALREADY-TRUNCATED list could never report `too_many` — a 200-date body saved 91 silently,
+  // which is exactly the "refused, never trimmed" rule the handler states one line above.
+  it('refuses an over-long allowlist rather than truncating it', async () => {
+    await setPlan('pro')
+    const many = Array.from({ length: 95 }, (_, i) => iso(i + 1))
+    const res = await save({ mode: 'custom', custom_dates: many })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toBe('too_many')
+  })
+
   it('normalises the fulfilment key without disturbing the rest of the config bag', async () => {
     await setPlan('pro')
     const res = await patch(`/api/merchants/${merchantId}`, {

@@ -607,8 +607,14 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
   --rdp-day-width: 40px;
   --rdp-day_button-height: 38px;
   --rdp-day_button-width: 38px;
-  --rdp-day_button-border-radius: var(--radius-md, 6px);
+  --rdp-day_button-border-radius: var(--radius-md);
   --rdp-selected-border: 1px solid var(--primary);
+}
+
+/* The 14px drop is scoped to the DAY GRID, which is the dense compact variant DESIGN.md's body
+   floor carves out — not to the month caption, which is running copy and stays at 16px. */
+.custom-dates-calendar .rdp-day,
+.custom-dates-calendar .rdp-weekday {
   font-size: 14px;
 }
 
