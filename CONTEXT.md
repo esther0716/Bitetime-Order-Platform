@@ -50,6 +50,34 @@ The distance is a **destination fact the client cannot be trusted to state**, so
 
 A percent voucher still discounts `subtotal + shipping`, unchanged. Worth knowing that this bites harder here: 20% off an RM8 flat rate gives away RM1.60 of shipping, the same voucher against an RM31.20 distance fee gives away RM6.24 — and that is the merchant's rider cost, not their food margin. Left as-is deliberately; changing the discount base would move totals at every shop that never asked for distance pricing.
 
+## Fulfilment date
+
+**When** the customer asks for their order — the date the storefront picker is built from and order intake checks against. One pure module, `packages/shared/src/fulfilment.ts`, decides it for both sides of the wire, for the same reason `priceOrder` does: two copies of this arithmetic that drift by a day are a checkout that refuses every honest order on the window's edge, with nothing on screen to explain it. Not to be confused with **fulfilment method** above, which is *how* the order travels.
+
+A shop offers dates in one of **two modes**, and the set is closed: `rolling` and `custom`. `merchants.config -> 'fulfilment' -> 'mode'`, read through `fulfilmentConfig` like every other field in that bag. The unused mode's settings stay in the row, dormant, the same arrangement a disabled tax keeps its `tax_rate` — switching mode is never a deletion.
+
+- **`rolling`** — a moving range computed from three numbers: `lead_days` (days of notice, 0 allows same-day), `window_days` (how far ahead the shop commits), and `closed_weekdays`. Closed days are **removed** from the range, they do not extend it: `window_days` is how far ahead the merchant is willing to commit, not a quota of open days. This is what every shop that has never opened the Fulfilment tab reads as — `0 / 14 / none`.
+- **`custom`** — an explicit **allowlist**, `custom_dates`, of calendar dates the merchant ticked. `lead_days`, `window_days` and `closed_weekdays` do not apply to it at all: ticked is ticked. The only filter is *date ≥ today*, and the merchant's own notice period is theirs to honour by not ticking tomorrow.
+
+**Today is the shop's clock, not the customer's** (`merchants.timezone`). A customer ordering from another timezone must see the same earliest date the merchant would, or the lead time silently means something different for them. Dates are compared as UTC-midnight milliseconds — the one place a date string becomes a number — because UTC has no daylight saving, so "+1 day" is always +86400000 and a window can never gain an hour and land on the wrong date.
+
+**The horizon is 90 days**, and it is one horizon for both modes: `window_days` is clamped to it and a `custom_dates` entry beyond it is dropped. The feedback asked for "up to 3 months"; 90 days is that, expressed in the day-count arithmetic this module is already made of, rather than a second concept and calendar-month maths.
+
+**Custom mode is Pro.** The backend refuses `mode: 'custom'` from a non-Pro caller with `403 requires_pro`, alongside Telegram alerts, vouchers, promos and menu options.
+
+**A shop with no offerable date is paused, not closed.** The two reads agree by construction — `selectableDates` returns `[]` and `isDateSelectable` returns false — so the storefront and a scripted POST get the same answer, and a paused shop cannot be sold out from under its owner by a caller who skips the picker. `merchants.status` stays `active`: the menu, prices and photos still render and are still crawlable, and the customer is told at the date step that the shop is not taking orders. A configuration gap must not wear the suspended-shop screen; being suspended is something the platform did to you. A stray POST is refused with the existing `fulfil_date_unavailable` — the date *is* unavailable, so the vocabulary already has the honest word and gains no new one.
+
+**Pausing has exactly two causes.**
+
+1. **The allowlist ran dry** — every ticked date is in the past. The merchant is warned in the dashboard before it happens (amber when the last remaining date is within 7 days, red at zero), computed from config with no job and no send path.
+2. **The shop stepped down from Pro** — `revokeProArtifacts` forces `mode` back to `rolling` and sets `needs_review`, keeping `custom_dates` intact. See [ADR 0015](docs/adr/0015-a-shop-with-no-offerable-dates-pauses.md) for why a downgrade pauses rather than quietly resuming a rolling window.
+
+**`needs_review` is cleared by a deliberate act inside the Fulfilment tab**, never by a banner button and never by a forced edit — a merchant whose rolling window was already right must not have to break it to reopen. Re-subscribing to Pro clears it too, restoring `custom` mode and whatever dates have not expired: the review existed because the shop lost the feature, and it has not lost it any more.
+
+**Stale dates are filtered on read and pruned on save.** Nothing sweeps them: a read that rewrote the merchant's config would be a merchant-config write on the customer path.
+
+**A date the merchant un-ticks stops new orders and nothing else.** Orders already placed for it keep their date, which is a historical fact about what the customer was promised, not a view of current settings.
+
 ## Promo
 
 A reduced price on one product, optionally ending on a date and optionally capped at a number of units. Four columns on `products`: `promo_price`, `promo_limit` (null = uncapped), `promo_end` (null = no end date), `promo_sold` (the counter).
