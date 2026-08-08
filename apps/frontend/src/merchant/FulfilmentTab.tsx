@@ -224,11 +224,13 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
                 t={t}
                 lang={lang}
               />
+              {/* The count lives on the list's own heading now, so this says only the thing the
+                  list cannot: that removing a date is not retroactive. */}
               <p className="text-[12px] text-muted-foreground mt-3 leading-[1.5]">
                 {fields.dates.length === 0
                   ? t('No dates picked — customers would have none to choose.', '尚未选择任何日期，顾客将无日期可选。')
-                  : t(`${fields.dates.length} picked. Removing a date only stops new orders — orders already placed for it are unaffected.`,
-                      `已选择 ${fields.dates.length} 个日期。取消某个日期只会停止新订单，已下单的订单不受影响。`)}
+                  : t('Removing a date only stops new orders — orders already placed for it are unaffected.',
+                      '取消某个日期只会停止新订单，已下单的订单不受影响。')}
               </p>
             </>
           )
