@@ -272,3 +272,99 @@ describe('POST /api/stripe/webhook — plan reconciliation', () => {
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 })
+
+// Custom order dates across a plan change (#210, ADR 0015). This is the WIRING test — the
+// transforms themselves are unit-tested in packages/shared/src/fulfilment.test.ts. What can only
+// be caught here is calling them on the wrong transition, or writing a config bag that drops the
+// merchant's other keys.
+describe('custom order dates across a plan change', () => {
+  const iso = (offsetDays: number) => {
+    const d = new Date(Date.now() + offsetDays * 86_400_000)
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+  }
+
+  async function seedWithDates(slug: string, plan: 'basic' | 'pro', fulfilment: Record<string, unknown>) {
+    await resetMerchant(slug)
+    const owner = await makeUser(`${slug}@example.com`, 'password123')
+    const id = await seedMerchant({ slug, owner_id: await userIdOf(owner), plan })
+    await serviceClient().from('merchants')
+      .update({ config: { fulfilment, shipping: { keep: 'me' } } })
+      .eq('id', id)
+    return id
+  }
+
+  async function fulfilmentOf(id: string) {
+    const { data } = await serviceClient().from('merchants').select('config').eq('id', id).single()
+    return (data!.config as any).fulfilment
+  }
+
+  it('pauses a custom-dates shop when it steps down to basic', async () => {
+    const id = await seedWithDates('wh-dates-down', 'pro', {
+      mode: 'custom', custom_dates: [iso(7)], lead_days: 3, closed_weekdays: [0],
+    })
+
+    const res = await postWebhook(subscriptionUpdated(id, PRICES.basicMonthly))
+    expect(res.status).toBe(200)
+
+    const f = await fulfilmentOf(id)
+    expect(f.mode).toBe('rolling')
+    expect(f.needs_review).toBe(true)
+    expect(f.custom_dates).toEqual([iso(7)])   // kept, never deleted
+    expect(f.lead_days).toBe(3)                // the rolling settings survive intact
+    expect(f.closed_weekdays).toEqual([0])
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  it('leaves the shop\'s other config keys alone when it pauses', async () => {
+    const id = await seedWithDates('wh-dates-keys', 'pro', { mode: 'custom', custom_dates: [iso(7)] })
+
+    await postWebhook(subscriptionUpdated(id, PRICES.basicMonthly))
+
+    const { data } = await serviceClient().from('merchants').select('config').eq('id', id).single()
+    expect((data!.config as any).shipping).toEqual({ keep: 'me' })
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  it('leaves a rolling shop alone when it steps down', async () => {
+    const id = await seedWithDates('wh-dates-rolling', 'pro', { mode: 'rolling', lead_days: 2 })
+
+    await postWebhook(subscriptionUpdated(id, PRICES.basicMonthly))
+
+    const f = await fulfilmentOf(id)
+    expect(f.needs_review).toBeFalsy()
+    expect(f.mode ?? 'rolling').toBe('rolling')
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  it('restores custom mode when the shop comes back to Pro', async () => {
+    const id = await seedWithDates('wh-dates-up', 'basic', {
+      mode: 'rolling', custom_dates: [iso(7)], needs_review: true,
+    })
+
+    const res = await postWebhook(subscriptionUpdated(id, PRICES.proMonthly))
+    expect(res.status).toBe(200)
+
+    const f = await fulfilmentOf(id)
+    expect(f.mode).toBe('custom')
+    expect(f.needs_review).toBe(false)
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  it('does not resume a paused shop whose dates are all gone', async () => {
+    const id = await seedWithDates('wh-dates-empty', 'basic', {
+      mode: 'rolling', custom_dates: [], needs_review: true,
+    })
+
+    await postWebhook(subscriptionUpdated(id, PRICES.proMonthly))
+
+    const f = await fulfilmentOf(id)
+    expect(f.needs_review).toBe(true)
+    expect(f.mode).toBe('rolling')
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+})

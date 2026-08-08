@@ -1,6 +1,7 @@
 import {
   optionGroupsFromRow, deactivateGroups, hasActiveGroup, hasRequiredGroup,
   menuCategoriesFromRow, deactivateCategories,
+  fulfilmentConfig, pauseFulfilment, resumeFulfilment, type FulfilmentConfig,
 } from '@bitetime/shared'
 import type Stripe from 'stripe'
 import { admin } from './supabase.js'
@@ -87,6 +88,11 @@ export async function reconcileMerchantPlan(merchantId: string, sub: Stripe.Subs
   if (before?.plan === 'pro' && tier.plan === 'basic') {
     await revokeProArtifacts(merchantId)
   }
+  // The one artifact that comes BACK (ADR 0015). Idempotent: a shop with no pause to lift and no
+  // dates to restore writes nothing, so a replayed event is free.
+  if (before?.plan !== 'pro' && tier.plan === 'pro') {
+    await restoreCustomDates(merchantId)
+  }
 }
 
 /**
@@ -135,7 +141,53 @@ export async function revokeProArtifacts(merchantId: string) {
 
   await revokeOptionGroups(merchantId)
   await revokeMenuCategories(merchantId)
+  await pauseCustomDates(merchantId)
 }
+
+/**
+ * Read the shop's config, apply a pure fulfilment transform, write it back only if it changed.
+ *
+ * The read-modify-write is safe because both transitions fire on a PLAN CHANGE, which
+ * `reconcilePlan` detects by reading the previous plan — a renewal replaying the same event does
+ * not reach here. The transforms return null when there is nothing to do, so a replay that does
+ * reach here still costs zero writes.
+ *
+ * The whole `config` bag is spread back, not replaced: shipping rates and menu categories live in
+ * the same jsonb, and a write that named only `fulfilment` would delete them.
+ */
+async function applyFulfilment(
+  merchantId: string,
+  transform: (cfg: FulfilmentConfig) => FulfilmentConfig | null,
+) {
+  const { data } = await admin.from('merchants').select('config').eq('id', merchantId).maybeSingle()
+  const config = (data?.config ?? {}) as Record<string, unknown>
+  const next = transform(fulfilmentConfig(config))
+  if (!next) return
+  const { error } = await admin
+    .from('merchants')
+    .update({ config: { ...config, fulfilment: next } })
+    .eq('id', merchantId)
+  if (error) throw error
+}
+
+/**
+ * Step down: custom order dates revert to the rolling window, PAUSED until the owner confirms.
+ *
+ * The pause is the point. Reverting alone would resume a window the merchant never agreed to —
+ * very possibly the untouched 0/14/none default — and start taking same-day orders on their
+ * behalf. See ADR 0015.
+ */
+export const pauseCustomDates = (merchantId: string) => applyFulfilment(merchantId, pauseFulfilment)
+
+/**
+ * Step up: the shop's own dates come back and the pause lifts.
+ *
+ * THE ONLY THING IN THIS CODEBASE THAT RETURNS ON A RE-SUBSCRIBE. Vouchers, promos, option groups
+ * and menu categories all stay revoked deliberately (ADR 0010); the difference is that this
+ * dormant state is a stopped shop rather than a dormant artifact, and there is nothing ambiguous
+ * to decide on the way back — these are the merchant's own dates, unchanged. See ADR 0015.
+ */
+export const restoreCustomDates = (merchantId: string) => applyFulfilment(merchantId, resumeFulfilment)
 
 /**
  * Switch a shop's menu sections off (ADR 0013).
