@@ -5,6 +5,7 @@ import { useEnterTransition } from '../motion'
 import { LayoutDashboard, ReceiptText, Cake, Ticket, Users, Settings } from 'lucide-react'
 import DashboardShell, { type NavItem } from '../components/DashboardShell'
 import BillingBanner from './BillingBanner'
+import FulfilmentDatesBanner from './FulfilmentDatesBanner'
 import TrialFeedbackPrompt from './TrialFeedbackPrompt'
 import DeactivatedVouchers from './DeactivatedVouchers'
 import Overview from './Overview'
@@ -102,6 +103,8 @@ function DashboardInner() {
       backTo={role === 'superadmin' ? { href: '/admin/merchants', label: t('Back to admin', '返回管理') } : undefined}
     >
       <BillingBanner />
+      {/* Same guarded move the Pro locks use, so a warning cannot discard a half-typed form. */}
+      <FulfilmentDatesBanner onGoToFulfilment={() => goToSettingsTab('fulfilment')} />
       <TrialFeedbackPrompt />
       <OnboardingChecklist section={section} onNavigate={selectSection} />
       <div key={section} {...enter}>
