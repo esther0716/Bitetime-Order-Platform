@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   DEFAULT_FULFILMENT, DEFAULT_TIMEZONE, fulfilmentConfig, isTimezone,
   todayInZone, isDateSelectable, selectableDates,
+  FULFILMENT_HORIZON_DAYS, MAX_CUSTOM_DATES, DATES_ENDING_SOON_DAYS,
+  customDateBounds, pruneCustomDates, validateCustomDates, fulfilmentWarning,
+  pauseFulfilment, resumeFulfilment,
+  type FulfilmentConfig,
 } from './fulfilment.js'
 
 // A fixed instant: 2026-07-20T04:00:00Z is 12:00 on 2026-07-20 in Kuala Lumpur (UTC+8).
@@ -9,15 +13,30 @@ const NOON_MYT = new Date('2026-07-20T04:00:00Z')
 // 2026-07-20T17:00:00Z is 01:00 on the 21st in KL but still the 20th in UTC.
 const LATE_MYT = new Date('2026-07-20T17:00:00Z')
 
-const OPEN: ReturnType<typeof fulfilmentConfig> = { lead_days: 0, window_days: 3, closed_weekdays: [] }
+const KL = 'Asia/Kuala_Lumpur'
+
+// Every fixture spreads the default so a new field cannot silently read as `undefined` here while
+// reading as its fallback everywhere else.
+const OPEN: FulfilmentConfig = { ...DEFAULT_FULFILMENT, window_days: 3 }
+
+/** A `custom` config built the way the app builds one — through the parser, never by hand. */
+const custom = (dates: string[], over: Record<string, unknown> = {}): FulfilmentConfig =>
+  fulfilmentConfig({ fulfilment: { mode: 'custom', custom_dates: dates, ...over } })
+
+/** `count` consecutive calendar dates from `2026-07-21`, as strings. */
+const consecutive = (count: number, fromMs = Date.UTC(2026, 6, 21)): string[] =>
+  Array.from({ length: count }, (_, i) => {
+    const d = new Date(fromMs + i * 86_400_000)
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+  })
 
 describe('todayInZone', () => {
   it('reads the date in the shop clock, not UTC', () => {
-    expect(todayInZone('Asia/Kuala_Lumpur', NOON_MYT)).toBe('2026-07-20')
+    expect(todayInZone(KL, NOON_MYT)).toBe('2026-07-20')
   })
 
   it('is already tomorrow in the shop while UTC is still today', () => {
-    expect(todayInZone('Asia/Kuala_Lumpur', LATE_MYT)).toBe('2026-07-21')
+    expect(todayInZone(KL, LATE_MYT)).toBe('2026-07-21')
     expect(todayInZone('UTC', LATE_MYT)).toBe('2026-07-20')
   })
 
@@ -28,53 +47,52 @@ describe('todayInZone', () => {
 
 describe('selectableDates', () => {
   it('offers window_days days starting today when lead is 0', () => {
-    expect(selectableDates(OPEN, 'Asia/Kuala_Lumpur', NOON_MYT))
+    expect(selectableDates(OPEN, KL, NOON_MYT))
       .toEqual(['2026-07-20', '2026-07-21', '2026-07-22'])
   })
 
   it('starts lead_days after today, and still offers window_days days', () => {
-    expect(selectableDates({ ...OPEN, lead_days: 2 }, 'Asia/Kuala_Lumpur', NOON_MYT))
+    expect(selectableDates({ ...OPEN, lead_days: 2 }, KL, NOON_MYT))
       .toEqual(['2026-07-22', '2026-07-23', '2026-07-24'])
   })
 
   it('drops closed weekdays without shortening the window', () => {
     // 2026-07-20 is a Monday (weekday 1).
-    expect(selectableDates({ lead_days: 0, window_days: 3, closed_weekdays: [1] }, 'Asia/Kuala_Lumpur', NOON_MYT))
+    expect(selectableDates({ ...OPEN, closed_weekdays: [1] }, KL, NOON_MYT))
       .toEqual(['2026-07-21', '2026-07-22'])
   })
 
   it('is empty when every weekday is closed', () => {
-    const shut = { lead_days: 0, window_days: 14, closed_weekdays: [0, 1, 2, 3, 4, 5, 6] }
-    expect(selectableDates(shut, 'Asia/Kuala_Lumpur', NOON_MYT)).toEqual([])
+    const shut: FulfilmentConfig = { ...DEFAULT_FULFILMENT, closed_weekdays: [0, 1, 2, 3, 4, 5, 6] }
+    expect(selectableDates(shut, KL, NOON_MYT)).toEqual([])
   })
 })
 
 describe('isDateSelectable', () => {
   it('accepts the first and last day of the window', () => {
-    expect(isDateSelectable('2026-07-20', OPEN, 'Asia/Kuala_Lumpur', NOON_MYT)).toBe(true)
-    expect(isDateSelectable('2026-07-22', OPEN, 'Asia/Kuala_Lumpur', NOON_MYT)).toBe(true)
+    expect(isDateSelectable('2026-07-20', OPEN, KL, NOON_MYT)).toBe(true)
+    expect(isDateSelectable('2026-07-22', OPEN, KL, NOON_MYT)).toBe(true)
   })
 
   it('refuses the day before the window and the day after it', () => {
-    expect(isDateSelectable('2026-07-19', OPEN, 'Asia/Kuala_Lumpur', NOON_MYT)).toBe(false)
-    expect(isDateSelectable('2026-07-23', OPEN, 'Asia/Kuala_Lumpur', NOON_MYT)).toBe(false)
+    expect(isDateSelectable('2026-07-19', OPEN, KL, NOON_MYT)).toBe(false)
+    expect(isDateSelectable('2026-07-23', OPEN, KL, NOON_MYT)).toBe(false)
   })
 
   it('refuses a date inside the window that falls on a closed weekday', () => {
-    const cfg = { lead_days: 0, window_days: 3, closed_weekdays: [1] }
-    expect(isDateSelectable('2026-07-20', cfg, 'Asia/Kuala_Lumpur', NOON_MYT)).toBe(false)
+    expect(isDateSelectable('2026-07-20', { ...OPEN, closed_weekdays: [1] }, KL, NOON_MYT)).toBe(false)
   })
 
   it('refuses anything that is not a YYYY-MM-DD calendar date', () => {
-    expect(isDateSelectable('2026-7-20', OPEN, 'Asia/Kuala_Lumpur', NOON_MYT)).toBe(false)
-    expect(isDateSelectable('2026-02-30', OPEN, 'Asia/Kuala_Lumpur', NOON_MYT)).toBe(false)
-    expect(isDateSelectable('', OPEN, 'Asia/Kuala_Lumpur', NOON_MYT)).toBe(false)
+    expect(isDateSelectable('2026-7-20', OPEN, KL, NOON_MYT)).toBe(false)
+    expect(isDateSelectable('2026-02-30', OPEN, KL, NOON_MYT)).toBe(false)
+    expect(isDateSelectable('', OPEN, KL, NOON_MYT)).toBe(false)
   })
 
   it('agrees with selectableDates', () => {
-    const cfg = { lead_days: 1, window_days: 10, closed_weekdays: [0, 3] }
-    for (const d of selectableDates(cfg, 'Asia/Kuala_Lumpur', NOON_MYT)) {
-      expect(isDateSelectable(d, cfg, 'Asia/Kuala_Lumpur', NOON_MYT)).toBe(true)
+    const cfg: FulfilmentConfig = { ...DEFAULT_FULFILMENT, lead_days: 1, window_days: 10, closed_weekdays: [0, 3] }
+    for (const d of selectableDates(cfg, KL, NOON_MYT)) {
+      expect(isDateSelectable(d, cfg, KL, NOON_MYT)).toBe(true)
     }
   })
 })
@@ -88,30 +106,224 @@ describe('fulfilmentConfig', () => {
 
   it('reads the fulfilment key off a merchants.config bag', () => {
     expect(fulfilmentConfig({ fulfilment: { lead_days: 2, window_days: 7, closed_weekdays: [1] } }))
-      .toEqual({ lead_days: 2, window_days: 7, closed_weekdays: [1] })
+      .toEqual({ ...DEFAULT_FULFILMENT, lead_days: 2, window_days: 7, closed_weekdays: [1] })
   })
 
   it('clamps out-of-range numbers instead of trusting them', () => {
     expect(fulfilmentConfig({ fulfilment: { lead_days: -5, window_days: 0, closed_weekdays: [] } }))
-      .toEqual({ lead_days: 0, window_days: 1, closed_weekdays: [] })
+      .toEqual({ ...DEFAULT_FULFILMENT, lead_days: 0, window_days: 1, closed_weekdays: [] })
     expect(fulfilmentConfig({ fulfilment: { lead_days: 999, window_days: 999, closed_weekdays: [] } }))
-      .toEqual({ lead_days: 30, window_days: 90, closed_weekdays: [] })
+      .toEqual({ ...DEFAULT_FULFILMENT, lead_days: 30, window_days: 90, closed_weekdays: [] })
   })
 
   it('drops junk weekdays and de-duplicates the rest', () => {
     expect(fulfilmentConfig({ fulfilment: { lead_days: 0, window_days: 14, closed_weekdays: [1, 1, 7, -1, 'x', 2.5, 6] } }))
-      .toEqual({ lead_days: 0, window_days: 14, closed_weekdays: [1, 6] })
+      .toEqual({ ...DEFAULT_FULFILMENT, closed_weekdays: [1, 6] })
   })
 
   it('falls back per field, so one bad value does not discard the good ones', () => {
     expect(fulfilmentConfig({ fulfilment: { lead_days: 'soon', window_days: 7, closed_weekdays: null } }))
-      .toEqual({ lead_days: 0, window_days: 7, closed_weekdays: [] })
+      .toEqual({ ...DEFAULT_FULFILMENT, window_days: 7 })
+  })
+})
+
+describe('fulfilmentConfig — mode', () => {
+  it('reads a shop that predates this feature as rolling, with an empty allowlist', () => {
+    const cfg = fulfilmentConfig({ fulfilment: { lead_days: 1, window_days: 7 } })
+    expect(cfg.mode).toBe('rolling')
+    expect(cfg.custom_dates).toEqual([])
+    expect(cfg.needs_review).toBe(false)
+  })
+
+  it('reads an unknown mode as rolling rather than throwing', () => {
+    expect(fulfilmentConfig({ fulfilment: { mode: 'weekends' } }).mode).toBe('rolling')
+  })
+
+  it('sorts, dedupes and drops junk from custom_dates without touching the other fields', () => {
+    const cfg = fulfilmentConfig({
+      fulfilment: {
+        mode: 'custom', lead_days: 2, window_days: 5, closed_weekdays: [0],
+        custom_dates: ['2026-08-20', '2026-08-13', '2026-08-13', '2026-02-30', 'nonsense', 42],
+      },
+    })
+    expect(cfg.custom_dates).toEqual(['2026-08-13', '2026-08-20'])
+    // The rolling fields survive intact — switching mode is never a deletion.
+    expect(cfg.lead_days).toBe(2)
+    expect(cfg.window_days).toBe(5)
+    expect(cfg.closed_weekdays).toEqual([0])
+  })
+
+  it('caps the allowlist length so a crafted body cannot bloat the row', () => {
+    const many = consecutive(400)
+    expect(fulfilmentConfig({ fulfilment: { mode: 'custom', custom_dates: many } }).custom_dates)
+      .toHaveLength(MAX_CUSTOM_DATES)
+  })
+
+  it('reads needs_review as a real boolean only', () => {
+    expect(fulfilmentConfig({ fulfilment: { needs_review: true } }).needs_review).toBe(true)
+    expect(fulfilmentConfig({ fulfilment: { needs_review: 'yes' } }).needs_review).toBe(false)
+  })
+})
+
+describe('selectableDates — custom mode', () => {
+  it('offers exactly the ticked dates, ignoring lead, window and closed weekdays', () => {
+    // 2026-07-26 is a Sunday, which closed_weekdays would remove in rolling mode.
+    const cfg = custom(['2026-07-21', '2026-07-26', '2026-09-01'], {
+      lead_days: 5, window_days: 1, closed_weekdays: [0, 1, 2, 3, 4, 5, 6],
+    })
+    expect(selectableDates(cfg, KL, NOON_MYT)).toEqual(['2026-07-21', '2026-07-26', '2026-09-01'])
+  })
+
+  it('offers today when today is ticked — ticked is ticked', () => {
+    expect(selectableDates(custom(['2026-07-20']), KL, NOON_MYT)).toEqual(['2026-07-20'])
+  })
+
+  it('drops dates that have gone past on the SHOP clock', () => {
+    expect(selectableDates(custom(['2026-07-19', '2026-07-21']), KL, NOON_MYT)).toEqual(['2026-07-21'])
+  })
+
+  it('drops dates beyond the 90-day horizon', () => {
+    // 2026-07-20 + 90 days is 2026-10-18; 2026-10-19 is one past the last selectable day.
+    expect(selectableDates(custom(['2026-10-18', '2026-10-19']), KL, NOON_MYT)).toEqual(['2026-10-18'])
+  })
+
+  it('offers nothing when every ticked date has passed', () => {
+    expect(selectableDates(custom(['2026-07-01']), KL, NOON_MYT)).toEqual([])
+  })
+})
+
+describe('needs_review pauses the shop on BOTH sides of the wire', () => {
+  const paused = fulfilmentConfig({
+    fulfilment: { mode: 'rolling', lead_days: 0, window_days: 14, needs_review: true },
+  })
+
+  it('offers no date at all, even though the rolling window is wide open', () => {
+    expect(selectableDates(paused, KL, NOON_MYT)).toEqual([])
+  })
+
+  it('refuses the date the rolling window would otherwise allow', () => {
+    expect(isDateSelectable('2026-07-21', paused, KL, NOON_MYT)).toBe(false)
+  })
+
+  it('pauses a custom shop too, whatever its dates say', () => {
+    const cfg = custom(['2026-07-21'], { needs_review: true })
+    expect(selectableDates(cfg, KL, NOON_MYT)).toEqual([])
+    expect(isDateSelectable('2026-07-21', cfg, KL, NOON_MYT)).toBe(false)
+  })
+})
+
+describe('isDateSelectable agrees with selectableDates in custom mode', () => {
+  const cfg = custom(['2026-07-21', '2026-08-01'])
+
+  it('accepts every date the list offers and refuses everything else', () => {
+    for (const d of selectableDates(cfg, KL, NOON_MYT)) {
+      expect(isDateSelectable(d, cfg, KL, NOON_MYT)).toBe(true)
+    }
+    expect(isDateSelectable('2026-07-22', cfg, KL, NOON_MYT)).toBe(false)
+    expect(isDateSelectable('not-a-date', cfg, KL, NOON_MYT)).toBe(false)
+  })
+})
+
+describe('customDateBounds', () => {
+  it('runs from today on the shop clock to today + 90', () => {
+    expect(customDateBounds(KL, NOON_MYT)).toEqual({ first: '2026-07-20', last: '2026-10-18' })
+    expect(FULFILMENT_HORIZON_DAYS).toBe(90)
+  })
+})
+
+describe('pruneCustomDates', () => {
+  it('keeps today and the future, drops the past', () => {
+    expect(pruneCustomDates(custom(['2026-07-01', '2026-07-20', '2026-08-01']), KL, NOON_MYT))
+      .toEqual(['2026-07-20', '2026-08-01'])
+  })
+})
+
+describe('validateCustomDates', () => {
+  it('passes a normal list', () => {
+    expect(validateCustomDates(['2026-07-21', '2026-08-01'], KL, NOON_MYT)).toBeNull()
+  })
+
+  it('refuses an empty list — a shop with no date cannot be ordered from', () => {
+    expect(validateCustomDates([], KL, NOON_MYT)).toBe('no_dates')
+  })
+
+  it('refuses a past date and a date beyond the horizon by their own names', () => {
+    expect(validateCustomDates(['2026-07-19'], KL, NOON_MYT)).toBe('past_date')
+    expect(validateCustomDates(['2026-10-19'], KL, NOON_MYT)).toBe('beyond_horizon')
+  })
+
+  it('refuses more dates than the cap', () => {
+    expect(validateCustomDates(consecutive(MAX_CUSTOM_DATES + 1), KL, NOON_MYT)).toBe('too_many')
+  })
+})
+
+describe('fulfilmentWarning', () => {
+  it('says nothing about a rolling shop — a window never runs dry', () => {
+    expect(fulfilmentWarning(fulfilmentConfig({}), KL, NOON_MYT)).toEqual({ kind: 'none' })
+  })
+
+  it('reports the review first, whatever the dates say', () => {
+    expect(fulfilmentWarning(custom(['2026-08-01'], { needs_review: true }), KL, NOON_MYT))
+      .toEqual({ kind: 'review' })
+  })
+
+  it('reports empty when every ticked date has passed', () => {
+    expect(fulfilmentWarning(custom(['2026-07-01']), KL, NOON_MYT)).toEqual({ kind: 'empty' })
+  })
+
+  it('reports ending when the last date is inside the warning window', () => {
+    expect(fulfilmentWarning(custom(['2026-07-21', '2026-07-24']), KL, NOON_MYT))
+      .toEqual({ kind: 'ending', last: '2026-07-24', daysLeft: 4 })
+    expect(DATES_ENDING_SOON_DAYS).toBe(7)
+  })
+
+  it('says nothing while the last date is comfortably ahead', () => {
+    expect(fulfilmentWarning(custom(['2026-09-01']), KL, NOON_MYT)).toEqual({ kind: 'none' })
+  })
+})
+
+describe('pauseFulfilment / resumeFulfilment', () => {
+  it('pausing a custom shop reverts the mode, keeps the dates and raises the flag', () => {
+    const cfg = custom(['2026-08-01'], { lead_days: 3, window_days: 7, closed_weekdays: [0] })
+    const paused = pauseFulfilment(cfg)!
+    expect(paused.mode).toBe('rolling')
+    expect(paused.needs_review).toBe(true)
+    expect(paused.custom_dates).toEqual(['2026-08-01'])
+    expect(paused.lead_days).toBe(3)
+    expect(paused.window_days).toBe(7)
+    expect(paused.closed_weekdays).toEqual([0])
+  })
+
+  it('pausing a shop that was never on custom dates is a no-op the caller can skip', () => {
+    expect(pauseFulfilment(fulfilmentConfig({}))).toBeNull()
+  })
+
+  it('is idempotent — pausing an already-paused shop changes nothing further', () => {
+    const paused = pauseFulfilment(custom(['2026-08-01']))!
+    expect(pauseFulfilment(paused)).toBeNull()
+  })
+
+  it('resuming restores custom mode and clears the flag', () => {
+    const paused = pauseFulfilment(custom(['2026-08-01']))!
+    const back = resumeFulfilment(paused)!
+    expect(back.mode).toBe('custom')
+    expect(back.needs_review).toBe(false)
+    expect(back.custom_dates).toEqual(['2026-08-01'])
+  })
+
+  it('does not resume a paused shop with no dates to go back to — the review still stands', () => {
+    const paused = fulfilmentConfig({ fulfilment: { needs_review: true, custom_dates: [] } })
+    expect(resumeFulfilment(paused)).toBeNull()
+  })
+
+  it('resuming a shop that was never paused is a no-op', () => {
+    expect(resumeFulfilment(custom(['2026-08-01']))).toBeNull()
   })
 })
 
 describe('isTimezone', () => {
   it('accepts real IANA zones', () => {
-    expect(isTimezone('Asia/Kuala_Lumpur')).toBe(true)
+    expect(isTimezone(KL)).toBe(true)
     expect(isTimezone('UTC')).toBe(true)
   })
 
