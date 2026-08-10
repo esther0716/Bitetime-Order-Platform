@@ -21,6 +21,19 @@ import {
   LIVE_STATUSES, upsertBilling, billingFromSubscription, reconcileMerchantPlan, setMerchantStatus,
 } from './billing.js'
 import { pickSubscription } from './billingLifecycle.js'
+import { isOurSubscription } from './webhookOwnership.js'
+import { env } from './env.js'
+
+/**
+ * Everything Stripe lists for a customer, minus anything this account sells that is not a shop
+ * plan. Without it, a merchant who also bought some other product from the same Stripe account
+ * has a subscription in this list that has nothing to do with their shop — enough for
+ * `liveSubscriptionBesides` to call a cancellation "replaced" and leave a lapsed shop open, or for
+ * `resolveSubscription` to write a foreign subscription id onto the billing row.
+ */
+function ours(subs: Stripe.Subscription[]): Stripe.Subscription[] {
+  return subs.filter(s => isOurSubscription(s, env.prices))
+}
 
 /**
  * The outbound adapter, held mutable so tests drive every branch offline — the same seam as
@@ -144,7 +157,7 @@ export async function liveSubscriptionBesides(sub: Stripe.Subscription): Promise
   const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id
   if (!customerId) return null
   const list = await billingSyncDeps.listSubscriptions(customerId)
-  const others = (list.data ?? []).filter(s => s.id !== sub.id && LIVE_STATUSES.includes(s.status))
+  const others = ours(list.data ?? []).filter(s => s.id !== sub.id && LIVE_STATUSES.includes(s.status))
   return pickSubscription(others)
 }
 
@@ -158,7 +171,7 @@ export async function liveSubscriptionBesides(sub: Stripe.Subscription): Promise
 async function resolveSubscription(row: BillingRow): Promise<Stripe.Subscription | null> {
   if (row.stripe_customer_id) {
     const list = await billingSyncDeps.listSubscriptions(row.stripe_customer_id)
-    const picked = pickSubscription(list.data ?? [])
+    const picked = pickSubscription(ours(list.data ?? []))
     if (picked) return picked
   }
   if (row.stripe_subscription_id) return billingSyncDeps.fetchSubscription(row.stripe_subscription_id)

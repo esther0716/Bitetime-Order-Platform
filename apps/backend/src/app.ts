@@ -23,6 +23,7 @@ import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './bil
 import { startCardlessTrial } from './trialSubscription.js'
 import { runBillingSweep } from './billingSweep.js'
 import { syncMerchantBilling, liveSubscriptionBesides } from './billingSync.js'
+import { isOurEvent } from './webhookOwnership.js'
 import { resendSend } from './email.js'
 import { notifyOrderPlaced, telegramSend } from './notify.js'
 import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
@@ -2284,11 +2285,25 @@ app.post('/api/stripe/webhook', async (c) => {
     return c.json({ error: 'Invalid signature' }, 400)
   }
 
+  // A webhook endpoint is account-wide — it cannot be scoped to a product, so every subscription
+  // and invoice event from anything else this Stripe account sells arrives here correctly signed.
+  // Drop those before any handler runs (webhookOwnership.ts holds the rule and the reasoning).
+  // 200, not an error: a stranger's event is handled, not failed, and a non-2xx would make Stripe
+  // retry it for three days.
+  if (!isOurEvent(event, env.prices)) {
+    return c.json({ received: true, ignored: true })
+  }
+
   try {
+    // FAILS CLOSED: an event type absent from webhookOwnership.ts is dropped above and never
+    // reaches this switch. A new case here needs its extractor added there too.
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object
-        const merchantId = session.metadata?.merchant_id || session.client_reference_id
+        // Metadata only. `client_reference_id` used to be the fallback, and it was the one hole
+        // the ownership gate exists to close: a foreign Checkout that set it for its own purposes
+        // reached upsertBilling with a value that is not a merchant id.
+        const merchantId = session.metadata?.merchant_id
         if (merchantId && session.subscription) {
           const subscriptionId =
             typeof session.subscription === 'string' ? session.subscription : session.subscription.id
