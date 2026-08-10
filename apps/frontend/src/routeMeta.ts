@@ -48,6 +48,15 @@ export const ROUTE_META: Record<string, RouteMeta> = {
     description:
       'What TinyOrder costs, how the free trial works, how customers pay you, and what Pro adds. The questions shop owners ask us before they sign up.',
   },
+  // The one prerendered page whose MAIN CONTENT cannot be baked: the shop list is read from the
+  // database in the browser, and a build must never reach for it (a build that cannot would ship a
+  // page stating there are no shops). What bakes is the heading, the intro line and the chrome —
+  // thin, and still strictly more than app.html's homepage title with no canonical under it.
+  '/sample-shops': {
+    title: 'Sample Shops — Real Storefronts Built on TinyOrder',
+    description:
+      'See real shops that take orders with TinyOrder. Open their storefront pages to know what yours can look like before you open one of your own.',
+  },
   // The two app pages sitemap.xml lists. They are not marketing pages, and they are here for a
   // narrower reason: a crawler that reaches them gets the file it is served, and without an entry
   // that file is app.html — whose title and description are the homepage's. Four sitemap URLs all

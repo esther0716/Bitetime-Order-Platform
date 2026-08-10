@@ -2,10 +2,15 @@
 //
 // Reached only by clicking the hero's "See sample shops" button (Landing.tsx) — a page of its
 // own, not a landing-page section, so a visitor asking to see shops gets the full list rather
-// than a teaser row competing with the rest of the homepage for scroll depth. Not prerendered:
-// unlike /pricing or /faq this page has no static content worth baking for a crawler — the shop
-// list is fetched client-side and useSampleShops has no fallback data, so a prerendered shell
-// would ship empty markup anyway. See docs/superpowers/specs/2026-08-04-sample-shops-carousel-design.md.
+// than a teaser row competing with the rest of the homepage for scroll depth.
+//
+// PRERENDERED, but only down to the chrome. The shop list is read in an effect and
+// renderToStaticMarkup runs none, so the carousel slot is empty in the built file and the page a
+// crawler downloads is the heading, the intro line, the nav and the footer. That is thin, and it
+// is the honest ceiling: baking the list would mean a database read at build time, and a build
+// that could not reach the database would ship a page stating this shop has no shops. What the
+// prerender buys is the head — a canonical, an og:url, and a title and description of this page
+// rather than the homepage's. See docs/superpowers/specs/2026-08-04-sample-shops-carousel-design.md.
 import { useSession } from '../SessionContext'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'

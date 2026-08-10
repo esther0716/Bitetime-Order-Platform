@@ -43,6 +43,7 @@ import Landing from '../src/marketing/Landing'
 import Pricing from '../src/marketing/Pricing'
 import FeaturesPage from '../src/marketing/FeaturesPage'
 import FaqPage from '../src/marketing/FaqPage'
+import SampleShopsPage from '../src/marketing/SampleShopsPage'
 import SignupScreen from '../src/merchant/SignupScreen'
 import LoginScreen from '../src/merchant/LoginScreen'
 import TermsPage from '../src/legal/TermsPage'
@@ -85,6 +86,12 @@ const ROUTES: PrerenderRoute[] = [
   { path: '/pricing', file: 'pricing.html', element: <Pricing /> },
   { path: '/features', file: 'features.html', element: <FeaturesPage /> },
   { path: '/faq', file: 'faq.html', element: <FaqPage />, head: faqLd },
+  // The shop list this page is named after is NOT in the bytes and cannot be: useSampleShops reads
+  // it in an effect, which never runs here, and reading the database at build time would make a
+  // build that cannot reach it ship a page saying there are no shops. So the carousel slot renders
+  // empty (`loading` starts true, which is also what a real visitor's first paint shows) and what
+  // bakes is the heading, the intro line, the nav and the footer.
+  { path: '/sample-shops', file: 'sample-shops.html', element: <SampleShopsPage /> },
   // Not marketing pages, and prerendered for a narrower reason than the four above: they are in
   // sitemap.xml, so they get crawled, and app.html would hand each of them the HOMEPAGE's title,
   // description and (being the shell) no canonical at all. Bare `/merchant/signup` only — the
