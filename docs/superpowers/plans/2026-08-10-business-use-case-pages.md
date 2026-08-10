@@ -34,7 +34,7 @@ Everything the four pages say, as data. Nothing renders it yet, so the suite sta
 
 **Interfaces:**
 - Consumes: `RouteMeta` from `../routeMeta` (an existing exported interface: `{ title: string; description: string }`).
-- Produces: `Copy`, `UseCaseBlock`, `UseCaseFaqEntry`, `UseCase`, `USE_CASES: UseCase[]`, `useCasePath(slug: string): string`.
+- Produces: `Copy`, `UseCaseBlock`, `UseCaseFaqEntry`, `UseCase`, `USE_CASES: UseCase[]`, `pathForUseCase(slug: string): string`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -42,7 +42,7 @@ Create `apps/frontend/src/marketing/useCases.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest'
-import { USE_CASES, useCasePath } from './useCases'
+import { USE_CASES, pathForUseCase } from './useCases'
 import { FAQ } from './faq'
 
 // Same reason as verticals.test.ts and faq.test.ts: both language fields are strings, so an entry
@@ -111,7 +111,7 @@ describe('USE_CASES content', () => {
   })
 
   it('serves every vertical under /for', () => {
-    expect(useCasePath('home-bakers')).toBe('/for/home-bakers')
+    expect(pathForUseCase('home-bakers')).toBe('/for/home-bakers')
   })
 
   // Fewer than three and the page is a stub; more than four and it stops being a page written for
@@ -246,7 +246,7 @@ export interface UseCase {
 }
 
 /** The path a vertical is served at. One definition, used by the router, the prerender and the links. */
-export function useCasePath(slug: string): string {
+export function pathForUseCase(slug: string): string {
   return `/for/${slug}`
 }
 
@@ -744,7 +744,7 @@ The four pages render in the dev server. `ROUTE_META` is deliberately untouched 
 - Modify: `apps/frontend/src/AppRouter.tsx` (imports near line 29, routes near line 186)
 
 **Interfaces:**
-- Consumes: `USE_CASES`, `useCasePath`, `UseCase` from `./useCases`; `MarketingNav`, `MarketingFooter` from `./MarketingChrome`; `Reveal` from `./LandingMotion`; `ctaPrimary`, `sectionTitle` from `./ctaStyles`; `useTopOnRouteChange` from `./useTopOnRouteChange`.
+- Consumes: `USE_CASES`, `pathForUseCase`, `UseCase` from `./useCases`; `MarketingNav`, `MarketingFooter` from `./MarketingChrome`; `Reveal` from `./LandingMotion`; `ctaPrimary`, `sectionTitle` from `./ctaStyles`; `useTopOnRouteChange` from `./useTopOnRouteChange`.
 - Produces: `UseCasePage` (default export), taking `{ useCase }: { useCase: UseCase }`.
 
 - [ ] **Step 1: Write the page component**
@@ -893,7 +893,7 @@ In `apps/frontend/src/AppRouter.tsx`, directly after the `import FaqPage from '.
 // Same rule a fourth time: every /for/<slug> page is prerendered (dist/for/<slug>.html), so the
 // template stays out of the lazy() boundary too. One component serves all four — see useCases.ts.
 import UseCasePage from './marketing/UseCasePage'
-import { USE_CASES, useCasePath } from './marketing/useCases'
+import { USE_CASES, pathForUseCase } from './marketing/useCases'
 ```
 
 - [ ] **Step 3: Add the routes**
@@ -908,7 +908,7 @@ In the same file, directly after the `<Route path="/faq" element={<FaqPage />} /
           {USE_CASES.map(useCase => (
             <Route
               key={useCase.slug}
-              path={useCasePath(useCase.slug)}
+              path={pathForUseCase(useCase.slug)}
               element={<UseCasePage useCase={useCase} />}
             />
           ))}
@@ -956,53 +956,53 @@ together in a later commit, because three suites key off that table."
 **Interfaces:**
 - Consumes: `UseCase` from `./useCases`, `SITE_URL` from `../site`, `Lang` from `../types`.
 - Produces:
-  - `useCaseFaqStructuredData(useCase: UseCase, lang: Lang): object`
+  - `faqStructuredDataForUseCase(useCase: UseCase, lang: Lang): object`
   - `useStructuredData(data: object): void` — the generalised hook that adopts, writes and removes the single `script[data-structured-data="faq"]`.
   - `useFaqStructuredData(lang: Lang): void` — unchanged signature, now a wrapper.
   - `useUseCaseStructuredData(useCase: UseCase, lang: Lang): void`
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `apps/frontend/src/marketing/structuredData.test.ts` (and add the two imports at the top of the file: `import { useCaseFaqStructuredData } from './structuredData'` merged into the existing import, and `import { USE_CASES } from './useCases'`):
+Append to `apps/frontend/src/marketing/structuredData.test.ts` (and add the two imports at the top of the file: `import { faqStructuredDataForUseCase } from './structuredData'` merged into the existing import, and `import { USE_CASES } from './useCases'`):
 
 ```ts
-describe('useCaseFaqStructuredData', () => {
+describe('faqStructuredDataForUseCase', () => {
   const bakers = USE_CASES[0]
 
   it('is a FAQPage — identity lives in index.html, not here', () => {
-    const data = useCaseFaqStructuredData(bakers, 'en') as Record<string, any>
+    const data = faqStructuredDataForUseCase(bakers, 'en') as Record<string, any>
     expect(data['@type']).toBe('FAQPage')
     expect(JSON.stringify(data)).not.toContain('"Organization"')
   })
 
   it('names the use-case page it actually describes, not /faq', () => {
     for (const useCase of USE_CASES) {
-      const data = useCaseFaqStructuredData(useCase, 'en') as Record<string, any>
+      const data = faqStructuredDataForUseCase(useCase, 'en') as Record<string, any>
       expect(data.url).toBe(`${SITE_URL}/for/${useCase.slug}`)
       expect(data['@id']).toBe(`${SITE_URL}/for/${useCase.slug}#faq`)
     }
   })
 
   it('gives every vertical a distinct @id — one id on four pages is one page to a crawler', () => {
-    const ids = USE_CASES.map(u => (useCaseFaqStructuredData(u, 'en') as Record<string, any>)['@id'])
+    const ids = USE_CASES.map(u => (faqStructuredDataForUseCase(u, 'en') as Record<string, any>)['@id'])
     expect(new Set(ids).size).toBe(ids.length)
   })
 
   it('hangs off the identity nodes index.html declares', () => {
-    const data = useCaseFaqStructuredData(bakers, 'en') as Record<string, any>
+    const data = faqStructuredDataForUseCase(bakers, 'en') as Record<string, any>
     expect(data.publisher['@id']).toBe(`${SITE_URL}/#organization`)
     expect(data.isPartOf['@id']).toBe(`${SITE_URL}/#website`)
   })
 
   it('carries every question, in the order the page renders them', () => {
-    const data = useCaseFaqStructuredData(bakers, 'en') as Record<string, any>
+    const data = faqStructuredDataForUseCase(bakers, 'en') as Record<string, any>
     expect(data.mainEntity).toHaveLength(bakers.faq.length)
     expect(data.mainEntity.map((q: any) => q.name)).toEqual(bakers.faq.map(e => e.q.en))
     expect(data.mainEntity[0].acceptedAnswer.text).toBe(bakers.faq[0].a.en)
   })
 
   it('marks up the Chinese page in Chinese — markup that disagrees with the page is worse than none', () => {
-    const data = useCaseFaqStructuredData(bakers, 'zh') as Record<string, any>
+    const data = faqStructuredDataForUseCase(bakers, 'zh') as Record<string, any>
     expect(data.inLanguage).toBe('zh')
     expect(data.mainEntity.map((q: any) => q.name)).toEqual(bakers.faq.map(e => e.q.zh))
   })
@@ -1012,7 +1012,7 @@ describe('useCaseFaqStructuredData', () => {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm --filter @bitetime/frontend test -- structuredData`
-Expected: FAIL — `useCaseFaqStructuredData is not a function`.
+Expected: FAIL — `faqStructuredDataForUseCase is not a function`.
 
 - [ ] **Step 3: Generalise the hook and add the builder**
 
@@ -1033,7 +1033,7 @@ Then replace the section from `/** The prerendered block, or the one a previous 
  * `SITE_URL` for the same reason `faqStructuredData` is: so it hangs off the Organization node
  * index.html declares rather than inventing a second one on a preview deployment.
  */
-export function useCaseFaqStructuredData(useCase: UseCase, lang: Lang): object {
+export function faqStructuredDataForUseCase(useCase: UseCase, lang: Lang): object {
   const pick = <T>(en: T, zh: T) => (lang === 'zh' ? zh : en)
   const url = `${SITE_URL}/for/${useCase.slug}`
 
@@ -1094,7 +1094,7 @@ export function useFaqStructuredData(lang: Lang): void {
 
 /** The same, for one /for/<slug> page. */
 export function useUseCaseStructuredData(useCase: UseCase, lang: Lang): void {
-  useStructuredData(useCaseFaqStructuredData(useCase, lang))
+  useStructuredData(faqStructuredDataForUseCase(useCase, lang))
 }
 ```
 
@@ -1158,7 +1158,7 @@ One commit, because `ROUTE_META` is what `routeMeta.test.ts`, `vercelRewrites.te
 - Modify: `apps/frontend/public/llms.txt`
 
 **Interfaces:**
-- Consumes: `USE_CASES`, `useCasePath` from `./marketing/useCases`; `UseCasePage` from `./marketing/UseCasePage`; `useCaseFaqStructuredData` from `./marketing/structuredData`.
+- Consumes: `USE_CASES`, `pathForUseCase` from `./marketing/useCases`; `UseCasePage` from `./marketing/UseCasePage`; `faqStructuredDataForUseCase` from `./marketing/structuredData`.
 - Produces: four new `ROUTE_META` keys — `/for/home-bakers`, `/for/home-kitchens`, `/for/makers`, `/for/cafes-and-stalls` — and four files at `dist/for/<slug>.html`.
 
 - [ ] **Step 1: Run the three suites first, to see them pass on the current four routes**
@@ -1171,7 +1171,7 @@ Expected: PASS. This is the baseline; the next step is what turns them red.
 In `apps/frontend/src/routeMeta.ts`, add the import below the existing header comment:
 
 ```ts
-import { USE_CASES, useCasePath } from './marketing/useCases'
+import { USE_CASES, pathForUseCase } from './marketing/useCases'
 ```
 
 and add this as the last entry of the `ROUTE_META` object, after the `'/faq'` entry:
@@ -1182,7 +1182,7 @@ and add this as the last entry of the `ROUTE_META` object, after the `'/faq'` en
   // splitting them across two files is how they drift. Everything this table's consumers need is
   // still here: prerender.tsx, useDocumentMeta, vercelRewrites.test.ts and llmsTxt.test.ts all read
   // ROUTE_META and none of them can tell the difference.
-  ...Object.fromEntries(USE_CASES.map(useCase => [useCasePath(useCase.slug), useCase.meta])),
+  ...Object.fromEntries(USE_CASES.map(useCase => [pathForUseCase(useCase.slug), useCase.meta])),
 ```
 
 - [ ] **Step 3: Run the three suites to verify they now fail**
@@ -1251,8 +1251,8 @@ Add to the imports, after `import FaqPage from '../src/marketing/FaqPage'`:
 
 ```tsx
 import UseCasePage from '../src/marketing/UseCasePage'
-import { USE_CASES, useCasePath } from '../src/marketing/useCases'
-import { faqStructuredData, useCaseFaqStructuredData } from '../src/marketing/structuredData'
+import { USE_CASES, pathForUseCase } from '../src/marketing/useCases'
+import { faqStructuredData, faqStructuredDataForUseCase } from '../src/marketing/structuredData'
 ```
 
 (replacing the existing `import { faqStructuredData } from '../src/marketing/structuredData'` line), and add `mkdirSync` to the `node:fs` import:
@@ -1273,12 +1273,12 @@ const ROUTES: PrerenderRoute[] = [
   // way and for the same reason as /faq's — English, rewritten by the effect for a Chinese reader —
   // and each one carries its own @id, so four pages are four pages to a crawler (#214).
   ...USE_CASES.map(useCase => ({
-    path: useCasePath(useCase.slug),
+    path: pathForUseCase(useCase.slug),
     file: `for/${useCase.slug}.html`,
     element: <UseCasePage useCase={useCase} />,
     head:
       `<script type="application/ld+json" data-structured-data="faq">` +
-      `${JSON.stringify(useCaseFaqStructuredData(useCase, 'en'))}</script>`,
+      `${JSON.stringify(faqStructuredDataForUseCase(useCase, 'en'))}</script>`,
   })),
 ]
 ```
@@ -1383,7 +1383,7 @@ Without this the four pages are orphans: reachable by URL, linked from nothing, 
 - Modify: `apps/frontend/src/marketing/Landing.tsx` (imports near line 9, and a new section before the footer CTA near line 303)
 
 **Interfaces:**
-- Consumes: `USE_CASES`, `useCasePath` from `./useCases`.
+- Consumes: `USE_CASES`, `pathForUseCase` from `./useCases`.
 - Produces: nothing new — links only.
 
 - [ ] **Step 1: Add the footer column**
@@ -1391,7 +1391,7 @@ Without this the four pages are orphans: reachable by URL, linked from nothing, 
 In `apps/frontend/src/marketing/MarketingChrome.tsx`, add to the imports:
 
 ```tsx
-import { USE_CASES, useCasePath } from './useCases'
+import { USE_CASES, pathForUseCase } from './useCases'
 ```
 
 and insert a new `FooterColumn` directly after the `Product` column's closing `</FooterColumn>`:
@@ -1401,7 +1401,7 @@ and insert a new `FooterColumn` directly after the `Product` column's closing `<
             which is what gets them crawled at all. See useCases.ts. */}
         <FooterColumn heading={t('Who it\'s for', '适合谁用')}>
           {USE_CASES.map(useCase => (
-            <Link key={useCase.slug} to={useCasePath(useCase.slug)} className={footerColumnLink}>
+            <Link key={useCase.slug} to={pathForUseCase(useCase.slug)} className={footerColumnLink}>
               {t(useCase.label.en, useCase.label.zh)}
             </Link>
           ))}
@@ -1413,7 +1413,7 @@ and insert a new `FooterColumn` directly after the `Product` column's closing `<
 In `apps/frontend/src/marketing/Landing.tsx`, add to the imports after `import { VERTICALS } from './verticals'`:
 
 ```tsx
-import { USE_CASES, useCasePath } from './useCases'
+import { USE_CASES, pathForUseCase } from './useCases'
 ```
 
 and insert this section immediately before the `{/* ── Footer CTA ── */}` comment:
@@ -1432,7 +1432,7 @@ and insert this section immediately before the `{/* ── Footer CTA ── */}
             {USE_CASES.map(useCase => (
               <Link
                 key={useCase.slug}
-                to={useCasePath(useCase.slug)}
+                to={pathForUseCase(useCase.slug)}
                 className="block rounded-2xl border-[0.5px] border-border bg-card p-5 no-underline [transition:border-color_0.15s,transform_0.15s] hover:border-primary hover:-translate-y-px"
               >
                 <span className="block font-heading text-[16px] font-semibold text-primary mb-1.5">
@@ -1566,7 +1566,7 @@ EOF
 | Content model, `UseCase` shape, truth constraint | 1 |
 | Per-vertical block topics | 1 (blocks written per the spec's list) |
 | `UseCasePage.tsx`, eager import, layout | 2 |
-| Structured data, `useCaseFaqStructuredData`, generalised hook | 3 |
+| Structured data, `faqStructuredDataForUseCase`, generalised hook | 3 |
 | Six registration points | 4 (`routeMeta`, `AppRouter` in Task 2, prerender, `vercel.json`, `sitemap.xml`, `llms.txt`) |
 | `mkdirSync` for `dist/for/` | 4, Step 7 |
 | Footer column and landing strip | 5 |
@@ -1576,4 +1576,4 @@ EOF
 
 **Placeholders:** none — every code step carries the code, every copy string is written out in both languages.
 
-**Type consistency:** `Copy`, `UseCaseBlock`, `UseCaseFaqEntry`, `UseCase`, `USE_CASES`, `useCasePath` are defined in Task 1 and used with the same names in Tasks 2–5. `useCaseFaqStructuredData(useCase, lang)` and `useUseCaseStructuredData(useCase, lang)` are defined in Task 3 and called with that argument order in Task 3 (page) and Task 4 (prerender). `RouteMeta` is the existing exported interface from `routeMeta.ts`; importing it into `useCases.ts` and spreading back into `ROUTE_META` in the same file is a cycle at the module level but not at the value level — `routeMeta.ts` imports `useCases.ts`, and `useCases.ts` imports only the *type* from `routeMeta.ts` (`import type`), which is erased at compile time. Task 1 uses `import type` for exactly that reason.
+**Type consistency:** `Copy`, `UseCaseBlock`, `UseCaseFaqEntry`, `UseCase`, `USE_CASES`, `pathForUseCase` are defined in Task 1 and used with the same names in Tasks 2–5. `faqStructuredDataForUseCase(useCase, lang)` and `useUseCaseStructuredData(useCase, lang)` are defined in Task 3 and called with that argument order in Task 3 (page) and Task 4 (prerender). `RouteMeta` is the existing exported interface from `routeMeta.ts`; importing it into `useCases.ts` and spreading back into `ROUTE_META` in the same file is a cycle at the module level but not at the value level — `routeMeta.ts` imports `useCases.ts`, and `useCases.ts` imports only the *type* from `routeMeta.ts` (`import type`), which is erased at compile time. Task 1 uses `import type` for exactly that reason.

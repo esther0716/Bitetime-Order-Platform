@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { faqStructuredData } from './structuredData'
+import { faqStructuredData, faqStructuredDataForUseCase } from './structuredData'
 import { SITE_URL } from '../site'
 import { FAQ } from './faq'
+import { USE_CASES } from './useCases'
 
 // Structured data fails silently: bad markup is not a crash, it is a page a search engine quietly
 // stops trusting. These assert the things that would actually break it — that the FAQ markup says
@@ -44,6 +45,48 @@ describe('faqStructuredData', () => {
     const json = JSON.stringify(faqStructuredData('en'))
     expect(json).not.toContain('"offers"')
     expect(json).not.toContain('"price"')
+  })
+})
+
+describe('faqStructuredDataForUseCase', () => {
+  const bakers = USE_CASES[0]
+
+  it('is a FAQPage — identity lives in index.html, not here', () => {
+    const data = faqStructuredDataForUseCase(bakers, 'en') as Record<string, any>
+    expect(data['@type']).toBe('FAQPage')
+    expect(JSON.stringify(data)).not.toContain('"Organization"')
+  })
+
+  it('names the use-case page it actually describes, not /faq', () => {
+    for (const useCase of USE_CASES) {
+      const data = faqStructuredDataForUseCase(useCase, 'en') as Record<string, any>
+      expect(data.url).toBe(`${SITE_URL}/for/${useCase.slug}`)
+      expect(data['@id']).toBe(`${SITE_URL}/for/${useCase.slug}#faq`)
+    }
+  })
+
+  it('gives every vertical a distinct @id — one id on four pages is one page to a crawler', () => {
+    const ids = USE_CASES.map(u => (faqStructuredDataForUseCase(u, 'en') as Record<string, any>)['@id'])
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('hangs off the identity nodes index.html declares', () => {
+    const data = faqStructuredDataForUseCase(bakers, 'en') as Record<string, any>
+    expect(data.publisher['@id']).toBe(`${SITE_URL}/#organization`)
+    expect(data.isPartOf['@id']).toBe(`${SITE_URL}/#website`)
+  })
+
+  it('carries every question, in the order the page renders them', () => {
+    const data = faqStructuredDataForUseCase(bakers, 'en') as Record<string, any>
+    expect(data.mainEntity).toHaveLength(bakers.faq.length)
+    expect(data.mainEntity.map((q: any) => q.name)).toEqual(bakers.faq.map(e => e.q.en))
+    expect(data.mainEntity[0].acceptedAnswer.text).toBe(bakers.faq[0].a.en)
+  })
+
+  it('marks up the Chinese page in Chinese — markup that disagrees with the page is worse than none', () => {
+    const data = faqStructuredDataForUseCase(bakers, 'zh') as Record<string, any>
+    expect(data.inLanguage).toBe('zh')
+    expect(data.mainEntity.map((q: any) => q.name)).toEqual(bakers.faq.map(e => e.q.zh))
   })
 })
 

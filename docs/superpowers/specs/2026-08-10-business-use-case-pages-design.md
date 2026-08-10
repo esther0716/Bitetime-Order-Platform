@@ -156,7 +156,7 @@ hand-edited, and two of those three fail the build when forgotten.
 `src/marketing/structuredData.ts` gains a second builder beside `faqStructuredData`:
 
 ```ts
-export function useCaseFaqStructuredData(useCase: UseCase, lang: Lang): object
+export function faqStructuredDataForUseCase(useCase: UseCase, lang: Lang): object
 ```
 
 Same `FAQPage` shape, with `@id` = `${SITE_URL}/for/<slug>#faq`, `url` = `${SITE_URL}/for/<slug>`,
@@ -198,7 +198,7 @@ rendering:
 - **no FAQ question duplicates one in `faq.ts`** — a page repeating `/faq` is the thin-content
   failure this whole design exists to avoid
 
-`src/marketing/structuredData.test.ts` extended: `useCaseFaqStructuredData` returns a `FAQPage`
+`src/marketing/structuredData.test.ts` extended: `faqStructuredDataForUseCase` returns a `FAQPage`
 whose `mainEntity` matches the entry's FAQ, whose `@id` and `url` name the page, and which switches
 language with `lang`.
 

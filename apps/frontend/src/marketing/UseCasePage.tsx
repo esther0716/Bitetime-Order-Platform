@@ -11,12 +11,16 @@ import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
+import { useUseCaseStructuredData } from './structuredData'
 import type { UseCase } from './useCases'
 import { ctaPrimary } from './ctaStyles'
 import { Reveal } from './LandingMotion'
 
 export default function UseCasePage({ useCase }: { useCase: UseCase }) {
-  const { t } = useSession()
+  const { t, lang } = useSession()
+  // Schema.org markup for this page only, in the language it is currently showing. A distinct @id
+  // per vertical — see structuredData.ts.
+  useUseCaseStructuredData(useCase, lang)
   useTopOnRouteChange()
   // No useCanonical / useDocumentMeta here: both are mounted once in AppRouter and keyed on the
   // pathname, so every route gets them and none can be forgotten. See canonical.ts, documentMeta.ts.
