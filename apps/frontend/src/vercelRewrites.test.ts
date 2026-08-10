@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { ROUTE_META } from './routeMeta'
+import { PRESELECTION_ROUTES } from './canonical'
 
 // The join between routeMeta.ts, scripts/prerender.tsx and vercel.json — a rule no compiler can see
 // and a browser cannot show you.
@@ -45,6 +46,25 @@ describe('vercel.json rewrites', () => {
     for (const route of needRewrite) {
       const at = rules.findIndex(r => r.source === route)
       expect(at, `${route} is below the catch-all, which matches first`).toBeLessThan(catchAll)
+    }
+  })
+
+  // canonicalPath collapses `/merchant/signup/pro/yearly` onto `/merchant/signup` — but it is an
+  // effect, so that only ever happened for a crawler that renders. Without the rule below the four
+  // pricing CTAs are four URLs served app.html: no canonical in the bytes, and markup identical to
+  // every other shell-served path. Google crawled the two BARE URLs in that state and filed them
+  // under "Duplicate without user-selected canonical" (Aug 2026); the preselection URLs are the
+  // same page again, four more times. Sending them to signup.html gives each one the file whose
+  // baked canonical already names the bare URL, which is the consolidation stated in the bytes.
+  it('sends every preselection URL to the file its canonical names', () => {
+    const rules = config.rewrites ?? []
+    const catchAll = rules.findIndex(r => r.source === '/(.*)')
+    for (const base of PRESELECTION_ROUTES) {
+      const at = rules.findIndex(r => r.source === `${base}/(.*)`)
+      expect(at, `${base}/… falls through to app.html — a canonical-less copy of ${base}`)
+        .toBeGreaterThanOrEqual(0)
+      expect(rules[at].destination).toBe(`${base}.html`)
+      expect(at, `${base}/(.*) is below the catch-all, which matches first`).toBeLessThan(catchAll)
     }
   })
 

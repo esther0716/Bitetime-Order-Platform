@@ -45,6 +45,11 @@ import FeaturesPage from '../src/marketing/FeaturesPage'
 import FaqPage from '../src/marketing/FaqPage'
 import UseCasePage from '../src/marketing/UseCasePage'
 import { USE_CASES, pathForUseCase } from '../src/marketing/useCases'
+import SampleShopsPage from '../src/marketing/SampleShopsPage'
+import SignupScreen from '../src/merchant/SignupScreen'
+import LoginScreen from '../src/merchant/LoginScreen'
+import TermsPage from '../src/legal/TermsPage'
+import PrivacyPage from '../src/legal/PrivacyPage'
 import { faqStructuredData, faqStructuredDataForUseCase } from '../src/marketing/structuredData'
 import { ROUTE_META } from '../src/routeMeta'
 import { SITE_URL } from '../src/site'
@@ -74,6 +79,10 @@ const faqLd =
   `<script type="application/ld+json" data-structured-data="faq">` +
   `${JSON.stringify(faqStructuredData('en'))}</script>`
 
+// The guarded and lazy() wrappers AppRouter puts around some of these are dropped on purpose, the
+// same way the Routes switch is: RedirectSignedInMerchant reads a session that does not exist in a
+// build, and Suspense cannot resolve here. What renders is the signed-out first paint, which is
+// the only state a crawler can ever be in.
 const ROUTES: PrerenderRoute[] = [
   { path: '/', file: 'index.html', element: <Landing /> },
   { path: '/pricing', file: 'pricing.html', element: <Pricing /> },
@@ -93,6 +102,20 @@ const ROUTES: PrerenderRoute[] = [
       `<script type="application/ld+json" data-structured-data="faq">` +
       `${JSON.stringify(faqStructuredDataForUseCase(useCase, 'en'))}</script>`,
   })),
+  // The shop list this page is named after is NOT in the bytes and cannot be: useSampleShops reads
+  // it in an effect, which never runs here, and reading the database at build time would make a
+  // build that cannot reach it ship a page saying there are no shops. So the carousel slot renders
+  // empty (`loading` starts true, which is also what a real visitor's first paint shows) and what
+  // bakes is the heading, the intro line, the nav and the footer.
+  { path: '/sample-shops', file: 'sample-shops.html', element: <SampleShopsPage /> },
+  // Not marketing pages, and prerendered for a narrower reason than the four above: they are in
+  // sitemap.xml, so they get crawled, and app.html would hand each of them the HOMEPAGE's title,
+  // description and (being the shell) no canonical at all. Bare `/merchant/signup` only — the
+  // plan/cycle segments are a preselection of this same page, collapsed by canonicalPath.
+  { path: '/merchant/signup', file: 'merchant/signup.html', element: <SignupScreen /> },
+  { path: '/merchant/login', file: 'merchant/login.html', element: <LoginScreen /> },
+  { path: '/terms', file: 'terms.html', element: <TermsPage /> },
+  { path: '/privacy', file: 'privacy.html', element: <PrivacyPage /> },
 ]
 
 const shell = readFileSync(path.join(dist, 'index.html'), 'utf8')
@@ -172,12 +195,12 @@ for (const route of ROUTES) {
     .replace(ROOT_DIV, `<div id="root">${visible}</div>`)
     .replace('</head>', `${routeHead}\n  </head>`)
 
-  // `dist/for/` does not exist — Vite writes flat and public/ has no such directory. Without this
-  // the build throws ENOENT, which is the safe failure; serving a path Vercel rewrites to a missing
-  // file would not be.
-  const target = path.join(dist, route.file)
-  mkdirSync(path.dirname(target), { recursive: true })
-  writeFileSync(target, html)
+  // A route with a path segment in it writes into a subdirectory Vite never created — `dist/for/`
+  // and `dist/merchant/` both. Without this the build throws ENOENT, which is the safe failure;
+  // serving a path Vercel rewrites to a missing file would not be.
+  const out = path.join(dist, route.file)
+  mkdirSync(path.dirname(out), { recursive: true })
+  writeFileSync(out, html)
   console.log(`prerender: dist/${route.file} ← ${route.path}, ${kb(visible)} of markup`)
 }
 

@@ -50,6 +50,42 @@ export const ROUTE_META: Record<string, RouteMeta> = {
     description:
       'What TinyOrder costs, how the free trial works, how customers pay you, and what Pro adds. The questions shop owners ask us before they sign up.',
   },
+  // The one prerendered page whose MAIN CONTENT cannot be baked: the shop list is read from the
+  // database in the browser, and a build must never reach for it (a build that cannot would ship a
+  // page stating there are no shops). What bakes is the heading, the intro line and the chrome —
+  // thin, and still strictly more than app.html's homepage title with no canonical under it.
+  '/sample-shops': {
+    title: 'Sample Shops — Real Storefronts Built on TinyOrder',
+    description:
+      'See real shops that take orders with TinyOrder. Open their storefront pages to know what yours can look like before you open one of your own.',
+  },
+  // The two app pages sitemap.xml lists. They are not marketing pages, and they are here for a
+  // narrower reason: a crawler that reaches them gets the file it is served, and without an entry
+  // that file is app.html — whose title and description are the homepage's. Four sitemap URLs all
+  // claiming to BE the homepage is the #169 failure again, on the routes prerendering did not
+  // cover. Only `/merchant/signup` bare: the plan and cycle segments are one page (canonicalPath).
+  '/merchant/signup': {
+    title: 'Sign Up — Start Your Food Shop Free | TinyOrder',
+    description:
+      'Create your shop page in minutes. No card for the 7-day trial and no commission on your orders. Pick a plan and start taking orders today.',
+  },
+  '/merchant/login': {
+    title: 'Log In to Your Shop Dashboard | TinyOrder',
+    description:
+      'Sign in to TinyOrder to read the orders that came in, change your menu and manage your shop page. Forgot your password? Reset it from here.',
+  },
+  // The legal documents. Public, linked from every footer, and reachable while a shop is
+  // suspended — see the routes in AppRouter.tsx.
+  '/terms': {
+    title: 'Terms of Service | TinyOrder',
+    description:
+      'The terms for using TinyOrder to run your shop: your account, who sells to your customers, payment, refunds and how either side can end the service.',
+  },
+  '/privacy': {
+    title: 'Privacy Policy | TinyOrder',
+    description:
+      'What TinyOrder holds about shop owners and their customers, why we hold it, who can read it, and how to ask us to delete it. Written in plain English.',
+  },
   // The four business-type pages, spread in from the module that holds their copy. Written there
   // rather than here because a page's title and its first paragraph are one piece of writing, and
   // splitting them across two files is how they drift. Everything this table's consumers need is

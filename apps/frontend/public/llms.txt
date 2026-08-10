@@ -48,6 +48,7 @@ are not listed here or in the sitemap — they appear and change without a deplo
 - [Features](https://tinyorder.shop/features): the storefront, delivery pricing, order handling, alerts, and the customer list, in full
 - [Pricing](https://tinyorder.shop/pricing): current Basic and Pro amounts for your region, the full plan comparison, and the 7-day cardless trial
 - [FAQ](https://tinyorder.shop/faq): cost, trial, how customers pay, whether a website is needed, what Pro adds, cancelling, Chinese support, and how fast a shop goes live
+- [Sample shops](https://tinyorder.shop/sample-shops): real storefronts built on TinyOrder. The list is read from the database when the page opens, so it is not in the page source — follow the shop links from the page itself
 
 ## Who it is for
 

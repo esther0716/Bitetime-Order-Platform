@@ -28,7 +28,7 @@ import { useLocation } from 'react-router-dom'
  * (SignupScreen accepts either), which is what keeps Stripe's `cancel_url` and any link already
  * sitting in an inbox pointing somewhere real.
  */
-const PRESELECTION_ROUTES = ['/merchant/signup']
+export const PRESELECTION_ROUTES = ['/merchant/signup']
 
 /** The path a route should be indexed under: itself, unless it is a preselection of another. */
 export function canonicalPath(pathname: string): string {
