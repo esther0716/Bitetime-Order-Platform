@@ -25,6 +25,7 @@ import { useEffect } from 'react'
 import type { Lang } from '../types'
 import { SITE_URL } from '../site'
 import { FAQ } from './faq'
+import { pathForUseCase, type UseCase } from './useCases'
 
 /**
  * The /faq page's FAQ, as a Schema.org `FAQPage`.
@@ -55,23 +56,76 @@ export function faqStructuredData(lang: Lang): object {
   }
 }
 
+/**
+ * The /for/<slug> page's questions, as a Schema.org `FAQPage`.
+ *
+ * A SEPARATE `@id` PER PAGE is the point. Four pages publishing one id is one page as far as a
+ * crawler is concerned, which would undo the reason these are four URLs (#214). Identified against
+ * `SITE_URL` for the same reason `faqStructuredData` is: so it hangs off the Organization node
+ * index.html declares rather than inventing a second one on a preview deployment.
+ */
+export function faqStructuredDataForUseCase(useCase: UseCase, lang: Lang): object {
+  const pick = <T>(en: T, zh: T) => (lang === 'zh' ? zh : en)
+  // Through the helper, not a second spelling of `/for/`: this URL is what the page claims to BE,
+  // so a path that drifts from the route is markup describing a page that does not exist.
+  const url = `${SITE_URL}${pathForUseCase(useCase.slug)}`
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    '@id': `${url}#faq`,
+    url,
+    inLanguage: pick('en', 'zh'),
+    isPartOf: { '@id': `${SITE_URL}/#website` },
+    publisher: { '@id': `${SITE_URL}/#organization` },
+    mainEntity: useCase.faq.map(entry => ({
+      '@type': 'Question',
+      name: pick(entry.q.en, entry.q.zh),
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: pick(entry.a.en, entry.a.zh),
+      },
+    })),
+  }
+}
+
 /** The prerendered block, or the one a previous run of this effect left behind. */
 const SELECTOR = 'script[data-structured-data="faq"]'
 
-/** Keeps exactly one `<script type="application/ld+json">` in `<head>` while the page is mounted. */
-export function useFaqStructuredData(lang: Lang): void {
+/**
+ * Keeps exactly one `<script type="application/ld+json">` in `<head>` while the page is mounted.
+ *
+ * One element and one selector for every page that carries an FAQPage block, because only one such
+ * page is ever mounted at a time — and because leaving a second element behind is the failure this
+ * function exists to prevent, not one to solve twice.
+ */
+function useStructuredData(data: object): void {
+  const json = JSON.stringify(data)
   useEffect(() => {
-    // ADOPT, do not append: the build prerenders this block into faq.html (see
-    // scripts/prerender.tsx) so a crawler that runs no JavaScript still gets the FAQ. Appending a
-    // second one would publish the same @id twice — and on a Chinese page, twice in two languages.
+    // ADOPT, do not append: the build prerenders this block into the page's own file (see
+    // scripts/prerender.tsx) so a crawler that runs no JavaScript still gets the questions.
+    // Appending a second one would publish the same @id twice — and on a Chinese page, twice in
+    // two languages.
     const script =
       document.head.querySelector<HTMLScriptElement>(SELECTOR) ?? document.createElement('script')
     script.type = 'application/ld+json'
     script.dataset.structuredData = 'faq'
-    script.textContent = JSON.stringify(faqStructuredData(lang))
+    script.textContent = json
     if (!script.isConnected) document.head.appendChild(script)
     // Removed on unmount — including when it was the prerendered one — so navigating to a
     // storefront does not leave this page's FAQ behind claiming to describe that shop.
     return () => script.remove()
-  }, [lang])
+    // Keyed on the serialised markup, not the object: a fresh object every render would re-run
+    // this effect every render.
+  }, [json])
+}
+
+/** Keeps the /faq page's FAQPage markup in `<head>`, in the language the page is showing. */
+export function useFaqStructuredData(lang: Lang): void {
+  useStructuredData(faqStructuredData(lang))
+}
+
+/** The same, for one /for/<slug> page. */
+export function useUseCaseStructuredData(useCase: UseCase, lang: Lang): void {
+  useStructuredData(faqStructuredDataForUseCase(useCase, lang))
 }

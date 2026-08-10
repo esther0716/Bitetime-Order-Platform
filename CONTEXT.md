@@ -232,6 +232,16 @@ What a shop sells, as one code from a **closed** vocabulary — `BUSINESS_NATURE
 
 **NULL is "never said", and is counted.** Every shop predating the field carries it, and the migration backfills nothing — `other` is an answer a merchant *chose*, and defaulting to it would be a lie on the very chart this exists to draw. The admin Overview names the bucket *Unspecified*, sorts it **last** however large it is (it is not an industry), and scales the bars against the biggest *named* industry so day-one's all-NULL platform does not compress every real bar to a stub. The signup form requires a pick; `POST /api/merchants` deliberately does **not** — analytics must never be the reason a shop fails to be created — but a present-but-unknown code is refused, never dropped, on both the create and the settings path.
 
+## Use-case page
+
+A marketing page written for ONE trade, served at `/for/<slug>` — `home-bakers`, `home-kitchens`, `makers`, `cafes-and-stalls` (#214). Every string lives in `apps/frontend/src/marketing/useCases.ts`; `UseCasePage.tsx` renders any entry. The pages exist because the site said what TinyOrder does and never who it is for, and because a page per trade is a page per search a shop owner actually types.
+
+**"Use case" is the domain term. `verticals.ts` is a different thing that shares the English word "vertical".** That file holds the five WORDS the landing hero rotates through (`food`, `bakes`, `art`, `clothes`, `crafts`) with their measured slot widths; it addresses no page and has no route. A use case is a page. Do not merge them, and do not describe a `USE_CASES` entry as a vertical in code.
+
+**They describe the same product, not a plan or a bundle.** No shop type is gated, priced or provisioned differently; the pages differ in which shipped behaviour they lead with. That is why every claim on them is checked against `public/llms.txt`, which is the authoritative feature list — a sentence there that the software does not do is a promise the software then has to keep.
+
+**Adding one touches six places**, three of them derived from `USE_CASES` and three by hand: `ROUTE_META` (spread), the router (`.map`), the prerender list (spread), plus `vercel.json`'s rewrite, `sitemap.xml` and `llms.txt`. Of the hand-written three, only the sitemap and the rewrite/llms.txt joins are test-pinned — see `vercelRewrites.test.ts`, `llmsTxt.test.ts`, `sitemap.test.ts`.
+
 ## Customer signup
 
 How a customer account comes into being. Email confirmation is on **project-wide** and stays on — it is shared with merchants, and a merchant account controls a shop and its Stripe billing. A client-side `signUp` would therefore return no session, stranding a customer mid-checkout in their inbox holding a cart, so customers are minted **pre-confirmed** by the backend instead (`POST /api/customer/signup` → `admin.auth.admin.createUser({ email_confirm: true })`), and the client signs in normally. Pure seams: `customerSignup` (policy; the account-creation and profile writes are injected adapters), `rateLimit` (clock-injected sliding window), `clientIp` (backend), `signupError` (frontend).

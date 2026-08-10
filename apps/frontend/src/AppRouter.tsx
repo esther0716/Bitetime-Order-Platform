@@ -27,6 +27,10 @@ import Pricing from './marketing/Pricing'
 // they stay out of the lazy() boundary too. See scripts/prerender.tsx.
 import FeaturesPage from './marketing/FeaturesPage'
 import FaqPage from './marketing/FaqPage'
+// Same rule a fourth time: every /for/<slug> page is prerendered (dist/for/<slug>.html), so the
+// template stays out of the lazy() boundary too. One component serves all four — see useCases.ts.
+import UseCasePage from './marketing/UseCasePage'
+import { USE_CASES, pathForUseCase } from './marketing/useCases'
 
 // Route-level code splitting: every OTHER surface ships its own chunk, so a storefront
 // customer never downloads merchant/admin/signup code (signup pulls in the heavy
@@ -184,6 +188,17 @@ function AnimatedRoutes() {
               Prerendered — see scripts/prerender.tsx. */}
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/faq" element={<FaqPage />} />
+          {/* One route per business type, all rendered by one template. Same argument as /pricing
+              and /features: real pages of their own with their own <title> and description, and
+              the page a visitor searching for their own trade actually lands on (#214).
+              Prerendered — see scripts/prerender.tsx. */}
+          {USE_CASES.map(useCase => (
+            <Route
+              key={useCase.slug}
+              path={pathForUseCase(useCase.slug)}
+              element={<UseCasePage useCase={useCase} />}
+            />
+          ))}
           {/* NOT prerendered, unlike the three routes above — the shop list is fetched
               client-side with no fallback data, so a prerendered shell would just be empty
               markup. See SampleShopsPage.tsx. */}
