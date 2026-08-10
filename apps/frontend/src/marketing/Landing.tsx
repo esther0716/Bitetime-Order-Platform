@@ -310,7 +310,10 @@ export default function Landing() {
           <h2 className={sectionTitle}>
             {t('Built for the way you already sell', '为你现有的销售方式而做')}
           </h2>
-          <div className="grid [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] gap-4 max-[600px]:[grid-template-columns:1fr]">
+          {/* Counted columns, not auto-fit: there are exactly four verticals, and inside this
+              section's 836px of track any minmax wide enough to read fits three — which leaves the
+              fourth alone on a row of its own. 4 across, then 2×2, then stacked. */}
+          <div className="grid grid-cols-4 gap-4 max-[860px]:grid-cols-2 max-[600px]:grid-cols-1">
             {USE_CASES.map(useCase => (
               <Link
                 key={useCase.slug}
