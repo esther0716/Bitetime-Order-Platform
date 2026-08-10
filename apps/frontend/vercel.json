@@ -6,6 +6,7 @@
     { "source": "/faq", "destination": "/faq.html" },
     { "source": "/sample-shops", "destination": "/sample-shops.html" },
     { "source": "/merchant/signup", "destination": "/merchant/signup.html" },
+    { "source": "/merchant/signup/(.*)", "destination": "/merchant/signup.html" },
     { "source": "/merchant/login", "destination": "/merchant/login.html" },
     { "source": "/terms", "destination": "/terms.html" },
     { "source": "/privacy", "destination": "/privacy.html" },
