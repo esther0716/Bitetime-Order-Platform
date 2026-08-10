@@ -32,7 +32,7 @@
 // paint a real visitor gets) and usePlatformPricing returns FALLBACK_PRICING. Nothing here talks to
 // Supabase or Stripe, and the build stays offline.
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -43,7 +43,9 @@ import Landing from '../src/marketing/Landing'
 import Pricing from '../src/marketing/Pricing'
 import FeaturesPage from '../src/marketing/FeaturesPage'
 import FaqPage from '../src/marketing/FaqPage'
-import { faqStructuredData } from '../src/marketing/structuredData'
+import UseCasePage from '../src/marketing/UseCasePage'
+import { USE_CASES, pathForUseCase } from '../src/marketing/useCases'
+import { faqStructuredData, faqStructuredDataForUseCase } from '../src/marketing/structuredData'
 import { ROUTE_META } from '../src/routeMeta'
 import { SITE_URL } from '../src/site'
 
@@ -77,6 +79,17 @@ const ROUTES: PrerenderRoute[] = [
   { path: '/pricing', file: 'pricing.html', element: <Pricing /> },
   { path: '/features', file: 'features.html', element: <FeaturesPage /> },
   { path: '/faq', file: 'faq.html', element: <FaqPage />, head: faqLd },
+  // The business-type pages, one file each under dist/for/. Their questions are baked in the same
+  // way and for the same reason as /faq's — English, rewritten by the effect for a Chinese reader —
+  // and each one carries its own @id, so four pages are four pages to a crawler (#214).
+  ...USE_CASES.map(useCase => ({
+    path: pathForUseCase(useCase.slug),
+    file: `for/${useCase.slug}.html`,
+    element: <UseCasePage useCase={useCase} />,
+    head:
+      `<script type="application/ld+json" data-structured-data="faq">` +
+      `${JSON.stringify(faqStructuredDataForUseCase(useCase, 'en'))}</script>`,
+  })),
 ]
 
 const shell = readFileSync(path.join(dist, 'index.html'), 'utf8')
@@ -156,7 +169,12 @@ for (const route of ROUTES) {
     .replace(ROOT_DIV, `<div id="root">${visible}</div>`)
     .replace('</head>', `${routeHead}\n  </head>`)
 
-  writeFileSync(path.join(dist, route.file), html)
+  // `dist/for/` does not exist — Vite writes flat and public/ has no such directory. Without this
+  // the build throws ENOENT, which is the safe failure; serving a path Vercel rewrites to a missing
+  // file would not be.
+  const target = path.join(dist, route.file)
+  mkdirSync(path.dirname(target), { recursive: true })
+  writeFileSync(target, html)
   console.log(`prerender: dist/${route.file} ← ${route.path}, ${kb(visible)} of markup`)
 }
 

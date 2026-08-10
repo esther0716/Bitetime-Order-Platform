@@ -14,6 +14,8 @@
 // here, and the two drifting apart would silently retitle the homepage on the next build.
 // routeMeta.test.ts asserts the match.
 
+import { USE_CASES, pathForUseCase } from './marketing/useCases'
+
 export interface RouteMeta {
   /** Page title. Ends with the brand, because a sitelink label is read out of context. */
   title: string
@@ -48,4 +50,10 @@ export const ROUTE_META: Record<string, RouteMeta> = {
     description:
       'What TinyOrder costs, how the free trial works, how customers pay you, and what Pro adds. The questions shop owners ask us before they sign up.',
   },
+  // The four business-type pages, spread in from the module that holds their copy. Written there
+  // rather than here because a page's title and its first paragraph are one piece of writing, and
+  // splitting them across two files is how they drift. Everything this table's consumers need is
+  // still here: prerender.tsx, useDocumentMeta, vercelRewrites.test.ts and llmsTxt.test.ts all read
+  // ROUTE_META and none of them can tell the difference.
+  ...Object.fromEntries(USE_CASES.map(useCase => [pathForUseCase(useCase.slug), useCase.meta])),
 }
