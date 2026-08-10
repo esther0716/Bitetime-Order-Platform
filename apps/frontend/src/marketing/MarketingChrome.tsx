@@ -14,6 +14,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { ChevronDown } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { signOut } from '../store'
 import LanguageSelect from '../components/LanguageSelect'
@@ -53,6 +54,7 @@ function FooterColumn({ heading, children }: { heading: string; children: ReactN
 export function MarketingNav() {
   const { t, account, role, loading, merchantUnknown } = useSession()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [whoOpen, setWhoOpen] = useState(false)
 
   // Where the signed-in user's portal lives, by role. Customers have no portal — with one
   // exception: someone who is signed in and owns NO shop is where merchant signup leaves you
@@ -91,6 +93,49 @@ export function MarketingNav() {
         <Link to="/faq" className={cn(navLink, 'max-[600px]:hidden')}>
           {t('FAQ', '常见问题')}
         </Link>
+        {/* The four /for/<slug> pages, as a menu rather than four more items in the bar — four
+            trades would take more width than the rest of the nav put together.
+            NOT A CRAWL PATH, and it does not need to be: the panel is rendered only while open, so
+            these links are absent from the prerendered HTML. The footer column carries all four on
+            every page and never hides them, which is what a crawler follows. Same open/close shape
+            as the account menu below, click-catcher included. */}
+        <div className="relative max-[600px]:hidden">
+          <button
+            type="button"
+            className={cn(navLink, 'flex items-center gap-1 bg-transparent border-0 p-0 cursor-pointer font-sans')}
+            aria-haspopup="menu"
+            aria-expanded={whoOpen}
+            onClick={() => setWhoOpen(o => !o)}
+          >
+            {t('Who it\'s for', '适合谁用')}
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+          {whoOpen && (
+            <>
+              {/* Transparent click-catcher overlay */}
+              <div
+                className="fixed inset-0 z-[var(--z-dropdown)]"
+                onClick={() => setWhoOpen(false)}
+              />
+              <div
+                className="absolute top-[calc(100%+8px)] left-1/2 -translate-x-1/2 z-[var(--z-modal-popover)] min-w-[200px] bg-card border-[0.5px] border-border rounded-lg shadow-elev-2 overflow-hidden p-1"
+                role="menu"
+              >
+                {USE_CASES.map(useCase => (
+                  <Link
+                    key={useCase.slug}
+                    to={pathForUseCase(useCase.slug)}
+                    className={cn(menuItem, 'whitespace-nowrap')}
+                    role="menuitem"
+                    onClick={() => setWhoOpen(false)}
+                  >
+                    {t(useCase.label.en, useCase.label.zh)}
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         <div className="flex justify-end gap-1.5">
           <LanguageSelect />
         </div>

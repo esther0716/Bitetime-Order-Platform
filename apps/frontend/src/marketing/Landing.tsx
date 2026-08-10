@@ -7,7 +7,6 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '..
 import { FAQ } from './faq'
 import { FEATURES } from './features'
 import { VERTICALS } from './verticals'
-import { USE_CASES, pathForUseCase } from './useCases'
 import { PRICING_TIERS } from './pricingTiers'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
@@ -298,37 +297,6 @@ export default function Landing() {
               </AccordionItem>
             ))}
           </Accordion>
-        </Reveal>
-      </section>
-
-      {/* ── Who it's for ── */}
-      {/* Four links out, not four more sections: each of these is a page written for one reader
-          (#214), and the argument against restating them here is the same one that moved the
-          feature list to /features — two pages answering one question are two URLs competing. */}
-      <section className="border-t border-border px-8 py-16 max-w-[900px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
-        <Reveal>
-          <h2 className={sectionTitle}>
-            {t('Built for the way you already sell', '为你现有的销售方式而做')}
-          </h2>
-          {/* Counted columns, not auto-fit: there are exactly four verticals, and inside this
-              section's 836px of track any minmax wide enough to read fits three — which leaves the
-              fourth alone on a row of its own. 4 across, then 2×2, then stacked. */}
-          <div className="grid grid-cols-4 gap-4 max-[860px]:grid-cols-2 max-[600px]:grid-cols-1">
-            {USE_CASES.map(useCase => (
-              <Link
-                key={useCase.slug}
-                to={pathForUseCase(useCase.slug)}
-                className="block rounded-2xl border-[0.5px] border-border bg-card p-5 no-underline [transition:border-color_0.15s,transform_0.15s] hover:border-primary hover:-translate-y-px"
-              >
-                <span className="block font-heading text-[16px] font-semibold text-primary mb-1.5">
-                  {t(useCase.label.en, useCase.label.zh)}
-                </span>
-                <span className="block text-[13px] leading-[1.6] text-ink-700">
-                  {t(useCase.cardBlurb.en, useCase.cardBlurb.zh)}
-                </span>
-              </Link>
-            ))}
-          </div>
         </Reveal>
       </section>
 
