@@ -65,7 +65,7 @@ export interface UseCase {
 }
 
 /** The path a vertical is served at. One definition, used by the router, the prerender and the links. */
-export function useCasePath(slug: string): string {
+export function pathForUseCase(slug: string): string {
   return `/for/${slug}`
 }
 

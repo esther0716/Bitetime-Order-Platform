@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { USE_CASES, useCasePath } from './useCases'
+import { USE_CASES, pathForUseCase } from './useCases'
 import { FAQ } from './faq'
 
 // Same reason as verticals.test.ts and faq.test.ts: both language fields are strings, so an entry
@@ -68,7 +68,7 @@ describe('USE_CASES content', () => {
   })
 
   it('serves every vertical under /for', () => {
-    expect(useCasePath('home-bakers')).toBe('/for/home-bakers')
+    expect(pathForUseCase('home-bakers')).toBe('/for/home-bakers')
   })
 
   // Fewer than three and the page is a stub; more than four and it stops being a page written for

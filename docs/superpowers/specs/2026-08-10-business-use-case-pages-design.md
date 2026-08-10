@@ -77,7 +77,7 @@ export interface UseCase {
 }
 
 export const USE_CASES: UseCase[]
-export function useCasePath(slug: string): string   // `/for/${slug}`
+export function pathForUseCase(slug: string): string   // `/for/${slug}`
 ```
 
 ### Truth constraint
@@ -136,7 +136,7 @@ Three are derived from `USE_CASES`, so they cannot drift from the data:
 | Place | How |
 |-------|-----|
 | `src/routeMeta.ts` | spread `USE_CASES` `meta` entries into `ROUTE_META`, keyed on `/for/<slug>` |
-| `src/AppRouter.tsx` | `USE_CASES.map(u => <Route path={useCasePath(u.slug)} element={<UseCasePage useCase={u} />} />)` |
+| `src/AppRouter.tsx` | `USE_CASES.map(u => <Route path={pathForUseCase(u.slug)} element={<UseCasePage useCase={u} />} />)` |
 | `apps/frontend/scripts/prerender.tsx` | spread into `ROUTES`; each writes `dist/for/<slug>.html` |
 | `apps/frontend/vercel.json` | four rewrites `/for/<slug>` → `/for/<slug>.html`, **above** the catch-all |
 | `apps/frontend/public/sitemap.xml` | four `<url>` rows, `changefreq` monthly, `priority` 0.7 |
