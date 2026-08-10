@@ -104,8 +104,8 @@ export const USE_CASES: UseCase[] = [
           zh: '排满的日子可以关掉',
         },
         body: {
-          en: 'On Pro you choose the exact days you take orders for, and the calendar on your page offers only those. A customer cannot book a Sunday you are not baking, so you stop turning people down after the fact.',
-          zh: 'Pro 版可以指定你接单的日期，页面上的日历只会显示这些日子。顾客无法预订你不开炉的星期日，你也就不必事后回绝。',
+          en: 'Set the notice you need, how far ahead you take orders, and the weekdays you never bake — all on Basic. Pro goes one step further and lets you pick the exact dates, so a customer books a Sunday only when you opened it.',
+          zh: '设定你需要提前几天、最远接单到多久之后，以及固定不开炉的星期几——基础版就能做到。Pro 版更进一步，让你指定确切日期，顾客只能预订你开放的星期日。',
         },
       },
       {
@@ -126,8 +126,8 @@ export const USE_CASES: UseCase[] = [
           zh: '你一分一毫算出的价格，我们不抽成',
         },
         body: {
-          en: 'You pay a flat subscription and nothing else. Your customers pay you directly, the way they always have — TinyOrder never handles the money and takes no cut, so a busy December costs you the same as a quiet February.',
-          zh: '你只付固定订阅费，没有其他费用。顾客照旧直接付款给你——TinyOrder 不经手货款，也不抽成，所以繁忙的十二月和冷清的二月费用一样。',
+          en: 'Festive weeks are when a commission bites hardest — the more you bake, the more it takes. Your subscription does not move: a December of cake orders costs what a quiet February costs, and customers keep paying you the way they already do.',
+          zh: '节庆旺季正是抽成最伤的时候——做得越多，被抽走的越多。你的订阅费不会变：接满蛋糕订单的十二月，和冷清的二月一样多少钱；顾客也照原本的方式付款给你。',
         },
       },
     ],
@@ -139,8 +139,8 @@ export const USE_CASES: UseCase[] = [
           zh: '顾客可以预订三个星期后的蛋糕吗？',
         },
         a: {
-          en: 'Yes. The customer picks the day they want when they order, however far ahead that is, and the order sits in your list with that date on it until you get to it.',
-          zh: '可以。顾客下单时自行选择想要的日期，多远都行；订单会带着那个日期留在清单里，直到你处理它。',
+          en: 'That is your setting. You choose how much notice you need and how far ahead your page takes orders — up to three months — and the customer picks a day inside that. The order then sits in your list with that date on it.',
+          zh: '这由你设定。你决定需要提前几天，以及页面最远接单到多久之后——最长三个月——顾客在这个范围内选日期。订单会带着那个日期留在清单里。',
         },
       },
       {
@@ -150,8 +150,8 @@ export const USE_CASES: UseCase[] = [
           zh: '如果某个星期六已经排满了怎么办？',
         },
         a: {
-          en: 'On Pro you pick the days you take orders for, and only those days appear on your page. A customer cannot choose a day you have closed, so you never have to cancel a cake you cannot bake.',
-          zh: 'Pro 版可以指定接单日期，页面上只会显示这些日子。顾客无法选择你关闭的日期，你也就不必取消做不了的蛋糕。',
+          en: 'A weekday you never bake can be closed on Basic. For one particular Saturday, Pro lets you pick the exact dates you take orders for, and your page offers nothing else — so you never cancel a cake you cannot bake.',
+          zh: '固定不开炉的星期几，基础版就能关闭。若只是某一个星期六，Pro 版可以指定接单的确切日期，页面不会显示其他日子——你也就不必取消做不了的蛋糕。',
         },
       },
       {
@@ -228,8 +228,8 @@ export const USE_CASES: UseCase[] = [
           zh: '你不煮了，订单就关上',
         },
         body: {
-          en: 'Every order names the day it is for, and on Pro you decide which days are open at all. A Sunday menu stops taking orders when you say so, instead of one more message arriving while you are already packing.',
-          zh: '每笔订单都注明是哪一天的，Pro 版还能由你决定哪些日子开放接单。星期日的菜单可以按你的时间截单，而不是在你打包时又跳出一条讯息。',
+          en: 'Every order names the day it is for, and you set which days can be named: the notice you need, how far ahead your page takes orders, and the weekdays you are closed. Pro adds picking the exact dates instead.',
+          zh: '每笔订单都注明是哪一天的，而哪些日子可选由你决定：需要提前几天、页面最远接单到多久之后，以及每周固定休息的日子。Pro 版还能改为指定确切日期。',
         },
       },
       {
@@ -252,8 +252,8 @@ export const USE_CASES: UseCase[] = [
           zh: '我可以收到星期四为止，星期日才配送吗？',
         },
         a: {
-          en: 'Yes. The customer picks the day they want the food, so a Sunday order can be placed any time before you close orders. On Pro you choose exactly which days can be picked at all.',
-          zh: '可以。顾客自己选要哪一天的餐点，所以在你截单之前随时可以下星期日的订单。Pro 版还能由你指定哪些日期可选。',
+          en: 'Yes. On Basic you set how much notice you need and how far ahead your page takes orders, so Sunday stays open until it falls inside that notice. On Pro you pick the exact dates instead, and open Sunday alone.',
+          zh: '可以。基础版由你设定需要提前几天，以及页面最远接单到多久之后，星期日会一直开放，直到进入你设定的提前期。Pro 版则改为指定确切日期，只开放星期日。',
         },
       },
       {
@@ -376,8 +376,8 @@ export const USE_CASES: UseCase[] = [
           zh: '如果一件作品要做两个星期呢？',
         },
         a: {
-          en: 'Put the lead time in the product description, and let the customer pick the day they want it when they order. The date sits on the order in your list, so you can work in the order the dates fall.',
-          zh: '把所需时间写在产品说明里，让顾客下单时选择希望拿到的日期。日期会显示在订单清单上，你可以按日期先后安排制作。',
+          en: 'Set two weeks as the notice you need, and your page stops offering anything sooner. Put the lead time in the product description too, and the customer picks a day beyond it. The date sits on the order in your list.',
+          zh: '把需要提前的天数设为两个星期，页面就不会显示更早的日期。同时把所需时间写在产品说明里，顾客只能选之后的日子。日期会显示在订单清单上。',
         },
       },
       {
@@ -500,8 +500,8 @@ export const USE_CASES: UseCase[] = [
           zh: '我可以只在摆摊的日子接受预订吗？',
         },
         a: {
-          en: 'On Pro, yes — you pick the days you take orders for, and your page offers only those. On Basic every day is open and the customer picks the one they want.',
-          zh: 'Pro 版可以——你指定接单的日期，页面只显示这些日子。基础版则每天开放，由顾客自行选择。',
+          en: 'On Pro, yes — you pick the exact dates you take orders for, and your page offers only those. On Basic you set a rolling window instead: the notice you need, how far ahead to take orders, and the weekdays you are closed.',
+          zh: 'Pro 版可以——你指定接单的确切日期，页面只会显示这些日子。基础版则设定一个滚动范围：需要提前几天、最远接单到多久之后，以及每周固定休息的日子。',
         },
       },
       {

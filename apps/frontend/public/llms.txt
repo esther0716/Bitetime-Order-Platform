@@ -21,13 +21,19 @@ What a shop gets: a storefront page with photos, prices and per-unit pricing (pe
 pack, dozen, bottle, jar, tray, slice, kg or g); product names and descriptions in English, Chinese
 or both; delivery fees that are flat, by region, or a base fee plus a rate per kilometre of real
 road distance from the shop's address;
-pickup, delivery or both; numbered orders in one list with the customer's name, WhatsApp number,
+pickup, delivery or both; the shop link and a QR code for it; numbered orders in one list with the
+customer's name, WhatsApp number,
 items, wanted date and total; order status (preparing / ready / done); customer self-service order
 lookup by order number; an email alert on every order on every plan; and a customer list the shop
 builds automatically from its orders.
 
+When a customer may ask for their order is the shop's setting: days of notice before the earliest
+date, how far ahead the page takes orders, and the weekdays the shop is closed. A new shop offers
+today through two weeks out, and no shop takes an order more than three months ahead.
+
 Plans: **Basic** and **Pro**. Pro adds instant Telegram alerts, discount vouchers, promotional
-prices on individual items, and priority support. Billing is monthly or yearly, with two months
+prices on individual items, order dates picked one by one instead of a rolling window, and priority
+support. Billing is monthly or yearly, with two months
 free on yearly; amounts are shown per region on the pricing page and are deliberately not repeated
 here. Basic starts with a **free 7-day trial that needs no card**; starting on Pro pays up front.
 A shop and its order page go live the moment the owner signs up — there is no approval wait.

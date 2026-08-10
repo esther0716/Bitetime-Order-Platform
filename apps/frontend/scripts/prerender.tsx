@@ -84,7 +84,10 @@ const ROUTES: PrerenderRoute[] = [
   // and each one carries its own @id, so four pages are four pages to a crawler (#214).
   ...USE_CASES.map(useCase => ({
     path: pathForUseCase(useCase.slug),
-    file: `for/${useCase.slug}.html`,
+    // `<route path>.html`, derived from the same helper the route is: vercelRewrites.test.ts pins
+    // the rewrite destination to exactly that, so a second spelling of `/for/` here is a file
+    // Vercel rewrites to and cannot find.
+    file: `${pathForUseCase(useCase.slug).replace(/^\//, '')}.html`,
     element: <UseCasePage useCase={useCase} />,
     head:
       `<script type="application/ld+json" data-structured-data="faq">` +

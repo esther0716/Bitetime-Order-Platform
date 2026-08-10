@@ -108,6 +108,17 @@ describe('USE_CASES content', () => {
     expect(new Set(questions).size).toBe(questions.length)
   })
 
+  // The same pin one level up. Every vertical says "no commission" somewhere — that is the pitch —
+  // but two pages saying it in the SAME sentence is the duplicate content these four pages exist to
+  // avoid, and it survives a questions-only check. Exact match, because a paraphrase is a judgement
+  // a test cannot make; this catches the copy-paste, which is how it actually happens.
+  it('never repeats a block body word for word on two verticals', () => {
+    const bodies = USE_CASES.flatMap(u => u.blocks.map(b => b.body.en))
+    expect(new Set(bodies).size).toBe(bodies.length)
+    const zh = USE_CASES.flatMap(u => u.blocks.map(b => b.body.zh))
+    expect(new Set(zh).size).toBe(zh.length)
+  })
+
   // ROUTE_META's own suite checks these once they are spread in. Checking them here is what makes
   // this module self-contained: a title written 20 characters too long is caught where it is
   // written, not three commits later.

@@ -25,7 +25,7 @@ import { useEffect } from 'react'
 import type { Lang } from '../types'
 import { SITE_URL } from '../site'
 import { FAQ } from './faq'
-import type { UseCase } from './useCases'
+import { pathForUseCase, type UseCase } from './useCases'
 
 /**
  * The /faq page's FAQ, as a Schema.org `FAQPage`.
@@ -66,7 +66,9 @@ export function faqStructuredData(lang: Lang): object {
  */
 export function faqStructuredDataForUseCase(useCase: UseCase, lang: Lang): object {
   const pick = <T>(en: T, zh: T) => (lang === 'zh' ? zh : en)
-  const url = `${SITE_URL}/for/${useCase.slug}`
+  // Through the helper, not a second spelling of `/for/`: this URL is what the page claims to BE,
+  // so a path that drifts from the route is markup describing a page that does not exist.
+  const url = `${SITE_URL}${pathForUseCase(useCase.slug)}`
 
   return {
     '@context': 'https://schema.org',
