@@ -20,6 +20,7 @@ import LanguageSelect from '../components/LanguageSelect'
 import Wordmark from '../components/Wordmark'
 import { Button } from '../components/ui/button'
 import { REFUNDS_ANCHOR } from '../legal/anchors'
+import { USE_CASES, pathForUseCase } from './useCases'
 import { cn } from '../lib/utils'
 
 // Shared nav-link style (Pricing + Merchant log in)
@@ -167,6 +168,15 @@ export function MarketingFooter() {
           <Link to="/faq" className={footerColumnLink}>
             {t('FAQ', '常见问题')}
           </Link>
+        </FooterColumn>
+        {/* Sitewide, so no /for/<slug> page is an orphan: every marketing page links to all four,
+            which is what gets them crawled at all. See useCases.ts. */}
+        <FooterColumn heading={t('Who it\'s for', '适合谁用')}>
+          {USE_CASES.map(useCase => (
+            <Link key={useCase.slug} to={pathForUseCase(useCase.slug)} className={footerColumnLink}>
+              {t(useCase.label.en, useCase.label.zh)}
+            </Link>
+          ))}
         </FooterColumn>
         <FooterColumn heading={t('Legal', '法律')}>
           <Link to="/terms" className={footerColumnLink}>
