@@ -15,15 +15,24 @@ export type ConsentChoice = 'accepted' | 'rejected'
 /** The scope of TinyOrder's own banner, on its own marketing pages. */
 export const PLATFORM_CONSENT_SCOPE = 'platform'
 
+// `bitetime.` to match every other key this app writes (checkoutGate.ts writes
+// `bitetime.guest-checkout.<slug>`), so the whole namespace stays greppable by one prefix.
+//
 // VERSIONED so that adding a vendor can invalidate stored consent by bumping to v2, rather than
 // treating an answer given about Meta as an answer about someone else. Silently reusing it would
 // claim the visitor agreed to something they were never shown.
-const KEY_PREFIX = 'to_consent_v1'
+const KEY_PREFIX = 'bitetime.consent.v1'
 
 interface StoredConsent {
   scope: string
   choice: ConsentChoice
-  /** Epoch ms. Unused today; here so a future expiry does not need a v2 to become possible. */
+  /**
+   * Epoch ms — WHEN the visitor answered.
+   *
+   * Nothing reads it today, and it is still not optional: a consent record has to be able to say
+   * when consent was obtained, and a record that cannot is not evidence of anything. It also makes
+   * a future expiry possible without a v2.
+   */
   ts: number
 }
 

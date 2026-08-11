@@ -39,6 +39,22 @@ export function canonicalPath(pathname: string): string {
 }
 
 /**
+ * The one spelling of a route: no trailing slash, no preselection segments, never empty.
+ *
+ * Both consumers of this — the canonical URL and the advertising-pixel scope — must agree on what
+ * "the same page" means, and they were written twice with the trim and the collapse in OPPOSITE
+ * orders. They happen to agree today only because no preselection base ends in a slash, which is a
+ * coincidence rather than a reason.
+ *
+ * The root is the exception at both ends: `''` is the homepage rather than nothing, and `/` keeps
+ * its slash because there the slash IS the path.
+ */
+export function normalisedPath(pathname: string): string {
+  const trimmed = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  return canonicalPath(trimmed || '/')
+}
+
+/**
  * The URL a route should declare as its own.
  *
  * Query and hash are dropped: `?ref=<code>`, `?shop=<slug>` and a recovery link's token are all
@@ -47,9 +63,7 @@ export function canonicalPath(pathname: string): string {
  * pages — except at the root, where the slash IS the path.
  */
 export function canonicalUrl(origin: string, pathname: string): string {
-  const collapsed = canonicalPath(pathname)
-  const path = collapsed.length > 1 ? collapsed.replace(/\/+$/, '') : collapsed
-  return `${origin.replace(/\/+$/, '')}${path || '/'}`
+  return `${origin.replace(/\/+$/, '')}${normalisedPath(pathname)}`
 }
 
 /** Keeps a single `<link rel="canonical">` in `<head>` pointed at the current route. */

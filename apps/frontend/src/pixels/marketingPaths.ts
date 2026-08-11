@@ -14,17 +14,15 @@
 // conversion happens on.
 
 import { ROUTE_META } from '../routeMeta'
-import { canonicalPath } from '../canonical'
+import { normalisedPath } from '../canonical'
 
 /**
  * Is this path one of TinyOrder's own published pages?
  *
- * Normalised the same two ways the canonical URL is, so that one route cannot answer differently
- * depending on how the visitor typed it: a trailing slash is dropped (except at the root, where
- * the slash IS the path), and a signup preselection like `/merchant/signup/pro/yearly` collapses
- * to the single page it preselects.
+ * Normalised by the SAME function the canonical URL uses, not by a second copy of its rules: a
+ * trailing slash is dropped and a signup preselection collapses to the page it preselects, so one
+ * route cannot answer differently here than it does there.
  */
 export function isMarketingPath(pathname: string): boolean {
-  const trimmed = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
-  return canonicalPath(trimmed || '/') in ROUTE_META
+  return normalisedPath(pathname) in ROUTE_META
 }

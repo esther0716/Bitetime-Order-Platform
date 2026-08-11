@@ -171,7 +171,11 @@ describe('advertising pixels', () => {
   })
 
   it('says the pixels are on our pages and not on a shop’s storefront', () => {
-    expect(text.toLowerCase()).toContain('storefront')
+    // The sentence itself, not just the word — this is the promise pixels/decision.ts keeps, and
+    // a notice that merely mentions storefronts somewhere would satisfy a looser assertion while
+    // saying nothing.
+    expect(text).toContain('It is never present on a shop\'s storefront.')
+    expect(text).toContain('It receives nothing at all from a shop\'s storefront')
   })
 
   it('has a section about cookies that the consent banner can link a reader to', () => {

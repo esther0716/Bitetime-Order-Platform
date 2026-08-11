@@ -35,10 +35,10 @@ describe('pixelTrack', () => {
     expect(ttqTrackCalls).toEqual([['CompleteRegistration']])
   })
 
-  it('passes parameters through when there are any', () => {
-    pixelTrack('CompleteRegistration', { plan: 'basic' })
-    expect(fbqCalls).toEqual([['track', 'CompleteRegistration', { plan: 'basic' }]])
-    expect(ttqTrackCalls).toEqual([['CompleteRegistration', { plan: 'basic' }]])
+  it('sends the event name and nothing else — there is no payload to carry personal data', () => {
+    pixelTrack('CompleteRegistration')
+    expect(fbqCalls[0]).toHaveLength(2)
+    expect(ttqTrackCalls[0]).toHaveLength(1)
   })
 })
 

@@ -1,8 +1,10 @@
 // The question itself. Knows nothing about ids, routes or storage — it takes two callbacks.
 //
-// ACCEPT AND REJECT ARE THE SAME CONTROL AT THE SAME SIZE. A greyed-out, hidden or link-styled
-// Reject beside a filled Accept is the specific pattern regulators cite as invalid consent, and
-// it is also the one a reviewer is most likely to "tidy" without knowing why it is deliberate.
+// ACCEPT AND REJECT ARE THE SAME CONTROL: same variant, same size, same place, one after the
+// other. A greyed-out, hidden or link-styled Reject beside a filled Accept is the specific pattern
+// regulators cite as invalid consent, and it is the one a reviewer is most likely to "tidy"
+// without knowing why it is deliberate. Making Accept the filled primary was tried and reverted
+// for exactly that reason — a decline that is visibly the lesser button is not a free choice.
 
 import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
@@ -36,7 +38,7 @@ export default function ConsentBanner({
           <Button variant="outline" size="sm" onClick={onReject}>
             {t('Reject', '拒绝')}
           </Button>
-          <Button size="sm" onClick={onAccept}>
+          <Button variant="outline" size="sm" onClick={onAccept}>
             {t('Accept', '接受')}
           </Button>
         </div>

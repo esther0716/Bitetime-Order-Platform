@@ -38,18 +38,18 @@ describe('consent', () => {
 
   it('records when the choice was made, so a future version can expire it', () => {
     writeConsent(PLATFORM_CONSENT_SCOPE, 'accepted')
-    const raw = JSON.parse(store.get('to_consent_v1.platform')!)
+    const raw = JSON.parse(store.get('bitetime.consent.v1.platform')!)
     expect(raw).toMatchObject({ scope: 'platform', choice: 'accepted' })
     expect(typeof raw.ts).toBe('number')
   })
 
   it('reads corrupt storage as no choice, never as consent', () => {
-    store.set('to_consent_v1.platform', 'not json')
+    store.set('bitetime.consent.v1.platform', 'not json')
     expect(readConsent(PLATFORM_CONSENT_SCOPE)).toBeNull()
   })
 
   it('reads an unrecognised choice as no choice, never as consent', () => {
-    store.set('to_consent_v1.platform', JSON.stringify({ scope: 'platform', choice: 'maybe', ts: 1 }))
+    store.set('bitetime.consent.v1.platform', JSON.stringify({ scope: 'platform', choice: 'maybe', ts: 1 }))
     expect(readConsent(PLATFORM_CONSENT_SCOPE)).toBeNull()
   })
 

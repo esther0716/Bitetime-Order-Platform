@@ -268,6 +268,36 @@ they take it — a confirm step is only honest when the consequence is hidden, a
 warning is muted, not alarming: as a danger box it out-shouted the headline and made the guest
 path the loudest thing on a screen whose purpose is to offer an account.
 
+## Advertising pixel
+
+TinyOrder's own ad-conversion tracking (Meta today; TikTok is built but has no account and is
+unnamed in the privacy notice until it does). It answers one question — did a paid ad produce a
+shop — and it is **not** SEO: a pixel changes no ranking. Two events only, `PageView` and
+`CompleteRegistration`, and no payload rides with either. `track.ts` has no `params` argument at
+all, so "no personal data reaches an ad network" is a signature rather than a promise.
+
+**It never runs on a shop's storefront.** The audience there belongs to the merchant, not to us,
+and `documents.ts` tells those customers so in as many words. Scope is *derived* from
+`ROUTE_META` — the set of pages that have a title of their own — so a new page under `/s/` cannot
+quietly join it, and both scope and canonical URL normalise a path through one `normalisedPath`.
+
+Whether anything happens is a pure decision (`pixels/decision.ts` → `pixelDecision`), against a
+truth table, for the same reason [Checkout gate](#checkout-gate) is. It is one function because it
+was once two conditions: the pageview was gated on the path and the **load** was not, so a visitor
+who accepted on `/pricing` and then opened a storefront link injected `fbevents.js` onto that
+merchant's page. Nothing was reported and the damage was already done — the load *is* the
+third-party request and the advertising cookie. Off a marketing page every answer is now no,
+including for a visitor who accepted earlier: consent given on our pages is consent for our pages.
+
+Consent fails closed everywhere — no storage, throwing storage, corrupt JSON, unrecognised value
+all read as *not asked yet*, which shows the banner and loads nothing. It is remembered per scope
+(`bitetime.consent.v1.<scope>`), so the merchant-pixel follow-up (#220) asks its own question of
+its own audience. Accept and Reject are the same control at the same size, deliberately: a decline
+that is visibly the lesser button is not a free choice.
+
+With no `VITE_*_PIXEL_ID` set the whole feature is inert — no banner, no script — which is the
+state of dev, CI and the e2e run, and why none of them stub anything.
+
 ## Password reset
 
 The way back into a customer account — and therefore back to the order history, which is precisely
