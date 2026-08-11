@@ -180,16 +180,16 @@ export async function lookupMyMerchant(userId: string): Promise<Result<any | nul
   return apiGet<any | null>('/api/me/merchant', { auth: true })
 }
 
-export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode, businessNature, currency }: { name: string; plan?: string; billing?: string; referredByCode?: string; businessNature?: string; currency?: string }): Promise<Result<any>> {
-  return apiSend<any>('/api/merchants', 'POST', { name, plan, billing, referredByCode, businessNature, currency }, { auth: true })
+export async function createMerchant({ name, billing = 'monthly', referredByCode, businessNature, currency }: { name: string; billing?: string; referredByCode?: string; businessNature?: string; currency?: string }): Promise<Result<any>> {
+  return apiSend<any>('/api/merchants', 'POST', { name, billing, referredByCode, businessNature, currency }, { auth: true })
 }
 
 // ── Billing (Stripe via the Hono backend) ──────────────────────────────────────
 
 // Create a Stripe Checkout Session for the current merchant and return its URL.
 // Every subscription is charged in MYR; the backend no longer takes a region.
-export async function startCheckout({ plan, billing }: { plan: string; billing: string }): Promise<Result<string>> {
-  const r = await apiSend<{ url: string }>('/api/checkout', 'POST', { plan, billing }, { auth: 'required' })
+export async function startCheckout({ billing }: { billing: string }): Promise<Result<string>> {
+  const r = await apiSend<{ url: string }>('/api/checkout', 'POST', { billing }, { auth: 'required' })
   return mapOk(r, (d) => d.url)
 }
 

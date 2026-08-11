@@ -199,7 +199,6 @@ app.post('/api/merchants', requireUser, async (c) => {
       order_prefix: orderPrefix(slug),
       owner_id: user.id,
       status: 'pending',
-      plan: body?.plan ?? 'basic',
       billing_cycle: body?.billing ?? 'monthly',
       billing_region: 'MY', // everyone is charged MYR
       business_nature: businessNature,
@@ -210,13 +209,13 @@ app.post('/api/merchants', requireUser, async (c) => {
     .single()
   if (error) return c.json({ error: 'Create failed' }, 500)
 
-  // Self-serve: the trial is provisioned HERE, not by an approval. Two things this must not do —
-  // fail the signup because Stripe did (the account, the slug and the form's answers are worth
-  // more than the retry), and return an `active` shop with no subscription behind it
-  // (startCardlessTrial owns that ordering). A shop Stripe refused stays `pending` and the owner
-  // retries from the dashboard via POST /api/merchants/:id/start-trial.
-  if ((data.plan ?? 'basic') === 'pro') return c.json(data)
-
+  // Self-serve: the trial is provisioned HERE, not by an approval, and for EVERY shop — there is
+  // one plan and one way in (#222). Two things this must not do — fail the signup because Stripe
+  // did (the account, the slug and the form's answers are worth more than the retry), and return
+  // an `active` shop with no subscription behind it (startCardlessTrial owns that ordering). A
+  // shop Stripe refused stays `pending` and the owner retries from the dashboard via
+  // POST /api/merchants/:id/start-trial.
+  //
   // `null` billing is not a shortcut: a shop created milliseconds ago has no merchant_billing
   // row, so there is no customer id to reuse and nothing for canStartTrial to refuse.
   const outcome = await startCardlessTrial(data, null)

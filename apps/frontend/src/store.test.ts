@@ -293,7 +293,7 @@ describe('lookupMyMerchant', () => {
 describe('createMerchant', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('POSTs /api/merchants with name/plan/billing/referredByCode and a bearer token', async () => {
+  it('POSTs /api/merchants with name/billing/referredByCode and a bearer token', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
     const merchantRow = {
       id: 'm1', name: 'My Shop', slug: 'my-shop',
@@ -311,7 +311,7 @@ describe('createMerchant', () => {
     expect(init.method).toBe('POST')
     expect(init.headers.Authorization).toBe('Bearer tok')
     expect(JSON.parse(init.body)).toEqual({
-      name: 'My Shop', plan: 'basic', billing: 'monthly',
+      name: 'My Shop', billing: 'monthly',
     })
     expect(result).toEqual({ ok: true, data: merchantRow })
   })

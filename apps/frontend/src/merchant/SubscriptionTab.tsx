@@ -97,12 +97,12 @@ function PortalButton({ label }: { label: string }) {
  * exactly when `canManage` is true, so the two buttons cannot both appear and this cannot create
  * a second subscription. It grants no trial either: trials come only from superadmin approval.
  */
-function CheckoutButton({ plan, cycle, label }: { plan: string; cycle: string; label: string }) {
+function CheckoutButton({ cycle, label }: { cycle: string; label: string }) {
   const { t } = useSession()
   const [busy, setBusy] = useState(false)
   async function go() {
     setBusy(true)
-    const r = await startCheckout({ plan, billing: cycle })
+    const r = await startCheckout({ billing: cycle })
     if (r.ok) window.location.assign(r.data)
     else {
       toast.error(r.error.message || t('Could not start checkout', '无法开始结账'))
@@ -583,7 +583,7 @@ export default function SubscriptionTab() {
             </>
           ) : (
             <>
-              <CheckoutButton plan="pro" cycle={cycle} label={t('Upgrade to Pro', '升级到 Pro')} />
+              <CheckoutButton cycle={cycle} label={t('Upgrade to Pro', '升级到 Pro')} />
               <p className="text-[12px] text-muted-foreground mt-3">
                 {t('This shop has no subscription yet, so this starts a new one at the Pro price.',
                   '此店铺尚无订阅，将以 Pro 价格开始新的订阅。')}

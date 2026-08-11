@@ -8,28 +8,26 @@ describe('pendingShopMetadata', () => {
       name: 'Sunny Bakes',
       businessNature: 'bakery',
       currency: 'SGD',
-      plan: 'pro',
       billing: 'yearly',
       ref: 'ABC123',
     })).toEqual({
       shop_name: 'Sunny Bakes',
       shop_business_nature: 'bakery',
       shop_currency: 'SGD',
-      shop_plan: 'pro',
       shop_billing: 'yearly',
       shop_ref: 'ABC123',
     })
   })
 
   it('omits an absent referral rather than writing undefined', () => {
-    const meta = pendingShopMetadata({ name: 'S', businessNature: 'other', currency: 'MYR', plan: 'basic', billing: 'monthly' })
+    const meta = pendingShopMetadata({ name: 'S', businessNature: 'other', currency: 'MYR', billing: 'monthly' })
     expect('shop_ref' in meta).toBe(false)
   })
 })
 
 describe('pendingShopFromMetadata', () => {
   it('reads back what pendingShopMetadata wrote', () => {
-    const input: PendingShop = { name: 'Sunny Bakes', businessNature: 'bakery', currency: 'SGD', plan: 'pro', billing: 'yearly', ref: 'ABC123' }
+    const input: PendingShop = { name: 'Sunny Bakes', businessNature: 'bakery', currency: 'SGD', billing: 'yearly', ref: 'ABC123' }
     expect(pendingShopFromMetadata(pendingShopMetadata(input))).toEqual(input)
   })
 
@@ -42,9 +40,17 @@ describe('pendingShopFromMetadata', () => {
 
   // A user can rewrite their own user_metadata (supabase.auth.updateUser), so every field
   // read back here is untrusted input, not something this app wrote.
-  it('falls back to the signup form defaults on junk plan/billing', () => {
-    expect(pendingShopFromMetadata({ shop_name: 'S', shop_plan: 'enterprise', shop_billing: 'weekly' }))
-      .toEqual({ name: 'S', businessNature: '', currency: 'MYR', plan: 'basic', billing: 'monthly', ref: undefined })
+  it('falls back to the signup form defaults on a junk billing cycle', () => {
+    expect(pendingShopFromMetadata({ shop_name: 'S', shop_billing: 'weekly' }))
+      .toEqual({ name: 'S', businessNature: '', currency: 'MYR', billing: 'monthly', ref: undefined })
+  })
+
+  // A shop parked before #222 carries `shop_plan`. It is read by nothing now and must not survive
+  // into the object — a stale key reaching `createMerchant` is a field the backend would ignore
+  // anyway, but a reader here would be reading a tier that no longer exists.
+  it('drops a plan left in the metadata by an older release', () => {
+    const shop = pendingShopFromMetadata({ shop_name: 'S', shop_plan: 'pro' })
+    expect(shop).not.toHaveProperty('plan')
   })
 
   it('falls back to MYR on an unknown currency', () => {

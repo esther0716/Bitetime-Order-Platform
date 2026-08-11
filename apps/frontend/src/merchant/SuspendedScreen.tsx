@@ -37,7 +37,7 @@ export default function SuspendedScreen() {
 
   async function reactivate() {
     setBusy(true); setErr('')
-    const r = await startCheckout({ plan, billing: cycle })
+    const r = await startCheckout({ billing: cycle })
     if (r.ok) window.location.assign(r.data)
     else {
       setErr(r.error.message || t('Could not start checkout', '无法开始结账'))

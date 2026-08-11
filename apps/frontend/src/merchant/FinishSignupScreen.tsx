@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { createMerchant, startCheckout } from '../store'
+import { createMerchant } from '../store'
 import { useSession } from '../SessionContext'
 import { pendingShopFromMetadata } from './pendingShop'
 import type { PendingShop } from './pendingShop'
@@ -37,26 +37,19 @@ export default function FinishSignupScreen() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
-  // Mirrors SignupScreen's post-create branch: a Basic shop waits for approval, a Pro one has
-  // never paid and must reach Checkout — the shop is 'pending' either way, so skipping this
-  // would leave a Pro merchant with a shop no webhook will ever activate.
+  // Mirrors SignupScreen's post-create step, which is now a single one: the backend provisions
+  // the cardless trial and activates the shop inside `createMerchant`, so there is nowhere else
+  // to send anyone. A shop Stripe refused stays 'pending' and MerchantHome offers the retry.
   async function create(shop: PendingShop) {
     setBusy(true); setMsg('')
     const created = await createMerchant({
       name: shop.name,
-      plan: shop.plan,
       billing: shop.billing,
       referredByCode: shop.ref,
       businessNature: shop.businessNature || undefined,
       currency: shop.currency,
     })
     if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
-    if (shop.plan === 'pro') {
-      const checkout = await startCheckout({ plan: shop.plan, billing: shop.billing })
-      if (!checkout.ok) { setMsg(checkout.error.message || t('Could not start checkout', '无法开始结账')); setBusy(false); return }
-      window.location.assign(checkout.data)
-      return
-    }
     // Re-reading the shop is what changes this user's role to 'merchant', which is what lets
     // the guard above this screen render the dashboard instead of this form.
     await refreshMerchant()
@@ -77,10 +70,10 @@ export default function FinishSignupScreen() {
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    // A merchant stranded before this shipped never chose a currency either — same as plan/
-    // billing just below, this fallback form doesn't ask a third question for an edge case;
-    // the column's own default (MYR) is what they get, same as it always was.
-    create({ name: name.trim(), businessNature, currency: DEFAULT_CURRENCY, plan: 'basic', billing: 'monthly' })
+    // A merchant stranded before this shipped never chose a currency either — same as the billing
+    // cycle just below, this fallback form doesn't ask a second question for an edge case; the
+    // column's own default (MYR) is what they get, same as it always was.
+    create({ name: name.trim(), businessNature, currency: DEFAULT_CURRENCY, billing: 'monthly' })
   }
 
   const heading = (

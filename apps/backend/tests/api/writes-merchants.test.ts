@@ -128,9 +128,11 @@ describe('POST /api/merchants', () => {
     await serviceClient().from('merchants').delete().eq('id', m.id)
   })
 
-  // Pro is the pay-upfront path: no trial is provisioned and Stripe is not called at all here —
-  // the Checkout webhook is what activates the shop.
-  it('leaves a pro signup pending without touching Stripe', async () => {
+  // There is one signup path now (#222): every shop is offered the cardless trial and no body can
+  // route around it. A `plan` field is a leftover from the two-tier release and must be ignored
+  // rather than send this shop off to Checkout. `trial` being PRESENT is the assertion — it is
+  // false here only because the stub key cannot authenticate, per the note above.
+  it('attempts the trial whatever the body claims, ignoring a stale plan field', async () => {
     await resetMerchant('pro-cafe')
     const client = await makeUser('pro-signup@example.com', 'password123')
     const { token } = await tokenOf(client)
@@ -139,9 +141,8 @@ describe('POST /api/merchants', () => {
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow & { trial?: boolean }
+    expect(m.trial).toBe(false)
     expect(m.status).toBe('pending')
-    // No trial field at all on this path — Pro never calls startCardlessTrial.
-    expect(m.trial).toBeUndefined()
 
     const { data: billing } = await serviceClient()
       .from('merchant_billing').select('merchant_id').eq('merchant_id', m.id).maybeSingle()
