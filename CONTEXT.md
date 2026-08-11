@@ -63,16 +63,15 @@ A shop offers dates in one of **two modes**, and the set is closed: `rolling` an
 
 **The horizon is 90 days**, one constant (`FULFILMENT_HORIZON_DAYS`) bounding both modes — but not identically, and the difference is worth stating because the constant's name suggests otherwise. In `custom` it is absolute: a ticked date more than 90 days out is never offered and cannot be saved. In `rolling` it clamps `window_days` **alone**, and `lead_days` (up to 30) still pushes the range out ahead of it, so a rolling shop can commit as far as day 119. That is the pre-existing behaviour of the two caps and is left alone deliberately; the feedback that asked for "up to 3 months" was about the ticked dates, and 90 days is that, expressed in the day-count arithmetic this module is already made of rather than a second concept and calendar-month maths.
 
-**Custom mode is Pro.** The backend refuses `mode: 'custom'` from a non-Pro caller with `403 requires_pro`, alongside Telegram alerts, vouchers, promos and menu options.
 
 **A shop with no offerable date is paused, not closed.** The two reads agree by construction — `selectableDates` returns `[]` and `isDateSelectable` returns false — so the storefront and a scripted POST get the same answer, and a paused shop cannot be sold out from under its owner by a caller who skips the picker. `merchants.status` stays `active`: the menu, prices and photos still render and are still crawlable, and the customer is told at the date step that the shop is not taking orders. A configuration gap must not wear the suspended-shop screen; being suspended is something the platform did to you. A stray POST is refused with the existing `fulfil_date_unavailable` — the date *is* unavailable, so the vocabulary already has the honest word and gains no new one.
 
 **Pausing has exactly two causes.**
 
 1. **The allowlist ran dry** — every ticked date is in the past. The merchant is warned in the dashboard before it happens (amber when the last remaining date is within 7 days, red at zero), computed from config with no job and no send path.
-2. **The shop stepped down from Pro** — `revokeProArtifacts` forces `mode` back to `rolling` and sets `needs_review`, keeping `custom_dates` intact. See [ADR 0015](docs/adr/0015-a-shop-with-no-offerable-dates-pauses.md) for why a downgrade pauses rather than quietly resuming a rolling window.
+2. **A shop paused before #222** — the tier's removal took the only writer of `needs_review` with it, so nothing can pause a shop this way any more. The flag and its readers survive so a row written before that still behaves as its owner was told. See [ADR 0015](docs/adr/0015-a-shop-with-no-offerable-dates-pauses.md).
 
-**`needs_review` is cleared by a deliberate act inside the Fulfilment tab**, never by a banner button and never by a forced edit — a merchant whose rolling window was already right must not have to break it to reopen. Re-subscribing to Pro clears it too, restoring `custom` mode and whatever dates have not expired: the review existed because the shop lost the feature, and it has not lost it any more.
+**`needs_review` is cleared by a deliberate act inside the Fulfilment tab**, never by a banner button and never by a forced edit — a merchant whose rolling window was already right must not have to break it to reopen. That act is now the only thing that clears it.
 
 **Stale dates are filtered on read and pruned on save.** Nothing sweeps them: a read that rewrote the merchant's config would be a merchant-config write on the customer path.
 
@@ -118,7 +117,7 @@ A question a merchant attaches to a product, and the answer a customer gives to 
 
 **Availability is a flag, never a count.** `active` on a group and on an option is all a merchant gets, because the shop cannot track stock on a *product* either — per-option inventory would let a merchant cap oat milk but not muffins, and would put a third decrement inside the order transaction beside the counter lock and the promo claim. An option going inactive mid-checkout is refused as **`option_unavailable`**, which is its own code and not `product_unavailable`: that one recovers by refetching the menu so the vanished id drops out of the cart, and here the product id still exists, so the dead selection survives every refresh and every retry is refused identically — the permanent refusal loop *Refusal* above exists to prevent. Its recovery **repairs** the line by reopening the picker, and falls back to dropping the line only when the whole group is dead. That fallback is the terminating case, not a courtesy.
 
-**Menu options are Pro**, and stepping down to Basic **hides rather than deletes** — `active: false` on every group, plus `active: false` on any product carrying a *required* group, because a product whose mandatory question can no longer be asked is unfulfillable, not merely degraded. See [ADR 0010](docs/adr/0010-menu-options-are-pro-and-downgrade-hides.md). The write gate refuses a submitted set of groups that **differs from the stored one**, compared with the same canonical serialiser the cart key uses — *not* a body that merely contains groups. That distinction is the bug the promo gate has: refusing on presence forced the dashboard to send explicit nulls, so an ex-Pro shop editing a product's **name** clears its sale.
+**`active: false` hides a group rather than deleting it**, and that is the merchant's own Hide control — the bulk revocation that used to write it went with the tier (#222). A *required* group that is switched off takes its product off sale too, because a product whose mandatory question can no longer be asked is unfulfillable rather than merely degraded. See [ADR 0010](docs/adr/0010-menu-options-are-pro-and-downgrade-hides.md).
 
 ## Menu category
 
@@ -132,7 +131,7 @@ A section of a shop's own menu, authored by the merchant and named in their own 
 
 **Deleting a category takes nothing with it.** It leaves its products pointing at an id the list no longer holds, which is the uncategorized reading above — the products stay on sale and fall to the trailing block. Nothing rewrites the products, so there is no multi-row write and no half-applied delete; the merchant is told how many products are about to become uncategorized before they confirm.
 
-**Menu categories are Pro**, and stepping down to Basic **hides rather than deletes** — `active: false` on every category and on **no product**. A category is decoration, not a fulfilment requirement: unlike a *required* option group, a product whose heading disappeared is still perfectly sellable, so [ADR 0010](docs/adr/0010-menu-options-are-pro-and-downgrade-hides.md)'s second clause has no analogue. All categories inactive is precisely the uncategorized shop above. The storefront reads `active` — a flag, never the plan, which is the constraint [ADR 0004](docs/adr/0004-plan-entitlement-follows-the-stripe-price.md) fixed. `active` is **also the merchant's own Hide control**, and that is what lets a re-upgrade need no resurrection logic: the merchant switches them back on. The write gate refuses a submitted list, or a `category_id`, that **differs from the stored one** — *not* a body that merely contains the field, which is the promo gate's recorded bug.
+**`active: false` hides a category and takes **no product** off sale.** A category is decoration, not a fulfilment requirement: unlike a *required* option group, a product whose heading disappeared is still perfectly sellable, so [ADR 0010](docs/adr/0010-menu-options-are-pro-and-downgrade-hides.md)'s second clause has no analogue. All categories inactive is precisely the uncategorized shop above. The storefront reads `active` and nothing else.
 
 **The order never carries it.** An order snapshots names and prices precisely so a merchant tidying their menu cannot rewrite last month's receipts; how the menu was *arranged* the day it was ordered from is not a fact about the order. Receipts, Telegram tickets and the xlsx report are unchanged by this.
 
@@ -172,15 +171,15 @@ It is shared for the same reason `priceOrder` is — it must hold identically on
 
 The messages sent **after** an order commits, never inside its transaction — a notification outage must never roll back a paid order. One post-commit call (`POST /api/notify/order`, anonymous) fans out to three independent, best-effort recipients; any can fail or skip without touching the order or the others.
 
-The three are not variations on one message, and every difference between them is deliberate: who receives it, whether the plan gates it, whether it is deduplicated, and what language it speaks.
+The three are not variations on one message, and every difference between them is deliberate: who receives it, whether it is deduplicated, and what language it speaks.
 
-**Merchant notification** — a Telegram message to the shop. The shop's surface: English only, carries operational detail (WhatsApp, distance). Skips when the merchant has no Telegram configured, and skips when the shop is not **Pro** — it is the paid tier's headline feature. Not deduplicated — a repeat is merchant-facing noise.
+**Merchant notification** — a Telegram message to the shop. The shop's surface: English only, carries operational detail (WhatsApp, distance). Skips when the merchant has no Telegram configured, which is the only condition on it. Not deduplicated — a repeat is merchant-facing noise.
 
 **A message too long to send is a notification lost, so the Telegram arm truncates rather than overflows.** `sendMessage` caps text at **4096 characters** and does not trim — it refuses the whole call. Because the fan-out runs *after* the commit, that refusal costs the merchant every word about an order that already exists, and it looks exactly like a shop with no Telegram configured. A full cart is `MAX_CART_LINES` (100) items at roughly forty characters each, so the item block alone reaches the ceiling before the header and totals are counted; the per-item selections line adds the rest. `buildOrderMessage` therefore renders under the cap by construction — the guard lives in the builder, not the call site, so nothing downstream can forget it. What gives way is the **item block**, from the end, never the head or the tail: the order number, customer and address at the top and the money at the bottom are what a merchant acts on, and a cart long enough to overflow is the one whose individual lines matter least. It **says so** — *N of M items shown — open your dashboard for the full order* — because silent truncation reads as a complete order (see *Merchant order reads*, where an uncounted row was the same defect). Lines are dropped whole and the notice's `*` markers are balanced: the message goes out as Markdown, and a cut landing mid-`*bold*` is a parse rejection, which loses precisely what the truncation was written to save. The last resort, where the header alone overflows, keeps the order number and nothing else — with it a merchant can find the order, without it they cannot. **The two mail arms need no such guard**, and that is a fact about the numbers rather than a difference in principle: the largest legal cart renders to tens of kilobytes against a provider ceiling in megabytes, with no line near RFC 5322's 998 octets. Both facts are pinned by tests, so #145 cannot quietly move either one.
 
 **Order confirmation email** — a bilingual receipt to the **customer**, and only to a **signed-in** one: the recipient is the account email read server-side from `order.user_id` via Auth, so a guest order (`user_id` null) skips *structurally*, never by a check that can be forgotten. Sent once per order — stamped `orders.confirmation_emailed_at` under an atomic guard, because a customer receiving the same receipt twice reads as broken. Language rides in the request body (presentation only, safe to trust); the recipient never does.
 
-**Merchant order email** — the shop owner's new-order alert, and **the one arm blind to `merchants.plan`**. It exists because Telegram is Pro: a basic shop had no notification at all and learned of an order by refreshing the dashboard, which is not a notification. Telegram stays Pro and stays the difference the tier sells — the loud, phone-buzzing channel in the group the whole shop already sits in — and a Pro shop simply receives both. The recipient is the owner's account email, read from `merchants.owner_id` via Auth (never `profiles`, which a fresh signup may not have); an owner-less shop skips. English only, following the Telegram rule rather than the receipt's — the body's `lang` is the *customer's* presentation and never reaches here. It carries what the receipt deliberately omits: the customer's WhatsApp number and the routed distance. Sent from the **platform's** address, not the shop-named sender the receipt uses — the shop is the recipient, and an alert appearing to come from itself reads as a copy of the customer's mail.
+**Merchant order email** — the shop owner's new-order alert, and **the arm every shop gets**. It exists because Telegram is opt-in: a shop that never set a bot up had no notification at all and learned of an order by refreshing the dashboard, which is not a notification. Telegram stays the loud, phone-buzzing channel in the group the whole shop already sits in, and a shop that has configured one simply receives both. The recipient is the owner's account email, read from `merchants.owner_id` via Auth (never `profiles`, which a fresh signup may not have); an owner-less shop skips. English only, following the Telegram rule rather than the receipt's — the body's `lang` is the *customer's* presentation and never reaches here. It carries what the receipt deliberately omits: the customer's WhatsApp number and the routed distance. Sent from the **platform's** address, not the shop-named sender the receipt uses — the shop is the recipient, and an alert appearing to come from itself reads as a copy of the customer's mail.
 
 Sent once per order, stamped `orders.merchant_emailed_at`, and here the guard is **load-bearing rather than merely tidy**. ADR 0003 accepted an anonymous notify endpoint on the reasoning that the worst an enumerator achieves is triggering the one legitimate *customer* email slightly early. That argument does not survive a recipient who is not the customer: order numbers are a guessable per-shop daily counter, so without the stamp a guessed number is an unbounded mail flood at a merchant's inbox. The owner is resolved **before** the claim, so a shop with no reachable owner leaves the stamp unclaimed rather than burning its one alert on a send that never happened.
 
@@ -200,7 +199,7 @@ Two things share the name.
 
 **Referral capture** — live. A merchant signs up under another member's code, which is stamped on `merchants.referred_by_code`; the referrer can list the shops they brought in (`GET /api/referrals/shops`). A member's code is the first 8 hex characters of their user id, uppercased. The code is always derived from the caller's verified identity, never accepted from the request — a referrer's shops are not their own tenant, so reading them is a cross-tenant read, and the un-choosable code is the only thing that makes it safe. Display-only: no reward is granted.
 
-**Referral reward** — a **subscription** reward, not an order discount (decided in #70, `docs/prd-referral-reward.md`). When a merchant who signed up under a member's code pays their **first invoice**, that referring member earns **one month free of their own plan** — a credit on their Stripe customer balance, valued at their current plan (yearly → annual ÷ 12). The referred merchant gets nothing. Stacks with no cap, granted once per referred shop, no clawback. The old order-level `referral`/`referralDiscount` path in `priceOrder` was deleted — a customer typing a code at checkout for money off their food was never this program.
+**Referral reward** — a **subscription** reward, not an order discount (decided in #70, `docs/prd-referral-reward.md`). When a merchant who signed up under a member's code pays their **first invoice**, that referring member earns **one free month of their own subscription** — a credit on their Stripe customer balance, valued at what they pay today (yearly → annual ÷ 12). The referred merchant gets nothing. Stacks with no cap, granted once per referred shop, no clawback. The old order-level `referral`/`referralDiscount` path in `priceOrder` was deleted — a customer typing a code at checkout for money off their food was never this program.
 
 ## Shop customer
 
@@ -218,9 +217,9 @@ One shop's record of one person who orders from it. **Not a `Customer`** — tha
 
 **Tags offer, they do not normalise** (#150). The drawer suggests every tag the shop has already written — `shopTags` on the list response, folded in the pure module from the records it has already loaded, so the vocabulary costs no second query and is neither filtered nor paged (it is what the tag filter *chooses from*). Suggestions match the draft case-insensitively, so a merchant halfway through `vip` is shown the `VIP` they used last time and can avoid the collision while it is still avoidable. What the platform does **not** do is lowercase on write: a tag is the merchant's own label in their own words, and silently rewriting it would merge two tags they may have meant to keep apart with no way back — the *refuse or offer, never normalise* instinct the cart key states under *Order pricing*. Consequence accepted: `vip` and `VIP` can still both exist, and merging them is a separate story.
 
-**The row is the choosing** (#205). That vocabulary is drawn as chips under the customer list, one tag active at a time, and clicking the active chip clears it — there is no separate clear control. Capped at ten with a `+N more`, and the selected tag is always drawn even when it sorts past the cap: a filter the merchant cannot see is a list that reads as missing rows. Before it existed the only way to set the filter was to open a customer's drawer and click one of *their* tags, so a merchant looking for their VIPs had to find a VIP first. Each customer's own tags also sit **on their row**, first three then a `+N`, as display and not a second control — the row already opens the drawer, and one pointer must not have two outcomes. **Basic shops see neither the row nor the column**, which inverts the shown-but-locked rule the sort control beside it follows and is the one place it should invert — tags survive a downgrade hidden-not-deleted, so a disabled row would print the very vocabulary the downgrade hides.
+**The row is the choosing** (#205). That vocabulary is drawn as chips under the customer list, one tag active at a time, and clicking the active chip clears it — there is no separate clear control. Capped at ten with a `+N more`, and the selected tag is always drawn even when it sorts past the cap: a filter the merchant cannot see is a list that reads as missing rows. Before it existed the only way to set the filter was to open a customer's drawer and click one of *their* tags, so a merchant looking for their VIPs had to find a VIP first. Each customer's own tags also sit **on their row**, first three then a `+N`, as display and not a second control — the row already opens the drawer, and one pointer must not have two outcomes. Every shop sees both the row and the column.
 
-The list itself stays **free** — it ships to basic shops today and withdrawing it would be a regression wearing a feature's clothes. Notes, tags, tag filtering and sorting are **Pro**. On stepping down, notes and tags **survive, hidden not deleted**, following `promo_price` rather than `vouchers.active`: a merchant's own words are their record, not a platform artifact (see *Plan entitlement*).
+The list, its search, its sorting, its tag filter and the notes and tags themselves are one feature and every shop has all of it. Sorting, filtering, notes and tags were the paid half until the tier went (#222).
 
 ## Business nature
 
@@ -238,7 +237,7 @@ A marketing page written for ONE trade, served at `/for/<slug>` — `home-bakers
 
 **"Use case" is the domain term. `verticals.ts` is a different thing that shares the English word "vertical".** That file holds the five WORDS the landing hero rotates through (`food`, `bakes`, `art`, `clothes`, `crafts`) with their measured slot widths; it addresses no page and has no route. A use case is a page. Do not merge them, and do not describe a `USE_CASES` entry as a vertical in code.
 
-**They describe the same product, not a plan or a bundle.** No shop type is gated, priced or provisioned differently; the pages differ in which shipped behaviour they lead with. That is why every claim on them is checked against `public/llms.txt`, which is the authoritative feature list — a sentence there that the software does not do is a promise the software then has to keep.
+**They describe the same product, not a bundle.** No shop type is gated, priced or provisioned differently; the pages differ in which shipped behaviour they lead with. That is why every claim on them is checked against `public/llms.txt`, which is the authoritative feature list — a sentence there that the software does not do is a promise the software then has to keep.
 
 **Adding one touches six places**, three of them derived from `USE_CASES` and three by hand: `ROUTE_META` (spread), the router (`.map`), the prerender list (spread), plus `vercel.json`'s rewrite, `sitemap.xml` and `llms.txt`. Of the hand-written three, only the sitemap and the rewrite/llms.txt joins are test-pinned — see `vercelRewrites.test.ts`, `llmsTxt.test.ts`, `sitemap.test.ts`.
 
@@ -325,11 +324,11 @@ straight from the browser and GoTrue's own default floor is 6.
 
 ## Billing lifecycle
 
-A merchant's platform-subscription journey. Basic signup is cardless and
-**provisions its own trial**: `POST /api/merchants` creates the 7-day trialing
-Stripe subscription via `startCardlessTrial` (`trialSubscription.ts` — the only
-place a trial is ever granted) and activates the shop, so the clock starts at
-signup. A shop stays `pending` only when that provisioning did not finish: its
+A merchant's platform-subscription journey. **Signup is cardless and provisions
+its own trial** — every signup, with no second door: `POST /api/merchants`
+creates the 7-day trialing Stripe subscription via `startCardlessTrial`
+(`trialSubscription.ts` — the only place a trial is ever granted) and activates
+the shop, so the clock starts at signup. A shop stays `pending` only when that provisioning did not finish: its
 owner retries with `POST /api/merchants/:id/start-trial`, and
 `POST /api/admin/approve-merchant` is the admin-side fallback for one nobody
 retried. While `trialing`, the dashboard shows a
@@ -371,127 +370,73 @@ are surveyed; no backfill for trials that already ended. Superadmins read
 responses on their own admin page, separate from `AdminFeedback`'s complaint
 inbox.
 
-## Plan entitlement
+## Subscription
 
-Which **features** a shop may use, as opposed to whether its subscription is
-*live* (that is *Billing lifecycle* above). Two tiers — `basic` and `pro` — and
-the entitlement signal is a single field, **`merchants.plan === 'pro'`**. It is
-trustworthy because it is the field, not a request: the browser holds no grant
-on `merchants`, and `plan` is written in exactly four places — signup (the
-owner's chosen tier, `POST /api/merchants`), superadmin `comp-merchant`, its
-reverse `uncomp-merchant`, and the webhook reconciliation below.
-**An owner request never writes it** — the same
-rule that governs `orders.user_id` and `promo_sold`. A shop cannot self-upgrade
-to Pro; a paid Pro checkout or a comp is the only way the field becomes `'pro'`
-on a live shop.
+**One plan.** There is no tier, and entitlement is not a field: a shop that is
+**`active` can use everything the product does**, and a shop that is not is shut
+— its storefront refuses every order and its dashboard is locked. Nothing in the
+hot paths asks about billing, which is what the tier gate was always careful not
+to make them do. See [ADR 0016](docs/adr/0016-one-plan.md).
 
-**The tier is derived from the money, not from the signup body.** Signup writes a
-**provisional** plan — the tier the owner picked — and the first webhook after
-money moves confirms or corrects it: `reconcileMerchantPlan` (`billing.ts`) reads
-the price currently on the Stripe subscription, maps it back through
-`planFromPriceId` (`pricing.ts`, the inverse of `priceId`) and writes both `plan`
-and `billing_cycle`. It runs on `customer.subscription.updated` (the Customer
-Portal's plan swap) and `checkout.session.completed` (paid signup), so a body
-claiming `plan: 'pro'` that checked out at the basic price lands on basic. An
-**unrecognised price is a no-op**, never a downgrade: guessing there would
-silently strip a paying Pro shop of everything it pays for, and a stale column is
-the cheaper failure (the same fail-closed instinct as `hasProAccess`). See
-[ADR 0004](docs/adr/0004-plan-entitlement-follows-the-stripe-price.md).
+**The price is Stripe's, and only the cycle is ours to record.** `env.prices` is
+two MYR Price IDs keyed by billing cycle, and `reconcileBillingCycle`
+(`billing.ts`) reads the price currently on the subscription and maps it back
+through `cycleFromPriceId` (`pricing.ts`, the inverse of `priceId`) to write
+`merchants.billing_cycle`. It runs on `customer.subscription.updated` and
+`checkout.session.completed`, so the column follows the money rather than the
+signup body. An **unrecognised price is a no-op**: guessing there would write a
+renewal date the shop is not on, and a stale column is the cheaper failure.
 
-**The gate is the backend, not the UI.** `requirePro` chains after
-`requireMerchantOwns` (reusing the merchant it already loaded, superadmin
-bypassing) and **refuses** a non-Pro caller with `403 requires_pro`. It guards
-the three Pro features that exist today: Telegram alerts (`PUT …/secret`),
-vouchers (`POST`/`DELETE …/vouchers`) and product promos. Promos are the
-awkward one — they ride the **shared** product upsert (`PUT …/products/:id`,
-which basic shops legitimately use), so the gate lives *inside* that handler: a
-non-Pro row carrying a non-null `promo_price` is **refused, not silently
-stripped** (the cart-key rule — refuse, don't normalise). The frontend
-show-but-locks the same features (Pro badge + upgrade CTA) so the 403 is never
-hit blind, but that is UX; the refusal is what actually shuts the door.
+**Every amount on every page comes from Stripe at runtime** through
+`GET /api/pricing`, cached briefly. No price is written down in this repo —
+`FALLBACK_PRICING` in `usePlatformPricing.ts` is a last-resort render value, not
+a quote — so changing what a shop pays is a Stripe dashboard action and nothing
+else.
 
-**Winding down happens here, not in the portal.** Three routes —
-`POST /api/billing/{cancel,downgrade,resume}` — cancel at period end, schedule
-the step down to Basic at period end, and undo whichever is pending. They are
+**Winding down happens here, not in the portal.** Two routes,
+`POST /api/billing/{cancel,resume}`, cancel at period end and undo that. They are
 ours rather than Stripe's because they land on a **period boundary**: cancelling
-is a flag, and the downgrade is a two-phase Subscription Schedule with
-`proration_behavior: 'none'`, so no money moves at the click and there is nothing
-a payment screen must explain. What that buys is the sentence the portal cannot
-say — *cancelling suspends this shop, on this date*. The **upgrade** still goes
-through the portal, which owns the mid-period proration argument.
-`merchant_billing.cancel_at_period_end` is what makes a winding-down subscription
-visible at all: Stripe leaves `status` on `'active'` until the day it ends, which
-is how the Subscription tab once promised "Renews on 1 Sep" to a merchant whose
-shop was suspended on 1 Sep. `pending_plan` is **intent, never entitlement** — a
-shop that has scheduled a downgrade keeps every Pro feature until the period it
-paid for runs out, and nothing may gate on it. See
+is a flag, so no money moves at the click and there is nothing a payment screen
+must explain. What that buys is the sentence the portal cannot say — *cancelling
+suspends this shop, on this date*. `merchant_billing.cancel_at_period_end` is
+what makes a winding-down subscription visible at all: Stripe leaves `status` on
+`'active'` until the day it ends, which is how the Subscription tab once promised
+"Renews on 1 Sep" to a merchant whose shop was suspended on 1 Sep. See
 [ADR 0005](docs/adr/0005-winding-down-happens-in-the-dashboard.md).
 
-**A comp is Pro with no Stripe behind it**, and `merchant_billing.comped` is that
+**A comp means billing does not apply**, and `merchant_billing.comped` is that
 fact rather than an inference from a shape. Granted by superadmin
 `comp-merchant` (partners, staff, promo shops) and revoked by `uncomp-merchant`,
-which clears the flag and drops the shop to Basic. The column is deliberately
-apart from `status`: **`status` stays what Stripe says, `comped` stays what we
-say.** Everything a comped shop cannot do keys off it — the Subscription tab
-turns every billing action off (`subscriptionTabState`), and the backend refuses
-`/api/checkout`, `/api/billing/portal` and all three wind-down routes with
-`409 shop_is_comped` **before any Stripe call**. Two invariants earned the hard
-way: comp **clears `stripe_customer_id`** (a stale one is what sent a test-mode
-id to Stripe under a live key and answered 502) but **keeps
-`stripe_subscription_id`**, which `canStartTrial` reads as the one-trial-ever
-record; and un-comp winds `status`/`current_period_end` back to null, because
-those were comp's own writes and leaving them makes checkout refuse the shop for
-a subscription it never had. Comping a shop that really is paying is refused
-outright (`409 has_live_subscription`) — cancel in Stripe first.
+which clears the flag so the shop has to pay like any other. The column is
+deliberately apart from `status`: **`status` stays what Stripe says, `comped`
+stays what we say.** Everything a comped shop cannot do keys off it — the
+Subscription tab turns every billing action off (`subscriptionTabState`), the
+reconciliation sweep skips it, and the backend refuses `/api/checkout`,
+`/api/billing/portal` and both wind-down routes with `409 shop_is_comped`
+**before any Stripe call**. Two invariants earned the hard way: comp **clears
+`stripe_customer_id`** (a stale one is what sent a test-mode id to Stripe under a
+live key and answered 502) but **keeps `stripe_subscription_id`**, which
+`canStartTrial` reads as the one-trial-ever record; and un-comp winds
+`status`/`current_period_end` back to null, because those were comp's own writes
+and leaving them makes checkout refuse the shop for a subscription it never had.
+Comping a shop that really is paying is refused outright
+(`409 has_live_subscription`) — cancel in Stripe first.
 
-**Stepping down to Basic revokes the artifacts, once, at the transition.**
-`revokeProArtifacts` (called from `reconcileMerchantPlan` only when the tier
-actually moves `pro → basic`) sets `vouchers.active = false` in bulk and moves a
-running promo's `promo_end` to now — the configured `promo_price` survives as the
-merchant's own record, and `promoState` already reads a past end date as no
-promo. Telegram is the exception: it is gated at the notify route rather than
-revoked, because the token is a **credential, not an artifact** and deleting it
-would make re-upgrading mean re-doing BotFather. The cutoff is **not symmetric** —
-re-subscribing does not resurrect dead vouchers or restart ended sales.
+**Lapsing suspends, and stops there.** `lapseMerchant` writes
+`status = 'suspended'` and nothing else. A closed shop's vouchers, sale prices,
+menu options and categories are unreachable rather than revoked, and they work
+again the day it resubscribes — there is no tier left for the shop to be dropped
+to, and nothing to switch off on the way out.
 
-**Reads stay open and the hot paths are untouched.** Voucher redemption and promo
-pricing still carry no plan check. Redemption filters `vouchers.active` — a
-**column filter on a row the transaction was already reading**, which is the
-whole reason the cutoff is shaped as data rather than as a tier lookup: pushing
-plan logic into the priced order transaction is exactly the load-bearing code the
-sections above guard. The Telegram send is the one place that does read the tier,
-and it can afford to, being a separate call made *after* the order has landed.
-The advertised Pro
-features that do **not** yet exist — email order alerts, multiple shops,
-custom-link edit UI, priority support — are gated when they are built, not
-before; a lock on an unreachable feature is dead code.
-
-**Upgrading is Stripe's job; we only listen — by one of two routes, decided by
-whether there is a subscription to change.** With one (the usual case: a shop on
-its cardless trial) the **Customer Portal** swaps the price; that is
-configured in the Stripe dashboard rather than in this repo, so a fresh Stripe
-environment without plan-switching configured makes upgrade silently do nothing.
-Without one — an active shop that was activated but not re-trialled
-(`canStartTrial` false), or one whose subscription lapsed — **Checkout** sells a
-new subscription outright. The two can never both apply: `POST /api/checkout`
-refuses exactly `trialing`/`active`/`past_due`, the complement of the portal's
-population, so neither path can create a second subscription. **Settings → Subscription** is the shop-side
-screen: it shows the plan, price and renewal date, offers whichever of the two
-routes applies, and every Pro lock's CTA routes there rather than firing the
-portal blind, because the portal 404s for a shop with no Stripe customer. **A downgrade takes effect at the end of the paid
-period** — nothing here implements that: the schedule lives in Stripe, and
-because the reconciliation reads the price *currently* on the subscription, a
-pending change simply does not register until it applies.
-
-This section once closed by recording the opposite — that a shop dropping to
-basic kept its Pro artifacts running, as a known leak whose honest fix needed a
-`vouchers.active` column the table did not have. The column landed
-(`20260724120000_plan_downgrade_and_cancel.sql`) and `revokeProArtifacts` is
-that fix; the leak is closed. What survived the fix is the *reason* it was ever
-tolerated, which is still the binding rule: the cutoff is shaped as **data the
-hot paths already read** — a column filter on a row the order transaction was
-loading anyway — precisely so that closing it needed no plan check inside the
-priced order transaction. That remains the thing that must not happen.
+**Buying is Stripe's job, by one of two routes, decided by whether there is a
+subscription to change.** With one, the **Customer Portal** manages the card and
+the invoices. Without one — a shop whose comp was revoked, or whose subscription
+lapsed before a superadmin reopened it — **Checkout** sells a new subscription
+outright. The two can never both apply: `POST /api/checkout` refuses exactly
+`trialing`/`active`/`past_due`, the complement of the portal's population, so
+neither path can create a second subscription. **Settings → Subscription** is the
+shop-side screen: it shows the price and the renewal date, and offers whichever
+of the two applies.
 
 ## Storage buckets
 

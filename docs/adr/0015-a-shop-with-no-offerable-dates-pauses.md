@@ -1,7 +1,14 @@
 # 15. A shop with no offerable dates pauses, and never falls back to a window nobody chose
 
 Date: 2026-08-08
-Status: Accepted and implemented (#210).
+Status: Accepted and implemented (#210). **Amended by [ADR 0016](0016-one-plan.md).**
+
+> The pause survives as a state; its cause does not. `pauseFulfilment` was written only by the
+> step down from Pro, and there is no step down (#222) — so nothing can pause a shop this way
+> again. `needs_review` and every reader of it are kept deliberately: a row written before the
+> change still carries it, and dropping the reader would silently resume selling on a rolling
+> window its owner never agreed to, which is the exact failure this ADR exists to prevent. The
+> Fulfilment tab's Confirm control is now the only thing that clears it.
 
 ## Context
 

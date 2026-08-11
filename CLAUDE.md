@@ -31,7 +31,7 @@ pnpm --filter @bitetime/backend db:push      # HUMAN ONLY — writes to PRODUCTI
 stripe listen --forward-to http://localhost:8787/api/stripe/webhook   # REQUIRED for any local billing work
 ```
 
-**Anything that involves paying must have `stripe listen` running before the payment.** Stripe cannot reach `localhost`, and every post-payment effect is webhook-driven — `merchant_billing` (subscription id, status), `merchants.plan` reconciliation (#112) and the pending→active flip all happen in `POST /api/stripe/webhook` and nowhere else. Without the forwarder, Checkout completes, Stripe charges the card, and the app changes **nothing**: the merchant stays basic, and the only trace is the `stripe_customer_id` that `/api/checkout` wrote before redirecting. It looks exactly like a broken feature.
+**Anything that involves paying must have `stripe listen` running before the payment.** Stripe cannot reach `localhost`, and every post-payment effect is webhook-driven — `merchant_billing` (subscription id, status), the `merchants.billing_cycle` reconciliation and the pending→active flip all happen in `POST /api/stripe/webhook` and nowhere else. Without the forwarder, Checkout completes, Stripe charges the card, and the app changes **nothing**: the shop stays shut, and the only trace is the `stripe_customer_id` that `/api/checkout` wrote before redirecting. It looks exactly like a broken feature.
 
 The CLI prints its own signing secret on startup; it must equal `STRIPE_WEBHOOK_SECRET` in `apps/backend/.env` or every event is rejected as an invalid signature (a `<-- [400]` in the listener's own output). Started late? `stripe events resend <evt_id>` replays one — the handlers upsert, so a replay is safe. And check the listener is actually still up (`ps -eo command | grep stripe`) before concluding the code is at fault: a dead forwarder and a broken handler look identical from the app.
 
@@ -80,7 +80,7 @@ Multi-merchant ordering SaaS. React 19 + Vite + React Router (`react-router-dom`
 | Path | Screen | Guard |
 |------|--------|-------|
 | `/` | marketing landing (`marketing/Landing.tsx`) | — |
-| `/pricing` | plans in full (`marketing/Pricing.tsx`) | — (prerendered; the landing page keeps a summary and links here, so the two are not one page's content at two URLs) |
+| `/pricing` | the plan in full (`marketing/Pricing.tsx`) | — (prerendered; the landing page keeps a summary and links here, so the two are not one page's content at two URLs) |
 | `/reset-password` | set a new password after a recovery link (`ResetPasswordPage.tsx`) | none — **deliberately top-level**: nested under `/s/:slug` the shell's status gate would swallow it, and a suspended shop must never lock a customer out of their own account. Role-blind; `?shop=<slug>` decides where they land afterwards |
 | `/s/:slug/*` | merchant storefront (`store/Storefront.tsx`) | `MerchantProvider` resolves shop by slug; gated on `status === 'active'` |
 | `/merchant/signup`, `/merchant/login` | shop signup / login | — |
@@ -99,7 +99,7 @@ Multi-merchant ordering SaaS. React 19 + Vite + React Router (`react-router-dom`
 
 Sign up with a shop name → auto slug: pinyin transliteration for Chinese names, `shop-<id>` fallback, uniqueness suffix (`-2`), reserved platform segments blocked (`RESERVED_SLUGS`: `s`, `admin`, `api`, `merchant`, …).
 
-New shops go live at **signup**: `POST /api/merchants` provisions the 7-day cardless trial itself (`startCardlessTrial` in `apps/backend/src/trialSubscription.ts`) and activates the shop. `pending` therefore means **provisioning did not finish** — a Pro shop waiting for Checkout, or a Basic shop whose Stripe call failed, which its owner retries via `POST /api/merchants/:id/start-trial`. `POST /api/admin/approve-merchant` survives as the admin-side fallback for a shop stuck there; it is no longer a gate anyone waits at, and moderation is reactive (suspend).
+New shops go live at **signup**: `POST /api/merchants` provisions the 7-day cardless trial itself (`startCardlessTrial` in `apps/backend/src/trialSubscription.ts`) and activates the shop. `pending` therefore means **provisioning did not finish** — the Stripe call failed — which its owner retries via `POST /api/merchants/:id/start-trial`. `POST /api/admin/approve-merchant` survives as the admin-side fallback for a shop stuck there; it is no longer a gate anyone waits at, and moderation is reactive (suspend).
 
 ### Data layer (`src/store.ts`)
 

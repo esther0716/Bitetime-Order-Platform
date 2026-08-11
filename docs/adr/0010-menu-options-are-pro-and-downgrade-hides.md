@@ -1,7 +1,13 @@
 # 10. Menu options are Pro, and downgrade hides rather than deletes
 
 Date: 2026-07-28
-Status: Accepted. Not yet implemented — the build is #145.
+Status: Accepted and implemented (#145). **Amended by [ADR 0016](0016-one-plan.md).**
+
+> Menu options are no longer Pro and no downgrade hides them — there is one plan (#222). What
+> survives is the reason `active` exists at all: it is the merchant's own Hide control and a soft
+> delete, and a *required* group switched off still takes its product off sale, because a product
+> whose mandatory question cannot be asked is unfulfillable rather than merely degraded. The bulk
+> `deactivateGroups` helper went with the revocation that called it.
 
 ## Context
 

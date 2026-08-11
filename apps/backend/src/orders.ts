@@ -682,10 +682,9 @@ async function claimVoucher(
   `
   const voucher = rows[0]
   // `active` is folded into the lookup rather than checked after it, so an inactive voucher is
-  // indistinguishable from a missing one here and reuses `voucher_not_found`. Vouchers are
-  // deactivated in bulk when a shop steps down from Pro (see revokeProArtifacts) — this is a
-  // column filter on a row the transaction was already reading, NOT a plan check on the order
-  // path, and the difference is the whole reason the cutoff is shaped this way.
+  // indistinguishable from a missing one here and reuses `voucher_not_found`. This is a column
+  // filter on a row the transaction was already reading, and it must stay one — a billing lookup
+  // on the checkout path is a slow or wrong answer costing a real order.
   if (!voucher) throw new OrderError('voucher_not_found')
 
   // One redemption per customer. A re-redeem is an error, never a silent no-op — the caller
