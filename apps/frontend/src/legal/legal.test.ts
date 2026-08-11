@@ -189,3 +189,54 @@ describe('advertising pixels', () => {
     expect(numbers).toEqual(Array.from({ length: PRIVACY.sections.length }, (_, i) => i + 1))
   })
 })
+
+// The shop's OWN pixel (#220). A different controller, a different document: the Terms bind the
+// merchant, and the privacy notice has to stop claiming no pixel can ever load on a storefront.
+describe('a shop’s own advertising pixel', () => {
+  const terms = TERMS.sections.flatMap(s => s.body).join(' ')
+  const privacy = PRIVACY.sections.flatMap(s => s.body).join(' ')
+
+  it('gives the merchant’s responsibility its own Terms section', () => {
+    const section = TERMS.sections.find(s => s.id === 'shop-tracking')
+    expect(section).toBeDefined()
+    expect(section!.body.length).toBeGreaterThan(0)
+  })
+
+  it('says the tracking is the shop’s and not ours', () => {
+    expect(terms).toContain('that tracking is yours and not ours')
+  })
+
+  it('puts disclosure and the platform’s own terms on the merchant', () => {
+    expect(terms).toContain('tell your own customers about it')
+    expect(terms).toContain('advertising platform\'s own terms')
+  })
+
+  // The signatures in pixels/track.ts are what enforce this — there is no parameter to pass a
+  // name or a number through. The sentence must not promise more than they hold, nor less.
+  it('states the limit on what is sent, matching what track.ts can send', () => {
+    expect(terms).toContain('the pages viewed on your storefront and the value of an order')
+    expect(terms).toContain('We do not send your customers\' names, contact numbers or addresses')
+  })
+
+  // A downgraded shop must always be able to switch its pixel off — the one place the write gate
+  // deliberately departs from ADR 0013. Promised here, enforced by `pixelIdsChanged`.
+  it('promises the pixel can be removed on any plan', () => {
+    expect(terms).toContain('remove your pixel at any time in your shop settings, whatever plan you are on')
+  })
+
+  it('numbers the terms sections 1..n with no gap and no repeat', () => {
+    const numbers = TERMS.sections.map(s => Number(s.heading.split('.')[0]))
+    expect(numbers).toEqual(Array.from({ length: TERMS.sections.length }, (_, i) => i + 1))
+  })
+
+  // The privacy notice used to say advertising cookies are set "never on a shop's storefront",
+  // full stop. True of OURS, and false as a whole the moment a merchant adds one of their own.
+  it('no longer reads as a promise that no pixel can load on a storefront', () => {
+    expect(privacy).toContain('A shop can also add its own advertising pixel to its storefront')
+    expect(privacy).toContain('its storefront asks you separately')
+  })
+
+  it('still promises OUR pixels stay off a storefront', () => {
+    expect(privacy).toContain('never on a shop\'s storefront')
+  })
+})

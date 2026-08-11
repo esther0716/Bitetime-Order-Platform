@@ -144,8 +144,23 @@ export const TERMS: LegalDocument = {
       ],
     },
     {
+      // The merchant-owned advertising pixels (#220). Its own section rather than a paragraph
+      // folded into section 9, because it is the one place these terms hand the shop a tool that
+      // makes it a data controller in its own right — and the obligations that come with it are
+      // the shop's, not ours. Wording kept plain enough that the Shop Settings help text can say
+      // the same thing in the merchant's own language without the two drifting apart.
+      id: 'shop-tracking',
+      heading: '10. Tracking you add to your shop',
+      body: [
+        'On a paid plan you can add your own advertising pixel — a Meta (Facebook) or TikTok pixel — to your storefront. If you do, that tracking is yours and not ours. You are the party responsible for it.',
+        'That means you must tell your own customers about it, obtain their consent where the law requires it, and keep to the advertising platform\'s own terms and policies. We show your customers a request for consent on your storefront and set nothing unless they agree, but that does not transfer the responsibility to us.',
+        'What we send to the platform you name is limited to the pages viewed on your storefront and the value of an order that is placed. We do not send your customers\' names, contact numbers or addresses to an advertising platform.',
+        'We do not check whether the pixel you enter is correct or belongs to you, and we cannot see what the platform does with what it receives. You can remove your pixel at any time in your shop settings, whatever plan you are on.',
+      ],
+    },
+    {
       id: 'availability',
-      heading: '10. Availability',
+      heading: '11. Availability',
       body: [
         'We work to keep TinyOrder available, but we do not promise it will be uninterrupted or error-free. We may need to take it down for maintenance, and parts of it depend on third-party services that can fail independently of us.',
         'Some features depend on services outside our control — messaging, email delivery and mapping among them. A failure in one of those is not a failure of the whole service.',
@@ -153,7 +168,7 @@ export const TERMS: LegalDocument = {
     },
     {
       id: 'liability',
-      heading: '11. Limitation of liability',
+      heading: '12. Limitation of liability',
       body: [
         'Nothing in these terms limits liability that cannot lawfully be limited, including liability for death or personal injury caused by negligence, or for fraud.',
         'Subject to that, we are not liable for lost profits, lost sales, lost data or indirect or consequential loss, and our total liability to you in any twelve-month period is limited to the amount you paid us for the subscription in that period.',
@@ -162,21 +177,21 @@ export const TERMS: LegalDocument = {
     },
     {
       id: 'changes',
-      heading: '12. Changes to these terms',
+      heading: '13. Changes to these terms',
       body: [
         'We may update these terms. The date at the top of this page shows when they last changed. Where a change materially affects you, we will tell you before it takes effect. Continuing to use TinyOrder after that means you accept the updated terms.',
       ],
     },
     {
       id: 'governing-law',
-      heading: '13. Governing law',
+      heading: '14. Governing law',
       body: [
         'These terms are governed by the laws of Malaysia, and the courts of Malaysia have exclusive jurisdiction over any dispute arising from them.',
       ],
     },
     {
       id: 'contact-terms',
-      heading: '14. Contact',
+      heading: '15. Contact',
       body: [
         `Questions about these terms go to ${email}.`,
       ],
@@ -236,7 +251,11 @@ export const PRIVACY: LegalDocument = {
       body: [
         'We use a small amount of storage in your browser to keep the service working — to keep you signed in, to remember the language you chose, and to remember a choice you made at a shop\'s checkout. These are necessary for the service to work and are not used for advertising.',
         'We also measure how our pages are used. That measurement is done by our own systems and by our hosting provider, does not identify you, and does not follow you to other websites.',
-        'Advertising cookies are separate, and we only ever set them on our own marketing pages — never on a shop\'s storefront. We ask you before any of them are set, and we set none of them if you decline or if you do not answer. Your answer is remembered in your own browser, so a different browser or device asks you again.',
+        'Advertising cookies are separate. Ours are only ever set on our own marketing pages, and never on a shop\'s storefront. We ask you before any of them are set, and we set none of them if you decline or if you do not answer. Your answer is remembered in your own browser, so a different browser or device asks you again.',
+        // #220. This paragraph is the reason the sentence above had to be split: the claim "never
+        // on a shop's storefront" is still true of OUR pixels and false of the sentence a reader
+        // takes from it, the moment a shop adds one of its own.
+        'A shop can also add its own advertising pixel to its storefront, run by that shop through its own advertising account. Where a shop has done so, its storefront asks you separately, sets nothing unless you agree, and your answer there applies to that shop alone. That tracking belongs to the shop and not to us — the shop is responsible for it, and its own privacy practices apply.',
       ],
     },
     {
