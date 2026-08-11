@@ -85,6 +85,14 @@ export const PRICING_TIERS: PricingTier[] = [
         zh: '只在你勾选的日期接单——最多可预订未来 90 天',
       },
       {
+        // "your own pixel, your own ad account" is the load-bearing half (#220): the shop is the
+        // data controller for this tracking, which is what the Terms section says and what makes
+        // the feature honest to sell. A line promising "ad tracking" without it would read as
+        // TinyOrder doing the advertising.
+        en: 'Know which Facebook and TikTok ads bring orders — your own pixel, your own ad account',
+        zh: '看清哪些 Facebook 与 TikTok 广告带来订单——用你自己的像素和广告账户',
+      },
+      {
         en: 'Priority support — your questions jump the queue',
         zh: '优先支持——你的问题优先处理',
       },
@@ -220,6 +228,16 @@ export const PLAN_COMPARISON_GROUPS: ComparisonGroup[] = [
       {
         id: 'promos',
         label: { en: 'Sale prices on your products', zh: '产品促销价' },
+        basic: false,
+        pro: true,
+      },
+      {
+        // A genuine yes/no — the whole feature is absent on Basic, so a ✓/– pair flattens
+        // nothing. Enforced on the write (`pixelIdsChanged`, #220) and on the load (the
+        // storefront reads `plan === 'pro'` before a script exists), which is what this file's
+        // header asks of every row.
+        id: 'adpixel',
+        label: { en: 'Your own Meta and TikTok ad pixel', zh: '自有 Meta 与 TikTok 广告像素' },
         basic: false,
         pro: true,
       },
