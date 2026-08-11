@@ -202,7 +202,12 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
             <RadioGroupItem value="custom" id="ff-mode-custom" disabled={!pro} className="mt-[3px]" />
             <span>
               <span className="flex items-center gap-2 text-[14px] font-medium text-foreground">
-                {t('Specific dates', '指定日期')} <ProBadge />
+                {/* Marks what the shop CANNOT have, so it goes when the shop can. Every other
+                    part of this block is already gated — the radio, the cursor, the dimming,
+                    the upgrade link — and a badge left behind tells a paying merchant the
+                    feature they just paid for is still locked. Same shape as CustomersView's
+                    two badges and the settings tab rail. */}
+                {t('Specific dates', '指定日期')} {!pro && <ProBadge />}
               </span>
               <span className="block text-[12px] text-muted-foreground leading-[1.5]">
                 {t('You tick the exact dates you deliver on. Days of notice and closed days do not apply.',
