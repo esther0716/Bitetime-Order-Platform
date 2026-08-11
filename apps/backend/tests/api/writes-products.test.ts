@@ -6,7 +6,6 @@
 // row. See CLAUDE.md → Backend, Global Constraint 2.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { app } from '../../src/app.js'
-import { revokeProArtifacts } from '../../src/billing.js'
 import { makeUser, seedMerchant, seedProduct, serviceClient, resetMerchant } from '../rls/helpers.js'
 
 async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
@@ -616,82 +615,5 @@ describe('menu categories — both endpoints', () => {
     const { data } = await serviceClient()
       .from('products').select('category_id').eq('id', productId).single()
     expect(data!.category_id).toBe('long-deleted')
-  })
-})
-
-// The downgrade half of ADR 0013, which nothing else exercises: `revokeProArtifacts` is what a
-// step down to Basic runs, and its category clause is the one that must HIDE without dismantling.
-describe('revokeProArtifacts — menu categories', () => {
-  let shop: string
-  let productId: string
-
-  beforeAll(async () => {
-    await resetMerchant('cat-revoke-shop')
-    const owner = await makeUser('cat-revoke@example.com', 'password123')
-    const { userId } = await tokenOf(owner)
-    shop = await seedMerchant({ slug: 'cat-revoke-shop', owner_id: userId })
-    productId = crypto.randomUUID()
-    await serviceClient().from('products')
-      .insert({ id: productId, merchant_id: shop, name: 'Roll', price: 10, active: true, category_id: 'c1' })
-  })
-
-  afterAll(async () => { await resetMerchant('cat-revoke-shop') })
-
-  it('hides every category, keeps the list, and takes NO product off sale', async () => {
-    await serviceClient().from('merchants').update({
-      product_categories: [
-        { id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: true },
-        { id: 'c2', name: 'Tea', active: true },
-      ],
-    }).eq('id', shop)
-
-    await revokeProArtifacts(shop)
-
-    const { data } = await serviceClient()
-      .from('merchants').select('product_categories').eq('id', shop).single()
-    // Hidden, never deleted — names, Chinese names and ORDER all survive, because a shop that
-    // stopped paying must be downgraded rather than dismantled.
-    expect(data!.product_categories).toEqual([
-      { id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: false },
-      { id: 'c2', name: 'Tea', active: false },
-    ])
-
-    // A category is decoration, not a fulfilment requirement — unlike a required option group,
-    // it takes nothing off sale. The product keeps its id and falls to the trailing block.
-    const { data: p } = await serviceClient()
-      .from('products').select('active, category_id').eq('id', productId).single()
-    expect(p!.active).toBe(true)
-    expect(p!.category_id).toBe('c1')
-  })
-
-  // A replayed webhook must not re-hide a category the merchant has since switched back on —
-  // the same property the voucher revoke gets from filtering on `active = true`.
-  it('is idempotent: a replay leaves a re-shown category alone', async () => {
-    await serviceClient().from('merchants').update({
-      product_categories: [{ id: 'c1', name: 'Cakes', active: false }],
-    }).eq('id', shop)
-    // The merchant is Basic and switches one back on (they cannot, but a re-upgrade then a
-    // second lapse reaches the same state — this asserts the filter, not the UI).
-    await serviceClient().from('merchants').update({
-      product_categories: [{ id: 'c1', name: 'Cakes', active: false }, { id: 'c2', name: 'Tea', active: true }],
-    }).eq('id', shop)
-
-    await revokeProArtifacts(shop)
-    await revokeProArtifacts(shop)
-
-    const { data } = await serviceClient()
-      .from('merchants').select('product_categories').eq('id', shop).single()
-    expect(data!.product_categories).toEqual([
-      { id: 'c1', name: 'Cakes', active: false },
-      { id: 'c2', name: 'Tea', active: false },
-    ])
-  })
-
-  it('does nothing to a shop that never authored a category', async () => {
-    await serviceClient().from('merchants').update({ product_categories: [] }).eq('id', shop)
-    await revokeProArtifacts(shop)
-    const { data } = await serviceClient()
-      .from('merchants').select('product_categories').eq('id', shop).single()
-    expect(data!.product_categories).toEqual([])
   })
 })

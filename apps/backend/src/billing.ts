@@ -1,8 +1,3 @@
-import {
-  optionGroupsFromRow, deactivateGroups, hasActiveGroup, hasRequiredGroup,
-  menuCategoriesFromRow, deactivateCategories,
-  fulfilmentConfig, pauseFulfilment, resumeFulfilment, type FulfilmentConfig,
-} from '@bitetime/shared'
 import type Stripe from 'stripe'
 import { admin } from './supabase.js'
 import { env } from './env.js'
@@ -69,184 +64,6 @@ export async function reconcileBillingCycle(merchantId: string, sub: Stripe.Subs
 }
 
 /**
- * Stop the Pro artifacts a shop leaves behind when it steps down to Basic.
- *
- * #110 gated only the WRITES — a Basic shop cannot create a voucher or set a promo price — which
- * left the reverse direction open: a shop that had been Pro kept its vouchers redeemable and its
- * promos discounting, indefinitely, because the hot paths are plan-blind by design.
- *
- * They stay plan-blind. This revokes the DATA, once, at the transition, so that neither the
- * priced order transaction nor the storefront ever has to ask what tier a shop is on — the
- * constraint ADR 0004 named as the reason this was deferred rather than bodged. A plan lookup
- * inside `placeOrder`'s transaction would put billing state on the checkout path, where a slow
- * or wrong answer costs an order.
- *
- * Deliberately NOT symmetric with an upgrade. Re-subscribing to Pro does not resurrect old
- * vouchers or restart expired sales: those are decisions with customer-visible money attached,
- * and a merchant who wants them back can say so. Silent resurrection is the worse failure.
- *
- * Telegram is not handled here. The token is a credential, not an artifact — deleting it would
- * make a re-upgrade mean re-doing BotFather. That send is gated at the notify route instead,
- * which is safe precisely because notify is a separate call AFTER the order lands, never part
- * of the order transaction.
- */
-export async function revokeProArtifacts(merchantId: string) {
-  const at = new Date().toISOString()
-
-  // Vouchers already handed to customers keep existing — the row, its redemption history and
-  // its code all survive — they simply stop being redeemable. Filtering on `active` means only
-  // live ones are touched, so this is idempotent.
-  const { error: voucherErr } = await admin
-    .from('vouchers').update({ active: false }).eq('merchant_id', merchantId).eq('active', true)
-  if (voucherErr) throw voucherErr
-
-  // A running sale is ended by moving its end date to now rather than by clearing `promo_price`:
-  // the merchant's configured price survives for reference, the product reads as "promo ended
-  // <date>", which is true, and `promoState` already treats a past end date as no promo. Sales
-  // that had already finished are excluded so their historical end dates are not rewritten.
-  const { error: promoErr } = await admin
-    .from('products')
-    .update({ promo_end: at })
-    .eq('merchant_id', merchantId)
-    .not('promo_price', 'is', null)
-    .or(`promo_end.is.null,promo_end.gt.${at}`)
-  if (promoErr) throw promoErr
-
-  await revokeOptionGroups(merchantId)
-  await revokeMenuCategories(merchantId)
-  await pauseCustomDates(merchantId)
-}
-
-/**
- * Read the shop's config, apply a pure fulfilment transform, write it back only if it changed.
- *
- * The read-modify-write is safe because both transitions fire on a PLAN CHANGE, which
- * `reconcilePlan` detects by reading the previous plan — a renewal replaying the same event does
- * not reach here. The transforms return null when there is nothing to do, so a replay that does
- * reach here still costs zero writes.
- *
- * The whole `config` bag is spread back, not replaced: shipping rates and menu categories live in
- * the same jsonb, and a write that named only `fulfilment` would delete them.
- */
-async function applyFulfilment(
-  merchantId: string,
-  transform: (cfg: FulfilmentConfig) => FulfilmentConfig | null,
-) {
-  const { data } = await admin.from('merchants').select('config').eq('id', merchantId).maybeSingle()
-  const config = (data?.config ?? {}) as Record<string, unknown>
-  const next = transform(fulfilmentConfig(config))
-  if (!next) return
-  const { error } = await admin
-    .from('merchants')
-    .update({ config: { ...config, fulfilment: next } })
-    .eq('id', merchantId)
-  if (error) throw error
-}
-
-/**
- * Step down: custom order dates revert to the rolling window, PAUSED until the owner confirms.
- *
- * The pause is the point. Reverting alone would resume a window the merchant never agreed to —
- * very possibly the untouched 0/14/none default — and start taking same-day orders on their
- * behalf. See ADR 0015.
- */
-export const pauseCustomDates = (merchantId: string) => applyFulfilment(merchantId, pauseFulfilment)
-
-/**
- * Step up: the shop's own dates come back and the pause lifts.
- *
- * THE ONLY THING IN THIS CODEBASE THAT RETURNS ON A RE-SUBSCRIBE. Vouchers, promos, option groups
- * and menu categories all stay revoked deliberately (ADR 0010); the difference is that this
- * dormant state is a stopped shop rather than a dormant artifact, and there is nothing ambiguous
- * to decide on the way back — these are the merchant's own dates, unchanged. See ADR 0015.
- */
-export const restoreCustomDates = (merchantId: string) => applyFulfilment(merchantId, resumeFulfilment)
-
-/**
- * Switch a shop's menu sections off (ADR 0013).
- *
- * `revokeOptionGroups`' sibling, and cheaper in the one way that matters: NO PRODUCT IS TOUCHED.
- * A category is decoration, not a fulfilment requirement — a cake whose heading disappeared is
- * still priced, still in stock, still sellable — so ADR 0010's second clause has no analogue
- * here. Every category inactive is precisely the uncategorized shop: one flat menu, which is what
- * every shop had before this feature existed.
- *
- * Nothing is destroyed, for the reason the two revocations above give: the list lives in a jsonb
- * column, so a delete would be unrecoverable and a shop that stopped paying would be dismantled
- * rather than downgraded. The merchant's own Hide toggle writes this same flag, which is what
- * makes a re-upgrade need no resurrection path — they switch them back on.
- *
- * Idempotent by skipping a shop with nothing active left, exactly as the voucher update filters
- * `active = true`: a replayed webhook must not re-hide a category the merchant has since shown.
- * One row, so no paging — the list is capped at 20 and lives on the merchant.
- */
-async function revokeMenuCategories(merchantId: string) {
-  const { data, error } = await admin
-    .from('merchants').select('product_categories').eq('id', merchantId).single()
-  if (error) throw error
-  const categories = menuCategoriesFromRow(data?.product_categories)
-  if (!categories.some(cat => cat.active)) return
-  const { error: err } = await admin
-    .from('merchants').update({ product_categories: deactivateCategories(categories) })
-    .eq('id', merchantId)
-  if (err) throw err
-}
-
-/**
- * Switch a shop's menu options off, and take the products that cannot be sold without them off
- * sale with it (#145, ADR 0010).
- *
- * The same shape as the two revocations above and for the same reason: NOTHING is destroyed. The
- * groups keep their windows, their options and their deltas, and `validateSelections` already
- * ignores an inactive group — so the storefront and the order transaction never ask what tier
- * this shop is on. ADR 0008 put the groups in a jsonb column, so a delete here would be
- * unrecoverable: a shop that stopped paying would not be downgraded, it would be dismantled.
- *
- * A product carrying a REQUIRED group also goes inactive. With its question switched off it would
- * otherwise sell a six-muffin box with no flavours chosen, leaving the merchant guessing what to
- * pack — unfulfillable rather than degraded. A product whose groups are all optional keeps
- * selling and simply loses the upsell.
- *
- * Idempotent by filtering on there still being an ACTIVE group, exactly as the voucher update
- * filters `active = true`: a replayed webhook must not switch off a product the merchant has
- * since switched back on. Not symmetric either — re-subscribing resurrects nothing.
- */
-async function revokeOptionGroups(merchantId: string) {
-  // PAGED, because "give me all of this shop's products" is the request shape CONTEXT.md ->
-  // *Merchant order reads* rules out: PostgREST caps a response at `max_rows` and reports the
-  // truncation only in a header, so an unbounded read here would silently skip a large menu's
-  // tail — leaving those products selling questions the shop no longer pays for, with nothing
-  // to show it happened. The rule is about the shape of the request, not about the number.
-  for (let from = 0; ; from += REVOKE_PAGE) {
-    const { data, error } = await admin
-      .from('products').select('id, active, option_groups')
-      .eq('merchant_id', merchantId)
-      .order('id')
-      .range(from, from + REVOKE_PAGE - 1)
-    if (error) throw error
-    const rows = data ?? []
-    if (rows.length === 0) return
-    await revokePage(rows)
-    if (rows.length < REVOKE_PAGE) return
-  }
-}
-
-/** One page of products, at a size comfortably under any `max_rows` this could meet. */
-const REVOKE_PAGE = 200
-
-async function revokePage(rows: { id: string; active: boolean; option_groups: unknown }[]) {
-  for (const row of rows) {
-    const groups = optionGroupsFromRow(row.option_groups)
-    if (!hasActiveGroup(groups)) continue
-    const patch: Record<string, unknown> = { option_groups: deactivateGroups(groups) }
-    // Read from the groups as they stand NOW, before they are switched off.
-    if (hasRequiredGroup(groups)) patch.active = false
-    const { error: err } = await admin.from('products').update(patch).eq('id', row.id)
-    if (err) throw err
-  }
-}
-
-/**
  * Close a shop whose subscription has ended — trial expired unpaid, dunning exhausted, or a
  * cancellation that has finally landed.
  *
@@ -254,31 +71,20 @@ async function revokePage(rows: { id: string; active: boolean; option_groups: un
  * reconciliation sweep, because those two are the same decision reached by different roads and a
  * second copy would eventually disagree about what "closed" means.
  *
- * It does two things the suspension alone never did:
- *
- *   * Returns `merchants.plan` to basic. `hasProAccess` reads that column and nothing else — it
- *     is status-blind on purpose, so that no hot path has to ask about billing — which left a
- *     lapsed Pro shop still entitled. Suspension hid that behind a closed storefront rather than
- *     fixing it: un-suspend the shop and every Pro feature came back.
- *   * Revokes the Pro artifacts, on the TRANSITION only, exactly as `reconcileMerchantPlan` does
- *     for a portal downgrade. Read before write for the same reason: a replayed webhook, or a
- *     sweep re-reading a shop that is already closed, must not switch off vouchers the merchant
- *     has since restored.
+ * Suspension is the whole of it (#222). A suspended shop's storefront refuses every order and
+ * its dashboard is locked, so there is no entitlement left to revoke and no artifact left to
+ * switch off: the shop's own vouchers, promos and menu options are simply unreachable, and they
+ * work again the day it resubscribes.
  *
  * Idempotent, and it has to be: the sweep exists precisely to run over shops the webhook may or
  * may not have already handled.
  */
 export async function lapseMerchant(merchantId: string) {
-  const { data: before } = await admin
-    .from('merchants').select('plan').eq('id', merchantId).maybeSingle()
-
   const { error } = await admin
     .from('merchants')
-    .update({ status: 'suspended', plan: 'basic' })
+    .update({ status: 'suspended' })
     .eq('id', merchantId)
   if (error) throw error
-
-  if (before?.plan === 'pro') await revokeProArtifacts(merchantId)
 }
 
 // Flip the merchant's activation status (service role bypasses RLS).

@@ -1117,14 +1117,14 @@ app.post('/api/admin/set-merchant-sample', requireSuperadmin, async (c) => {
   return c.json({ ok: true, isSample })
 })
 
-// ── Superadmin: comp a merchant to free Pro (no Stripe payment) ────────────────
-// Grants active + pro without any Stripe subscription — for partners, staff, and
-// promo shops. Writes an 'active' billing row with a far-future period end and no
-// trial, so the trial/past-due banners stay silent and nothing expires the shop.
-// The shop is decoupled from Stripe: it has no real subscription, so the
-// webhook-driven suspension path never touches it. Revoke with
-// `/api/admin/uncomp-merchant`, which clears the flag and drops the shop to Basic
-// without touching its status — suspension is a separate decision.
+// ── Superadmin: comp a merchant (billing does not apply) ───────────────────────
+// A comp means the shop runs with NO subscription behind it — for partners, staff, and promo
+// shops. It activates the shop and writes an 'active' billing row with a far-future period end
+// and no trial, so the trial/past-due banners stay silent and nothing expires it. The shop is
+// decoupled from Stripe: it has no real subscription, so the webhook-driven suspension path
+// never touches it, and the reconciliation sweep skips it on the `comped` flag. Revoke with
+// `/api/admin/uncomp-merchant`, which clears the flag without touching status — suspension is a
+// separate decision.
 app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
   const { merchantId } = await c.req.json().catch(() => ({}))
   if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
@@ -1146,9 +1146,9 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
     return c.json({ error: 'has_live_subscription' }, 409)
   }
 
-  // Activate + mark pro. Service role bypasses the guard_merchant_status trigger.
+  // Activate. Service role bypasses the guard_merchant_status trigger.
   const { error: mErr } = await admin
-    .from('merchants').update({ status: 'active', plan: 'pro' }).eq('id', merchantId)
+    .from('merchants').update({ status: 'active' }).eq('id', merchantId)
   if (mErr) {
     console.error('comp-merchant merchants update failed:', mErr.message)
     return c.json({ error: 'Comp failed' }, 500)
@@ -1177,9 +1177,10 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
 })
 
 // ── Superadmin: revoke a comp ──────────────────────────────────────────────────
-// Clears the flag and drops the shop to Basic. Deliberately does not touch `merchants.status`:
-// suspension is a separate decision, and conflating the two is what makes a temporary suspension
-// silently end a comp — or a later reactivation silently hand free Pro back.
+// Clears the flag, so the shop has to pay like any other. Deliberately does not touch
+// `merchants.status`: suspension is a separate decision, and conflating the two is what makes a
+// temporary suspension silently end a comp — or a later reactivation silently hand a free shop
+// back.
 //
 // The billing row is wound back to "no subscription" (`status` and `current_period_end` null),
 // which is what leaves the shop ABLE TO PAY. Those two are comp's own writes, not Stripe's: a
@@ -1195,13 +1196,6 @@ app.post('/api/admin/uncomp-merchant', requireSuperadmin, async (c) => {
   const { data: merchant } = await admin
     .from('merchants').select('id').eq('id', merchantId).maybeSingle()
   if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
-
-  const { error: mErr } = await admin
-    .from('merchants').update({ plan: 'basic' }).eq('id', merchantId)
-  if (mErr) {
-    console.error('uncomp-merchant merchants update failed:', mErr.message)
-    return c.json({ error: 'Un-comp failed' }, 500)
-  }
 
   try {
     await upsertBilling(merchantId, { comped: false, status: null, current_period_end: null })

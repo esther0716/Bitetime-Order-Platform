@@ -131,19 +131,6 @@ function safeParse(s: string): unknown {
   try { return JSON.parse(s) } catch { return null }
 }
 
-/**
- * Hide every section — what a step down to Basic writes.
- *
- * Hides, never deletes: the merchant's authored list survives untouched, so a re-upgrade is the
- * merchant flipping them back on rather than a resurrection path on the billing side. All
- * inactive is exactly the uncategorized shop — today's flat menu — and NO PRODUCT is touched,
- * because a category is decoration rather than a fulfilment requirement. That is where this
- * parts company with `deactivateGroups`, whose required groups take their products off sale.
- */
-export function deactivateCategories(categories: MenuCategory[]): MenuCategory[] {
-  return categories.map(c => ({ ...c, active: false }))
-}
-
 const isObject = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v)
 const isId = (v: unknown): v is string => typeof v === 'string' && v !== ''

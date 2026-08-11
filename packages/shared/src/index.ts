@@ -57,7 +57,7 @@ export type {
 export {
   canonicalJson, cartLineKey, validateSelections, validateOptionGroups,
   snapshotSelections, picksDelta,
-  deactivateGroups, hasRequiredGroup, hasActiveGroup, canBeAnswered,
+  canBeAnswered,
   MAX_PICK_QTY, MAX_GROUPS_PER_PRODUCT, MAX_OPTIONS_PER_GROUP,
 } from './options.js'
 export type {
@@ -65,7 +65,7 @@ export type {
   SelectionError, GroupConfigError,
 } from './options.js'
 export {
-  validateMenuCategories, menuCategoriesFromRow, deactivateCategories,
+  validateMenuCategories, menuCategoriesFromRow,
   MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
 } from './menuCategories.js'
 export type { MenuCategory, CategoryConfigError } from './menuCategories.js'
