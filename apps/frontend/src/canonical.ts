@@ -18,15 +18,15 @@ import { useLocation } from 'react-router-dom'
 /**
  * Route bases whose trailing path segments PRESELECT something rather than address another page.
  *
- * `/merchant/signup/pro/yearly` is the signup form with a different plan highlighted — the same
- * page as `/merchant/signup`, not a fourth one. Left alone, the landing page's four pricing CTAs
- * would offer search engines four URLs for one form, which compete with each other and split
- * whatever authority the page has, and only one of which is in sitemap.xml.
+ * `/merchant/signup/yearly` is the signup form with a different billing cycle preselected — the
+ * same page as `/merchant/signup`, not a second one. Left alone, the pricing CTAs would offer
+ * search engines several URLs for one form, which compete with each other and split whatever
+ * authority the page has, and only one of which is in sitemap.xml.
  *
- * Why the selection is in the path at all: a `?plan=basic&billing=monthly` href is what a link
- * auditor — and a human reading a URL out loud — scores as unfriendly. The query form still works
- * (SignupScreen accepts either), which is what keeps Stripe's `cancel_url` and any link already
- * sitting in an inbox pointing somewhere real.
+ * Why the selection is in the path at all: a `?billing=monthly` href is what a link auditor — and
+ * a human reading a URL out loud — scores as unfriendly. The query form still works (SignupScreen
+ * accepts either), which is what keeps Stripe's `cancel_url` and any link already sitting in an
+ * inbox pointing somewhere real.
  */
 export const PRESELECTION_ROUTES = ['/merchant/signup']
 

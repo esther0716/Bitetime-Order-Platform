@@ -205,48 +205,40 @@ export default function Landing() {
       </section>
 
       {/* ── Pricing summary ── */}
-      {/* A SUMMARY, and the cards it used to hold now live on /pricing (#169). Both pages showing
-          the same tier cards would be two URLs answering "what does TinyOrder cost" — they compete
-          with each other and split whatever authority either has, which is the argument
-          canonicalPath() already makes about the four signup CTAs.
+      {/* A SUMMARY, and the card it used to hold now lives on /pricing (#169). Both pages showing
+          the same card would be two URLs answering "what does TinyOrder cost" — they compete with
+          each other and split whatever authority either has, which is the argument canonicalPath()
+          already makes about the signup CTAs.
 
-          The PRICES stay here even so. They are the objection this section exists to answer, and a
+          The PRICE stays here even so. It is the objection this section exists to answer, and a
           pricing section that makes you click to see a number is the pattern every visitor has
-          learned means "expensive". What moved is the detail: the feature lists, the comparison
-          table and the billing rules. The FAQ below still says "the prices are in the table just
-          above", and this is what keeps that true. */}
+          learned means "expensive". What moved is the detail: the full feature list and the
+          billing rules. */}
       <section id="pricing" className="px-8 py-16 max-w-[720px] mx-auto w-full text-center border-t border-border">
         <Reveal>
         <h2 className={sectionTitle}>
           {t('Simple, honest pricing — start free', '简单透明的价格——免费开始')}
         </h2>
         <p className="-mt-7 mb-9 text-[15px] leading-[1.6] text-ink-700">
-          {t('Start free on Basic — 7 days, no card required. Move to Pro whenever your shop is ready.', '基础版 7 天免费试用，无需信用卡。店铺准备好了随时升级 Pro。')}
+          {t('One plan, everything included — 7 days free, no card required.', '一个方案，功能全包含——7 天免费，无需信用卡。')}
         </p>
-        <dl className="grid [grid-template-columns:repeat(auto-fit,minmax(200px,1fr))] gap-6 text-left">
-          {PRICING_TIERS.map(tier => (
-            <div
-              key={tier.id}
-              className="flex flex-col p-6 rounded-lg bg-card border border-border"
-            >
-              <dt className="font-heading text-lg font-medium text-foreground">
-                {t(tier.name.en, tier.name.zh)}
-              </dt>
-              <dd className="m-0 mt-2 flex items-baseline gap-[0.35rem]">
-                <span className="font-heading text-[30px] font-semibold text-primary leading-none">
-                  {formatMoney(pricing.prices.pro.monthly, pricing.currency)}
-                </span>
-                <span className="text-sm text-muted-foreground">{t('/mo', '/月')}</span>
-              </dd>
-              <dd className="m-0 mt-3 text-sm leading-[1.6] text-ink-700">
-                {t(tier.blurb.en, tier.blurb.zh)}
-              </dd>
-            </div>
-          ))}
+        <dl className="max-w-[320px] mx-auto flex flex-col p-6 rounded-lg bg-card border border-border text-left">
+          <dt className="font-heading text-lg font-medium text-foreground">
+            {t(PRICING_TIERS[0].name.en, PRICING_TIERS[0].name.zh)}
+          </dt>
+          <dd className="m-0 mt-2 flex items-baseline gap-[0.35rem]">
+            <span className="font-heading text-[30px] font-semibold text-primary leading-none">
+              {formatMoney(pricing.prices.pro.monthly, pricing.currency)}
+            </span>
+            <span className="text-sm text-muted-foreground">{t('/mo', '/月')}</span>
+          </dd>
+          <dd className="m-0 mt-3 text-sm leading-[1.6] text-ink-700">
+            {t(PRICING_TIERS[0].blurb.en, PRICING_TIERS[0].blurb.zh)}
+          </dd>
         </dl>
         <p className="mt-9 mb-0 text-[13px] text-muted-foreground">
           <Link to="/pricing" className="underline underline-offset-4 hover:text-primary">
-            {t('Compare Basic and Pro', '比较基础版与 Pro')}
+            {t('See everything that is included', '查看包含的全部功能')}
           </Link>
         </p>
         <p className="mt-2 mb-0 text-[13px] text-muted-foreground">

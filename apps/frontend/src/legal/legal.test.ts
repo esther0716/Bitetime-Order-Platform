@@ -218,10 +218,10 @@ describe('a shop’s own advertising pixel', () => {
     expect(terms).toContain('We do not send your customers\' names, contact numbers or addresses')
   })
 
-  // A downgraded shop must always be able to switch its pixel off — the one place the write gate
-  // deliberately departs from ADR 0013. Promised here, enforced by `pixelIdsChanged`.
-  it('promises the pixel can be removed on any plan', () => {
-    expect(terms).toContain('remove your pixel at any time in your shop settings, whatever plan you are on')
+  // A shop must always be able to switch its own tracking off, and the Terms have to say so:
+  // this is the sentence a merchant is told to rely on.
+  it('promises the pixel can be removed at any time', () => {
+    expect(terms).toContain('remove your pixel at any time in your shop settings')
   })
 
   it('numbers the terms sections 1..n with no gap and no repeat', () => {

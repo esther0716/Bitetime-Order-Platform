@@ -36,9 +36,9 @@ export const ROUTE_META: Record<string, RouteMeta> = {
       'Start your own food shop online and keep every order in one place. TinyOrder takes orders for home kitchens, bakers, makers and small sellers. Free 7 days.',
   },
   '/pricing': {
-    title: 'Pricing — Basic and Pro Plans for Your Shop | TinyOrder',
+    title: 'Pricing — One Plan, Everything Included | TinyOrder',
     description:
-      'Simple monthly pricing with no commission on your orders. Compare Basic and Pro, see what each plan includes, and start free for 7 days without a card.',
+      'Simple monthly pricing with no commission on your orders. See everything the plan includes, and start free for 7 days without a card.',
   },
   '/features': {
     title: 'Features — Everything Your Shop Needs | TinyOrder',

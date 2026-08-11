@@ -87,7 +87,7 @@ export default function UseCasePage({ useCase }: { useCase: UseCase }) {
       <section className="border-t border-border px-8 py-16 text-center bg-brand-100 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className="font-heading italic text-[18px] text-foreground mb-6 max-w-[520px] mx-auto">
-            {t('Seven days on Basic, no card, and your own shop at the end of it.', '基础版七天，无需信用卡，结束时你已经有了自己的店。')}
+            {t('Seven days free, no card, and your own shop at the end of it.', '七天免费，无需信用卡，结束时你已经有了自己的店。')}
           </h2>
           <Link to="/merchant/signup" className={ctaPrimary}>
             {t('Start your shop', '开始建店')}
@@ -99,7 +99,7 @@ export default function UseCasePage({ useCase }: { useCase: UseCase }) {
               {t('See everything TinyOrder does', '查看 TinyOrder 的所有功能')}
             </Link>
             <Link to="/pricing" className="underline underline-offset-4 hover:text-primary">
-              {t('See Basic and Pro pricing', '查看基础版与 Pro 版价格')}
+              {t('See the price', '查看价格')}
             </Link>
           </p>
         </Reveal>

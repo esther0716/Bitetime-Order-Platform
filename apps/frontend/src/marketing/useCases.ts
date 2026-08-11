@@ -104,8 +104,8 @@ export const USE_CASES: UseCase[] = [
           zh: '排满的日子可以关掉',
         },
         body: {
-          en: 'Set the notice you need, how far ahead you take orders, and the weekdays you never bake — all on Basic. Pro goes one step further and lets you pick the exact dates, so a customer books a Sunday only when you opened it.',
-          zh: '设定你需要提前几天、最远接单到多久之后，以及固定不开炉的星期几——基础版就能做到。Pro 版更进一步，让你指定确切日期，顾客只能预订你开放的星期日。',
+          en: 'Set the notice you need, how far ahead you take orders, and the weekdays you never bake. Or pick the exact dates instead, so a customer books a Sunday only when you opened it.',
+          zh: '设定你需要提前几天、最远接单到多久之后，以及固定不开炉的星期几。也可以改为指定确切日期，顾客只能预订你开放的星期日。',
         },
       },
       {
@@ -150,8 +150,8 @@ export const USE_CASES: UseCase[] = [
           zh: '如果某个星期六已经排满了怎么办？',
         },
         a: {
-          en: 'A weekday you never bake can be closed on Basic. For one particular Saturday, Pro lets you pick the exact dates you take orders for, and your page offers nothing else — so you never cancel a cake you cannot bake.',
-          zh: '固定不开炉的星期几，基础版就能关闭。若只是某一个星期六，Pro 版可以指定接单的确切日期，页面不会显示其他日子——你也就不必取消做不了的蛋糕。',
+          en: 'A weekday you never bake can be closed outright. For one particular Saturday, pick the exact dates you take orders for instead, and your page offers nothing else — so you never cancel a cake you cannot bake.',
+          zh: '固定不开炉的星期几可以直接关闭。若只是某一个星期六，改为指定接单的确切日期，页面不会显示其他日子——你也就不必取消做不了的蛋糕。',
         },
       },
       {
@@ -239,8 +239,8 @@ export const USE_CASES: UseCase[] = [
           zh: '准备中、可取、已完成',
         },
         body: {
-          en: 'You move an order along as you cook it, and a customer holding the order number can check it themselves. Every plan emails you the moment an order lands; Pro adds a Telegram alert that reaches everyone helping you at once.',
-          zh: '你一边做一边更新订单状态，拿着订单编号的顾客可以自己查询。所有方案都会在订单进来时发电邮给你；Pro 版另加 Telegram 通知，一次通知所有帮手。',
+          en: 'You move an order along as you cook it, and a customer holding the order number can check it themselves. We email you the moment an order lands, and a Telegram alert reaches everyone helping you at once.',
+          zh: '你一边做一边更新订单状态，拿着订单编号的顾客可以自己查询。订单一进来我们就发电邮给你，Telegram 通知则一次通知所有帮手。',
         },
       },
     ],
@@ -252,8 +252,8 @@ export const USE_CASES: UseCase[] = [
           zh: '我可以收到星期四为止，星期日才配送吗？',
         },
         a: {
-          en: 'Yes. On Basic you set how much notice you need and how far ahead your page takes orders, so Sunday stays open until it falls inside that notice. On Pro you pick the exact dates instead, and open Sunday alone.',
-          zh: '可以。基础版由你设定需要提前几天，以及页面最远接单到多久之后，星期日会一直开放，直到进入你设定的提前期。Pro 版则改为指定确切日期，只开放星期日。',
+          en: 'Yes. Set how much notice you need and how far ahead your page takes orders, so Sunday stays open until it falls inside that notice. Or pick the exact dates instead, and open Sunday alone.',
+          zh: '可以。设定你需要提前几天，以及页面最远接单到多久之后，星期日会一直开放，直到进入你设定的提前期。也可以改为指定确切日期，只开放星期日。',
         },
       },
       {
@@ -398,8 +398,8 @@ export const USE_CASES: UseCase[] = [
           zh: '如果我一个月只卖几件，值得吗？',
         },
         a: {
-          en: 'That is your call, and the trial is there to answer it — seven days on Basic without a card. The subscription is flat either way, so a few pieces cost the same to sell as many.',
-          zh: '这由你决定，试用期正是为此而设——基础版七天，无需信用卡。订阅费是固定的，卖几件和卖很多件的费用相同。',
+          en: 'That is your call, and the trial is there to answer it — seven days without a card. The subscription is flat either way, so a few pieces cost the same to sell as many.',
+          zh: '这由你决定，试用期正是为此而设——七天，无需信用卡。订阅费是固定的，卖几件和卖很多件的费用相同。',
         },
       },
     ],
@@ -500,8 +500,8 @@ export const USE_CASES: UseCase[] = [
           zh: '我可以只在摆摊的日子接受预订吗？',
         },
         a: {
-          en: 'On Pro, yes — you pick the exact dates you take orders for, and your page offers only those. On Basic you set a rolling window instead: the notice you need, how far ahead to take orders, and the weekdays you are closed.',
-          zh: 'Pro 版可以——你指定接单的确切日期，页面只会显示这些日子。基础版则设定一个滚动范围：需要提前几天、最远接单到多久之后，以及每周固定休息的日子。',
+          en: 'Yes — pick the exact dates you take orders for, and your page offers only those. Or set a rolling window instead: the notice you need, how far ahead to take orders, and the weekdays you are closed.',
+          zh: '可以——你指定接单的确切日期，页面只会显示这些日子。也可以改为设定一个滚动范围：需要提前几天、最远接单到多久之后，以及每周固定休息的日子。',
         },
       },
       {

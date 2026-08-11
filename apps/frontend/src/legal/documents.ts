@@ -112,8 +112,6 @@ export const TERMS: LegalDocument = {
       body: [
         'You can cancel your subscription at any time from your dashboard. Cancellation takes effect at the end of the period you have already paid for: your shop keeps working until then, and you are not billed again.',
         'Because access continues to the end of the paid period, we do not prorate or refund part of a period. Cancelling halfway through a month does not produce a half-month refund; it stops the next payment.',
-        'The same applies to moving to a cheaper plan. The change takes effect at your next renewal rather than immediately, so nothing is refunded and nothing is charged at the moment you make it.',
-        'Moving to a cheaper plan is not simply the reverse of upgrading, and it is worth knowing before you do it: when the change takes effect, the features of the higher plan stop, and anything you created with them stops with them. Your discount vouchers are deactivated and any running promotional prices end. Upgrading again does not bring them back — you would set them up afresh.',
         'We may refund a payment at our discretion where something has gone wrong on our side — for example a shop that was billed while unusable because of a fault in the software.',
         'Refunds for FOOD ORDERS are not ours to give. The shop received that payment directly and decides what to do about it. See section 3.',
       ],
@@ -152,10 +150,10 @@ export const TERMS: LegalDocument = {
       id: 'shop-tracking',
       heading: '10. Tracking you add to your shop',
       body: [
-        'On a paid plan you can add your own advertising pixel — a Meta (Facebook) or TikTok pixel — to your storefront. If you do, that tracking is yours and not ours. You are the party responsible for it.',
+        'Your subscription lets you add your own advertising pixel — a Meta (Facebook) or TikTok pixel — to your storefront. If you do, that tracking is yours and not ours. You are the party responsible for it.',
         'That means you must tell your own customers about it, obtain their consent where the law requires it, and keep to the advertising platform\'s own terms and policies. We show your customers a request for consent on your storefront and set nothing unless they agree, but that does not transfer the responsibility to us.',
         'What we send to the platform you name is limited to the pages viewed on your storefront and the value of an order that is placed. We do not send your customers\' names, contact numbers or addresses to an advertising platform.',
-        'We do not check whether the pixel you enter is correct or belongs to you, and we cannot see what the platform does with what it receives. You can remove your pixel at any time in your shop settings, whatever plan you are on.',
+        'We do not check whether the pixel you enter is correct or belongs to you, and we cannot see what the platform does with what it receives. You can remove your pixel at any time in your shop settings.',
       ],
     },
     {
