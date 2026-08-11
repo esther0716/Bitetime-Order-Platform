@@ -11,6 +11,7 @@ import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
 import { fmtDate } from '../merchantDate'
 import { subscriptionTabState, type SubscriptionSnapshot } from './subscriptionTabState'
+import { yearlySavingPercent, type Cycle } from './reactivationChoice'
 import { billingErrorMessage } from './billingErrors'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -98,6 +99,78 @@ function CheckoutButton({ cycle, label }: { cycle: string; label: string }) {
     <Button type="button" size="sm" onClick={go} disabled={busy}>
       {busy ? t('Opening…', '打开中…') : label}
     </Button>
+  )
+}
+
+/**
+ * Buying a subscription for a shop that is open with nothing paying for it — a comp that was
+ * revoked, or one whose subscription lapsed before a superadmin reopened the shop.
+ *
+ * It CHOOSES a billing cycle rather than inheriting the shop's stored one, and that is the whole
+ * reason it is a component: the card above reports what the shop pays, which is a fact, while this
+ * one is a purchase, which is a decision. Sharing a single `cycle` between them left yearly
+ * unreachable here for any shop whose column happened to say monthly — including every shop that
+ * never had a subscription at all.
+ *
+ * `yearlySavingPercent` is SuspendedScreen's, deliberately: the two purchase surfaces must not be
+ * able to quote different savings off the same pair of Stripe prices. Null when yearly is not
+ * actually cheaper, so a "Save 0%" badge can never render.
+ */
+function SubscribeCard({ defaultCycle, readOnly }: { defaultCycle: Cycle; readOnly: boolean }) {
+  const { t } = useSession()
+  const { pricing } = usePlatformPricing()
+  const [buyCycle, setBuyCycle] = useState<Cycle>(defaultCycle)
+
+  const amount = pricing.prices.pro[buyCycle]
+  const per = buyCycle === 'yearly' ? t('/year', '/年') : t('/month', '/月')
+  const saving = yearlySavingPercent(pricing.prices.pro.monthly, pricing.prices.pro.yearly)
+
+  return (
+    <div className={CARD}>
+      <h3 className={HEADING}>{t('Subscribe', '订阅')}</h3>
+      <p className="text-[13px] text-muted-foreground mb-4">
+        {t('This shop has no subscription yet. Cancel anytime.', '此店铺尚无订阅。可随时取消。')}
+      </p>
+
+      <div
+        role="radiogroup"
+        aria-label={t('Billing cycle', '付费周期')}
+        className="inline-flex p-[3px] mb-4 rounded-pill border-[0.5px] border-border bg-card"
+      >
+        {(['monthly', 'yearly'] as Cycle[]).map(c => (
+          <button
+            key={c}
+            type="button"
+            role="radio"
+            aria-checked={buyCycle === c}
+            onClick={() => setBuyCycle(c)}
+            className={`py-[5px] px-4 rounded-pill text-[13px] cursor-pointer transition-colors ${
+              buyCycle === c ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-primary'
+            }`}
+          >
+            {c === 'monthly' ? t('Monthly', '按月') : t('Yearly', '按年')}
+            {/* Only ever rendered from the live Stripe prices, and only when there is a real
+                saving to claim — see yearlySavingPercent. */}
+            {c === 'yearly' && saving !== null && (
+              <span className={buyCycle === c ? 'ml-1.5 opacity-90' : 'ml-1.5 text-primary'}>
+                {t(`− ${saving}%`, `省 ${saving}%`)}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-[15px] text-foreground mb-4">
+        <span className="font-heading text-[22px] text-primary">{formatMoney(amount, pricing.currency)}</span>
+        <span className="text-[13px] text-muted-foreground">{per}</span>
+      </p>
+
+      {/* Withheld from an impersonating superadmin, and it has to be: `/api/checkout` is
+          guarded by `requireOwnMerchant`, so the button would 404 for them. */}
+      {readOnly
+        ? <OwnerOnlyNote />
+        : <CheckoutButton cycle={buyCycle} label={t('Subscribe', '订阅')} />}
+    </div>
   )
 }
 
@@ -383,6 +456,9 @@ export default function SubscriptionTab() {
   // inside it — same discipline as ProductsManager's promoEnded.
   const state = subscriptionTabState(billing, new Date())
 
+  // What the shop PAYS, read off its own row. Distinct from `buyCycle` below, which is what a
+  // shop with no subscription is CHOOSING — conflating the two is how the Subscribe card ended up
+  // able to sell only whichever cycle the column happened to say.
   const cycle = merchant?.billing_cycle === 'yearly' ? 'yearly' : 'monthly'
   const planPrice = pricing.prices.pro[cycle]
   const per = cycle === 'yearly' ? t('/year', '/年') : t('/month', '/月')
@@ -524,18 +600,7 @@ export default function SubscriptionTab() {
           `canSubscribe` is the exact complement of `canManage`, so this and the portal button can
           never both appear and a second subscription cannot be created on a shop that pays. */}
       {state.canSubscribe && (
-        <div className={CARD}>
-          <h3 className={HEADING}>{t('Subscribe', '订阅')}</h3>
-          <p className="text-[13px] text-muted-foreground mb-4">
-            {t(`This shop has no subscription yet. ${formatMoney(planPrice, pricing.currency)}${per}, cancel anytime.`,
-              `此店铺尚无订阅。${formatMoney(planPrice, pricing.currency)}${per}，可随时取消。`)}
-          </p>
-          {/* Withheld from an impersonating superadmin, and it has to be: `/api/checkout` is
-              guarded by `requireOwnMerchant`, so the button would 404 for them. */}
-          {readOnly
-            ? <OwnerOnlyNote />
-            : <CheckoutButton cycle={cycle} label={t('Subscribe', '订阅')} />}
-        </div>
+        <SubscribeCard defaultCycle={cycle} readOnly={readOnly} />
       )}
     </div>
   )
