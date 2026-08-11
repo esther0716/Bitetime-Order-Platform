@@ -69,8 +69,8 @@ export const FEATURES: FeatureEntry[] = [
       zh: '订单一进来你立刻知道',
     },
     body: {
-      en: 'An email reaches you on every plan the moment an order lands, and your dashboard updates itself while it is open. On Pro, an instant Telegram alert buzzes your phone — and everyone else in your shop\'s group at the same time.',
-      zh: '所有方案都会在订单进来的当下发送电邮通知，仪表板开着时也会自动更新。Pro 版另加 Telegram 即时通知，会震动你的手机，并同时通知店里群组的所有人。',
+      en: 'An email reaches you the moment an order lands, and your dashboard updates itself while it is open. Set up Telegram and an instant alert buzzes your phone too — and everyone else in your shop\'s group at the same time.',
+      zh: '订单进来的当下就会发送电邮通知，仪表板开着时也会自动更新。设置 Telegram 后还会收到即时通知，会震动你的手机，并同时通知店里群组的所有人。',
     },
   },
   {
@@ -80,8 +80,8 @@ export const FEATURES: FeatureEntry[] = [
       zh: '看得见的熟客',
     },
     body: {
-      en: 'Your shop builds its own customer list as orders come in: who orders from you, how often, what they have spent and how long it has been since the last time. On Pro you can bring them back with discount vouchers and promotional prices on individual items.',
-      zh: '随着订单累积，店铺会自动建立专属顾客名单：谁在下单、下单频率、累计消费金额，以及距离上次下单多久。Pro 版还能用优惠券和单品促销价，把他们带回来。',
+      en: 'Your shop builds its own customer list as orders come in: who orders from you, how often, what they have spent and how long it has been since the last time. Bring them back with discount vouchers and promotional prices on individual items.',
+      zh: '随着订单累积，店铺会自动建立专属顾客名单：谁在下单、下单频率、累计消费金额，以及距离上次下单多久。可用优惠券和单品促销价，把他们带回来。',
     },
   },
   {

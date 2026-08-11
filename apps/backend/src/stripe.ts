@@ -16,17 +16,13 @@ export function isStripeError(err: unknown): err is Stripe.errors.StripeError {
   return err instanceof Stripe.errors.StripeError
 }
 
-const PLANS = ['basic', 'pro']
 const CYCLES = ['monthly', 'yearly']
 
-export function isValidPlan(plan: string) {
-  return PLANS.includes(plan)
-}
 export function isValidCycle(cycle: string) {
   return CYCLES.includes(cycle)
 }
 
-// Map (plan, cycle) → the configured MYR Stripe Price ID. We charge MYR for everyone.
-export function priceFor(plan: string, cycle: string) {
-  return priceId(env.prices, plan, cycle)
+// Map a billing cycle → the configured MYR Stripe Price ID. We charge MYR for everyone.
+export function priceFor(cycle: string) {
+  return priceId(env.prices, cycle)
 }

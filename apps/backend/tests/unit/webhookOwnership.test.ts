@@ -13,10 +13,8 @@ import { isOurEvent, isOurSubscription } from '../../src/webhookOwnership.js'
 import type { Prices } from '../../src/pricing.js'
 
 const PRICES: Prices = {
-  basic_monthly: 'price_basic_m',
-  basic_yearly: 'price_basic_y',
-  pro_monthly: 'price_pro_m',
-  pro_yearly: 'price_pro_y',
+  monthly: 'price_pro_m',
+  yearly: 'price_pro_y',
 }
 
 const FOREIGN_PRICE = 'price_some_other_product'
@@ -65,8 +63,8 @@ describe('isOurEvent — our own events pass', () => {
   })
 
   it('accepts an invoice on a line-item price, in either line shape', () => {
-    const legacy = { lines: { data: [{ price: { id: 'price_basic_m' } }] } }
-    const modern = { lines: { data: [{ pricing: { price_details: { price: 'price_basic_m' } } }] } }
+    const legacy = { lines: { data: [{ price: { id: 'price_pro_m' } }] } }
+    const modern = { lines: { data: [{ pricing: { price_details: { price: 'price_pro_m' } } }] } }
     expect(isOurEvent(event('invoice.paid', legacy), PRICES)).toBe(true)
     expect(isOurEvent(event('invoice.paid', modern), PRICES)).toBe(true)
   })
@@ -107,7 +105,7 @@ describe('isOurEvent — another product in the same account is dropped', () => 
 describe('isOurSubscription', () => {
   it('keeps a shop plan and rejects another product bought by the same customer', () => {
     expect(isOurSubscription(sub({ merchantId: 'm_1' }), PRICES)).toBe(true)
-    expect(isOurSubscription(sub({ price: 'price_basic_y' }), PRICES)).toBe(true)
+    expect(isOurSubscription(sub({ price: 'price_pro_y' }), PRICES)).toBe(true)
     expect(isOurSubscription(sub(), PRICES)).toBe(false)
   })
 })

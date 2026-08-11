@@ -2,7 +2,7 @@
 // end at "Setting up your subscription…" forever.
 //
 // WHY THIS EXISTS. Everything that makes a paid shop OPEN was carried by one delivery of
-// `checkout.session.completed`: the billing row, the tier reconciliation, and the flip of
+// `checkout.session.completed`: the billing row, the cycle reconciliation, and the flip of
 // `merchants.status` to 'active'. Miss that request — an endpoint subscribed to the wrong events,
 // a deploy mid-delivery, five 500s exhausting Stripe's retries — and the merchant is left on a
 // screen that polls a status nothing will ever change, having already been charged. The hourly
@@ -18,7 +18,7 @@ import type Stripe from 'stripe'
 import { stripe } from './stripe.js'
 import { admin } from './supabase.js'
 import {
-  LIVE_STATUSES, upsertBilling, billingFromSubscription, reconcileMerchantPlan, setMerchantStatus,
+  LIVE_STATUSES, upsertBilling, billingFromSubscription, reconcileBillingCycle, setMerchantStatus,
 } from './billing.js'
 import { pickSubscription } from './billingLifecycle.js'
 import { isOurSubscription } from './webhookOwnership.js'
@@ -26,8 +26,8 @@ import { env } from './env.js'
 
 /**
  * Everything Stripe lists for a customer, minus anything this account sells that is not a shop
- * plan. Without it, a merchant who also bought some other product from the same Stripe account
- * has a subscription in this list that has nothing to do with their shop — enough for
+ * subscription. Without it, a merchant who also bought some other product from the same Stripe
+ * account has a subscription in this list that has nothing to do with their shop — enough for
  * `liveSubscriptionBesides` to call a cancellation "replaced" and leave a lapsed shop open, or for
  * `resolveSubscription` to write a foreign subscription id onto the billing row.
  */
@@ -129,9 +129,9 @@ export async function syncMerchantBilling(
     return { merchantStatus, subscriptionStatus: sub.status, activated: false, reason: 'suspended_by_admin' }
   }
 
-  // The tier follows the money, exactly as it does in the webhook (#112) — a shop that checked
-  // out at the basic price lands on basic whatever signup wrote.
-  await reconcileMerchantPlan(merchantId, sub)
+  // The billing cycle follows the money, exactly as it does in the webhook — a shop that checked
+  // out yearly is yearly whatever signup wrote.
+  await reconcileBillingCycle(merchantId, sub)
   if (merchantStatus === 'active') {
     return { merchantStatus, subscriptionStatus: sub.status, activated: false }
   }

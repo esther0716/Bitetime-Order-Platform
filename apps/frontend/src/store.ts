@@ -133,14 +133,14 @@ export async function setMerchantStatus(id: string, status: string): Promise<Res
   return apiSend<any>('/api/admin/set-merchant-status', 'POST', { merchantId: id, status }, { auth: 'required' })
 }
 
-// Superadmin: grant a merchant free Pro (active + pro, no Stripe charge). Goes
-// through the backend, which writes status/plan/billing with the service-role key.
+// Superadmin: comp a merchant — the shop runs with no subscription behind it. Goes through the
+// backend, which writes status and the billing row with the service-role key.
 export async function compMerchant(id: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/comp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
 }
 
-// Superadmin: revoke a comp. Drops the shop to Basic and clears the flag; the shop's own
-// status is untouched, because suspending is a separate decision.
+// Superadmin: revoke a comp. Clears the flag so the shop has to pay; its own status is
+// untouched, because suspending is a separate decision.
 export async function uncompMerchant(id: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/uncomp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
 }
@@ -180,16 +180,16 @@ export async function lookupMyMerchant(userId: string): Promise<Result<any | nul
   return apiGet<any | null>('/api/me/merchant', { auth: true })
 }
 
-export async function createMerchant({ name, plan = 'basic', billing = 'monthly', referredByCode, businessNature, currency }: { name: string; plan?: string; billing?: string; referredByCode?: string; businessNature?: string; currency?: string }): Promise<Result<any>> {
-  return apiSend<any>('/api/merchants', 'POST', { name, plan, billing, referredByCode, businessNature, currency }, { auth: true })
+export async function createMerchant({ name, billing = 'monthly', referredByCode, businessNature, currency }: { name: string; billing?: string; referredByCode?: string; businessNature?: string; currency?: string }): Promise<Result<any>> {
+  return apiSend<any>('/api/merchants', 'POST', { name, billing, referredByCode, businessNature, currency }, { auth: true })
 }
 
 // ── Billing (Stripe via the Hono backend) ──────────────────────────────────────
 
 // Create a Stripe Checkout Session for the current merchant and return its URL.
 // Every subscription is charged in MYR; the backend no longer takes a region.
-export async function startCheckout({ plan, billing }: { plan: string; billing: string }): Promise<Result<string>> {
-  const r = await apiSend<{ url: string }>('/api/checkout', 'POST', { plan, billing }, { auth: 'required' })
+export async function startCheckout({ billing }: { billing: string }): Promise<Result<string>> {
+  const r = await apiSend<{ url: string }>('/api/checkout', 'POST', { billing }, { auth: 'required' })
   return mapOk(r, (d) => d.url)
 }
 
@@ -219,7 +219,6 @@ export async function syncBilling(): Promise<Result<BillingSync>> {
 export interface PlatformPricing {
   currency: string
   prices: {
-    basic: { monthly: number; yearly: number }
     pro: { monthly: number; yearly: number }
   }
   estimate: { currency: string; rate: number } | null
@@ -324,23 +323,21 @@ export async function openBillingPortal(): Promise<Result<string>> {
 }
 
 /**
- * The three wind-down actions, which unlike the portal stay inside the dashboard: cancelling and
- * downgrading both land on a period boundary, so no money moves and there is nothing a payment
- * screen needs to explain. See CONTEXT.md → Plan entitlement.
+ * The two wind-down actions, which unlike the portal stay inside the dashboard: cancelling lands
+ * on a period boundary, so no money moves and there is nothing a payment screen needs to explain.
+ * See CONTEXT.md → Subscription.
  *
  * Each returns `Result<void>` and carries the backend's error code in `error.code` on failure —
  * the caller decides what `no_live_subscription` should say, because it means "the subscription
  * changed under this tab", not "something broke".
  */
-async function billingAction(path: 'cancel' | 'resume' | 'downgrade'): Promise<Result<void>> {
+async function billingAction(path: 'cancel' | 'resume'): Promise<Result<void>> {
   return toVoid(await apiSend(`/api/billing/${path}`, 'POST', undefined, { auth: 'required' }))
 }
 
-/** Step down to Basic when the paid-for period ends. Pro features stay until then. */
-export const downgradeToBasic = () => billingAction('downgrade')
 /** End the subscription when the paid-for period ends. The shop is suspended at that point. */
 export const cancelSubscription = () => billingAction('cancel')
-/** Undo whichever wind-down is pending — a cancellation, a scheduled downgrade, or both. */
+/** Undo the pending cancellation. */
 export const resumeSubscription = () => billingAction('resume')
 
 export async function updateMerchantSlug(id: string, slug: string): Promise<Result<any>> {
@@ -762,7 +759,7 @@ export async function fetchOrderCount(
 }
 
 /**
- * The Pro-only revenue export. Hands back the workbook and the name the server chose for it.
+ * The revenue export. Hands back the workbook and the name the server chose for it.
  *
  * The range and granularity are the ones the merchant is looking at on the Overview chart — the
  * file is that panel's contents, not a second range concept in the dashboard. `auth: 'required'`
@@ -800,9 +797,6 @@ export async function setOrderTracking(orderId: string, courier: string | null, 
  * and it sat on top of an orders endpoint that truncated at 1000 rows without saying so (fixed
  * separately in #144). All of it now happens in SQL and one pure module; see CONTEXT.md → Shop
  * customer.
- *
- * `sort` other than `recent`, and `tag`, are Pro: the backend answers `403 requires_pro`, which
- * `isRequiresPro` turns into an upgrade prompt rather than a bare error.
  */
 export async function fetchShopCustomers(
   merchantId: string,
@@ -834,8 +828,8 @@ export async function fetchShopCustomerOrders(merchantId: string, phoneKey: stri
 }
 
 /**
- * Save what the merchant wrote about one customer. Pro-only, and the row is created on the
- * first write — most customers never have one.
+ * Save what the merchant wrote about one customer. The row is created on the first write — most
+ * customers never have one.
  *
  * Sends BOTH fields every time rather than patching one: the dashboard edits them in one panel
  * with one save, and a partial write would need the server to distinguish "cleared the note"

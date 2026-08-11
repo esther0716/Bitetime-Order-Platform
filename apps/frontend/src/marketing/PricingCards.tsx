@@ -1,9 +1,9 @@
-// The plan cards and the monthly/yearly toggle — the full treatment, which lives on /pricing.
+// The plan card and the monthly/yearly toggle — the full treatment, which lives on /pricing.
 //
 // The landing page deliberately does NOT render this. It carries a short summary that links here
-// instead, because two pages showing the same cards are two URLs competing for the same query,
+// instead, because two pages showing the same card are two URLs competing for the same query,
 // which splits whatever authority either has — the same argument canonicalPath() makes about the
-// four signup CTAs (#169).
+// signup CTAs (#169).
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -11,7 +11,7 @@ import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
 import { PRICING_TIERS } from './pricingTiers'
-import { cardCtaPrimary, cardCtaGhost } from './ctaStyles'
+import { cardCtaPrimary } from './ctaStyles'
 import { cn } from '../lib/utils'
 import { Reveal } from './LandingMotion'
 import { Button } from '../components/ui/button'
@@ -71,21 +71,16 @@ export default function PricingCards() {
       </div>
 
       <Reveal>
-        {/* Cards stretch to a shared height; cardCta* pins each CTA to the bottom edge */}
-        <div className="grid [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))] gap-6 mt-10 text-left">
+        {/* One card, centred — the grid is gone with the second plan (#222). */}
+        <div className="max-w-[420px] mx-auto mt-10 text-left">
           {PRICING_TIERS.map(tier => {
-            const tierPrices = pricing.prices[tier.id]
+            const tierPrices = pricing.prices.pro
             // Yearly is billed at 10× monthly (2 months free) and shown as an effective /mo.
             const amount = billing === 'yearly' ? tierPrices.yearly / 12 : tierPrices.monthly
             return (
               <div
                 key={tier.id}
-                className={cn(
-                  'flex flex-col p-7 rounded-lg bg-card',
-                  tier.highlight
-                    ? 'border-[0.5px] border-primary shadow-[0_6px_24px_rgba(122,16,40,0.12)]'
-                    : 'border border-border'
-                )}
+                className="flex flex-col p-7 rounded-lg bg-card border-[0.5px] border-primary shadow-[0_6px_24px_rgba(122,16,40,0.12)]"
               >
                 {tier.badge && (
                   <span className="self-start text-[11px] font-semibold py-[3px] px-[10px] mb-3 rounded-pill bg-primary text-background">
@@ -112,12 +107,6 @@ export default function PricingCards() {
                 <p className="text-sm leading-[1.6] text-ink-700 mt-3 mb-5">
                   {t(tier.blurb.en, tier.blurb.zh)}
                 </p>
-                {/* Inherited-tier label — a heading for the list, not a feature, so no ✓ */}
-                {tier.inherits && (
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mt-0 mb-3">
-                    {t(tier.inherits.en, tier.inherits.zh)}
-                  </p>
-                )}
                 <ul className="list-none m-0 mb-7 p-0 flex flex-col gap-[0.6rem]">
                   {tier.features.map((f, i) => (
                     <li
@@ -128,18 +117,14 @@ export default function PricingCards() {
                     </li>
                   ))}
                 </ul>
-                {/* Path segments, not `?plan=…&billing=…`: this is the one CTA a crawler reads,
-                    and a query string is what a link auditor and a human both score as an
-                    unfriendly URL. All four collapse to /merchant/signup in the canonical tag
-                    (canonical.ts), so the form stays one indexed page. */}
-                <Link
-                  to={`/merchant/signup/${tier.id}/${billing}`}
-                  className={tier.highlight ? cardCtaPrimary : cardCtaGhost}
-                >
+                {/* A path segment, not `?billing=…`: this is the one CTA a crawler reads, and a
+                    query string is what a link auditor and a human both score as an unfriendly
+                    URL. It collapses to /merchant/signup in the canonical tag (canonical.ts), so
+                    the form stays one indexed page. */}
+                <Link to={`/merchant/signup/${billing}`} className={cardCtaPrimary}>
                   {t(tier.cta.en, tier.cta.zh)}
                 </Link>
-                {/* Risk reversal sits at the click, not at the foot of the section — and it is
-                    per-tier, because only Basic has a trial to reverse the risk with */}
+                {/* Risk reversal sits at the click, not at the foot of the section. */}
                 <p className="mt-2.5 mb-0 text-center text-xs text-muted-foreground">
                   {t(tier.note.en, tier.note.zh)}
                 </p>

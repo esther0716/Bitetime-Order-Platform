@@ -4,7 +4,6 @@ import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
 import { fetchMerchantVouchers, createMerchantVoucher, deleteMerchantVoucher } from '../store'
 import { formatMoney, currencyDef } from '../currency'
-import { isRequiresPro } from '../plan'
 import { SkeletonText } from '../components/Loaders'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Badge } from '../components/ui/badge'
@@ -72,11 +71,7 @@ export default function VouchersManager() {
       setForm(BLANK); await load()
       toast.success(t('Voucher created', '优惠券已创建'))
     } else {
-      // The whole section is replaced by an upgrade prompt for a basic shop, so this is the
-      // fallback for a `plan` that changed under a long-open tab (#110).
-      toast.error(isRequiresPro(r.error)
-        ? t('Vouchers are a Pro feature. Upgrade to Pro to create one.', '优惠券是 Pro 功能。升级到 Pro 即可创建。')
-        : t('Could not create voucher — is the code already used?', '无法创建优惠券 — 优惠码是否已存在？'))
+      toast.error(t('Could not create voucher — is the code already used?', '无法创建优惠券 — 优惠码是否已存在？'))
     }
   }
 
@@ -86,12 +81,7 @@ export default function VouchersManager() {
       await load()
       toast.success(t('Voucher deleted', '优惠券已删除'))
     } else {
-      // Delete is gated too (#110) — the backend refuses the whole voucher mutation surface,
-      // not just create. Without this the refusal would pass silently and the row would simply
-      // stay put with nothing said.
-      toast.error(isRequiresPro(r.error)
-        ? t('Vouchers are a Pro feature. Upgrade to Pro to manage them.', '优惠券是 Pro 功能。升级到 Pro 即可管理。')
-        : t('Could not delete voucher', '无法删除优惠券'))
+      toast.error(t('Could not delete voucher', '无法删除优惠券'))
     }
   }
 

@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useParams, Link } from 'react-router-dom'
-import { signUp, signIn, createMerchant, startCheckout } from '../store'
+import { signUp, signIn, createMerchant } from '../store'
+import { pixelTrack } from '../pixels/track'
+// TinyOrder's OWN ids, deliberately — a shop signing up is our conversion, never a merchant's.
+import { platformPixelIds } from '../pixels/ids'
 import { toSlugBase } from '../slug'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
@@ -15,17 +18,20 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 import Wordmark from '../components/Wordmark'
 
-const PLANS = ['basic', 'pro']
 const CYCLES = ['monthly', 'yearly']
 
 /**
  * The first of `candidates` that is one of `allowed`, else `fallback`.
  *
- * Two candidates, in order, because the plan reaches this screen two ways. The path segment
- * (`/merchant/signup/pro/yearly`) is what the pricing cards link to — a query string is what a
- * link auditor and a human both read as an unfriendly URL. The query string (`?plan=pro`) is what
- * Stripe's `cancel_url` sends back and what any link already sitting in an inbox still says, so
- * it keeps working rather than silently landing everyone on Basic.
+ * Several candidates, in order, because the cycle reaches this screen more than one way. The path
+ * segment (`/merchant/signup/yearly`) is what the pricing card links to — a query string is what a
+ * link auditor and a human both read as an unfriendly URL. The query string (`?billing=yearly`) is
+ * what Stripe's `cancel_url` sends back.
+ *
+ * BOTH path segments are offered as candidates, and that is deliberate rather than sloppy: the URL
+ * used to carry the plan first (`/merchant/signup/pro/yearly`), and those links are still in
+ * inboxes and in Stripe's own history. Reading whichever segment happens to be a cycle keeps them
+ * landing on a working form instead of a route that matches nothing and renders a blank page.
  */
 function pick(allowed: string[], candidates: (string | null | undefined)[], fallback: string) {
   return candidates.find(c => c != null && allowed.includes(c)) ?? fallback
@@ -37,8 +43,7 @@ export default function SignupScreen() {
   const [params] = useSearchParams()
   const path = useParams()
 
-  const plan = pick(PLANS, [path.plan, params.get('plan')], 'basic')
-  const billing = pick(CYCLES, [path.billing, params.get('billing')], 'monthly')
+  const billing = pick(CYCLES, [path.a, path.b, params.get('billing')], 'monthly')
   const canceled = params.get('canceled') === '1'
   const ref = params.get('ref') ?? undefined
 
@@ -63,9 +68,8 @@ export default function SignupScreen() {
     return () => { active = false }
   }, [name])
 
-  const planName = plan === 'pro' ? 'Pro' : t('Basic', '基础版')
   const cycleName = billing === 'yearly' ? t('Yearly', '按年') : t('Monthly', '按月')
-  const planPrices = pricing.prices[plan as 'basic' | 'pro']
+  const planPrices = pricing.prices.pro
   const perMoAmount = billing === 'yearly' ? planPrices.yearly / 12 : planPrices.monthly
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -75,7 +79,7 @@ export default function SignupScreen() {
       // The shop details ride along on the auth user. With email confirmation on, the sign-in
       // below fails and `createMerchant` never runs — parked, the shop is created for them the
       // moment they confirm and log in, instead of dying with this page. See pendingShop.ts.
-      await signUp(name, email, password, { name, businessNature, currency, plan: plan as 'basic' | 'pro', billing: billing as 'monthly' | 'yearly', ref })
+      await signUp(name, email, password, { name, businessNature, currency, billing: billing as 'monthly' | 'yearly', ref })
       try {
         await signIn(email, password)
       } catch {
@@ -83,22 +87,19 @@ export default function SignupScreen() {
                  '账号已创建。请查收邮件确认后登录，我们会为你完成店铺设置。'))
         setBusy(false); return
       }
-      const created = await createMerchant({ name, plan, billing, referredByCode: ref, businessNature, currency })
+      const created = await createMerchant({ name, billing, referredByCode: ref, businessNature, currency })
       if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
+      // The one conversion the marketing pixels report, and it has to be here rather than on the
+      // page the merchant lands on: /merchant is outside the marketing scope. The shop exists at
+      // this line. A no-op unless the visitor accepted the pixels — see pixels/track.ts.
+      pixelTrack(platformPixelIds(), 'CompleteRegistration')
       await refreshMerchant()
-      if (plan === 'basic') {
-        // Cardless trial: no Checkout. The backend provisioned the trial and activated the shop
-        // during createMerchant, so this lands on the dashboard. If Stripe refused, the shop is
-        // still there at `pending` and MerchantHome shows the retry screen.
-        // `replace`, not `assign`: the shop now exists, so Back must not return to a signup form
-        // that would try to create it a second time.
-        window.location.replace('/merchant')
-        return
-      }
-      // Pro pays upfront: hand off to Stripe Checkout; webhook activates the shop.
-      const checkout = await startCheckout({ plan, billing })
-      if (!checkout.ok) { setMsg(checkout.error.message || t('Could not start checkout', '无法开始结账')); setBusy(false); return }
-      window.location.assign(checkout.data)
+      // Cardless trial, and there is no other door (#222). The backend provisioned the trial and
+      // activated the shop during createMerchant, so this lands on the dashboard. If Stripe
+      // refused, the shop is still there at `pending` and MerchantHome shows the retry screen.
+      // `replace`, not `assign`: the shop now exists, so Back must not return to a signup form
+      // that would try to create it a second time.
+      window.location.replace('/merchant')
     } catch (err: any) {
       setMsg(err.message || t('Something went wrong.', '出错了。'))
       setBusy(false)
@@ -117,16 +118,16 @@ export default function SignupScreen() {
 
         {/* Plan banner: oxblood-tint bg, rose-border, md radius */}
         <div className="flex items-baseline flex-wrap gap-2 px-[13px] py-[10px] mb-[14px] bg-brand-100 border border-border rounded-md">
-          <span className="font-semibold text-primary text-[14px]">{planName} · {cycleName}</span>
+          <span className="font-semibold text-primary text-[14px]">{cycleName}</span>
           <span className="font-heading text-foreground text-[15px]">{formatMoney(perMoAmount, pricing.currency)}{t('/mo', '/月')}</span>
           {pricing.estimate && perMoAmount > 0 && (
             <span className="text-muted-foreground text-[13px]">≈ {formatMoney(perMoAmount * pricing.estimate.rate, pricing.estimate.currency)}{t('/mo', '/月')}</span>
           )}
-          {plan === 'basic' && (
-            <Badge variant="default" className="ml-auto py-[2px] tracking-[0.03em]">
-              {t('7-day free trial — no card required', '7 天免费试用，无需信用卡')}
-            </Badge>
-          )}
+          {/* Unconditional now: every shop starts on the trial, so there is no second case for
+              this badge to be wrong about. */}
+          <Badge variant="default" className="ml-auto py-[2px] tracking-[0.03em]">
+            {t('7-day free trial — no card required', '7 天免费试用，无需信用卡')}
+          </Badge>
         </div>
 
         {canceled && (
@@ -190,11 +191,7 @@ export default function SignupScreen() {
           </div>
           {/* A Radix select carries no native `required`, so the button is the gate. */}
           <Button type="submit" variant="default" size="md" className="py-3" disabled={busy || !businessNature}>
-            {busy
-              ? t('Creating…', '创建中…')
-              : plan === 'basic'
-                ? t('Start free trial', '开始免费试用')
-                : t('Continue to payment', '前往付款')}
+            {busy ? t('Creating…', '创建中…') : t('Start free trial', '开始免费试用')}
           </Button>
           {/* Sits under the button, not above it: the merchant reads it at the moment the act
               happens. The screen said nothing about terms before, so nothing recorded that a

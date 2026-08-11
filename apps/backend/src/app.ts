@@ -15,10 +15,9 @@ import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
-import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, requirePro, hasProAccess, REQUIRES_PRO, type AppEnv } from './mw.js'
-import { stripe, priceFor, isValidPlan, isValidCycle, isStripeError } from './stripe.js'
-import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileMerchantPlan, lapseMerchant, LIVE_STATUSES } from './billing.js'
-import { downgradePhases, ScheduleError, type LivePhase } from './subscriptionSchedule.js'
+import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, type AppEnv } from './mw.js'
+import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
+import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
 import { startCardlessTrial } from './trialSubscription.js'
 import { runBillingSweep } from './billingSweep.js'
@@ -42,7 +41,7 @@ import { liveDistanceDeps } from './distanceCache.js'
 import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow } from './quotaWindows.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
 import { detectCountry } from './region.js'
-import { fetchBasePricing, createPricingCache, planFromPriceId, type PricingPayload } from './pricing.js'
+import { fetchBasePricing, createPricingCache, type PricingPayload } from './pricing.js'
 import { estimateFor } from './fx.js'
 import { listReferredShops, listEarnedRewards } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
@@ -64,11 +63,11 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor } from '@bitetime/shared'
+import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
-import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, menuCategoriesChanged, categoryChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
+import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
 
@@ -164,7 +163,7 @@ app.get('/api/billing', requireSuperadmin, async (c) => {
 // ── Merchant creation (any authenticated user creates their own shop) ──────────
 // The insert goes through `admin` (service_role), which bypasses guard_merchant_status —
 // so `status: 'pending'`, `owner_id: user.id` and `billing_region: 'MY'` are forced here,
-// never read from the body. Only name/plan/billing/referredByCode are accepted from the
+// never read from the body. Only name/billing/referredByCode are accepted from the
 // client (Global Constraint 1). Slug uniqueness resolution moved server-side now that the
 // browser can no longer SELECT merchants.slug directly.
 app.post('/api/merchants', requireUser, async (c) => {
@@ -200,7 +199,6 @@ app.post('/api/merchants', requireUser, async (c) => {
       order_prefix: orderPrefix(slug),
       owner_id: user.id,
       status: 'pending',
-      plan: body?.plan ?? 'basic',
       billing_cycle: body?.billing ?? 'monthly',
       billing_region: 'MY', // everyone is charged MYR
       business_nature: businessNature,
@@ -211,13 +209,13 @@ app.post('/api/merchants', requireUser, async (c) => {
     .single()
   if (error) return c.json({ error: 'Create failed' }, 500)
 
-  // Self-serve: the trial is provisioned HERE, not by an approval. Two things this must not do —
-  // fail the signup because Stripe did (the account, the slug and the form's answers are worth
-  // more than the retry), and return an `active` shop with no subscription behind it
-  // (startCardlessTrial owns that ordering). A shop Stripe refused stays `pending` and the owner
-  // retries from the dashboard via POST /api/merchants/:id/start-trial.
-  if ((data.plan ?? 'basic') === 'pro') return c.json(data)
-
+  // Self-serve: the trial is provisioned HERE, not by an approval, and for EVERY shop — there is
+  // one plan and one way in (#222). Two things this must not do — fail the signup because Stripe
+  // did (the account, the slug and the form's answers are worth more than the retry), and return
+  // an `active` shop with no subscription behind it (startCardlessTrial owns that ordering). A
+  // shop Stripe refused stays `pending` and the owner retries from the dashboard via
+  // POST /api/merchants/:id/start-trial.
+  //
   // `null` billing is not a shortcut: a shop created milliseconds ago has no merchant_billing
   // row, so there is no customer id to reuse and nothing for canStartTrial to refuse.
   const outcome = await startCardlessTrial(data, null)
@@ -251,14 +249,44 @@ app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
   // WHY, in time for the merchant still looking at the form, instead of a bare 500 out of
   // PostgREST.
   const stored = c.get('merchant')
-  // Menu categories are Pro, gated the same way `option_groups` is one endpoint over and for the
-  // same recorded reason (ADR 0013): the question is whether the list CHANGED, never whether the
-  // body carried it. ShopSettings resubmits a whole config bag, so a presence check would refuse
-  // a Basic ex-Pro shop editing its shipping rates. Clearing counts as a change, so a shop that
-  // stepped down cannot delete the categories it can no longer edit — the downgrade hides them,
-  // and ceasing to pay must not be a way to destroy them.
-  if (menuCategoriesChanged(patch, stored) && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
+  // The body is merchant-controlled and `admin` bypasses RLS, so the fulfilment bag that lands in
+  // the row is the one THIS function produces, never the one that arrived: sorted, deduped,
+  // clamped, unknown keys dropped. One writer, one reader — the storefront can never read back a
+  // shape the settings form did not save.
+  //
+  // Keyed on whether the body actually CARRIES a fulfilment bag, never on whether it carries a
+  // `config`. Deriving
+  // the bag from an absent key reads as DEFAULT_FULFILMENT and writes it over the row, which
+  // clears `custom_dates` and lifts the ADR 0015 pause behind a success toast. `config` is a
+  // whole-column overwrite, so an untouched bag has to be carried forward explicitly.
+  if (patch.config !== undefined) {
+    const submitted = { ...(patch.config as Record<string, unknown>) }
+    const storedConfig = (stored.config ?? null) as Record<string, unknown> | null
+    if (submitted.fulfilment !== undefined) {
+      const fulfilment = fulfilmentConfig(submitted)
+      if (fulfilment.mode === 'custom') {
+        // Counted on the RAW array, before `fulfilmentConfig` caps it: validating the truncated
+        // list could never report `too_many`, so a 200-date body saved 91 of them silently —
+        // the exact "trimmed, not refused" outcome the rule below exists to prevent.
+        const raw = (submitted.fulfilment as Record<string, unknown>)?.custom_dates
+        if (Array.isArray(raw) && raw.length > MAX_CUSTOM_DATES) {
+          return c.json({ error: 'too_many' }, 400)
+        }
+        // The horizon needs a clock, so it cannot live in `fulfilmentConfig`. Refused here rather
+        // than silently trimmed: a merchant who ticked a date past it must be told it did not save,
+        // not discover months later that it never did.
+        // The SUBMITTED timezone wins over the stored one: the Fulfilment tab saves the clock and
+        // the dates in one body, and judging tomorrow's date against yesterday's zone is how an
+        // honest save gets refused on the horizon's edge.
+        const tz = (patch.timezone as string | undefined) ?? stored.timezone ?? DEFAULT_TIMEZONE
+        const bad = validateCustomDates(fulfilment.custom_dates, tz, new Date())
+        if (bad) return c.json({ error: bad }, 400)
+      }
+      submitted.fulfilment = fulfilment
+    } else if (storedConfig?.fulfilment !== undefined) {
+      submitted.fulfilment = fulfilmentConfig(storedConfig)
+    }
+    patch.config = submitted
   }
   const merged = {
     pickup: patch.pickup_enabled ?? stored.pickup_enabled,
@@ -383,10 +411,9 @@ app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
  * cap — a shop past its 1000th order still gets a complete customer list here. This was the
  * first escape from that cap; the orders endpoint above took its own in #144.
  *
- * The plan gate is CONDITIONAL, so it cannot be `requirePro` middleware: the list itself is free
- * (it shipped to basic shops before Pro existed and withdrawing it would be a regression), while
- * sorting and tag filtering are the Pro capability. Same shape as the product upsert's promo
- * gate — inside the handler, once we know what the request is actually asking for.
+ * The list, its sorting and its tag filter are one free feature. Sorting and filtering used to be
+ * the paid half of it, gated inside the handler rather than by middleware because the list itself
+ * never was — that split went with the tier (#222).
  */
 app.get('/api/merchants/:id/customers', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
@@ -395,10 +422,6 @@ app.get('/api/merchants/:id/customers', requireMerchantOwns, async (c) => {
   const sort = q.get('sort') ?? DEFAULT_SHOP_CUSTOMER_SORT
   if (!isShopCustomerSort(sort)) return c.json({ error: 'invalid_sort' }, 400)
   const tag = q.get('tag') ?? undefined
-
-  if ((sort !== DEFAULT_SHOP_CUSTOMER_SORT || tag !== undefined) && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
-  }
 
   const [groups, records] = await Promise.all([shopCustomerGroups(m.id), shopCustomerRecords(m.id)])
   return c.json(shopCustomers(groups, records, {
@@ -434,10 +457,10 @@ app.get('/api/merchants/:id/customers/:phoneKey/orders', requireMerchantOwns, as
   return c.json(data ?? [])
 })
 
-// Writing is wholly Pro, so the gate is middleware here rather than a branch. `phoneKey` on the
-// path parameter is a SHAPE check, not a lookup: a key with no orders behind it is a harmless
+// `phoneKey` on the path parameter is a SHAPE check, not a lookup: a key with no orders behind it
+// is a harmless
 // row that never joins, but a path segment that is not a key at all is a caller bug.
-app.put('/api/merchants/:id/customers/:phoneKey', requireMerchantOwns, requirePro, async (c) => {
+app.put('/api/merchants/:id/customers/:phoneKey', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
   const key = phoneKey(c.req.param('phoneKey'))
   if (key === null || key !== c.req.param('phoneKey')) return c.json({ error: 'invalid_phone_key' }, 400)
@@ -477,10 +500,7 @@ app.get('/api/merchants/:id/orders/count', requireMerchantOwns, async (c) => {
   return c.json({ count: count ?? 0 })
 })
 
-// The Pro-only revenue export (CONTEXT.md → Plan entitlement). The gate is HERE — the padlock in
-// the dashboard is UX, and this refuses a crafted request from a basic shop's own owner. It sits
-// ahead of the range check on purpose: a basic shop probing the endpoint learns that it needs
-// Pro, not which ranges the paid feature accepts.
+// The revenue export.
 //
 // Read-only and single-statement, so it goes through `admin` and not `db.ts`; there is nothing to
 // keep atomic. Every sheet is confined to the window, which is why the orders are narrowed BEFORE
@@ -503,7 +523,7 @@ function stampInZone(timeZone: string, at: Date): string {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
 }
 
-app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, requirePro, async (c) => {
+app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, async (c) => {
   const days = Number(c.req.query('days'))
   const granularity = c.req.query('granularity')
   // Refused, not clamped: a clamped request hands back a file that quietly answers a different
@@ -597,10 +617,7 @@ app.get('/api/merchants/:id/secret', requireMerchantOwns, async (c) => {
 // see 20260627120150_secure_merchant_secrets.sql), so the product-PUT hijack class (Global
 // Constraint 2) does not apply here: there is no client-supplied child id to nest a foreign
 // row under. No separate tenancy check is needed.
-// Telegram alerts are a Pro feature, so `requirePro` chains after the ownership check (#110).
-// Only the WRITE is gated: the send path (`notify`) carries no plan check, because a shop that
-// already has a token configured must keep receiving its orders. See CONTEXT.md → Plan entitlement.
-app.put('/api/merchants/:id/secret', requireMerchantOwns, requirePro, async (c) => {
+app.put('/api/merchants/:id/secret', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const b = await c.req.json().catch(() => ({}) as any)
   const row: Record<string, unknown> = { merchant_id: id }
@@ -744,50 +761,16 @@ app.get('/api/merchants/:id/products', async (c) => {
 // in place (including merchant_id reassigned to A) instead of a new row being inserted. Loading
 // the product and checking merchant_id === :id before upserting is what closes that hole
 // (Global Constraint 2), mirroring the DELETE handler below.
-// Product promos are Pro-only, but this endpoint is NOT — basic shops legitimately edit their
-// menu through it, so it cannot carry `requirePro` as a whole (#110). The gate is inside, and it
-// asks whether the write CHANGES the promo, comparing the body against the row `requireOwnsChild`
-// already loaded (#145). A change from a non-Pro shop is REFUSED, never silently stripped — a
-// saved product whose sale price vanished without a word is exactly the "success toast, wrong
-// data" failure pickMerchantConfig refuses elsewhere.
-//
-// CHANGE, not presence, and the difference is a bug this used to have. Presence (`fields[k] !=
-// null`) refuses a body that merely CARRIES the promo it already has — so a shop that dropped from
-// pro to basic could not rename its own product, because the dashboard resubmits the whole row.
-// The workaround was for the client to omit the columns, which leaves a shop's live sale one
-// payload mistake away from being cleared behind a success toast: precisely what the rule above
-// exists to stop. Comparing against the stored row lets the unchanged resubmit through and still
-// refuses every real edit, on all three columns — a body moving only `promo_limit`/`promo_end`
-// would otherwise raise the cap or push back the end date on a live sale for free.
-//
-// Clearing a promo is a change like any other, so a basic shop cannot do that either: the promo it
-// may no longer edit stays put until the shop is Pro again. See promoChanged in writes.ts, and
-// note that `promo_price: 0` is a real promo (a free item) — it is compared for null, never for
-// truthiness. #145 gives `option_groups` the same shape on this endpoint.
+// The promo, option-group and category columns on this endpoint used to be gated on the shop's
+// tier, which is what made the body-vs-stored comparison in writes.ts necessary. The tier is gone
+// (#222) and so is that gate; all three are ordinary product fields now, saved like any other.
 app.put('/api/merchants/:id/products/:productId', requireMerchantOwns, requireOwnsChild('products', 'productId', { mayCreate: true }), async (c) => {
   const id = c.req.param('id')
   const productId = c.req.param('productId')
   const fields = pickProductFields(await c.req.json().catch(() => ({})))
-  // THREE Pro columns on one endpoint, asked as one question. Each is change-based for the same
-  // recorded reason (the promo comment above), and they share an answer, so they share the plan
-  // lookup — three separate `await hasProAccess(c)` calls asked billing the same thing three
-  // times to reach one 403.
-  //
-  //   * `optionGroupsChanged` — menu options, ADR 0010.
-  //   * `categoryChanged` — which section the product sits in, ADR 0013. The submitted id is
-  //     deliberately NOT checked against the shop's category list: an id the list no longer
-  //     holds is the "uncategorized" reading the whole delete story rests on, so validating it
-  //     here would turn a stale dashboard into a refused save.
-  //
-  // Clearing counts as a change in all three, so a shop that stepped down to basic cannot delete
-  // what it can no longer edit — a Pro feature must not be removable by ceasing to pay for it.
-  const child = c.get('child')
-  const touchesPro = promoChanged(fields, child)
-    || optionGroupsChanged(fields, child)
-    || categoryChanged(fields, child)
-  if (touchesPro && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
-  }
+  // The submitted `category_id` is deliberately NOT checked against the shop's category list: an
+  // id the list no longer holds is the "uncategorized" reading the whole delete story rests on
+  // (ADR 0013), so validating it here would turn a stale dashboard into a refused save.
   // ADR 0008 traded every `check` constraint on these groups for atomic saves and a jsonb column
   // that both drivers parse identically. THIS is what stands in their place: Postgres will store
   // `minSelect: 9, maxSelect: 2` without complaint, and a customer would then meet a question no
@@ -834,10 +817,7 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
 // class (conflict-resolving onto a stranger's row) does not apply here — there is no
 // client-supplied id to collide on. `code` is uppercased/trimmed server-side, matching the
 // old client-side `input.code.trim().toUpperCase()`.
-// Vouchers are a Pro feature (#110). Only the merchant's MUTATIONS are gated — the customer's
-// code lookup above stays public and redemption inside the order transaction stays plan-blind,
-// so the gate can never break the ordering hot path.
-app.post('/api/merchants/:id/vouchers', requireMerchantOwns, requirePro, async (c) => {
+app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const b = await c.req.json().catch(() => ({} as any))
   const code = String(b?.code ?? '').trim().toUpperCase()
@@ -857,7 +837,7 @@ app.post('/api/merchants/:id/vouchers', requireMerchantOwns, requirePro, async (
 // about voucherId, so an owner of shop A could otherwise delete shop B's voucher by nesting
 // it under :id = A. Loading the voucher and checking merchant_id === :id before deleting is
 // what closes that hole (Global Constraint 2), mirroring the product DELETE handler above.
-app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requirePro, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
+app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
   const voucherId = c.req.param('voucherId')
   const { error } = await admin.from('vouchers').delete().eq('id', voucherId)
   if (error) return c.json({ error: 'Delete failed' }, 500)
@@ -922,9 +902,9 @@ app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
 app.post('/api/checkout', requireOwnMerchant, async (c) => {
   const body = await c.req.json().catch(() => ({}))
-  const { plan, billing } = body
-  if (!isValidPlan(plan) || !isValidCycle(billing)) {
-    return c.json({ error: 'Invalid plan or billing cycle' }, 400)
+  const { billing } = body
+  if (!isValidCycle(billing)) {
+    return c.json({ error: 'Invalid billing cycle' }, 400)
   }
   // Caller and their own shop both resolved by `requireOwnMerchant` — one merchant per owner.
   const user = c.get('user')
@@ -960,11 +940,11 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
     await upsertBilling(merchant.id, { stripe_customer_id: customerId })
   }
 
-  const metadata = { merchant_id: merchant.id, plan, billing, region: 'MY' }
+  const metadata = { merchant_id: merchant.id, billing, region: 'MY' }
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
-    line_items: [{ price: priceFor(plan, billing), quantity: 1 }],
+    line_items: [{ price: priceFor(billing), quantity: 1 }],
     client_reference_id: merchant.id,
     metadata,
     // Stripe hides the promo-code field unless asked, so a coupon we hand a merchant is
@@ -978,7 +958,7 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
     // subscriber on the Subscription tab once it clears. Query before hash — MerchantHome reads
     // the query, the hash survives the param clear and deep-links the tab.
     success_url: `${env.frontendUrl}/merchant?checkout=success#settings/subscription`,
-    cancel_url: `${env.frontendUrl}/merchant/signup?plan=${plan}&billing=${billing}&canceled=1`,
+    cancel_url: `${env.frontendUrl}/merchant/signup?billing=${billing}&canceled=1`,
   })
 
   return c.json({ url: session.url })
@@ -1028,7 +1008,7 @@ app.post('/api/admin/approve-merchant', requireSuperadmin, async (c) => {
   const [merchantRes, billingRes] = await Promise.all([
     admin
       .from('merchants')
-      .select('id, name, status, plan, billing_cycle, owner_id')
+      .select('id, name, status, billing_cycle, owner_id')
       .eq('id', merchantId)
       .maybeSingle(),
     admin.from('merchant_billing').select('*').eq('merchant_id', merchantId).maybeSingle(),
@@ -1068,13 +1048,12 @@ app.post('/api/merchants/:id/start-trial', requireMerchantOwns, async (c) => {
   }
 
   // Named rather than spread: `c.get('merchant')` is the whole row as `Record<string, any>`, and
-  // listing the five columns the provisioning actually reads is what keeps that untyped bag from
+  // listing the four columns the provisioning actually reads is what keeps that untyped bag from
   // reaching it.
   const outcome = await startCardlessTrial({
     id: merchant.id,
     name: merchant.name,
     owner_id: merchant.owner_id,
-    plan: merchant.plan,
     billing_cycle: merchant.billing_cycle,
   }, billing)
   if (!outcome.ok) return c.json({ error: outcome.error }, outcome.http)
@@ -1129,14 +1108,14 @@ app.post('/api/admin/set-merchant-sample', requireSuperadmin, async (c) => {
   return c.json({ ok: true, isSample })
 })
 
-// ── Superadmin: comp a merchant to free Pro (no Stripe payment) ────────────────
-// Grants active + pro without any Stripe subscription — for partners, staff, and
-// promo shops. Writes an 'active' billing row with a far-future period end and no
-// trial, so the trial/past-due banners stay silent and nothing expires the shop.
-// The shop is decoupled from Stripe: it has no real subscription, so the
-// webhook-driven suspension path never touches it. Revoke with
-// `/api/admin/uncomp-merchant`, which clears the flag and drops the shop to Basic
-// without touching its status — suspension is a separate decision.
+// ── Superadmin: comp a merchant (billing does not apply) ───────────────────────
+// A comp means the shop runs with NO subscription behind it — for partners, staff, and promo
+// shops. It activates the shop and writes an 'active' billing row with a far-future period end
+// and no trial, so the trial/past-due banners stay silent and nothing expires it. The shop is
+// decoupled from Stripe: it has no real subscription, so the webhook-driven suspension path
+// never touches it, and the reconciliation sweep skips it on the `comped` flag. Revoke with
+// `/api/admin/uncomp-merchant`, which clears the flag without touching status — suspension is a
+// separate decision.
 app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
   const { merchantId } = await c.req.json().catch(() => ({}))
   if (!merchantId) return c.json({ error: 'Missing merchantId' }, 400)
@@ -1158,9 +1137,9 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
     return c.json({ error: 'has_live_subscription' }, 409)
   }
 
-  // Activate + mark pro. Service role bypasses the guard_merchant_status trigger.
+  // Activate. Service role bypasses the guard_merchant_status trigger.
   const { error: mErr } = await admin
-    .from('merchants').update({ status: 'active', plan: 'pro' }).eq('id', merchantId)
+    .from('merchants').update({ status: 'active' }).eq('id', merchantId)
   if (mErr) {
     console.error('comp-merchant merchants update failed:', mErr.message)
     return c.json({ error: 'Comp failed' }, 500)
@@ -1189,9 +1168,10 @@ app.post('/api/admin/comp-merchant', requireSuperadmin, async (c) => {
 })
 
 // ── Superadmin: revoke a comp ──────────────────────────────────────────────────
-// Clears the flag and drops the shop to Basic. Deliberately does not touch `merchants.status`:
-// suspension is a separate decision, and conflating the two is what makes a temporary suspension
-// silently end a comp — or a later reactivation silently hand free Pro back.
+// Clears the flag, so the shop has to pay like any other. Deliberately does not touch
+// `merchants.status`: suspension is a separate decision, and conflating the two is what makes a
+// temporary suspension silently end a comp — or a later reactivation silently hand a free shop
+// back.
 //
 // The billing row is wound back to "no subscription" (`status` and `current_period_end` null),
 // which is what leaves the shop ABLE TO PAY. Those two are comp's own writes, not Stripe's: a
@@ -1207,13 +1187,6 @@ app.post('/api/admin/uncomp-merchant', requireSuperadmin, async (c) => {
   const { data: merchant } = await admin
     .from('merchants').select('id').eq('id', merchantId).maybeSingle()
   if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
-
-  const { error: mErr } = await admin
-    .from('merchants').update({ plan: 'basic' }).eq('id', merchantId)
-  if (mErr) {
-    console.error('uncomp-merchant merchants update failed:', mErr.message)
-    return c.json({ error: 'Un-comp failed' }, 500)
-  }
 
   try {
     await upsertBilling(merchantId, { comped: false, status: null, current_period_end: null })
@@ -1270,19 +1243,16 @@ app.post('/api/billing/portal', requireOwnMerchant, async (c) => {
   }
 })
 
-// ── Downgrade and cancellation ─────────────────────────────────────────────────
-// ADR 0004 chose the Customer Portal over calling Stripe ourselves, and that still holds for the
-// UPGRADE: a mid-period tier increase is a proration argument, and the portal is a screen built
-// to have it. These three are the exception, for one reason — they all land on a period
-// boundary. `cancel_at_period_end` is a flag, and the downgrade is scheduled with
-// `proration_behavior: 'none'`, so no money moves and there is nothing for a payment screen to
-// explain. What is gained is the thing the portal cannot give: telling a merchant, in their own
-// dashboard and in their own language, that cancelling suspends their shop on a named date.
+// ── Cancellation ───────────────────────────────────────────────────────────────
+// The Customer Portal could carry these, and these two are deliberately ours instead, for one
+// reason — they land on a period boundary. `cancel_at_period_end` is a flag, so no money moves
+// and there is nothing for a payment screen to explain. What is gained is the thing the portal
+// cannot give: telling a merchant, in their own dashboard and in their own language, that
+// cancelling suspends their shop on a named date.
 //
 // Stripe remains authoritative. Each route writes the outcome back to `merchant_billing`
 // immediately so the tab does not lie for the seconds before the webhook lands, but
-// `customer.subscription.updated` is what confirms it, and the tier itself moves only through
-// `reconcileMerchantPlan`.
+// `customer.subscription.updated` is what confirms it.
 
 /** The signed-in merchant's live subscription, or the response explaining why there isn't one. */
 async function liveSubscription(c: Context<AppEnv>) {
@@ -1294,8 +1264,8 @@ async function liveSubscription(c: Context<AppEnv>) {
     .eq('merchant_id', merchant.id).maybeSingle()
   // Ahead of the gate below, which a comped row passes on both terms: comp keeps
   // stripe_subscription_id (canStartTrial's one-trial-ever record) and leaves status 'active'.
-  // Without this, cancel/downgrade/resume would act on an id that is dead or belongs to a real
-  // cancelled subscription.
+  // Without this, cancel/resume would act on an id that is dead or belongs to a real cancelled
+  // subscription.
   if (billing?.comped) return { res: c.json({ error: 'shop_is_comped' }, 409) }
   // 409 rather than 404: the shop is fine, the request just does not apply to it. The
   // Subscription tab hides these buttons in that state, so this is the long-open-tab case.
@@ -1304,88 +1274,6 @@ async function liveSubscription(c: Context<AppEnv>) {
   }
   return { merchantId: merchant.id, subscriptionId: billing.stripe_subscription_id }
 }
-
-/**
- * Drop any scheduled phase change and hand the subscription back to itself.
- *
- * Releasing rather than cancelling is load-bearing: `subscriptionSchedules.cancel()` cancels the
- * SUBSCRIPTION the schedule drives, which would end the shop's billing outright. `release()`
- * detaches the schedule and leaves the subscription running exactly as it is.
- */
-async function releaseSchedule(subscriptionId: string) {
-  const sub = await stripe.subscriptions.retrieve(subscriptionId)
-  const scheduleId = typeof sub.schedule === 'string' ? sub.schedule : sub.schedule?.id
-  if (!scheduleId) return
-  const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId)
-  // A schedule that already ran (or was released) cannot be released again, and saying so would
-  // turn "undo my downgrade" into an error for a merchant whose downgrade has already happened.
-  if (schedule.status === 'active' || schedule.status === 'not_started') {
-    await stripe.subscriptionSchedules.release(scheduleId)
-  }
-}
-
-// Step down to Basic at the end of the period already paid for. Never immediate: the merchant
-// has been charged for Pro through this period, and taking the features now would drop live
-// vouchers under customers mid-checkout.
-app.post('/api/billing/downgrade', requireOwnMerchant, async (c) => {
-  const found = await liveSubscription(c)
-  if ('res' in found) return found.res
-  const { merchantId, subscriptionId } = found
-
-  // The whole exchange with Stripe under one guard. The 409s below are ordinary returns, not
-  // throws, so wrapping the body does not swallow them, and `isStripeError` in the catch keeps
-  // our own exceptions (a ScheduleError re-thrown, a bug in downgradePhases) propagating as the
-  // 500s they are.
-  try {
-    const sub = await stripe.subscriptions.retrieve(subscriptionId)
-    if (sub.cancel_at_period_end) {
-      // The subscription is already ending. Scheduling a tier for a period that will never be
-      // billed is meaningless, and doing it silently would read as having un-cancelled.
-      return c.json({ error: 'subscription_ending' }, 409)
-    }
-
-    const currentPriceId = sub.items?.data?.[0]?.price?.id ?? ''
-    const tier = planFromPriceId(env.prices, currentPriceId)
-    // An unrecognised price is the same no-op it is in reconcileMerchantPlan — we cannot say what
-    // the Basic equivalent of a price we did not configure is, and guessing moves real money.
-    if (!tier) return c.json({ error: 'unknown_price' }, 409)
-    if (tier.plan === 'basic') return c.json({ error: 'already_basic' }, 409)
-
-    // Wrapping the live subscription in a schedule copies its current phase verbatim; reusing an
-    // existing schedule matters because `from_subscription` errors on a subscription that already
-    // has one (a second downgrade request, or a retry after a failed write below).
-    const existingId = typeof sub.schedule === 'string' ? sub.schedule : sub.schedule?.id
-    const schedule = existingId
-      ? await stripe.subscriptionSchedules.retrieve(existingId)
-      : await stripe.subscriptionSchedules.create({ from_subscription: subscriptionId })
-
-    let phases
-    try {
-      phases = downgradePhases(schedule.phases[0] as unknown as LivePhase, priceFor('basic', tier.cycle))
-    } catch (err) {
-      if (err instanceof ScheduleError) {
-        console.warn(`Downgrade refused for merchant ${merchantId}: ${err.message}`)
-        return c.json({ error: 'cannot_schedule' }, 409)
-      }
-      throw err
-    }
-
-    await stripe.subscriptionSchedules.update(schedule.id, {
-      phases,
-      // Once the Basic period has been billed the schedule lets go, leaving an ordinary
-      // subscription at the new price rather than one permanently driven by a schedule.
-      end_behavior: 'release',
-    })
-  } catch (err) {
-    if (isStripeError(err)) return stripeFailed(c, `downgrade for merchant ${merchantId}`, err)
-    throw err
-  }
-
-  // Intent only. `merchants.plan` is untouched — the shop keeps the Pro it paid for until
-  // `reconcileMerchantPlan` sees the price actually change.
-  await upsertBilling(merchantId, { pending_plan: 'basic' })
-  return c.json({ ok: true, pendingPlan: 'basic' })
-})
 
 // End the subscription when the current period runs out. The shop stays open and fully
 // functional until then; `customer.subscription.deleted` is what suspends it.
@@ -1396,23 +1284,17 @@ app.post('/api/billing/cancel', requireOwnMerchant, async (c) => {
 
   let sub
   try {
-    // Cancelling supersedes a scheduled downgrade — there is no period after this one for a new
-    // tier to apply to, and Stripe refuses to set the flag while a schedule drives the
-    // subscription. Released first so the two intents can never both be pending.
-    await releaseSchedule(subscriptionId)
     sub = await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true })
   } catch (err) {
     if (isStripeError(err)) return stripeFailed(c, `cancel for merchant ${merchantId}`, err)
     throw err
   }
 
-  await upsertBilling(merchantId, { ...billingFromSubscription(sub), pending_plan: null })
+  await upsertBilling(merchantId, billingFromSubscription(sub))
   return c.json({ ok: true, endsAt: billingFromSubscription(sub).current_period_end })
 })
 
-// Undo whichever wind-down is pending — a cancellation, a scheduled downgrade, or both. One
-// route because it answers one question ("keep things as they are"), and because leaving a
-// merchant to undo two pending changes in two clicks is how one of them gets forgotten.
+// Undo the pending cancellation — the only wind-down there is (#222).
 app.post('/api/billing/resume', requireOwnMerchant, async (c) => {
   const found = await liveSubscription(c)
   if ('res' in found) return found.res
@@ -1420,14 +1302,13 @@ app.post('/api/billing/resume', requireOwnMerchant, async (c) => {
 
   let sub
   try {
-    await releaseSchedule(subscriptionId)
     sub = await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: false })
   } catch (err) {
     if (isStripeError(err)) return stripeFailed(c, `resume for merchant ${merchantId}`, err)
     throw err
   }
 
-  await upsertBilling(merchantId, { ...billingFromSubscription(sub), pending_plan: null })
+  await upsertBilling(merchantId, billingFromSubscription(sub))
   return c.json({ ok: true })
 })
 
@@ -2136,10 +2017,10 @@ export const trialFeedbackDeps: { email: typeof resendSend } = { email: resendSe
 // or suppresses the others, and none touches the already-committed order.
 //
 // The three are NOT interchangeable, and the differences are deliberate:
-//   * Telegram is Pro-only and undeduplicated — a repeat ping is merchant noise.
+//   * Telegram needs a configured token and is undeduplicated — a repeat ping is merchant noise.
 //   * The customer receipt is signed-in-only (a guest has no account, so no
 //     recipient) and one-shot.
-//   * The merchant email sends on EVERY plan and is one-shot. It exists because a
+//   * The merchant email always sends and is one-shot. It exists because a
 //     basic shop, having no Telegram, otherwise learned of an order by refreshing.
 //
 // `lang` selects the CUSTOMER email's presentation only (never identity or money),
@@ -2310,8 +2191,7 @@ app.post('/api/stripe/webhook', async (c) => {
           const sub = await stripe.subscriptions.retrieve(subscriptionId)
           await upsertBilling(merchantId, billingFromSubscription(sub))
           // The tier comes from the price they just paid, not from what signup wrote (#112).
-          // A body claiming `plan: 'pro'` that checked out at the basic price lands on basic.
-          await reconcileMerchantPlan(merchantId, sub)
+          await reconcileBillingCycle(merchantId, sub)
           await setMerchantStatus(merchantId, 'active')
         }
         break
@@ -2335,7 +2215,7 @@ app.post('/api/stripe/webhook', async (c) => {
           // This is the plan-switch path: the Customer Portal swaps the price and Stripe fires
           // this event, so the tier follows the money (#112). Also repairs `billing_cycle`,
           // which a monthly↔yearly switch in the portal used to leave stale.
-          await reconcileMerchantPlan(merchantId, sub)
+          await reconcileBillingCycle(merchantId, sub)
         }
         break
       }
@@ -2361,7 +2241,7 @@ app.post('/api/stripe/webhook', async (c) => {
           const replacement = await liveSubscriptionBesides(sub)
           if (replacement) {
             await upsertBilling(merchantId, billingFromSubscription(replacement))
-            await reconcileMerchantPlan(merchantId, replacement)
+            await reconcileBillingCycle(merchantId, replacement)
             console.log(
               `Subscription ${sub.id} ended for merchant ${merchantId}, but ${replacement.id} is ` +
                 `live — reconciled to it instead of closing the shop.`,
@@ -2370,8 +2250,8 @@ app.post('/api/stripe/webhook', async (c) => {
           }
 
           await upsertBilling(merchantId, billingFromSubscription(sub))
-          // Suspends AND returns the shop to basic — see lapseMerchant. Shared with the
-          // reconciliation sweep so a shop closed by either road is closed the same way.
+          // Suspends the shop — see lapseMerchant. Shared with the reconciliation sweep so a
+          // shop closed by either road is closed the same way.
           await lapseMerchant(merchantId)
         }
         break

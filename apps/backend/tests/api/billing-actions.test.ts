@@ -1,18 +1,16 @@
 // tests/api/billing-actions.test.ts
-// POST /api/billing/{downgrade,cancel,resume} — the guards in front of them.
+// POST /api/billing/{cancel,resume} — the guards in front of them.
 //
 // Scope is deliberate: everything PAST the guard calls Stripe, and these suites are
-// network-free (see the note at the head of webhook-plan.test.ts). What is asserted here is the
+// network-free (see the note at the head of webhook-cycle.test.ts). What is asserted here is the
 // half that can be — who is allowed to ask, and what happens to a shop that has nothing to
 // change. That half is where the damage is: a missing auth check on these routes would let any
 // signed-in user cancel a stranger's subscription and close their shop.
-//
-// The scheduling arithmetic itself is covered without a network by tests/unit/subscriptionSchedule.
 import { describe, it, expect } from 'vitest'
 import { app } from '../../src/app.js'
 import { makeUser, seedMerchant, serviceClient, resetMerchant } from '../rls/helpers.js'
 
-const ROUTES = ['downgrade', 'cancel', 'resume'] as const
+const ROUTES = ['cancel', 'resume'] as const
 
 function post(route: string, token?: string) {
   return app.request(`/api/billing/${route}`, {
@@ -62,7 +60,7 @@ describe('billing wind-down routes', () => {
     await resetMerchant('billing-actions-shop')
     const owner = await makeUser('billing-actions@example.com', 'password123')
     const { token, userId } = await sessionOf(owner)
-    const id = await seedMerchant({ slug: 'billing-actions-shop', owner_id: userId, plan: 'pro' })
+    const id = await seedMerchant({ slug: 'billing-actions-shop', owner_id: userId })
 
     for (const route of ROUTES) {
       const res = await post(route, token)
@@ -73,14 +71,14 @@ describe('billing wind-down routes', () => {
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 
-  // A cancelled or incomplete subscription is not something to cancel again, downgrade, or
-  // resume — SuspendedScreen owns reactivation via Checkout, and a second payment path competing
-  // with it is what `LIVE_STATUSES` exists to prevent.
+  // A cancelled or incomplete subscription is not something to cancel again or resume —
+  // SuspendedScreen owns reactivation via Checkout, and a second payment path competing with it
+  // is what `LIVE_STATUSES` exists to prevent.
   it('answers 409 for a subscription that is no longer running', async () => {
     await resetMerchant('billing-dead-sub-shop')
     const owner = await makeUser('billing-dead-sub@example.com', 'password123')
     const { token, userId } = await sessionOf(owner)
-    const id = await seedMerchant({ slug: 'billing-dead-sub-shop', owner_id: userId, plan: 'pro' })
+    const id = await seedMerchant({ slug: 'billing-dead-sub-shop', owner_id: userId })
     await serviceClient().from('merchant_billing').upsert({
       merchant_id: id, stripe_subscription_id: 'sub_dead', status: 'canceled',
     })
@@ -101,7 +99,7 @@ describe('billing wind-down routes', () => {
   it('refuses a comped shop', async () => {
     const owner = await makeUser('comped-winddown@example.com', 'password123')
     const { token, userId } = await sessionOf(owner)
-    const merchantId = await seedMerchant({ slug: 'comped-winddown-shop', owner_id: userId, plan: 'pro' })
+    const merchantId = await seedMerchant({ slug: 'comped-winddown-shop', owner_id: userId })
     await serviceClient().from('merchant_billing').upsert({
       merchant_id: merchantId,
       comped: true,

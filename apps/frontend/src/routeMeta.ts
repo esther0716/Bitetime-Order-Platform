@@ -14,6 +14,8 @@
 // here, and the two drifting apart would silently retitle the homepage on the next build.
 // routeMeta.test.ts asserts the match.
 
+import { USE_CASES, pathForUseCase } from './marketing/useCases'
+
 export interface RouteMeta {
   /** Page title. Ends with the brand, because a sitelink label is read out of context. */
   title: string
@@ -34,9 +36,9 @@ export const ROUTE_META: Record<string, RouteMeta> = {
       'Start your own food shop online and keep every order in one place. TinyOrder takes orders for home kitchens, bakers, makers and small sellers. Free 7 days.',
   },
   '/pricing': {
-    title: 'Pricing — Basic and Pro Plans for Your Shop | TinyOrder',
+    title: 'Pricing — One Plan, Everything Included | TinyOrder',
     description:
-      'Simple monthly pricing with no commission on your orders. Compare Basic and Pro, see what each plan includes, and start free for 7 days without a card.',
+      'Simple monthly pricing with no commission on your orders. See everything the plan includes, and start free for 7 days without a card.',
   },
   '/features': {
     title: 'Features — Everything Your Shop Needs | TinyOrder',
@@ -46,7 +48,7 @@ export const ROUTE_META: Record<string, RouteMeta> = {
   '/faq': {
     title: 'FAQ — Answers for Shop Owners | TinyOrder',
     description:
-      'What TinyOrder costs, how the free trial works, how customers pay you, and what Pro adds. The questions shop owners ask us before they sign up.',
+      'What TinyOrder costs, how the free trial works, how customers pay you, and what is included. The questions shop owners ask us before they sign up.',
   },
   // The one prerendered page whose MAIN CONTENT cannot be baked: the shop list is read from the
   // database in the browser, and a build must never reach for it (a build that cannot would ship a
@@ -65,7 +67,7 @@ export const ROUTE_META: Record<string, RouteMeta> = {
   '/merchant/signup': {
     title: 'Sign Up — Start Your Food Shop Free | TinyOrder',
     description:
-      'Create your shop page in minutes. No card for the 7-day trial and no commission on your orders. Pick a plan and start taking orders today.',
+      'Create your shop page in minutes. No card for the 7-day trial and no commission on your orders. Start taking orders today.',
   },
   '/merchant/login': {
     title: 'Log In to Your Shop Dashboard | TinyOrder',
@@ -84,4 +86,10 @@ export const ROUTE_META: Record<string, RouteMeta> = {
     description:
       'What TinyOrder holds about shop owners and their customers, why we hold it, who can read it, and how to ask us to delete it. Written in plain English.',
   },
+  // The four business-type pages, spread in from the module that holds their copy. Written there
+  // rather than here because a page's title and its first paragraph are one piece of writing, and
+  // splitting them across two files is how they drift. Everything this table's consumers need is
+  // still here: prerender.tsx, useDocumentMeta, vercelRewrites.test.ts and llmsTxt.test.ts all read
+  // ROUTE_META and none of them can tell the difference.
+  ...Object.fromEntries(USE_CASES.map(useCase => [pathForUseCase(useCase.slug), useCase.meta])),
 }

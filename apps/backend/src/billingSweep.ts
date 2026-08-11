@@ -2,10 +2,10 @@
 // webhook that never arrives.
 //
 // WHY THIS EXISTS. Every consequence of a subscription ending was, until this file, carried by a
-// single `customer.subscription.deleted` delivery: the shop's suspension, the return to Basic,
-// the revocation of Pro artifacts. Miss that one HTTP request — an endpoint subscribed to the
-// wrong events, a deploy mid-delivery, five 500s exhausting Stripe's retries — and the shop stays
-// open and entitled FOREVER, because nothing else ever looks. That is not a hypothetical: a
+// single `customer.subscription.deleted` delivery: the shop's suspension. Miss that one HTTP
+// request — an endpoint subscribed to the wrong events, a deploy mid-delivery, five 500s
+// exhausting Stripe's retries — and the shop stays OPEN AND SELLING forever, because nothing else
+// ever looks. That is not a hypothetical: a
 // production endpoint subscribed only to `checkout.session.completed` left expired trials
 // selling, with no trace anywhere in the app that anything had gone wrong.
 //
@@ -21,7 +21,7 @@ import type Stripe from 'stripe'
 import { stripe } from './stripe.js'
 import { admin } from './supabase.js'
 import {
-  upsertBilling, billingFromSubscription, reconcileMerchantPlan, lapseMerchant,
+  upsertBilling, billingFromSubscription, reconcileBillingCycle, lapseMerchant,
 } from './billing.js'
 import { isLapsed, needsReconcile, type BillingRow } from './billingLifecycle.js'
 
@@ -105,7 +105,7 @@ async function reconcileOne(row: StaleRow): Promise<'lapsed' | 'refreshed'> {
   // Alive after all — a trial that converted, or a period that renewed. Reconcile the tier for
   // the same reason `customer.subscription.updated` does: the price on the subscription is what
   // the shop is actually paying for, and a missed portal swap leaves the column lying.
-  await reconcileMerchantPlan(row.merchant_id, sub)
+  await reconcileBillingCycle(row.merchant_id, sub)
   return 'refreshed'
 }
 

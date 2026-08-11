@@ -116,9 +116,9 @@ export function validateSelections(
   groups: OptionGroup[],
   selections: Selection[],
 ): SelectionError | null {
-  // A SWITCHED-OFF group is not a question, so it is neither enforced nor answerable. That is
-  // what makes the Pro downgrade survivable: `active: false` on every group leaves optional ones
-  // simply gone, without `priceOrder` ever asking what tier the shop is on (ADR 0010).
+  // A SWITCHED-OFF group is not a question, so it is neither enforced nor answerable — the
+  // merchant's Hide toggle removes the question rather than blocking the product, and
+  // `priceOrder` never asks anything about billing (ADR 0010, ADR 0016).
   const asked = groups.filter(g => g.active)
 
   // IDS FIRST, and the order is load-bearing: a stale answer naming a group this product no
@@ -289,36 +289,6 @@ export function picksDelta(picks: PickSnapshot[]): number {
 }
 
 /**
- * Switch every group off, destroying nothing.
- *
- * What a step down from Pro to Basic does to a shop's menu (ADR 0010). The voucher move, not a
- * delete: `active: false` and the merchant's configuration survives verbatim, because ADR 0008
- * put the groups in a jsonb column on the product row and there is no history to restore from.
- *
- * `validateSelections` already ignores an inactive group, so nothing downstream has to ask what
- * tier a shop is on — which is the constraint ADR 0004 named and this exists to respect.
- */
-export function deactivateGroups(groups: OptionGroup[]): OptionGroup[] {
-  return groups.map(g => ({ ...g, active: false }))
-}
-
-/**
- * Does any of this ask a question the customer MUST answer?
- *
- * Such a product comes off sale at downgrade. It is unfulfillable rather than degraded: with its
- * group switched off it would sell a six-muffin box with no flavours chosen, leaving the merchant
- * to guess what to pack. A product whose groups are all optional keeps selling and loses an upsell.
- */
-export function hasRequiredGroup(groups: OptionGroup[]): boolean {
-  return groups.some(g => g.active && g.minSelect >= 1)
-}
-
-/** Is there anything left to switch off? The idempotency guard on the revoke. */
-export function hasActiveGroup(groups: OptionGroup[]): boolean {
-  return groups.some(g => g.active)
-}
-
-/**
  * Could a customer still give a legal answer to these questions?
  *
  * What decides whether an `option_unavailable` refusal REPAIRS the line — reopen the picker and
@@ -327,8 +297,8 @@ export function hasActiveGroup(groups: OptionGroup[]): boolean {
  * customer's drink because one milk ran out, when three remain, is the wrong recovery.
  *
  * Only REQUIRED groups can make a product unanswerable. An optional group losing every option
- * costs an upsell, not the product. A switched-off group is not a question at all, which is what
- * keeps the Pro downgrade from turning products unanswerable rather than merely unasked.
+ * costs an upsell, not the product. A switched-off group is not a question at all, so hiding one
+ * leaves a product unasked rather than unanswerable.
  *
  * Capacity is `active options x maxPerOption` (uncapped means one option can fill the group), so
  * a six-muffin box down to a single flavour capped at one each cannot be answered.

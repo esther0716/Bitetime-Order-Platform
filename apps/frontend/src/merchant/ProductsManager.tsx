@@ -23,10 +23,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyCont
 import ImagePicker from './ProductImages'
 import OptionGroupsEditor from './OptionGroupsEditor'
 import MenuCategoriesDialog, { blankCategory, categoryProblem } from './MenuCategoriesDialog'
-import { UpgradeLink } from './ProLock'
-import { useUpgradeNav } from './UpgradeNav'
 import { Tooltip, TooltipTrigger, TooltipContent } from '../components/ui/tooltip'
-import { useProAccess, isRequiresPro } from '../plan'
 import { findCategory } from '../menuGroups'
 import {
   optionGroupsFromRow, menuCategoriesFromRow, validateMenuCategories,
@@ -199,7 +196,6 @@ const columns: ColumnDef<any>[] = [
 
 export default function ProductsManager() {
   const { t, lang, merchant, refreshMerchant } = useSession()
-  const { goToSubscription } = useUpgradeNav()
   const [rows, setRows] = useState<any[] | null>(null)
   const [form, setForm] = useState<any>(BLANK)
   const [busy, setBusy] = useState(false)
@@ -224,9 +220,6 @@ export default function ProductsManager() {
   const [newCategory, setNewCategory] = useState<string | null>(null)
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
-  // Promos are Pro-only (#110); ordinary product editing is not. This flag locks the promo
-  // fields and decides which promo values the writes below carry — see `promoWrite`.
-  const pro = useProAccess()
   // Whether the row being edited has a promo whose end date has already passed. Computed once, in
   // openEdit below, rather than read from `Date.now()` during render (React Compiler forbids calling
   // an impure function while rendering — the result would also go stale without a re-render to
@@ -257,13 +250,9 @@ export default function ProductsManager() {
       promo_price: p.promo_price === null || p.promo_price === undefined ? '' : String(p.promo_price),
       promo_limit: p.promo_limit === null || p.promo_limit === undefined ? '' : String(p.promo_limit),
       promo_end: promoEndToDate(p.promo_end),
-      // THE STORED VALUE, VERBATIM, dangling id and all. Mapping a dead id to '' here looked
-      // tidy and was a bug: `save` sends `form.category_id || null`, so a Basic ex-Pro shop
-      // renaming a product whose category was deleted would submit `null` against a stored id,
-      // `categoryChanged` would call that a change, and an ordinary rename would be refused with
-      // `403 requires_pro` — the exact failure `categoryChanged`'s own doc says it exists to
-      // prevent. `categoryItems` keeps the dead id selectable instead, the way `unitItems` keeps
-      // a legacy unit selectable, so the round-trip is byte-identical.
+      // THE STORED VALUE, VERBATIM, dangling id and all. `categoryItems` keeps a dead id
+      // selectable, the way `unitItems` keeps a legacy unit selectable, so a rename round-trips
+      // byte-identically instead of quietly unfiling the product.
       category_id: p.category_id ?? '',
     })
     setImages(p.image_urls ?? [])
@@ -292,27 +281,12 @@ export default function ProductsManager() {
   /**
    * The promo columns to send with this write.
    *
-   * Pro: the three form fields, as `promoFields` reads them. Not Pro: the STORED row's own values,
-   * sent back verbatim — the promo inputs are disabled, so a basic shop never expresses a change,
-   * and the backend's gate refuses a CHANGE, not a presence (#145). Sending what is already there
-   * is not a change, so an ordinary rename by an ex-Pro shop goes through with its sale intact.
-   *
-   * `form`'s own promo keys are STRINGS ('' for empty) and must never reach the write: '' is not a
-   * number, so the backend would read it as a change and refuse. That is why this ALWAYS returns
-   * all three columns, to spread AFTER `...form`, rather than deleting them afterwards — an early
-   * `{}` here would let the blank strings through on the add form and 403 a basic shop's new
-   * product.
-   *
-   * Adding without Pro sends three nulls: a new row has no promo, so that is what it already is.
+   * `form`'s own promo keys are STRINGS ('' for empty) and must never reach the write: '' is not
+   * a number. `promoFields` is what turns them into the three real columns, and this ALWAYS
+   * returns all three, to spread AFTER `...form` rather than deleting them afterwards.
    */
-  function promoWrite(stored: any | null) {
-    if (pro) return promoFields(form)
-    if (!stored) return { promo_price: null, promo_limit: null, promo_end: null }
-    return {
-      promo_price: stored.promo_price ?? null,
-      promo_limit: stored.promo_limit ?? null,
-      promo_end: stored.promo_end ?? null,
-    }
+  function promoWrite() {
+    return promoFields(form)
   }
 
   /**
@@ -346,7 +320,7 @@ export default function ProductsManager() {
     const r = editingProduct
       // Spread the original row first so sort / active / etc. survive the upsert.
       ? await upsertProduct({
-          ...editingProduct, ...form, ...promoWrite(editingProduct),
+          ...editingProduct, ...form, ...promoWrite(),
           image_urls: images,
           option_groups: optionGroups,
           price: Number(form.price) || 0,
@@ -358,7 +332,7 @@ export default function ProductsManager() {
         })
       : await upsertProduct({
           ...form,
-          ...promoWrite(null),
+          ...promoWrite(),
           id: draftId,
           image_urls: images,
           option_groups: optionGroups,
@@ -383,26 +357,7 @@ export default function ProductsManager() {
       // admin tool, a direct SQL edit), and `products_promo_below_price` is what stops one of those
       // leaving a promo priced above the item. Postgres's raw constraint string is not something to
       // show a merchant if that ever collides with a live promo here.
-      // The promo fields are locked for a basic shop, so this is the fallback for a `plan` that
-      // moved under a long-open tab — an upgrade prompt, not the bare error code (#110).
-      if (isRequiresPro(err)) {
-        // Promos, options and categories are all Pro and all share this endpoint, so name the one
-        // they were actually reaching for — being told about a "promo price" while adding flavours
-        // reads as the wrong error, which is worse than a vague one.
-        // Compared against the STORED row, not read off the form, and for the same reason the
-        // backend's gate is: the form's value and the row's agreeing is the ordinary case, and
-        // it is the disagreement that was refused. Reading `form.category_id` alone named the
-        // wrong feature whenever the category being moved away from was the one that mattered.
-        const categoryMoved = (form.category_id || null) !== (editingProduct?.category_id ?? null)
-        setMsg(optionGroups.length > 0
-          ? t('Menu options are a Pro feature. Upgrade to Pro to let customers choose sizes, flavours or add-ons.',
-              '商品选项是 Pro 功能。升级到 Pro 即可让顾客选择规格、口味或加料。')
-          : categoryMoved
-          ? t('Menu categories are a Pro feature. Upgrade to Pro to sort your menu into sections.',
-              '菜单分类是 Pro 功能。升级到 Pro 即可将菜单分成不同类别。')
-          : t('Putting an item on sale is a Pro feature. Upgrade to Pro to set a promo price.',
-              '限时优惠是 Pro 功能。升级到 Pro 即可设置优惠价。'))
-      } else if (err.message.includes('products_promo_below_price')) {
+      if (err.message.includes('products_promo_below_price')) {
         setMsg(t('The promo price is no longer below the normal price. Lower or clear the promo price first.',
           '优惠价已不低于原价。请先降低或清除优惠价。'))
       } else {
@@ -441,9 +396,7 @@ export default function ProductsManager() {
     const r = await updateMerchantConfig(merchant!.id, { product_categories: next })
     setCategoriesSaving(false)
     if (!r.ok) {
-      toast.error(isRequiresPro(r.error)
-        ? t('Menu categories are a Pro feature.', '菜单分类是 Pro 功能。')
-        : r.error.message || t('Could not save categories', '无法保存分类'))
+      toast.error(r.error.message || t('Could not save categories', '无法保存分类'))
       return false
     }
     await refreshMerchant()
@@ -540,39 +493,13 @@ export default function ProductsManager() {
           {t('Your products', '您的产品')}
         </h3>
         <div className="flex items-center gap-2">
-          {/* Shown to EVERY shop and locked for Basic — the show-but-lock rule (#110). Hiding it
-              would read as a missing feature and leave nothing to sell against, which is the
-              opposite of what the Pro gate is for. A Basic shop gets the padlock and the upgrade
-              CTA; the gate itself is the backend's 403, which `saveCategories` also handles for
-              the plan that moved under a long-open tab. */}
-          {pro ? (
-            <Button
-              type="button" variant="soft" size="none"
-              className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap"
-              onClick={() => setCategoriesOpen(true)}
-            >
-              {t('Categories', '分类')}
-            </Button>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button" variant="soft" size="none"
-                    className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap text-muted-foreground"
-                    onClick={goToSubscription}
-                  />
-                }
-              >
-                <Lock className="size-[13px] mr-1" strokeWidth={2} />
-                {t('Categories', '分类')}
-              </TooltipTrigger>
-              <TooltipContent>
-                {t('Menu categories are a Pro feature — sort your menu into sections.',
-                   '菜单分类是 Pro 功能 — 可将菜单分成不同类别。')}
-              </TooltipContent>
-            </Tooltip>
-          )}
+          <Button
+            type="button" variant="soft" size="none"
+            className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap"
+            onClick={() => setCategoriesOpen(true)}
+          >
+            {t('Categories', '分类')}
+          </Button>
           <Button data-tour="add-product" type="button" size="none" className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
             {t('+ Add product', '+ 添加产品')}
           </Button>
@@ -658,7 +585,6 @@ export default function ProductsManager() {
                   to is part of WHAT IT IS, and it was landing below the promo block and the photo
                   picker — past the fold on a laptop, so the merchant met it only after they had
                   finished thinking about the product. Identity first, then price, then media. */}
-              {pro && (
               <div className="flex flex-col gap-[6px] min-w-0">
                 <Label htmlFor="pm-category">{t('Category (optional)', '分类（可选）')}</Label>
                 <Select
@@ -709,7 +635,6 @@ export default function ProductsManager() {
                      '未分类的产品会排在店面最后，且不带标题。')}
                 </span>
               </div>
-              )}
               <div className="flex flex-col gap-[6px]">
                 <Label htmlFor="pm-3">{t('Description', '描述')}</Label>
                 <Textarea
@@ -761,13 +686,6 @@ export default function ProductsManager() {
                   </Select>
                 </div>
               </div>
-              {/* Promo pricing is Pro-only (#110), and a basic shop does not see these fields at
-                  all. This form is the ONE place a Pro lock would have appeared twice — promo and
-                  options — and two disabled panels in a single dialog buried the ordinary product
-                  editing every shop keeps. What is not shown here is still offered: the footer
-                  names both features once, so there is still something to sell against.
-                  `display: contents` keeps a Pro shop's layout exactly as it always was. */}
-              {pro && (
               <div className="contents">
                 <div className="flex flex-col gap-[6px]">
                   <Label htmlFor="pm-promo-price">{t('Promo price', '优惠价')}</Label>
@@ -812,7 +730,6 @@ export default function ProductsManager() {
                   </span>
                 </div>
               </div>
-              )}
               {editingProduct && editingProduct.promo_price !== null && editingProduct.promo_price !== undefined && (() => {
                 // M-1: `promo_sold` can outlive a LOWERED `promo_limit` — sell 8 against a cap of
                 // 10, then drop the cap to 3, and the row is `promo_sold: 8, promo_limit: 3`.
@@ -862,7 +779,6 @@ export default function ProductsManager() {
                   t={t}
                 />
               </div>
-              {pro && (
               <div className="flex flex-col gap-[6px] min-w-0">
                 <Label>{t('Options (optional)', '选项（可选）')}</Label>
                 <OptionGroupsEditor
@@ -884,7 +800,6 @@ export default function ProductsManager() {
                     }))}
                 />
               </div>
-              )}
               <div className="flex items-center justify-between gap-3 pt-1">
                 <div className="flex flex-col">
                   <Label htmlFor="pm-active">{t('Visible in storefront', '在店面显示')}</Label>
@@ -904,22 +819,6 @@ export default function ProductsManager() {
                 </button>
               </div>
             </div>
-            {/* The form's ONE upgrade offer. Each locked section says what it is; repeating the
-                CTA beside every one of them is the same offer twice in a single dialog. Here it
-                sits with the primary action, which is where a merchant looks when they try to
-                save and find out something was locked. */}
-            {!pro && (
-              <div className="mt-4 flex items-center justify-between gap-3 flex-wrap rounded-lg bg-muted px-3 py-2.5">
-                <span className="text-[12px] text-muted-foreground">
-                  {/* Names all THREE things this form hides from a Basic shop. It listed two for
-                      a release after categories shipped, which made the missing Category picker
-                      look like a bug rather than something to buy. */}
-                  {t('Sale prices, menu categories and customer options are Pro features.',
-                     '优惠价、菜单分类与商品选项为 Pro 功能。')}
-                </span>
-                <UpgradeLink className="px-3 py-[6px] text-[12px]" />
-              </div>
-            )}
             <Button type="submit" size="md" className="mt-4 w-full" disabled={busy}>
               {busy ? t('Saving…', '保存中…') : editingProduct ? t('Save changes', '保存更改') : t('Add product', '添加产品')}
             </Button>

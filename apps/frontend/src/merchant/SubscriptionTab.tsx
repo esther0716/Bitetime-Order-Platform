@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react'
-import { AlertTriangle, Check, ExternalLink, Timer } from 'lucide-react'
+import { AlertTriangle, ExternalLink, Timer } from 'lucide-react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import {
   fetchMyBilling, openBillingPortal, startCheckout,
-  cancelSubscription, downgradeToBasic, resumeSubscription,
+  cancelSubscription, resumeSubscription,
 } from '../store'
 import type { Result } from '../api'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
 import { fmtDate } from '../merchantDate'
 import { subscriptionTabState, type SubscriptionSnapshot } from './subscriptionTabState'
+import { yearlySavingPercent, type Cycle } from './reactivationChoice'
 import { billingErrorMessage } from './billingErrors'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -19,32 +20,18 @@ import {
 } from '../components/ui/dialog'
 import { SkeletonText } from '../components/Loaders'
 
-// Settings → Subscription (#112). The one place that answers "what plan am I on, what does it
-// cost, when does it renew" — BillingBanner only speaks in trouble states, so a healthy paying
-// merchant previously saw nothing about their subscription anywhere in the app.
+// Settings → Subscription (#112). The one place that answers "what does this cost and when does
+// it renew" — BillingBanner only speaks in trouble states, so a healthy paying merchant
+// previously saw nothing about their subscription anywhere in the app.
 //
-// The UPGRADE happens in Stripe's Customer Portal: a mid-period tier increase is a proration
-// argument, and the portal is a screen built to have it. The wind-down actions — cancel, step
-// down to Basic, and undoing either — happen HERE, because they all land on a period boundary,
-// so no money moves and there is nothing a payment screen needs to explain. What that buys is
-// the thing the portal cannot say: that cancelling suspends this shop, on a named date, in the
-// merchant's own language.
+// Cancelling and undoing a cancellation happen HERE rather than in Stripe's portal, because they
+// land on a period boundary: no money moves and there is nothing a payment screen needs to
+// explain. What that buys is the thing the portal cannot say — that cancelling suspends this
+// shop, on a named date, in the merchant's own language.
 
 const CARD = 'bg-card border-[0.5px] border-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4'
 const HEADING = 'font-heading text-[15px] font-medium text-primary mb-4 flex items-center gap-2'
 
-// What Pro adds, as it exists in code today — the gated surfaces and nothing else; the rest of
-// what the marketing page advertises is not built, and listing it here would be selling vapour.
-//
-// This list is where every Pro lock in the dashboard sends the merchant, so a gated feature
-// missing from it is a merchant clicking a padlock and landing on a page that never mentions
-// the thing they wanted.
-const PRO_FEATURES: [string, string][] = [
-  ['Telegram order alerts', 'Telegram 订单通知'],
-  ['Discount vouchers', '优惠券'],
-  ['Product promo pricing', '商品优惠价'],
-  ['Revenue reports as Excel', '营收报表导出 Excel'],
-]
 
 /**
  * The Stripe portal hand-off, shared by every control that opens it — the `PortalButton` and the
@@ -96,12 +83,12 @@ function PortalButton({ label }: { label: string }) {
  * exactly when `canManage` is true, so the two buttons cannot both appear and this cannot create
  * a second subscription. It grants no trial either: trials come only from superadmin approval.
  */
-function CheckoutButton({ plan, cycle, label }: { plan: string; cycle: string; label: string }) {
+function CheckoutButton({ cycle, label }: { cycle: string; label: string }) {
   const { t } = useSession()
   const [busy, setBusy] = useState(false)
   async function go() {
     setBusy(true)
-    const r = await startCheckout({ plan, billing: cycle })
+    const r = await startCheckout({ billing: cycle })
     if (r.ok) window.location.assign(r.data)
     else {
       toast.error(r.error.message || t('Could not start checkout', '无法开始结账'))
@@ -112,6 +99,78 @@ function CheckoutButton({ plan, cycle, label }: { plan: string; cycle: string; l
     <Button type="button" size="sm" onClick={go} disabled={busy}>
       {busy ? t('Opening…', '打开中…') : label}
     </Button>
+  )
+}
+
+/**
+ * Buying a subscription for a shop that is open with nothing paying for it — a comp that was
+ * revoked, or one whose subscription lapsed before a superadmin reopened the shop.
+ *
+ * It CHOOSES a billing cycle rather than inheriting the shop's stored one, and that is the whole
+ * reason it is a component: the card above reports what the shop pays, which is a fact, while this
+ * one is a purchase, which is a decision. Sharing a single `cycle` between them left yearly
+ * unreachable here for any shop whose column happened to say monthly — including every shop that
+ * never had a subscription at all.
+ *
+ * `yearlySavingPercent` is SuspendedScreen's, deliberately: the two purchase surfaces must not be
+ * able to quote different savings off the same pair of Stripe prices. Null when yearly is not
+ * actually cheaper, so a "Save 0%" badge can never render.
+ */
+function SubscribeCard({ defaultCycle, readOnly }: { defaultCycle: Cycle; readOnly: boolean }) {
+  const { t } = useSession()
+  const { pricing } = usePlatformPricing()
+  const [buyCycle, setBuyCycle] = useState<Cycle>(defaultCycle)
+
+  const amount = pricing.prices.pro[buyCycle]
+  const per = buyCycle === 'yearly' ? t('/year', '/年') : t('/month', '/月')
+  const saving = yearlySavingPercent(pricing.prices.pro.monthly, pricing.prices.pro.yearly)
+
+  return (
+    <div className={CARD}>
+      <h3 className={HEADING}>{t('Subscribe', '订阅')}</h3>
+      <p className="text-[13px] text-muted-foreground mb-4">
+        {t('This shop has no subscription yet. Cancel anytime.', '此店铺尚无订阅。可随时取消。')}
+      </p>
+
+      <div
+        role="radiogroup"
+        aria-label={t('Billing cycle', '付费周期')}
+        className="inline-flex p-[3px] mb-4 rounded-pill border-[0.5px] border-border bg-card"
+      >
+        {(['monthly', 'yearly'] as Cycle[]).map(c => (
+          <button
+            key={c}
+            type="button"
+            role="radio"
+            aria-checked={buyCycle === c}
+            onClick={() => setBuyCycle(c)}
+            className={`py-[5px] px-4 rounded-pill text-[13px] cursor-pointer transition-colors ${
+              buyCycle === c ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-primary'
+            }`}
+          >
+            {c === 'monthly' ? t('Monthly', '按月') : t('Yearly', '按年')}
+            {/* Only ever rendered from the live Stripe prices, and only when there is a real
+                saving to claim — see yearlySavingPercent. */}
+            {c === 'yearly' && saving !== null && (
+              <span className={buyCycle === c ? 'ml-1.5 opacity-90' : 'ml-1.5 text-primary'}>
+                {t(`− ${saving}%`, `省 ${saving}%`)}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-[15px] text-foreground mb-4">
+        <span className="font-heading text-[22px] text-primary">{formatMoney(amount, pricing.currency)}</span>
+        <span className="text-[13px] text-muted-foreground">{per}</span>
+      </p>
+
+      {/* Withheld from an impersonating superadmin, and it has to be: `/api/checkout` is
+          guarded by `requireOwnMerchant`, so the button would 404 for them. */}
+      {readOnly
+        ? <OwnerOnlyNote />
+        : <CheckoutButton cycle={buyCycle} label={t('Subscribe', '订阅')} />}
+    </div>
   )
 }
 
@@ -225,42 +284,10 @@ function ConfirmAction({
 }
 
 /**
- * The downgrade confirm body: a lead line, the three Pro features that stop as a bulleted list,
- * then the reassurance the shop stays open. A list rather than a sentence because three distinct
- * things stop and a merchant deciding needs to weigh each — the run-on version buried them.
- * Mirrors the PRO_FEATURES the upgrade pitch lists, phrased as losses.
- */
-function DowngradeBody({ renewsAt }: { renewsAt: string | null }) {
-  const { t } = useSession()
-  const stops: [string, string][] = [
-    ['Telegram order alerts stop', 'Telegram 订单通知将停止'],
-    ['Your discount vouchers stop working', '优惠券将失效'],
-    ['Any running promo prices end', '进行中的优惠价将结束'],
-    // The dashboard keeps showing the revenue chart on Basic — only the download goes.
-    ['You can no longer download revenue reports', '将无法下载营收报表'],
-  ]
-  return (
-    <>
-      <p>
-        {renewsAt
-          ? t(`You keep Pro until ${fmtDate(renewsAt)}, then this shop moves to Basic and:`,
-              `在 ${fmtDate(renewsAt)} 之前 Pro 功能仍可使用，之后店铺将转为基础版：`)
-          : t('At the end of the period you have paid for, this shop moves to Basic and:',
-              '在您已付费的周期结束后，店铺将转为基础版：')}
-      </p>
-      <ul className="flex flex-col gap-1 list-disc pl-5">
-        {stops.map(([en, zh]) => <li key={en}>{t(en, zh)}</li>)}
-      </ul>
-      <p>{t('Your shop stays open.', '店铺本身照常营业。')}</p>
-    </>
-  )
-}
-
-/**
  * The cancel confirm body. Paired with the red `alert` callout above it: the callout states the
  * one fact that must not be missed (the shop closes), this fills in the timeline and the way
- * back. A list, same reasoning as DowngradeBody — the suspension is the point and must not be
- * buried mid-sentence.
+ * back. A list rather than a sentence: the suspension is the point and must not be buried
+ * mid-sentence.
  */
 function CancelBody({ renewsAt }: { renewsAt: string | null }) {
   const { t } = useSession()
@@ -292,8 +319,9 @@ function CancelBody({ renewsAt }: { renewsAt: string | null }) {
  * `requireOwnMerchant` in the backend's mw.ts, where that asymmetry is deliberate. A superadmin
  * owns no shop, so the honest answer is that this is the owner's to do.
  *
- * Rendered ONCE per card, never twice on the same screen: the plan card and the upgrade card are
- * separate surfaces, but the Summary grid sits directly under the plan card and simply drops its
+ * Rendered ONCE per card, never twice on the same screen: the subscription card and the subscribe
+ * card are separate surfaces, but the Summary grid sits directly under the subscription card and
+ * simply drops its
  * portal cells rather than repeating this sentence a few pixels below itself.
  */
 function OwnerOnlyNote() {
@@ -379,7 +407,7 @@ function SummaryGrid({ nextPayment, renewalLabel, renewalValue, readOnly }: {
         </div>
         {/* Both cells are nothing but a door to the portal, so an admin who cannot open it is
             better off not seeing them at all — a "Payment method" label above a dead link says
-            less than nothing. The plan card immediately above has already said why. */}
+            less than nothing. The subscription card immediately above has already said why. */}
         {!readOnly && (
           <>
             <div>
@@ -404,7 +432,7 @@ function SummaryGrid({ nextPayment, renewalLabel, renewalValue, readOnly }: {
 export default function SubscriptionTab() {
   // `impersonating` is what makes this tab read-only. Everything ABOVE the buttons keeps working
   // while it is true — the card is fetched by explicit merchant id through `requireMerchantOwns`,
-  // which superadmins do pass — and that split is exactly the trap: a fully populated plan card
+  // which superadmins do pass — and that split is exactly the trap: a fully populated card
   // implies the buttons under it belong to the same shop, and they do not. They post to routes
   // with no id in them, which resolve the caller's own shop and answer 404 to a superadmin who
   // owns none. Read `readOnly` as "these controls are not this viewer's to use", not "loading".
@@ -415,9 +443,7 @@ export default function SubscriptionTab() {
   const [loaded, setLoaded] = useState(false)
   const merchantId = merchant?.id
 
-  // Extracted so the wind-down actions can re-read after Stripe has been told. `merchant.plan`
-  // deliberately does NOT change here: the tier moves only when `reconcileMerchantPlan` sees the
-  // price actually change, which is the whole reason a pending downgrade keeps its Pro features.
+  // Extracted so the wind-down actions can re-read after Stripe has been told.
   const load = useCallback(() => {
     if (!merchantId) return
     fetchMyBilling(merchantId)
@@ -428,11 +454,13 @@ export default function SubscriptionTab() {
 
   // The clock is read once per render pass and handed to the pure module, rather than consulted
   // inside it — same discipline as ProductsManager's promoEnded.
-  const state = subscriptionTabState(billing, merchant?.plan, new Date())
+  const state = subscriptionTabState(billing, new Date())
 
+  // What the shop PAYS, read off its own row. Distinct from `buyCycle` below, which is what a
+  // shop with no subscription is CHOOSING — conflating the two is how the Subscribe card ended up
+  // able to sell only whichever cycle the column happened to say.
   const cycle = merchant?.billing_cycle === 'yearly' ? 'yearly' : 'monthly'
-  const planPrice = pricing.prices[state.plan === 'pro' ? 'pro' : 'basic'][cycle]
-  const proPrice = pricing.prices.pro[cycle]
+  const planPrice = pricing.prices.pro[cycle]
   const per = cycle === 'yearly' ? t('/year', '/年') : t('/month', '/月')
 
   if (!loaded) return <div className={CARD}><SkeletonText /></div>
@@ -440,8 +468,7 @@ export default function SubscriptionTab() {
   // Named once: every wind-down sentence has to say WHEN, and a date-less "your shop will be
   // suspended" is the sort of warning that reads as a threat rather than information.
   const endsAt = state.kind === 'ending' ? state.endsAt : null
-  // When the period the merchant has already paid for runs out — the moment a downgrade would
-  // take effect. Only ever read while `canDowngrade`, which requires a live subscription.
+  // When the period the merchant has already paid for runs out.
   const renewsAt = state.kind === 'live' ? state.renewsAt : state.kind === 'trial' ? state.trialEndsAt : null
 
   return (
@@ -452,26 +479,18 @@ export default function SubscriptionTab() {
       <div className={CARD}>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
-            <h3 className={HEADING}>{t('Your plan', '您的方案')}</h3>
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="font-heading text-[22px] text-primary">
-                {state.plan === 'pro' ? 'Pro' : t('Basic', '基础版')}
-              </span>
-              <Badge variant={state.plan === 'pro' ? 'default' : 'outline'} className="uppercase tracking-[0.08em]">
-                {state.plan === 'pro' ? 'Pro' : t('Basic', '基础版')}
-              </Badge>
-            </div>
+            <h3 className={HEADING}>{t('Your subscription', '您的订阅')}</h3>
             <a
-              href="/#pricing" target="_blank" rel="noopener"
-              className="inline-flex items-center gap-1 text-[13px] text-primary underline underline-offset-2 mt-2"
+              href="/pricing" target="_blank" rel="noopener"
+              className="inline-flex items-center gap-1 text-[13px] text-primary underline underline-offset-2 mt-1"
             >
-              {t('Plan details', '方案详情')}
+              {t('What is included', '包含什么')}
               <ExternalLink size={13} strokeWidth={2} aria-hidden />
             </a>
           </div>
           <span className="font-heading text-[18px] text-primary whitespace-nowrap shrink-0">
-            {/* A comped shop is Pro and pays nothing. Quoting the Pro price here — beside a Pro
-                badge, with no subscription behind it — reads as a bill. */}
+            {/* A comped shop pays nothing. Quoting the price here, with no subscription behind
+                it, reads as a bill. */}
             {state.comped
               ? t('Free', '免费')
               : <>{formatMoney(planPrice, pricing.currency)}<span className="text-[13px] text-muted-foreground">{per}</span></>}
@@ -505,16 +524,6 @@ export default function SubscriptionTab() {
                         '此店铺尚无订阅记录。')}
         </p>
 
-        {/* A scheduled downgrade is NOT the same state as a cancellation — the shop stays open
-            and keeps being billed, at the lower tier — so it gets its own line rather than
-            being folded into the sentence above. */}
-        {state.pendingPlan === 'basic' && state.pendingAt && (
-          <p className="text-[13px] text-muted-foreground leading-[1.6] mt-2">
-            {t(`Switching to Basic on ${fmtDate(state.pendingAt)}. You keep Pro features until then.`,
-              `将于 ${fmtDate(state.pendingAt)} 转为基础版。在此之前 Pro 功能仍可使用。`)}
-          </p>
-        )}
-
         {/* Gated on canManage, NOT on canUpgrade: a Pro shop cannot upgrade but must still be
             able to change its card and read invoices — a sentence promising the billing portal
             with no way to reach it is the same dead end in a different costume. */}
@@ -534,26 +543,8 @@ export default function SubscriptionTab() {
                     else toast.error(r.error.message || t('Could not undo that', '无法撤销'))
                   })}
                 >
-                  {state.kind === 'ending'
-                    ? t('Keep my subscription', '继续订阅')
-                    : t('Keep Pro', '保留 Pro')}
+                  {t('Keep my subscription', '继续订阅')}
                 </Button>
-              )}
-
-              {state.canDowngrade && (
-                <ConfirmAction
-                  label={t('Switch to Basic', '转为基础版')}
-                  title={t('Switch to Basic?', '转为基础版？')}
-                  // Names what the cutoff actually does, because it is not reversible by
-                  // re-upgrading: the vouchers already in customers' hands are deactivated for
-                  // good, and a running sale is ended rather than paused. The consequences are a
-                  // list, not a run-on sentence — three separate things stop, and a merchant
-                  // scanning this needs to see each one.
-                  body={<DowngradeBody renewsAt={renewsAt} />}
-                  confirmLabel={t('Switch to Basic', '转为基础版')}
-                  run={downgradeToBasic}
-                  onDone={load}
-                />
               )}
 
               {state.canCancel && (
@@ -583,7 +574,7 @@ export default function SubscriptionTab() {
 
       {/* Not for past-due: that shop has no renewal date (the card is failing), and a Summary
           that answered "Renewal: Active" would flatly contradict the payment-failed line above.
-          The plan card's Manage button already routes it to the portal to fix the card. */}
+          The card's Manage button already routes it to the portal to fix the card. */}
       {state.canManage && state.kind !== 'past-due' && (
         <SummaryGrid
           nextPayment={
@@ -602,57 +593,14 @@ export default function SubscriptionTab() {
         />
       )}
 
-      {/* The pitch is shown to any shop that is not already Pro, INCLUDING one with no
-          subscription behind it: a Pro lock's CTA promises "see the price and what Pro adds",
-          and a comped or pre-checkout shop that lands here must find that, not a blank tab.
-          Only the BUTTON depends on there being a Stripe customer to send them to. */}
-      {state.canUpgrade && (
-        <div className={CARD}>
-          <h3 className={HEADING}>
-            {t('Upgrade to Pro', '升级到 Pro')}
-            <Badge variant="default" className="uppercase tracking-[0.08em]">Pro</Badge>
-          </h3>
-          <p className="text-[13px] text-muted-foreground mb-4">
-            {t(`${formatMoney(proPrice, pricing.currency)}${per} — everything in Basic, plus:`,
-              `${formatMoney(proPrice, pricing.currency)}${per} — 包含基础版全部功能，另加：`)}
-          </p>
-          <ul className="flex flex-col gap-2 mb-5">
-            {PRO_FEATURES.map(([en, zh]) => (
-              <li key={en} className="flex items-center gap-2 text-[13px] text-foreground">
-                <Check size={15} strokeWidth={2} className="text-primary shrink-0" aria-hidden />
-                {t(en, zh)}
-              </li>
-            ))}
-          </ul>
-          {/* Two routes to the same tier, decided by whether there is a subscription to change.
-              With one: the portal swaps the price on it, and owns the proration argument that
-              comes with a mid-period increase. Without one (an active shop approved without a
-              trial, or one whose subscription lapsed): Checkout sells a new one, which the
-              `checkout.session.completed` reconciliation then turns into real Pro access. */}
-          {/* The pitch above stays — an admin has every reason to read what Pro costs and adds.
-              Only the act of buying is withheld, and BOTH branches have to be: `/api/checkout`
-              is guarded by `requireOwnMerchant` exactly as the portal is, so the no-subscription
-              path 404s for an admin just as the portal path does. */}
-          {readOnly ? (
-            <OwnerOnlyNote />
-          ) : state.canManage ? (
-            <>
-              <PortalButton label={t('Upgrade to Pro', '升级到 Pro')} />
-              <p className="text-[12px] text-muted-foreground mt-3">
-                {t('You will pick the Pro plan in the billing portal. You can step back down to Basic from this page later; that takes effect at the end of the period you have paid for.',
-                  '您将在账单门户中选择 Pro 方案。日后可在此页面转回基础版，将在已付费周期结束时生效。')}
-              </p>
-            </>
-          ) : (
-            <>
-              <CheckoutButton plan="pro" cycle={cycle} label={t('Upgrade to Pro', '升级到 Pro')} />
-              <p className="text-[12px] text-muted-foreground mt-3">
-                {t('This shop has no subscription yet, so this starts a new one at the Pro price.',
-                  '此店铺尚无订阅，将以 Pro 价格开始新的订阅。')}
-              </p>
-            </>
-          )}
-        </div>
+      {/* The shop is open but nothing is paying for it — a comp that was revoked, or a
+          subscription that lapsed before a superadmin reopened the shop. It reaches the dashboard
+          (it is neither pending nor suspended), so this is the only place it can buy one, and
+          telling it to "contact us" is the dead end ADR 0004 set out to remove.
+          `canSubscribe` is the exact complement of `canManage`, so this and the portal button can
+          never both appear and a second subscription cannot be created on a shop that pays. */}
+      {state.canSubscribe && (
+        <SubscribeCard defaultCycle={cycle} readOnly={readOnly} />
       )}
     </div>
   )

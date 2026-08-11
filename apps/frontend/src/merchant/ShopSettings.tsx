@@ -16,14 +16,12 @@ import { isDirty, type SettingsFields } from './settingsDirty'
 import { useSaved } from './useSaved'
 import ReferralTab from './ReferralTab'
 import FulfilmentTab from './FulfilmentTab'
-import { ProLock } from './ProLock'
 import SubscriptionTab from './SubscriptionTab'
 import { useDashboardSubsection } from '../useDashboardSection'
-import { useProAccess, isRequiresPro } from '../plan'
 import AddressAutocomplete from '../store/AddressAutocomplete'
 import PaymentQrPicker from './PaymentQrPicker'
 
-type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'notifications' | 'subscription' | 'referral'
+type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'marketing' | 'notifications' | 'subscription' | 'referral'
 
 // Tabbed Shop Settings (issue #19). A container renders a horizontal tab bar and
 // the active tab's form; each tab is its own form with its own Save. Only the
@@ -31,7 +29,6 @@ type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'notifications' | 'subscri
 // container tracks a single `dirty` flag and registers it with the NavGuard.
 export default function ShopSettings() {
   const { t } = useSession()
-  const pro = useProAccess()
   const { guard, registerBlocker } = useNavGuard()
   // WHICH tab is dirty, not merely whether one is. Only the active tab can be, so `dirty` falls
   // out of the comparison — and a tab switch clears it by construction rather than by an effect
@@ -40,13 +37,12 @@ export default function ShopSettings() {
   // navigation and warn on reload about edits that no longer exist.
   const [dirtyTab, setDirtyTab] = useState<TabKey | null>(null)
 
-  const TABS: { key: TabKey; label: string; tag?: string }[] = [
+  const TABS: { key: TabKey; label: string }[] = [
     { key: 'shipping', label: t('Shipping', '运费') },
     { key: 'fulfilment', label: t('Fulfilment', '取货') },
     { key: 'payment', label: t('Payment', '付款') },
-    // Marked from the tab bar, not only once opened — a basic shop should see that alerts are
-    // a paid feature before it goes looking for the form (#110).
-    { key: 'notifications', label: t('Notifications', '通知'), tag: pro ? undefined : 'Pro' },
+    { key: 'marketing', label: t('Marketing', '营销') },
+    { key: 'notifications', label: t('Notifications', '通知') },
     { key: 'subscription', label: t('Subscription', '订阅') },
     { key: 'referral', label: t('Referral', '推荐') },
   ]
@@ -102,19 +98,9 @@ export default function ShopSettings() {
             a `max-sm:` here would leave the tablet widths overflowing — which is the bug this
             replaced. */}
         <TabsList className="flex-wrap">
-          {TABS.map(({ key, label, tag }) => (
+          {TABS.map(({ key, label }) => (
             <TabsTrigger key={key} value={key} className="group/tab">
               {label}
-              {/* The active trigger fills with oxblood, so the outline badge's `text-foreground` would
-                  sit near-invisible on it — invert to cream while the tab is selected. */}
-              {tag && (
-                <Badge
-                  variant="outline"
-                  className="ml-2 uppercase tracking-[0.08em] group-data-active/tab:border-background/40 group-data-active/tab:text-background"
-                >
-                  {tag}
-                </Badge>
-              )}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -123,16 +109,8 @@ export default function ShopSettings() {
       {tab === 'shipping' && <ShippingTab onDirtyChange={setDirty} />}
       {tab === 'fulfilment' && <FulfilmentTab onDirtyChange={setDirty} />}
       {tab === 'payment' && <PaymentTab onDirtyChange={setDirty} />}
-      {/* Telegram alerts are Pro-only (#110). The tab stays — the feature must be visible to
-          be sold — but a basic shop gets the upgrade prompt in place of the form. The refusal
-          that actually matters is the backend's `403 requires_pro` on PUT …/secret. */}
-      {tab === 'notifications' && (pro
-        ? <NotificationsTab onDirtyChange={setDirty} />
-        : <ProLock
-            what={t('Order notifications', '订单通知')}
-            why={t('Get a Telegram message the moment an order comes in, so you never have to watch the dashboard. Available on the Pro plan.',
-              '订单一进来就收到 Telegram 消息，无需盯着后台。Pro 方案专享。')}
-          />)}
+      {tab === 'marketing' && <MarketingTab onDirtyChange={setDirty} />}
+      {tab === 'notifications' && <NotificationsTab onDirtyChange={setDirty} />}
       {tab === 'subscription' && <SubscriptionTab />}
       {tab === 'referral' && <ReferralTab />}
     </div>
@@ -610,6 +588,110 @@ function PaymentTab({ onDirtyChange }: TabProps) {
 
 // Only ever rendered for a Pro shop — the gate is in ShopSettings above, alongside every other
 // tab's mount, rather than hidden in a wrapper here.
+// The shop's OWN advertising pixels (#220). The merchant is the data controller for this
+// tracking, not TinyOrder — which is why the help text below reads as an obligation rather than a
+// feature description, and why the Terms carry a clause about it.
+//
+// The two ids go through `updateMerchantConfig` like every other shop-config field. What makes
+// them Pro is `pixelIdsChanged` at the route, not this form: a merchant whose plan moved under a
+// long-open tab still meets a 403, which is the toast at the bottom of `save`.
+function MarketingTab({ onDirtyChange }: TabProps) {
+  const { t, merchant, refreshMerchant } = useSession()
+  const [initial] = useState<SettingsFields>(() => ({
+    metaPixel: merchant!.meta_pixel_id ?? '',
+    tiktokPixel: merchant!.tiktok_pixel_id ?? '',
+  }))
+  const [fields, setFields] = useState<SettingsFields>(initial)
+  const [busy, setBusy] = useState(false)
+  const { commit } = useSaved(initial, fields, settingsEq, onDirtyChange)
+
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); setBusy(true)
+    try {
+      // Sent as typed, blanks included: '' is how this form says "take the pixel down", and the
+      // backend reads it as null (writes.ts). Trimming and shape-checking happen there, once,
+      // rather than in two places that can disagree.
+      const saved = await updateMerchantConfig(merchant!.id, {
+        meta_pixel_id: String(fields.metaPixel ?? ''),
+        tiktok_pixel_id: String(fields.tiktokPixel ?? ''),
+      })
+      if (!saved.ok) {
+        toast.error(saved.error.message || t('Save failed', '保存失败'))
+        return
+      }
+      await refreshMerchant()
+      commit(fields)
+      toast.success(t('Marketing saved', '营销设置已保存'))
+    } catch (err: any) { toast.error(err.message || t('Save failed', '保存失败')) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <form onSubmit={save}>
+      <div className={CARD}>
+        <h3 className={HEADING}>{t('Your own ad pixel', '你自己的广告像素')}</h3>
+        <p className="text-[12px] text-muted-foreground mb-4 leading-[1.5]">
+          {t('Add your pixel and your shop page reports its own visits and orders straight to your ad account, so Facebook and TikTok can tell you which ads earned their money. Leave a box empty if you do not run ads there.',
+             '填入像素后，你的店铺页面会把访问与订单直接汇报给你自己的广告账户，让 Facebook 与 TikTok 告诉你哪些广告真的赚钱。没有投放的平台留空即可。')}
+        </p>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-[6px]">
+            <Label htmlFor="shop-meta-pixel">{t('Meta (Facebook) pixel ID', 'Meta（Facebook）像素 ID')}</Label>
+            <Input
+              id="shop-meta-pixel"
+              value={String(fields.metaPixel ?? '')}
+              onChange={e => setFields(f => ({ ...f, metaPixel: e.target.value }))}
+              placeholder="123456789012345"
+              inputMode="numeric"
+              variant="compact"
+            />
+            <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
+              {t('A 15- or 16-digit number from Events Manager → Data sources. Not your ad account number.',
+                 '来自事件管理工具 → 数据源的 15 或 16 位数字。不是广告账户号码。')}
+            </p>
+          </div>
+          <div className="flex flex-col gap-[6px]">
+            <Label htmlFor="shop-tiktok-pixel">{t('TikTok pixel ID', 'TikTok 像素 ID')}</Label>
+            <Input
+              id="shop-tiktok-pixel"
+              value={String(fields.tiktokPixel ?? '')}
+              onChange={e => setFields(f => ({ ...f, tiktokPixel: e.target.value }))}
+              placeholder="CQ1234567890ABCDEFGH"
+              variant="compact"
+            />
+            <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
+              {t('20 letters and digits from TikTok Ads Manager → Assets → Events.',
+                 '来自 TikTok 广告管理工具 → 资产 → 事件的 20 位字母数字。')}
+            </p>
+          </div>
+        </div>
+      </div>
+      {/* Said BEFORE the merchant saves, and said plainly. Both costs are real, both are theirs,
+          and a merchant who meets the cookie banner for the first time as a complaint from a
+          customer was not told. The wording is the Terms clause in the merchant's own language —
+          see src/legal/documents.ts. */}
+      <div className={CARD}>
+        <h3 className={HEADING}>{t('Before you switch this on', '开启前请注意')}</h3>
+        <ul className="flex flex-col gap-2 text-[13px] text-muted-foreground leading-[1.6] list-disc pl-4">
+          <li>
+            {t('Your customers get a cookie question on your shop page, and nothing is tracked unless they agree. That is a step in front of your own checkout.',
+               '你的顾客会在店铺页面看到 Cookie 询问，只有同意后才会跟踪。这会在你的结账流程前多出一步。')}
+          </li>
+          <li>
+            {t('The tracking is yours, not TinyOrder’s. You are responsible for telling your customers about it and for the ad platform’s own rules.',
+               '这项跟踪属于你，不属于 TinyOrder。你需要自行告知顾客，并遵守广告平台的规则。')}
+          </li>
+          <li>
+            {t('We cannot tell a wrong ID from a right one. Place a test order and check it arrives in Events Manager.',
+               '我们无法分辨 ID 是否正确。请下一笔测试订单，并到事件管理工具确认已收到。')}
+          </li>
+        </ul>
+      </div>
+      <SaveRow busy={busy} label={{ idle: t('Save marketing', '保存营销设置'), busy: t('Saving…', '保存中…') }} />
+    </form>
+  )
+}
+
 function NotificationsTab({ onDirtyChange }: TabProps) {
   const { t, merchant } = useSession()
   const initial: SettingsFields = { tgToken: '', tgChat: '' }
@@ -638,12 +720,7 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
       commit(fields)
       toast.success(t('Notifications saved', '通知已保存'))
     } else {
-      // The form only renders for a Pro shop, so this is the fallback for a `plan` that moved
-      // under a long-open tab — an upgrade prompt, not the raw `requires_pro` code (#110).
-      toast.error(isRequiresPro(r.error)
-        ? t('Order notifications are a Pro feature. Upgrade to Pro to turn them on.',
-            '订单通知是 Pro 功能。升级到 Pro 即可开启。')
-        : r.error.message || t('Save failed', '保存失败'))
+      toast.error(r.error.message || t('Save failed', '保存失败'))
     }
     setBusy(false)
   }

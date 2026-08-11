@@ -112,8 +112,6 @@ export const TERMS: LegalDocument = {
       body: [
         'You can cancel your subscription at any time from your dashboard. Cancellation takes effect at the end of the period you have already paid for: your shop keeps working until then, and you are not billed again.',
         'Because access continues to the end of the paid period, we do not prorate or refund part of a period. Cancelling halfway through a month does not produce a half-month refund; it stops the next payment.',
-        'The same applies to moving to a cheaper plan. The change takes effect at your next renewal rather than immediately, so nothing is refunded and nothing is charged at the moment you make it.',
-        'Moving to a cheaper plan is not simply the reverse of upgrading, and it is worth knowing before you do it: when the change takes effect, the features of the higher plan stop, and anything you created with them stops with them. Your discount vouchers are deactivated and any running promotional prices end. Upgrading again does not bring them back — you would set them up afresh.',
         'We may refund a payment at our discretion where something has gone wrong on our side — for example a shop that was billed while unusable because of a fault in the software.',
         'Refunds for FOOD ORDERS are not ours to give. The shop received that payment directly and decides what to do about it. See section 3.',
       ],
@@ -144,8 +142,23 @@ export const TERMS: LegalDocument = {
       ],
     },
     {
+      // The merchant-owned advertising pixels (#220). Its own section rather than a paragraph
+      // folded into section 9, because it is the one place these terms hand the shop a tool that
+      // makes it a data controller in its own right — and the obligations that come with it are
+      // the shop's, not ours. Wording kept plain enough that the Shop Settings help text can say
+      // the same thing in the merchant's own language without the two drifting apart.
+      id: 'shop-tracking',
+      heading: '10. Tracking you add to your shop',
+      body: [
+        'Your subscription lets you add your own advertising pixel — a Meta (Facebook) or TikTok pixel — to your storefront. If you do, that tracking is yours and not ours. You are the party responsible for it.',
+        'That means you must tell your own customers about it, obtain their consent where the law requires it, and keep to the advertising platform\'s own terms and policies. We show your customers a request for consent on your storefront and set nothing unless they agree, but that does not transfer the responsibility to us.',
+        'What we send to the platform you name is limited to the pages viewed on your storefront and the value of an order that is placed. We do not send your customers\' names, contact numbers or addresses to an advertising platform.',
+        'We do not check whether the pixel you enter is correct or belongs to you, and we cannot see what the platform does with what it receives. You can remove your pixel at any time in your shop settings.',
+      ],
+    },
+    {
       id: 'availability',
-      heading: '10. Availability',
+      heading: '11. Availability',
       body: [
         'We work to keep TinyOrder available, but we do not promise it will be uninterrupted or error-free. We may need to take it down for maintenance, and parts of it depend on third-party services that can fail independently of us.',
         'Some features depend on services outside our control — messaging, email delivery and mapping among them. A failure in one of those is not a failure of the whole service.',
@@ -153,7 +166,7 @@ export const TERMS: LegalDocument = {
     },
     {
       id: 'liability',
-      heading: '11. Limitation of liability',
+      heading: '12. Limitation of liability',
       body: [
         'Nothing in these terms limits liability that cannot lawfully be limited, including liability for death or personal injury caused by negligence, or for fraud.',
         'Subject to that, we are not liable for lost profits, lost sales, lost data or indirect or consequential loss, and our total liability to you in any twelve-month period is limited to the amount you paid us for the subscription in that period.',
@@ -162,21 +175,21 @@ export const TERMS: LegalDocument = {
     },
     {
       id: 'changes',
-      heading: '12. Changes to these terms',
+      heading: '13. Changes to these terms',
       body: [
         'We may update these terms. The date at the top of this page shows when they last changed. Where a change materially affects you, we will tell you before it takes effect. Continuing to use TinyOrder after that means you accept the updated terms.',
       ],
     },
     {
       id: 'governing-law',
-      heading: '13. Governing law',
+      heading: '14. Governing law',
       body: [
         'These terms are governed by the laws of Malaysia, and the courts of Malaysia have exclusive jurisdiction over any dispute arising from them.',
       ],
     },
     {
       id: 'contact-terms',
-      heading: '14. Contact',
+      heading: '15. Contact',
       body: [
         `Questions about these terms go to ${email}.`,
       ],
@@ -215,7 +228,8 @@ export const PRIVACY: LegalDocument = {
         'To bill shops for their subscriptions, and to handle trials, renewals and cancellations.',
         'To keep the service working and safe: to diagnose faults, to prevent abuse, and to enforce our terms.',
         'To contact you about the service where we need to — a trial ending, a failed payment, a material change to these documents.',
-        'We do not sell personal data, and we do not use it for advertising.',
+        'We do not sell personal data. We do not use what a shop tells us, or what its customers order, for advertising.',
+        'On our own marketing pages we use a Meta advertising pixel to measure our own advertising, and it runs only if you accept it. It is never present on a shop\'s storefront.',
       ],
     },
     {
@@ -224,13 +238,27 @@ export const PRIVACY: LegalDocument = {
       body: [
         'To the shop you ordered from. Placing an order sends the shop your name, contact number, what you ordered and, for a delivery, your address — because they cannot fulfil the order otherwise. Shops on our paid tier may also receive that order through a messaging service, which means those details are delivered into the shop\'s own messaging account.',
         'To the service providers we run on. Each receives only what it needs, and we name them rather than describe them: Supabase hosts our database and handles sign-in, and so stores the data described above; Stripe processes shops\' subscription payments; Resend delivers order confirmations and account email; Google Maps Platform receives a delivery address when a shop prices delivery by distance, and receives what you type when a shop uses address autocomplete; and Telegram delivers order alerts to shops that have enabled them.',
+        'To Meta, if you accept advertising cookies on our own marketing pages. Meta receives which of our pages you viewed and whether you created a shop. It does not receive your name, your email address, your contact number or any order. It receives nothing at all from a shop\'s storefront, and nothing at all if you decline.',
         'Where the law requires it, or to establish, exercise or defend legal claims.',
         'Some of these providers process data outside Malaysia. Where that happens we rely on the provider\'s own contractual protections.',
       ],
     },
     {
+      id: 'cookies',
+      heading: '5. Cookies and similar technologies',
+      body: [
+        'We use a small amount of storage in your browser to keep the service working — to keep you signed in, to remember the language you chose, and to remember a choice you made at a shop\'s checkout. These are necessary for the service to work and are not used for advertising.',
+        'We also measure how our pages are used. That measurement is done by our own systems and by our hosting provider, does not identify you, and does not follow you to other websites.',
+        'Advertising cookies are separate. Ours are only ever set on our own marketing pages, and never on a shop\'s storefront. We ask you before any of them are set, and we set none of them if you decline or if you do not answer. Your answer is remembered in your own browser, so a different browser or device asks you again.',
+        // #220. This paragraph is the reason the sentence above had to be split: the claim "never
+        // on a shop's storefront" is still true of OUR pixels and false of the sentence a reader
+        // takes from it, the moment a shop adds one of its own.
+        'A shop can also add its own advertising pixel to its storefront, run by that shop through its own advertising account. Where a shop has done so, its storefront asks you separately, sets nothing unless you agree, and your answer there applies to that shop alone. That tracking belongs to the shop and not to us — the shop is responsible for it, and its own privacy practices apply.',
+      ],
+    },
+    {
       id: 'retention',
-      heading: '5. How long we keep it',
+      heading: '6. How long we keep it',
       body: [
         'Order records are kept for as long as the shop that received them is on the platform, because the shop needs its own trading history.',
         'Account data is kept while the account exists. If a shop closes, we keep its data for a reasonable period afterwards to settle billing and handle any dispute, and then remove it.',
@@ -239,7 +267,7 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'guest-orders',
-      heading: '6. Ordering as a guest',
+      heading: '7. Ordering as a guest',
       body: [
         'You can order without creating an account. If you do, the order is recorded against the shop but not against any account — including one you create later. This is permanent and cannot be undone: a guest order can never be attached to an account afterwards.',
         'That means a guest order will not appear in an account\'s order history, and you track it using the order number and the contact number you gave.',
@@ -248,7 +276,7 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'email-addresses',
-      heading: '7. A note about email addresses',
+      heading: '8. A note about email addresses',
       body: [
         'We do not verify a customer\'s email address when an account is created. A mistyped address therefore belongs to whoever actually owns it, and order confirmations sent to that account would reach them — including the order\'s name, items, total and delivery address.',
         'We state this plainly because it is a real consequence of not requiring verification. Please check your address when you sign up.',
@@ -256,7 +284,7 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'your-rights',
-      heading: '8. Your rights',
+      heading: '9. Your rights',
       body: [
         'Under Malaysian personal data protection law you may ask for a copy of the personal data we hold about you, ask us to correct it if it is wrong or incomplete, ask us to limit how we process it, and withdraw consent where our use of it rests on consent.',
         `To exercise any of these, write to ${email}. We may need to confirm who you are before we act, so that we do not disclose your data to someone else. We will respond within the period the law allows.`,
@@ -266,7 +294,7 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'security',
-      heading: '9. Security',
+      heading: '10. Security',
       body: [
         'Each shop\'s data is separated from every other shop\'s, and a shop can only reach its own orders and customers. Traffic is encrypted in transit, passwords are stored only as cryptographic hashes and never in a readable form, and access to production data is limited to those who need it.',
         'No system is perfectly secure, and we do not claim otherwise.',
@@ -274,14 +302,14 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'changes-privacy',
-      heading: '10. Changes to this notice',
+      heading: '11. Changes to this notice',
       body: [
         'We may update this notice. The date at the top of this page shows when it last changed. Where a change materially affects you, we will tell you.',
       ],
     },
     {
       id: 'contact-privacy',
-      heading: '11. Contact',
+      heading: '12. Contact',
       body: [
         `Questions, requests or complaints about your personal data go to ${email}.`,
       ],

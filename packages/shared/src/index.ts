@@ -38,9 +38,12 @@ export type {
 export {
   fulfilmentConfig, isTimezone, todayInZone,
   isDateSelectable, selectableDates,
+  customDateBounds, pruneCustomDates, validateCustomDates,
+  fulfilmentWarning,
   DEFAULT_FULFILMENT, DEFAULT_TIMEZONE,
+  FULFILMENT_HORIZON_DAYS, MAX_CUSTOM_DATES, DATES_ENDING_SOON_DAYS,
 } from './fulfilment.js'
-export type { FulfilmentConfig } from './fulfilment.js'
+export type { FulfilmentConfig, FulfilmentMode, CustomDatesError, FulfilmentWarning } from './fulfilment.js'
 export { REFUSAL_STATUS, ORDER_REFUSALS, QUOTE_REFUSAL_STATUS, QUOTE_REFUSALS } from './refusal.js'
 export type { OrderRefusal, QuoteRefusal } from './refusal.js'
 export {
@@ -54,7 +57,7 @@ export type {
 export {
   canonicalJson, cartLineKey, validateSelections, validateOptionGroups,
   snapshotSelections, picksDelta,
-  deactivateGroups, hasRequiredGroup, hasActiveGroup, canBeAnswered,
+  canBeAnswered,
   MAX_PICK_QTY, MAX_GROUPS_PER_PRODUCT, MAX_OPTIONS_PER_GROUP,
 } from './options.js'
 export type {
@@ -62,7 +65,7 @@ export type {
   SelectionError, GroupConfigError,
 } from './options.js'
 export {
-  validateMenuCategories, menuCategoriesFromRow, deactivateCategories,
+  validateMenuCategories, menuCategoriesFromRow,
   MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
 } from './menuCategories.js'
 export type { MenuCategory, CategoryConfigError } from './menuCategories.js'

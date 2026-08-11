@@ -99,7 +99,7 @@ describe('POST /api/notify/order — customer confirmation email fan-out', () =>
   beforeAll(async () => {
     const owner = await makeUser(OWNER_EMAIL, 'password123')
     const ownerId = (await owner.auth.getUser()).data.user!.id
-    merchantId = await seedMerchant({ slug: SLUG, owner_id: ownerId, name: 'Notify Shop', plan: 'pro' })
+    merchantId = await seedMerchant({ slug: SLUG, owner_id: ownerId, name: 'Notify Shop' })
     productId = await seedProduct({ merchant_id: merchantId, price: 13 })
 
     const customer = await makeUser(CUSTOMER_EMAIL, 'password123')
@@ -216,9 +216,8 @@ describe('POST /api/notify/order — customer confirmation email fan-out', () =>
 })
 
 // ── The third arm ─────────────────────────────────────────────────────────────
-// The shop owner's new-order email. Its whole reason to exist is the one property this suite
-// states first: it sends on EVERY plan, where Telegram sends only on Pro. A basic shop had no
-// notification at all before it.
+// The shop owner's new-order email. It exists because Telegram is opt-in: a shop that never set
+// a bot up had no notification at all and learned of an order by refreshing the dashboard.
 // Its OWN shop, owner and customer — not the suite above's. `makeUser` deletes and recreates,
 // so sharing a slug or an email would make the two suites order-dependent, and an order-
 // dependent DB suite fails in whichever order CI happens to pick.
@@ -234,7 +233,7 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
   beforeAll(async () => {
     const owner = await makeUser(M_OWNER_EMAIL, 'password123')
     const ownerId = (await owner.auth.getUser()).data.user!.id
-    mMerchantId = await seedMerchant({ slug: M_SLUG, owner_id: ownerId, name: 'Merchant Mail Shop', plan: 'basic' })
+    mMerchantId = await seedMerchant({ slug: M_SLUG, owner_id: ownerId, name: 'Merchant Mail Shop' })
     mProductId = await seedProduct({ merchant_id: mMerchantId, price: 13 })
 
     const customer = await makeUser(M_CUSTOMER_EMAIL, 'password123')
@@ -253,9 +252,7 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
     notifyDeps.telegram = async () => {}
   })
 
-  it('emails a BASIC shop owner — the plan on which Telegram sends nothing', async () => {
-    // A Telegram secret IS seeded, so the arm skipping is the plan gate and not a missing token.
-    await svc().from('merchant_secrets').upsert({ merchant_id: mMerchantId, tg_token: 't0ken', tg_chat_id: '42' })
+  it('emails the owner of a shop with no Telegram — the arm that used to have nothing', async () => {
     const orderNumber = await placeOrderReturningNumber(orderBody(mMerchantId, mProductId), mCustomerToken)
 
     const res = await postNotify({ merchantId: mMerchantId, orderNumber, lang: 'en' })
@@ -263,20 +260,17 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
       telegram: { ok: boolean; skipped?: boolean }
       merchantEmail: { ok: boolean }
     }
-    expect(json.telegram.skipped).toBe(true) // Pro-only
-    expect(json.merchantEmail.ok).toBe(true) // every plan
+    expect(json.telegram.skipped).toBe(true) // no token configured
+    expect(json.merchantEmail.ok).toBe(true)
 
     const mail = mailTo(M_OWNER_EMAIL)
     expect(mail).toHaveLength(1)
     expect(mail[0].subject).toContain(orderNumber)
     expect(mail[0].body.html).toBeTruthy()
-
-    await svc().from('merchant_secrets').delete().eq('merchant_id', mMerchantId)
   })
 
-  it('emails a PRO shop owner AS WELL AS its Telegram — upgrading adds a channel, it does not swap one', async () => {
+  it('emails the owner AS WELL AS its Telegram — the two are channels, not alternatives', async () => {
     await svc().from('merchant_secrets').upsert({ merchant_id: mMerchantId, tg_token: 't0ken', tg_chat_id: '42' })
-    await svc().from('merchants').update({ plan: 'pro' }).eq('id', mMerchantId)
     let telegramSent = 0
     notifyDeps.telegram = async () => { telegramSent++ }
 
@@ -288,8 +282,6 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
     expect(telegramSent).toBe(1)
     expect(json.merchantEmail.ok).toBe(true)
     expect(mailTo(M_OWNER_EMAIL)).toHaveLength(1)
-
-    await svc().from('merchants').update({ plan: 'basic' }).eq('id', mMerchantId)
     await svc().from('merchant_secrets').delete().eq('merchant_id', mMerchantId)
   })
 
@@ -427,7 +419,6 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
 
   it('a merchant-email failure does not suppress the customer receipt or Telegram', async () => {
     await svc().from('merchant_secrets').upsert({ merchant_id: mMerchantId, tg_token: 't0ken', tg_chat_id: '42' })
-    await svc().from('merchants').update({ plan: 'pro' }).eq('id', mMerchantId)
     let telegramSent = 0
     notifyDeps.telegram = async () => { telegramSent++ }
     // Only the owner's send throws; the customer's goes through the same adapter and must not.
@@ -449,8 +440,6 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
     expect(json.telegram.ok).toBe(true)
     expect(telegramSent).toBe(1)
     expect(mailTo(M_CUSTOMER_EMAIL)).toHaveLength(1)
-
-    await svc().from('merchants').update({ plan: 'basic' }).eq('id', mMerchantId)
     await svc().from('merchant_secrets').delete().eq('merchant_id', mMerchantId)
   })
 
@@ -458,7 +447,6 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
     // The mirror of the test above: the merchant's alert is the arm every shop depends on, so it
     // must be the one that still lands when its neighbours are down.
     await svc().from('merchant_secrets').upsert({ merchant_id: mMerchantId, tg_token: 't0ken', tg_chat_id: '42' })
-    await svc().from('merchants').update({ plan: 'pro' }).eq('id', mMerchantId)
     notifyDeps.telegram = async () => { throw new Error('telegram down') }
     notifyDeps.email = async (to, subject, body) => {
       if (to === M_CUSTOMER_EMAIL) throw new Error('resend down')
@@ -477,8 +465,6 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
     expect(json.email.ok).toBe(false)
     expect(json.merchantEmail.ok).toBe(true)
     expect(mailTo(M_OWNER_EMAIL)).toHaveLength(1)
-
-    await svc().from('merchants').update({ plan: 'basic' }).eq('id', mMerchantId)
     await svc().from('merchant_secrets').delete().eq('merchant_id', mMerchantId)
   })
 

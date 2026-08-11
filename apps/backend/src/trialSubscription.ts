@@ -28,7 +28,6 @@ export interface TrialMerchant {
   id: string
   name: string
   owner_id: string
-  plan?: string | null
   billing_cycle?: string | null
 }
 
@@ -62,7 +61,6 @@ export async function startCardlessTrial(
   const { data: ownerUser } = await admin.auth.admin.getUserById(merchant.owner_id)
   const ownerEmail = ownerUser?.user?.email
 
-  const plan = merchant.plan || 'basic'
   const cycle = merchant.billing_cycle || 'monthly'
 
   // Undo the claim; never throw from a failure path.
@@ -87,10 +85,10 @@ export async function startCardlessTrial(
     }
     sub = await stripe.subscriptions.create({
       customer: customerId,
-      items: [{ price: priceFor(plan, cycle) }],
+      items: [{ price: priceFor(cycle) }],
       trial_period_days: TRIAL_DAYS,
       trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
-      metadata: { merchant_id: merchant.id, plan, billing: cycle, region: 'MY' },
+      metadata: { merchant_id: merchant.id, billing: cycle, region: 'MY' },
     })
   } catch (err) {
     console.error('Trial subscription creation failed:', err instanceof Error ? err.message : String(err))

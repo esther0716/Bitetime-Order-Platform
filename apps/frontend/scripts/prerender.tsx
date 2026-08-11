@@ -43,12 +43,14 @@ import Landing from '../src/marketing/Landing'
 import Pricing from '../src/marketing/Pricing'
 import FeaturesPage from '../src/marketing/FeaturesPage'
 import FaqPage from '../src/marketing/FaqPage'
+import UseCasePage from '../src/marketing/UseCasePage'
+import { USE_CASES, pathForUseCase } from '../src/marketing/useCases'
 import SampleShopsPage from '../src/marketing/SampleShopsPage'
 import SignupScreen from '../src/merchant/SignupScreen'
 import LoginScreen from '../src/merchant/LoginScreen'
 import TermsPage from '../src/legal/TermsPage'
 import PrivacyPage from '../src/legal/PrivacyPage'
-import { faqStructuredData } from '../src/marketing/structuredData'
+import { faqStructuredData, faqStructuredDataForUseCase } from '../src/marketing/structuredData'
 import { ROUTE_META } from '../src/routeMeta'
 import { SITE_URL } from '../src/site'
 
@@ -86,6 +88,20 @@ const ROUTES: PrerenderRoute[] = [
   { path: '/pricing', file: 'pricing.html', element: <Pricing /> },
   { path: '/features', file: 'features.html', element: <FeaturesPage /> },
   { path: '/faq', file: 'faq.html', element: <FaqPage />, head: faqLd },
+  // The business-type pages, one file each under dist/for/. Their questions are baked in the same
+  // way and for the same reason as /faq's — English, rewritten by the effect for a Chinese reader —
+  // and each one carries its own @id, so four pages are four pages to a crawler (#214).
+  ...USE_CASES.map(useCase => ({
+    path: pathForUseCase(useCase.slug),
+    // `<route path>.html`, derived from the same helper the route is: vercelRewrites.test.ts pins
+    // the rewrite destination to exactly that, so a second spelling of `/for/` here is a file
+    // Vercel rewrites to and cannot find.
+    file: `${pathForUseCase(useCase.slug).replace(/^\//, '')}.html`,
+    element: <UseCasePage useCase={useCase} />,
+    head:
+      `<script type="application/ld+json" data-structured-data="faq">` +
+      `${JSON.stringify(faqStructuredDataForUseCase(useCase, 'en'))}</script>`,
+  })),
   // The shop list this page is named after is NOT in the bytes and cannot be: useSampleShops reads
   // it in an effect, which never runs here, and reading the database at build time would make a
   // build that cannot reach it ship a page saying there are no shops. So the carousel slot renders
@@ -179,7 +195,9 @@ for (const route of ROUTES) {
     .replace(ROOT_DIV, `<div id="root">${visible}</div>`)
     .replace('</head>', `${routeHead}\n  </head>`)
 
-  // A route with a path segment in it writes into a subdirectory Vite never created.
+  // A route with a path segment in it writes into a subdirectory Vite never created — `dist/for/`
+  // and `dist/merchant/` both. Without this the build throws ENOENT, which is the safe failure;
+  // serving a path Vercel rewrites to a missing file would not be.
   const out = path.join(dist, route.file)
   mkdirSync(path.dirname(out), { recursive: true })
   writeFileSync(out, html)

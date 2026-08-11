@@ -20,7 +20,6 @@ export interface PendingShop {
   /** '' for "never chose one" — same as the picker's empty value. */
   businessNature: string
   currency: CurrencyCode
-  plan: 'basic' | 'pro'
   billing: 'monthly' | 'yearly'
   ref?: string
 }
@@ -32,7 +31,6 @@ export function pendingShopMetadata(shop: PendingShop): Record<string, string> {
     shop_name: shop.name,
     shop_business_nature: shop.businessNature,
     shop_currency: shop.currency,
-    shop_plan: shop.plan,
     shop_billing: shop.billing,
     ...(shop.ref ? { shop_ref: shop.ref } : {}),
   }
@@ -49,7 +47,6 @@ export function pendingShopFromMetadata(meta: unknown): PendingShop | null {
     name,
     businessNature: isBusinessNature(bag.shop_business_nature) ? bag.shop_business_nature : '',
     currency: isCurrencyCode(bag.shop_currency) ? bag.shop_currency : DEFAULT_CURRENCY,
-    plan: bag.shop_plan === 'pro' ? 'pro' : 'basic',
     billing: bag.shop_billing === 'yearly' ? 'yearly' : 'monthly',
     ref: typeof bag.shop_ref === 'string' && bag.shop_ref ? bag.shop_ref : undefined,
   }

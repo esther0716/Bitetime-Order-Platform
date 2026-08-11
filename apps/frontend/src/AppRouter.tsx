@@ -8,6 +8,8 @@ import { MerchantProvider, useMerchant } from './MerchantContext'
 import RequireRole from './RequireRole'
 import { useCanonical } from './canonical'
 import { useDocumentMeta } from './documentMeta'
+import { usePixels } from './pixels/usePixels'
+import { ShopPixelsProvider } from './pixels/ShopPixels'
 import { Spinner } from './components/Loaders'
 import Wordmark from './components/Wordmark'
 // STATICALLY IMPORTED, and it is the one route that must be. `/` is prerendered into the HTML
@@ -27,6 +29,10 @@ import Pricing from './marketing/Pricing'
 // they stay out of the lazy() boundary too. See scripts/prerender.tsx.
 import FeaturesPage from './marketing/FeaturesPage'
 import FaqPage from './marketing/FaqPage'
+// Same rule a fourth time: every /for/<slug> page is prerendered (dist/for/<slug>.html), so the
+// template stays out of the lazy() boundary too. One component serves all four — see useCases.ts.
+import UseCasePage from './marketing/UseCasePage'
+import { USE_CASES, pathForUseCase } from './marketing/useCases'
 
 // Route-level code splitting: every OTHER surface ships its own chunk, so a storefront
 // customer never downloads merchant/admin/signup code (signup pulls in the heavy
@@ -43,6 +49,10 @@ const ReleaseNotes = lazy(() => import('./marketing/ReleaseNotes'))
 const TermsPage = lazy(() => import('./legal/TermsPage'))
 const PrivacyPage = lazy(() => import('./legal/PrivacyPage'))
 const Toaster = lazy(() => import('./components/ui/sonner').then(m => ({ default: m.Toaster })))
+// Lazy for the same reason the toaster is: the marketing entry chunk must not carry a component
+// that most visits never render. It is only ever asked for after a visitor with a pixel
+// configured reaches a marketing route without having answered.
+const ConsentBanner = lazy(() => import('./pixels/ConsentBanner'))
 
 function RouteFallback() {
   return (
@@ -93,13 +103,19 @@ function StorefrontShell() {
   )
 
   return (
-    <Routes>
-      <Route index element={<Storefront />} />
-      {/* A destination, not a dialog: deep-linkable and shareable. Signed out it renders the
-          auth panel in place — deliberately NOT behind RequireRole, which bounces to the
-          merchant login: wrong framing, wrong bundle, wrong destination for a customer. */}
-      <Route path="orders" element={<OrderHistory />} />
-    </Routes>
+    // The SHOP's own advertising pixels (#220), and TinyOrder's never — `pixelDecision` answers
+    // no to every question off a marketing path, which a storefront is. Mounted here, below the
+    // not-found and status gates, so the subtree existing IS the proof that this is an active
+    // shop's storefront: the hook can then state `inScope: true` as a fact.
+    <ShopPixelsProvider merchant={merchant}>
+      <Routes>
+        <Route index element={<Storefront />} />
+        {/* A destination, not a dialog: deep-linkable and shareable. Signed out it renders the
+            auth panel in place — deliberately NOT behind RequireRole, which bounces to the
+            merchant login: wrong framing, wrong bundle, wrong destination for a customer. */}
+        <Route path="orders" element={<OrderHistory />} />
+      </Routes>
+    </ShopPixelsProvider>
   )
 }
 
@@ -130,6 +146,7 @@ export default function AppRouter() {
         <AnimatedRoutes />
       </TooltipProvider>
       <RouteToaster />
+      <PixelConsent />
     </SessionProvider>
   )
 }
@@ -159,6 +176,30 @@ function RouteToaster() {
   )
 }
 
+// The advertising pixels and the question that gates them. Mounted here, beside RouteToaster and
+// for the same reason: it is route-aware and app-wide, and it belongs outside AnimatedRoutes so a
+// page transition does not animate it.
+//
+// The hook is called unconditionally — the pageview effects live inside it and must run whether or
+// not the banner is on screen. Only the banner itself is conditional.
+function PixelConsent() {
+  const { t } = useSession()
+  const { showBanner, accept, reject } = usePixels()
+  if (!showBanner) return null
+  return (
+    <Suspense fallback={null}>
+      <ConsentBanner
+        onAccept={accept}
+        onReject={reject}
+        message={t(
+          'We use advertising cookies on our own pages to measure our advertising. They load only if you accept, and never on a shop’s page.',
+          '我们在自己的页面上使用广告 Cookie 来衡量广告效果。只有你接受后才会加载，店铺页面上永远不会使用。',
+        )}
+      />
+    </Suspense>
+  )
+}
+
 function AnimatedRoutes() {
   const location = useLocation()
   // Written per route, not in index.html: one HTML file serves every path, so a static tag would
@@ -184,6 +225,17 @@ function AnimatedRoutes() {
               Prerendered — see scripts/prerender.tsx. */}
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/faq" element={<FaqPage />} />
+          {/* One route per business type, all rendered by one template. Same argument as /pricing
+              and /features: real pages of their own with their own <title> and description, and
+              the page a visitor searching for their own trade actually lands on (#214).
+              Prerendered — see scripts/prerender.tsx. */}
+          {USE_CASES.map(useCase => (
+            <Route
+              key={useCase.slug}
+              path={pathForUseCase(useCase.slug)}
+              element={<UseCasePage useCase={useCase} />}
+            />
+          ))}
           {/* NOT prerendered, unlike the three routes above — the shop list is fetched
               client-side with no fallback data, so a prerendered shell would just be empty
               markup. See SampleShopsPage.tsx. */}
@@ -202,12 +254,17 @@ function AnimatedRoutes() {
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/s/:slug/*" element={<MerchantProvider><StorefrontShell /></MerchantProvider>} />
-          {/* The optional segments are the plan and billing cycle the pricing cards preselect —
-              `/merchant/signup/pro/yearly` rather than `?plan=pro&billing=yearly`, because a query
-              string is what a link auditor and a human both read as unfriendly. Optional, so the
-              bare URL in sitemap.xml and a half-typed one still land on the form; collapsed to
-              that bare URL by canonicalPath, so the four CTAs are one indexed page. */}
-          <Route path="/merchant/signup/:plan?/:billing?" element={<SignupScreen />} />
+          {/* The optional segments preselect the billing cycle — `/merchant/signup/yearly` rather
+              than `?billing=yearly`, because a query string is what a link auditor and a human
+              both read as unfriendly. Optional, so the bare URL in sitemap.xml and a half-typed
+              one still land on the form; collapsed to that bare URL by canonicalPath, so every
+              CTA is one indexed page.
+
+              TWO optional segments for ONE value, deliberately: the URL used to carry the plan
+              first (`/merchant/signup/pro/yearly`), and those links are still in inboxes and in
+              Stripe's own cancel_url history. A one-segment route would match none of them and
+              render a blank page — SignupScreen reads whichever segment is a cycle. */}
+          <Route path="/merchant/signup/:a?/:b?" element={<SignupScreen />} />
           <Route path="/merchant/login" element={<RedirectSignedInMerchant><LoginScreen /></RedirectSignedInMerchant>} />
           <Route path="/merchant" element={<RequireRole role="merchant"><MerchantHome /></RequireRole>} />
           <Route path="/merchant/:slug" element={<RequireRole role="superadmin"><MerchantHome /></RequireRole>} />

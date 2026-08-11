@@ -16,7 +16,10 @@ import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods
 import type { FulfilmentMethod, CartLine, PickSnapshot } from '@bitetime/shared'
 import { prefillFromProfile, savedDetailsFromOrder, carriesAddress } from '../savedDetails'
 import { fulfilmentLabel, feeLineLabel } from '../fulfilmentLabel'
-import { formatMoney } from '../currency'
+import { formatMoney, DEFAULT_CURRENCY } from '../currency'
+// The SHOP's pixel, never TinyOrder's (#220). A no-op unless this shop set an id, is on Pro, and
+// its customer accepted — so nothing here has to ask any of those three questions.
+import { useShopPixelTrack } from '../pixels/ShopPixels'
 import { formatTaxRate } from '../receipt'
 import { formatUnit } from '../productUnit'
 import { menuSections } from '../menuGroups'
@@ -174,6 +177,8 @@ export default function Storefront() {
   const [appliedVoucher, setAppliedVoucher] = useState<Voucher | null>(null)
   const [voucherMsg, setVoucherMsg] = useState<Notice | null>(null)
   const [voucherBusy, setVoucherBusy] = useState(false)
+
+  const shopTrack = useShopPixelTrack()
 
   const merchantId = merchant?.id
   const currency = merchant?.currency
@@ -529,6 +534,10 @@ export default function Storefront() {
     // it would drop the first one. `?? prev` keeps a ceiling that only binds against the newer
     // cart from blanking the line instead of refusing it.
     setCart(prev => nextCart(prev, target, delta).cart ?? prev)
+    // The shop's own pixel, if it has one (#220). Only a growing cart is an AddToCart — a
+    // stepper's minus is not one, and neither is a refused tap, which is why this sits after the
+    // refusal return above rather than at the top of the function.
+    if (delta > 0) shopTrack('AddToCart')
   }
 
   /**
@@ -664,6 +673,11 @@ export default function Storefront() {
 
   const handleSubmit = async () => {
     if (!canSubmit) return
+    // The shop's own pixel, if it has one (#220). Fired before the work rather than after the
+    // voucher re-read: an InitiateCheckout is the customer TRYING to buy, and a refusal further
+    // down is a checkout that started and did not finish — which is exactly the funnel step an
+    // ad platform is being asked to optimize.
+    shopTrack('InitiateCheckout')
     setBusy(true)
     setError(null)
     try {
@@ -769,6 +783,20 @@ export default function Storefront() {
         fulfilDate: chosenDate,
       })
       toast.success(t('Order placed!', '订单已提交！'))
+      // The sale, on the shop's own pixel (#220).
+      //
+      // `total` is NOT a browser-side recomputation, and that distinction is the whole reason
+      // this line sits after the ok branch rather than beside the submit. Order intake re-prices
+      // with the same `priceOrder` this page quoted with and REFUSES any total it disagrees with
+      // (`price_changed`) — so a placeOrder that resolved ok is the backend stating that this
+      // exact number is what it committed. An ad platform optimizing on a figure that does not
+      // match revenue is worse than one told nothing.
+      //
+      // A refused order reports nothing: the transaction rolled back and there is no sale.
+      // `currency` is what every money line on this page is already formatted in. The fallback is
+      // the platform default rather than a blank: both vendors read `currency` as ISO 4217 and
+      // discard a value they cannot parse, taking the amount with it.
+      shopTrack('Purchase', { value: total, currency: currency ?? DEFAULT_CURRENCY })
     } catch {
       // Backstop for an UNEXPECTED throw — placeOrder's refusals are handled above via its Result,
       // so this only fires if something else in the try threw. Show the generic refusal message.

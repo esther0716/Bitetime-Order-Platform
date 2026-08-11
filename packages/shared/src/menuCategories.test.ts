@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  validateMenuCategories, categoryMatchKey, menuCategoriesFromRow, deactivateCategories,
+  validateMenuCategories, categoryMatchKey, menuCategoriesFromRow,
   MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
 } from './menuCategories.js'
 import type { MenuCategory } from './menuCategories.js'
@@ -124,14 +124,3 @@ describe('menuCategoriesFromRow', () => {
   })
 })
 
-describe('deactivateCategories', () => {
-  it('hides every category and mutates nothing else', () => {
-    const before = [cat({ id: 'c1', name: 'Cake', name_zh: '蛋糕' }), cat({ id: 'c2', name: 'Tea', active: false })]
-    expect(deactivateCategories(before)).toEqual([
-      { id: 'c1', name: 'Cake', name_zh: '蛋糕', active: false },
-      { id: 'c2', name: 'Tea', active: false },
-    ])
-    // The merchant's authored list survives a downgrade — hiding, never dismantling.
-    expect(before[0]!.active).toBe(true)
-  })
-})

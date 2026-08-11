@@ -38,7 +38,7 @@ async function billingRow(merchantId: string) {
 
 async function merchantRow(merchantId: string) {
   const { data } = await serviceClient()
-    .from('merchants').select('status, plan').eq('id', merchantId).maybeSingle()
+    .from('merchants').select('status').eq('id', merchantId).maybeSingle()
   return data
 }
 
@@ -71,7 +71,7 @@ describe('comp / uncomp', () => {
     expect((await post('/api/admin/uncomp-merchant', { merchantId }, plainToken)).status).toBe(403)
   })
 
-  it('comps a shop: flag on, customer id gone, pro and active', async () => {
+  it('comps a shop: flag on, customer id gone, shop active', async () => {
     await serviceClient().from('merchant_billing').upsert({
       merchant_id: merchantId,
       stripe_customer_id: 'cus_stale_from_test_mode',
@@ -83,7 +83,7 @@ describe('comp / uncomp', () => {
 
     const billing = await billingRow(merchantId)
     expect(billing).toMatchObject({ comped: true, status: 'active', stripe_customer_id: null })
-    expect(await merchantRow(merchantId)).toMatchObject({ status: 'active', plan: 'pro' })
+    expect(await merchantRow(merchantId)).toMatchObject({ status: 'active' })
   })
 
   // The one-trial-ever record (canStartTrial reads this id). Clearing it would hand a shop that
@@ -118,18 +118,18 @@ describe('comp / uncomp', () => {
 
   // Revoking a comp is not the same as suspending a shop, and must not do it by accident: a
   // suspended comped shop that gets reactivated would otherwise silently hand back free Pro.
-  it('un-comps: flag off, plan basic, shop status untouched', async () => {
+  it('un-comps: flag off, shop status untouched', async () => {
     await serviceClient().from('merchant_billing').upsert({
       merchant_id: merchantId,
       comped: true,
       status: 'active',
       stripe_subscription_id: null,
     }, { onConflict: 'merchant_id' })
-    await serviceClient().from('merchants').update({ status: 'active', plan: 'pro' }).eq('id', merchantId)
+    await serviceClient().from('merchants').update({ status: 'active' }).eq('id', merchantId)
 
     expect((await post('/api/admin/uncomp-merchant', { merchantId }, superToken)).status).toBe(200)
     expect(await billingRow(merchantId)).toMatchObject({ comped: false })
-    expect(await merchantRow(merchantId)).toMatchObject({ status: 'active', plan: 'basic' })
+    expect(await merchantRow(merchantId)).toMatchObject({ status: 'active' })
   })
 
   // Un-comp must leave the shop ABLE TO PAY, and the billing status is what decides that.

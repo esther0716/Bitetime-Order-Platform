@@ -21,17 +21,23 @@ What a shop gets: a storefront page with photos, prices and per-unit pricing (pe
 pack, dozen, bottle, jar, tray, slice, kg or g); product names and descriptions in English, Chinese
 or both; delivery fees that are flat, by region, or a base fee plus a rate per kilometre of real
 road distance from the shop's address;
-pickup, delivery or both; numbered orders in one list with the customer's name, WhatsApp number,
+pickup, delivery or both; the shop link and a QR code for it; numbered orders in one list with the
+customer's name, WhatsApp number,
 items, wanted date and total; order status (preparing / ready / done); customer self-service order
-lookup by order number; an email alert on every order on every plan; and a customer list the shop
+lookup by order number; an email alert on every order; and a customer list the shop
 builds automatically from its orders.
 
-Plans: **Basic** and **Pro**. Pro adds instant Telegram alerts, discount vouchers, promotional
-prices on individual items, and priority support. Billing is monthly or yearly, with two months
-free on yearly; amounts are shown per region on the pricing page and are deliberately not repeated
-here. Basic starts with a **free 7-day trial that needs no card**; starting on Pro pays up front.
-A shop and its order page go live the moment the owner signs up — there is no approval wait.
-Cancel any time from the dashboard; the shop runs to the end of the paid period.
+When a customer may ask for their order is the shop's setting: days of notice before the earliest
+date, how far ahead the page takes orders, and the weekdays the shop is closed. A new shop offers
+today through two weeks out, and no shop takes an order more than three months ahead.
+
+**One plan, and it holds everything**: instant Telegram alerts, discount vouchers, promotional
+prices on individual items, order dates picked one by one instead of a rolling window, the shop's
+own Meta and TikTok ad pixel, and priority support. Billing is monthly or yearly, with two months
+free on yearly; the amount is shown on the pricing page and is deliberately not repeated here.
+Every shop starts with a **free 7-day trial that needs no card**. A shop and its order page go live
+the moment the owner signs up — there is no approval wait. Cancel any time from the dashboard; the
+shop runs to the end of the paid period.
 
 Each shop is served at `https://tinyorder.shop/s/<shop-slug>`. Shop slugs are chosen at signup and
 are not listed here or in the sitemap — they appear and change without a deploy.
@@ -40,9 +46,19 @@ are not listed here or in the sitemap — they appear and change without a deplo
 
 - [Home](https://tinyorder.shop/): what TinyOrder is, who it is for, and how a shop gets started
 - [Features](https://tinyorder.shop/features): the storefront, delivery pricing, order handling, alerts, and the customer list, in full
-- [Pricing](https://tinyorder.shop/pricing): current Basic and Pro amounts for your region, the full plan comparison, and the 7-day cardless trial
-- [FAQ](https://tinyorder.shop/faq): cost, trial, how customers pay, whether a website is needed, what Pro adds, cancelling, Chinese support, and how fast a shop goes live
+- [Pricing](https://tinyorder.shop/pricing): the current amount, everything the plan includes, and the 7-day cardless trial
+- [FAQ](https://tinyorder.shop/faq): cost, trial, how customers pay, whether a website is needed, what is included, cancelling, Chinese support, and how fast a shop goes live
 - [Sample shops](https://tinyorder.shop/sample-shops): real storefronts built on TinyOrder. The list is read from the database when the page opens, so it is not in the page source — follow the shop links from the page itself
+
+## Who it is for
+
+The same product, described for one trade at a time. No shop type is priced differently or gets a
+different feature set.
+
+- [Home bakers](https://tinyorder.shop/for/home-bakers): cake, cookie and bread pre-orders — the wanted date on every order, prices by the piece, box, dozen or tray
+- [Home kitchens and meal prep](https://tinyorder.shop/for/home-kitchens): weekly cooked-food orders — delivery priced by road distance, orders closed when cooking stops, a customer list that builds itself
+- [Makers and crafts](https://tinyorder.shop/for/makers): made-to-order craft, art and clothing — photos, per-piece and per-set prices, no commission
+- [Cafés and market stalls](https://tinyorder.shop/for/cafes-and-stalls): pickup pre-orders collected at the counter — pickup-only shops, numbered orders, a QR code for the sign
 
 ## Start a shop
 

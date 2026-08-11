@@ -1,4 +1,4 @@
-// /pricing — the plans in full.
+// /pricing — the plan in full.
 //
 // A page of its own rather than a section of the landing page (#169). The landing page keeps a
 // summary and links here; this page owns the detail, so the two are not two URLs answering the
@@ -11,36 +11,14 @@
 // would be the duplication this split exists to avoid. The prose below is written for this page
 // and appears on no other.
 
-import { Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
 import { useTopOnRouteChange } from './useTopOnRouteChange'
 import PricingCards from './PricingCards'
-import { PLAN_COMPARISON_GROUPS, type ComparisonValue } from './pricingTiers'
+import { INCLUDED_GROUPS } from './pricingTiers'
 import { ctaPrimary, sectionTitle } from './ctaStyles'
 import { Reveal } from './LandingMotion'
-import { cn } from '../lib/utils'
-
-/**
- * One comparison cell. A boolean row renders as a ✓ (oxblood — the brand's one accent, not a
- * second green/red pair) or a plain – for "not included"; the icon is `aria-hidden` and paired
- * with a screen-reader-only word, since a bare glyph in a table cell reads as nothing to a screen
- * reader. A text row (the two plans differ in kind, not just presence) renders the words as-is.
- */
-function ComparisonCell({ value, t }: { value: ComparisonValue; t: (en: string, zh: string) => string }) {
-  if (typeof value === 'boolean') {
-    return (
-      <span className="flex items-center justify-center">
-        <span aria-hidden="true" className={value ? 'text-primary text-base font-semibold' : 'text-muted-foreground text-base'}>
-          {value ? '✓' : '–'}
-        </span>
-        <span className="sr-only">{value ? t('Included', '包含') : t('Not included', '不包含')}</span>
-      </span>
-    )
-  }
-  return <>{t(value.en, value.zh)}</>
-}
 
 export default function Pricing() {
   const { t } = useSession()
@@ -63,103 +41,53 @@ export default function Pricing() {
         </h1>
         <p className="text-base leading-[1.75] text-ink-700 max-w-[580px] mx-auto mb-4">
           {t(
-            'You pay a subscription and nothing else — the month your shop does well is the month you keep the difference. Start on Basic free for seven days, without a card, and move to Pro when the alerts and vouchers start earning their keep.',
-            '你只需支付订阅费，不再有其他费用——生意好的那个月，多出来的部分全归你。基础版可免费试用七天，无需信用卡；等到即时通知与优惠券开始带来回报，再升级 Pro。',
+            'You pay a subscription and nothing else — the month your shop does well is the month you keep the difference. Every shop starts with seven free days, and we ask for no card to begin.',
+            '你只需支付订阅费，不再有其他费用——生意好的那个月，多出来的部分全归你。每家店铺都有七天免费期，开始时无需信用卡。',
           )}
         </p>
       </section>
 
-      {/* ── The plans ── */}
+      {/* ── The plan ── */}
       <section className="px-8 pb-16 max-w-[1000px] mx-auto w-full max-[600px]:px-5 max-[600px]:pb-10">
         <PricingCards />
       </section>
 
-      {/* ── Comparison ── */}
+      {/* ── What is included ── */}
       {/* The detail the landing summary does not carry, and the reason a visitor clicks through.
-          Rows come from pricingTiers.ts, where each one is checked against what the backend
-          actually gates — a ✓/✗ grid that disagrees with `requirePro` is a refund request. */}
+          Rows come from pricingTiers.ts, where each one is checked against what the product
+          actually does — a line here the software does not do is a refund request. */}
       <section className="border-t border-border px-8 py-16 max-w-[860px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className={sectionTitle}>
-            {t('What is in each plan', '两个方案分别包含什么')}
+            {t('What is included', '包含什么')}
           </h2>
-          {/* Scrolls inside itself on a narrow screen rather than widening the page. */}
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm min-w-[520px]">
-              <caption className="sr-only">
-                {t(
-                  'Basic and Pro compared, feature by feature',
-                  '基础版与 Pro 版逐项比较',
-                )}
-              </caption>
-              <thead>
-                <tr className="border-b-[0.5px] border-border">
-                  <th scope="col" className="py-3 pr-4 font-heading text-[15px] font-medium text-foreground">
-                    {t('Feature', '功能')}
-                  </th>
-                  <th scope="col" className="py-3 px-4 text-center font-heading text-[15px] font-medium text-foreground">
-                    {t('Basic', '基础版')}
-                  </th>
-                  {/* The tint wash carries down every Pro cell below, turning the column into the
-                      same "this one's highlighted" read the Pro card gets in PricingCards. */}
-                  <th scope="col" className="py-3 px-4 text-center font-heading text-[15px] font-medium text-primary bg-brand-100 rounded-t-lg">
-                    Pro
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {PLAN_COMPARISON_GROUPS.map((group, gi) => {
-                  const isFirstGroup = gi === 0
-                  const isLastGroup = gi === PLAN_COMPARISON_GROUPS.length - 1
-                  return (
-                    <Fragment key={group.id}>
-                      {/* The label sits in the Feature column only — the Basic/Pro cells stay
-                          empty so the Pro tint runs unbroken top to bottom, one column, not one
-                          rounded chip per section. */}
-                      <tr>
-                        <th
-                          scope="colgroup"
-                          className={cn(
-                            'pb-1 font-sans text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground text-left',
-                            isFirstGroup ? 'pt-3' : 'pt-7',
-                          )}
-                        >
-                          {t(group.label.en, group.label.zh)}
-                        </th>
-                        <td className={cn('pb-1', isFirstGroup ? 'pt-3' : 'pt-7')} />
-                        <td
-                          className={cn(
-                            'pb-1 bg-brand-50',
-                            isFirstGroup ? 'pt-3' : 'pt-7',
-                          )}
-                        />
-                      </tr>
-                      {group.rows.map((row, ri) => {
-                        const isLastRow = isLastGroup && ri === group.rows.length - 1
-                        return (
-                          <tr key={row.id} className="border-b border-border align-middle">
-                            <th scope="row" className="py-3 pr-4 font-normal text-foreground leading-[1.55] text-left">
-                              {t(row.label.en, row.label.zh)}
-                            </th>
-                            <td className="py-3 px-4 text-center text-ink-700 leading-[1.55]">
-                              <ComparisonCell value={row.basic} t={t} />
-                            </td>
-                            <td
-                              className={cn(
-                                'py-3 px-4 text-center text-ink-700 leading-[1.55] bg-brand-50',
-                                isLastRow && 'rounded-b-lg',
-                              )}
-                            >
-                              <ComparisonCell value={row.pro} t={t} />
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-8 mt-2">
+            {INCLUDED_GROUPS.map(group => (
+              <div key={group.id}>
+                <h3 className="font-sans text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3">
+                  {t(group.label.en, group.label.zh)}
+                </h3>
+                <ul className="flex flex-col gap-2.5 list-none m-0 p-0">
+                  {group.rows.map(row => (
+                    <li
+                      key={row.id}
+                      className="flex items-baseline gap-2 border-b border-border pb-2.5 text-sm leading-[1.55]"
+                    >
+                      {/* aria-hidden and paired with nothing: every row in this list is included,
+                          so the glyph is decoration and a screen reader announcing "included"
+                          fifteen times would be noise, not information. */}
+                      <span aria-hidden="true" className="text-primary font-semibold shrink-0">✓</span>
+                      <span className="text-foreground">{t(row.label.en, row.label.zh)}</span>
+                      {row.detail && (
+                        <span className="ml-auto pl-4 text-right text-ink-700">
+                          {t(row.detail.en, row.detail.zh)}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         </Reveal>
       </section>
@@ -176,14 +104,8 @@ export default function Pricing() {
           <div className="flex flex-col gap-5 text-[15px] leading-[1.75] text-ink-700">
             <p className="m-0">
               {t(
-                'Basic starts with seven free days and asks for no card. The clock starts when you sign up, and your shop is open from that moment. We remind you before it ends. If you decide not to continue, it stops on its own and you are never charged.',
-                '基础版有七天免费期，且无需绑定信用卡。计时从你注册那一刻开始，店铺也同时开放。结束前我们会提醒你。若决定不继续，试用期结束即自动停止，不会产生任何费用。',
-              )}
-            </p>
-            <p className="m-0">
-              {t(
-                'Pro has no separate trial: choosing it takes you straight to payment and your shop opens as soon as the payment clears. If you would rather try first, start on Basic and upgrade from your dashboard whenever you like — your shop, your products and your orders all stay where they are.',
-                'Pro 版没有独立的试用期：选择后会直接进入付款，款项完成即可开店。若想先试用，可先选基础版，之后随时在仪表板升级——店铺、产品与订单都原封不动。',
+                'Every shop starts with seven free days and we ask for no card. The clock starts when you sign up, and your shop is open from that moment. We remind you before it ends. If you decide not to continue, it stops on its own and you are never charged.',
+                '每家店铺都有七天免费期，且无需绑定信用卡。计时从你注册那一刻开始，店铺也同时开放。结束前我们会提醒你。若决定不继续，试用期结束即自动停止，不会产生任何费用。',
               )}
             </p>
             <p className="m-0">

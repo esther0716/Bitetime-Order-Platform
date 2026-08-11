@@ -6,7 +6,6 @@
 // row. See CLAUDE.md → Backend, Global Constraint 2.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { app } from '../../src/app.js'
-import { revokeProArtifacts } from '../../src/billing.js'
 import { makeUser, seedMerchant, seedProduct, serviceClient, resetMerchant } from '../rls/helpers.js'
 
 async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
@@ -120,63 +119,13 @@ describe('PUT /api/merchants/:id/products/:productId', () => {
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 
-  // Product promos are Pro-only, but the endpoint they ride is NOT (#110). Basic shops
-  // legitimately upsert products all day, so the gate lives inside the handler and keys off the
-  // incoming row: a non-null `promo_price` from a non-Pro shop is REFUSED, never silently
-  // stripped (the codebase's refuse-don't-normalise rule). The three tests below pin both
-  // halves of that — the refusal, and the ordinary edit that must keep working.
-  it('403 requires_pro when a basic shop sends a promo_price, and writes nothing', async () => {
-    await resetMerchant('prod-basic-promo-shop')
-    const owner = await makeUser('prod-basic-promo@example.com', 'password123')
-    const { token, userId } = await tokenOf(owner)
-    const id = await seedMerchant({ slug: 'prod-basic-promo-shop', owner_id: userId, plan: 'basic' })
-    const productId = crypto.randomUUID()
-
-    const res = await put(`/api/merchants/${id}/products/${productId}`, {
-      name: 'Discounted Cookie', price: 12, promo_price: 8, promo_limit: 10,
-    }, token)
-
-    expect(res.status).toBe(403)
-    expect(await res.json()).toEqual({ error: 'requires_pro' })
-
-    const { data } = await serviceClient().from('products').select('id').eq('id', productId).maybeSingle()
-    expect(data).toBeNull()
-
-    await serviceClient().from('merchants').delete().eq('id', id)
-  })
-
-  // The gate reads all three promo columns, not just the price. A shop that dropped to basic
-  // keeps its old promo row, and a body carrying only the cap or the end date would otherwise
-  // let it extend a live sale for free — the Pro feature, used without Pro.
-  it('403 requires_pro when a basic shop sends only promo_limit or promo_end', async () => {
-    await resetMerchant('prod-basic-limit-shop')
-    const owner = await makeUser('prod-basic-limit@example.com', 'password123')
-    const { token, userId } = await tokenOf(owner)
-    const id = await seedMerchant({ slug: 'prod-basic-limit-shop', owner_id: userId, plan: 'basic' })
-    const productId = await seedProduct({ merchant_id: id, name: 'Legacy Promo Cookie', price: 12 })
-
-    const limitOnly = await put(`/api/merchants/${id}/products/${productId}`, {
-      name: 'Legacy Promo Cookie', price: 12, promo_limit: 99,
-    }, token)
-    expect(limitOnly.status).toBe(403)
-    expect(await limitOnly.json()).toEqual({ error: 'requires_pro' })
-
-    const endOnly = await put(`/api/merchants/${id}/products/${productId}`, {
-      name: 'Legacy Promo Cookie', price: 12, promo_end: '2030-01-01T00:00:00.000Z',
-    }, token)
-    expect(endOnly.status).toBe(403)
-
-    await serviceClient().from('products').delete().eq('id', productId)
-    await serviceClient().from('merchants').delete().eq('id', id)
-  })
-
   // The other half: over-blocking the shared endpoint would break ordinary product management
   // for every basic shop, which is user story 4. An edit that touches no promo field succeeds.
   it('lets a basic shop edit non-promo fields', async () => {
     await resetMerchant('prod-basic-plain-shop')
     const owner = await makeUser('prod-basic-plain@example.com', 'password123')
     const { token, userId } = await tokenOf(owner)
-    const id = await seedMerchant({ slug: 'prod-basic-plain-shop', owner_id: userId, plan: 'basic' })
+    const id = await seedMerchant({ slug: 'prod-basic-plain-shop', owner_id: userId })
     const productId = crypto.randomUUID()
 
     const res = await put(`/api/merchants/${id}/products/${productId}`, {
@@ -207,7 +156,7 @@ describe('PUT /api/merchants/:id/products/:productId', () => {
     await resetMerchant('prod-expro-rename-shop')
     const owner = await makeUser('prod-expro-rename@example.com', 'password123')
     const { token, userId } = await tokenOf(owner)
-    const id = await seedMerchant({ slug: 'prod-expro-rename-shop', owner_id: userId, plan: 'basic' })
+    const id = await seedMerchant({ slug: 'prod-expro-rename-shop', owner_id: userId })
     const promoEnd = '2030-01-01T15:59:59.999Z'
     const productId = await seedProduct({
       merchant_id: id, name: 'Legacy Promo Cookie', price: 12,
@@ -231,41 +180,11 @@ describe('PUT /api/merchants/:id/products/:productId', () => {
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 
-  // The other side of the same rule: resubmitting the promo unchanged is fine, MOVING it is not.
-  // A basic shop cannot cut the price, raise the cap or push back the end date on the promo it
-  // still carries — that is the Pro feature, used without Pro.
-  it('still refuses a basic shop that changes an existing promo, and writes nothing', async () => {
-    await resetMerchant('prod-expro-change-shop')
-    const owner = await makeUser('prod-expro-change@example.com', 'password123')
-    const { token, userId } = await tokenOf(owner)
-    const id = await seedMerchant({ slug: 'prod-expro-change-shop', owner_id: userId, plan: 'basic' })
-    const promoEnd = '2030-01-01T15:59:59.999Z'
-    const productId = await seedProduct({
-      merchant_id: id, name: 'Legacy Promo Cookie', price: 12,
-      promo_price: 8, promo_limit: 10, promo_end: promoEnd,
-    })
-
-    const res = await put(`/api/merchants/${id}/products/${productId}`, {
-      name: 'Legacy Promo Cookie', price: 12,
-      promo_price: 6, promo_limit: 10, promo_end: promoEnd,
-    }, token)
-
-    expect(res.status).toBe(403)
-    expect(await res.json()).toEqual({ error: 'requires_pro' })
-
-    const { data } = await serviceClient()
-      .from('products').select('promo_price').eq('id', productId).single()
-    expect(Number(data!.promo_price)).toBe(8)
-
-    await serviceClient().from('products').delete().eq('id', productId)
-    await serviceClient().from('merchants').delete().eq('id', id)
-  })
-
   it('lets a pro shop set a promo', async () => {
     await resetMerchant('prod-pro-promo-shop')
     const owner = await makeUser('prod-pro-promo@example.com', 'password123')
     const { token, userId } = await tokenOf(owner)
-    const id = await seedMerchant({ slug: 'prod-pro-promo-shop', owner_id: userId, plan: 'pro' })
+    const id = await seedMerchant({ slug: 'prod-pro-promo-shop', owner_id: userId })
     const productId = crypto.randomUUID()
 
     const res = await put(`/api/merchants/${id}/products/${productId}`, {
@@ -400,23 +319,22 @@ describe('PUT /api/merchants/:id/products/:productId — option groups', () => {
     ],
   }]
 
-  // TWO shops, made once — one per tier, which is what these tests actually distinguish.
-  // `merchants_owner_id_key` makes a shop's owner unique (one owner, one shop), so a shop per
+  // TWO shops, made once. `merchants_owner_id_key` makes a shop's owner unique (one owner, one shop), so a shop per
   // test is an auth account per test; and `makeUser` lists every user before creating one, so
   // each account a suite adds permanently widens that race for the suites vitest runs beside it.
   let basic: { id: string; token: string }
   let pro: { id: string; token: string }
 
-  async function makeShop(slug: string, email: string, plan: 'basic' | 'pro') {
+  async function makeShop(slug: string, email: string) {
     await resetMerchant(slug)
     const owner = await makeUser(email, 'password123')
     const { token, userId } = await tokenOf(owner)
-    return { id: await seedMerchant({ slug, owner_id: userId, plan }), token }
+    return { id: await seedMerchant({ slug, owner_id: userId }), token }
   }
 
   beforeAll(async () => {
-    basic = await makeShop('opt-basic-shop', 'opt-basic@example.com', 'basic')
-    pro = await makeShop('opt-pro-shop', 'opt-pro@example.com', 'pro')
+    basic = await makeShop('opt-basic-shop', 'opt-basic@example.com')
+    pro = await makeShop('opt-pro-shop', 'opt-pro@example.com')
   })
 
   afterAll(async () => {
@@ -424,26 +342,25 @@ describe('PUT /api/merchants/:id/products/:productId — option groups', () => {
     await resetMerchant('opt-pro-shop')
   })
 
-  /** Seeded past the gate, exactly as a shop that WAS Pro would have it. */
+  /** Seeded straight into the row, without going through the route. */
   async function seedWithGroups(merchantId: string, productId: string) {
     await serviceClient().from('products')
       .insert({ id: productId, merchant_id: merchantId, name: 'Latte', price: 10, option_groups: MILK })
   }
 
-  it('403 requires_pro when a basic shop adds option groups, and writes nothing', async () => {
+  it('lets a shop add option groups', async () => {
     const productId = crypto.randomUUID()
     const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
       name: 'Latte', price: 10, option_groups: MILK,
     }, basic.token)
 
-    expect(res.status).toBe(403)
-    expect(await res.json()).toEqual({ error: 'requires_pro' })
-    const { data } = await serviceClient().from('products').select('id').eq('id', productId).maybeSingle()
-    expect(data).toBeNull()
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('products').select('option_groups').eq('id', productId).single()
+    expect(data!.option_groups).toEqual(MILK)
   })
 
-  // The rename case, and the whole reason the gate compares rather than sniffs.
-  it('lets a basic shop rename a product while resubmitting its unchanged groups', async () => {
+  it('lets a shop rename a product while resubmitting its unchanged groups', async () => {
     const productId = crypto.randomUUID()
     await seedWithGroups(basic.id, productId)
 
@@ -458,9 +375,7 @@ describe('PUT /api/merchants/:id/products/:productId — option groups', () => {
     expect(data!.option_groups).toEqual(MILK)
   })
 
-  // Clearing is a change like any other: a Pro feature must not be removable by the act of
-  // ceasing to pay for it.
-  it('403 requires_pro when a basic shop tries to CLEAR its groups', async () => {
+  it('lets a shop clear its groups', async () => {
     const productId = crypto.randomUUID()
     await seedWithGroups(basic.id, productId)
 
@@ -468,10 +383,10 @@ describe('PUT /api/merchants/:id/products/:productId — option groups', () => {
       name: 'Latte', price: 10, option_groups: [],
     }, basic.token)
 
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
     const { data } = await serviceClient()
       .from('products').select('option_groups').eq('id', productId).single()
-    expect(data!.option_groups).toEqual(MILK)
+    expect(data!.option_groups).toEqual([])
   })
 
   // ADR 0008 traded every check constraint for the atomic save and appointed
@@ -513,22 +428,22 @@ describe('PUT /api/merchants/:id/products/:productId — option groups', () => {
 // shape as the option-groups one above: it asks whether the value CHANGED, never whether the
 // body contained it. The two are tested together because they are one feature — a merchant can
 // only file a product into a section their shop is allowed to have.
-describe('menu categories — the Pro gate on both endpoints', () => {
+describe('menu categories — both endpoints', () => {
   const CAKES = [{ id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: true }]
 
   let basic: { id: string; token: string }
   let pro: { id: string; token: string }
 
-  async function makeShop(slug: string, email: string, plan: 'basic' | 'pro') {
+  async function makeShop(slug: string, email: string) {
     await resetMerchant(slug)
     const owner = await makeUser(email, 'password123')
     const { token, userId } = await tokenOf(owner)
-    return { id: await seedMerchant({ slug, owner_id: userId, plan }), token }
+    return { id: await seedMerchant({ slug, owner_id: userId }), token }
   }
 
   beforeAll(async () => {
-    basic = await makeShop('cat-basic-shop', 'cat-basic@example.com', 'basic')
-    pro = await makeShop('cat-pro-shop', 'cat-pro@example.com', 'pro')
+    basic = await makeShop('cat-basic-shop', 'cat-basic@example.com')
+    pro = await makeShop('cat-pro-shop', 'cat-pro@example.com')
   })
 
   afterAll(async () => {
@@ -536,24 +451,23 @@ describe('menu categories — the Pro gate on both endpoints', () => {
     await resetMerchant('cat-pro-shop')
   })
 
-  /** Seeded past the gate, exactly as a shop that WAS Pro would have it. */
+  /** Seeded straight into the row, without going through the route. */
   async function seedCategories(merchantId: string) {
     await serviceClient().from('merchants').update({ product_categories: CAKES }).eq('id', merchantId)
   }
 
-  it('403 requires_pro when a basic shop authors categories, and writes nothing', async () => {
+  it('lets a shop author its categories', async () => {
     const res = await patch(`/api/merchants/${basic.id}`, { product_categories: CAKES }, basic.token)
 
-    expect(res.status).toBe(403)
-    expect(await res.json()).toEqual({ error: 'requires_pro' })
+    expect(res.status).toBe(200)
     const { data } = await serviceClient()
       .from('merchants').select('product_categories').eq('id', basic.id).single()
-    expect(data!.product_categories).toEqual([])
+    expect(data!.product_categories).toEqual(CAKES)
   })
 
-  // The reason the gate compares rather than sniffs: ShopSettings resubmits a whole config bag,
-  // so a presence check would refuse a Basic ex-Pro shop an ordinary shipping edit.
-  it('lets a basic shop edit its config while resubmitting unchanged categories', async () => {
+  // ShopSettings resubmits a whole config bag, so an unchanged category list must ride along with
+  // an ordinary shipping or tax edit without disturbing anything.
+  it('lets a shop edit its config while resubmitting unchanged categories', async () => {
     await seedCategories(basic.id)
 
     const res = await patch(`/api/merchants/${basic.id}`, {
@@ -567,15 +481,15 @@ describe('menu categories — the Pro gate on both endpoints', () => {
     expect(Number(data!.tax_rate)).toBe(6)
   })
 
-  it('403 requires_pro when a basic shop tries to CLEAR its categories', async () => {
+  it('lets a shop clear its categories', async () => {
     await seedCategories(basic.id)
 
     const res = await patch(`/api/merchants/${basic.id}`, { product_categories: [] }, basic.token)
 
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
     const { data } = await serviceClient()
       .from('merchants').select('product_categories').eq('id', basic.id).single()
-    expect(data!.product_categories).toEqual(CAKES)
+    expect(data!.product_categories).toEqual([])
   })
 
   // ADR 0013 traded every check constraint for a write path that already existed and appointed
@@ -612,21 +526,21 @@ describe('menu categories — the Pro gate on both endpoints', () => {
     expect(data!.product_categories).toEqual(reordered)
   })
 
-  it('403 requires_pro when a basic shop files a product into a category', async () => {
+  it('lets a shop file a product into a category', async () => {
     const productId = crypto.randomUUID()
     const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
       name: 'Roll', price: 10, category_id: 'c1',
     }, basic.token)
 
-    expect(res.status).toBe(403)
-    expect(await res.json()).toEqual({ error: 'requires_pro' })
-    const { data } = await serviceClient().from('products').select('id').eq('id', productId).maybeSingle()
-    expect(data).toBeNull()
+    expect(res.status).toBe(200)
+    const { data } = await serviceClient()
+      .from('products').select('category_id').eq('id', productId).single()
+    expect(data!.category_id).toBe('c1')
   })
 
-  // `null` and an absent column are ONE state — uncategorized — so neither is a change, and a
-  // basic shop must still be able to save an ordinary unfiled product.
-  it('lets a basic shop save an uncategorized product', async () => {
+  // `null` and an absent column are ONE state — uncategorized — so an ordinary unfiled product
+  // still saves.
+  it('lets a shop save an uncategorized product', async () => {
     const productId = crypto.randomUUID()
     const res = await put(`/api/merchants/${basic.id}/products/${productId}`, {
       name: 'Roll', price: 10, category_id: null,
@@ -638,7 +552,7 @@ describe('menu categories — the Pro gate on both endpoints', () => {
     expect(data!.category_id).toBeNull()
   })
 
-  it('lets a basic shop rename a product while resubmitting its unchanged category', async () => {
+  it('lets a shop rename a product while resubmitting its unchanged category', async () => {
     const productId = crypto.randomUUID()
     await serviceClient().from('products')
       .insert({ id: productId, merchant_id: basic.id, name: 'Roll', price: 10, category_id: 'c1' })
@@ -654,13 +568,9 @@ describe('menu categories — the Pro gate on both endpoints', () => {
     expect(data!.category_id).toBe('c1')
   })
 
-  // The bug this pair exists to pin. A Pro shop deletes a category; its products keep the dead
-  // id. The shop then drops to Basic and the merchant renames one of those products. If the
-  // dashboard "tidies" the dangling id to null on the way out, `categoryChanged` calls that a
-  // change and refuses an ORDINARY RENAME with 403 — the exact failure `categoryChanged`'s doc
-  // says it exists to prevent. The fix is in ProductsManager (the dead id round-trips verbatim);
-  // these two assert the gate's half of the contract, which is what the fix depends on.
-  it('lets a basic shop rename a product carrying a DANGLING category id', async () => {
+  // A shop deletes a category; its products keep the dead id. Renaming one of those products
+  // must save, dangling id and all — a dangling id IS the uncategorized state, not an error.
+  it('lets a shop rename a product carrying a DANGLING category id', async () => {
     const productId = crypto.randomUUID()
     await serviceClient().from('products')
       .insert({ id: productId, merchant_id: basic.id, name: 'Roll', price: 10, category_id: 'deleted-cat' })
@@ -676,7 +586,7 @@ describe('menu categories — the Pro gate on both endpoints', () => {
     expect(data!.category_id).toBe('deleted-cat')
   })
 
-  it('403s a basic shop that CLEARS a dangling category id — unfiling is still a change', async () => {
+  it('lets a shop unfile a product carrying a dangling category id', async () => {
     const productId = crypto.randomUUID()
     await serviceClient().from('products')
       .insert({ id: productId, merchant_id: basic.id, name: 'Roll', price: 10, category_id: 'deleted-cat' })
@@ -685,11 +595,11 @@ describe('menu categories — the Pro gate on both endpoints', () => {
       name: 'Swiss Roll', price: 10, category_id: null,
     }, basic.token)
 
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
     const { data } = await serviceClient()
       .from('products').select('name, category_id').eq('id', productId).single()
-    expect(data!.name).toBe('Roll')
-    expect(data!.category_id).toBe('deleted-cat')
+    expect(data!.name).toBe('Swiss Roll')
+    expect(data!.category_id).toBeNull()
   })
 
   // Nothing checks a product's category id against the shop's list, on purpose: a stale
@@ -705,82 +615,5 @@ describe('menu categories — the Pro gate on both endpoints', () => {
     const { data } = await serviceClient()
       .from('products').select('category_id').eq('id', productId).single()
     expect(data!.category_id).toBe('long-deleted')
-  })
-})
-
-// The downgrade half of ADR 0013, which nothing else exercises: `revokeProArtifacts` is what a
-// step down to Basic runs, and its category clause is the one that must HIDE without dismantling.
-describe('revokeProArtifacts — menu categories', () => {
-  let shop: string
-  let productId: string
-
-  beforeAll(async () => {
-    await resetMerchant('cat-revoke-shop')
-    const owner = await makeUser('cat-revoke@example.com', 'password123')
-    const { userId } = await tokenOf(owner)
-    shop = await seedMerchant({ slug: 'cat-revoke-shop', owner_id: userId, plan: 'pro' })
-    productId = crypto.randomUUID()
-    await serviceClient().from('products')
-      .insert({ id: productId, merchant_id: shop, name: 'Roll', price: 10, active: true, category_id: 'c1' })
-  })
-
-  afterAll(async () => { await resetMerchant('cat-revoke-shop') })
-
-  it('hides every category, keeps the list, and takes NO product off sale', async () => {
-    await serviceClient().from('merchants').update({
-      product_categories: [
-        { id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: true },
-        { id: 'c2', name: 'Tea', active: true },
-      ],
-    }).eq('id', shop)
-
-    await revokeProArtifacts(shop)
-
-    const { data } = await serviceClient()
-      .from('merchants').select('product_categories').eq('id', shop).single()
-    // Hidden, never deleted — names, Chinese names and ORDER all survive, because a shop that
-    // stopped paying must be downgraded rather than dismantled.
-    expect(data!.product_categories).toEqual([
-      { id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: false },
-      { id: 'c2', name: 'Tea', active: false },
-    ])
-
-    // A category is decoration, not a fulfilment requirement — unlike a required option group,
-    // it takes nothing off sale. The product keeps its id and falls to the trailing block.
-    const { data: p } = await serviceClient()
-      .from('products').select('active, category_id').eq('id', productId).single()
-    expect(p!.active).toBe(true)
-    expect(p!.category_id).toBe('c1')
-  })
-
-  // A replayed webhook must not re-hide a category the merchant has since switched back on —
-  // the same property the voucher revoke gets from filtering on `active = true`.
-  it('is idempotent: a replay leaves a re-shown category alone', async () => {
-    await serviceClient().from('merchants').update({
-      product_categories: [{ id: 'c1', name: 'Cakes', active: false }],
-    }).eq('id', shop)
-    // The merchant is Basic and switches one back on (they cannot, but a re-upgrade then a
-    // second lapse reaches the same state — this asserts the filter, not the UI).
-    await serviceClient().from('merchants').update({
-      product_categories: [{ id: 'c1', name: 'Cakes', active: false }, { id: 'c2', name: 'Tea', active: true }],
-    }).eq('id', shop)
-
-    await revokeProArtifacts(shop)
-    await revokeProArtifacts(shop)
-
-    const { data } = await serviceClient()
-      .from('merchants').select('product_categories').eq('id', shop).single()
-    expect(data!.product_categories).toEqual([
-      { id: 'c1', name: 'Cakes', active: false },
-      { id: 'c2', name: 'Tea', active: false },
-    ])
-  })
-
-  it('does nothing to a shop that never authored a category', async () => {
-    await serviceClient().from('merchants').update({ product_categories: [] }).eq('id', shop)
-    await revokeProArtifacts(shop)
-    const { data } = await serviceClient()
-      .from('merchants').select('product_categories').eq('id', shop).single()
-    expect(data!.product_categories).toEqual([])
   })
 })

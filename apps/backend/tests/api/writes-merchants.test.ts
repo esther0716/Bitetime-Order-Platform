@@ -43,7 +43,7 @@ describe('POST /api/merchants', () => {
     const client = await makeUser('create-shop@example.com', 'password123')
     const { token, userId } = await tokenOf(client)
 
-    const res = await post('/api/merchants', { name: 'Joe Coffee', plan: 'basic', billing: 'monthly', region: 'US', businessNature: 'bakery' }, token)
+    const res = await post('/api/merchants', { name: 'Joe Coffee', billing: 'monthly', businessNature: 'bakery' }, token)
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow
@@ -110,7 +110,7 @@ describe('POST /api/merchants', () => {
     const client = await makeUser('stripe-down@example.com', 'password123')
     const { token } = await tokenOf(client)
 
-    const res = await post('/api/merchants', { name: 'Stripe Down Cafe', plan: 'basic', billing: 'monthly', businessNature: 'bakery' }, token)
+    const res = await post('/api/merchants', { name: 'Stripe Down Cafe', billing: 'monthly', businessNature: 'bakery' }, token)
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow & { trial: boolean }
@@ -128,9 +128,11 @@ describe('POST /api/merchants', () => {
     await serviceClient().from('merchants').delete().eq('id', m.id)
   })
 
-  // Pro is the pay-upfront path: no trial is provisioned and Stripe is not called at all here —
-  // the Checkout webhook is what activates the shop.
-  it('leaves a pro signup pending without touching Stripe', async () => {
+  // There is one signup path now (#222): every shop is offered the cardless trial and no body can
+  // route around it. A `plan` field is a leftover from the two-tier release and must be ignored
+  // rather than send this shop off to Checkout. `trial` being PRESENT is the assertion — it is
+  // false here only because the stub key cannot authenticate, per the note above.
+  it('attempts the trial whatever the body claims, ignoring a stale plan field', async () => {
     await resetMerchant('pro-cafe')
     const client = await makeUser('pro-signup@example.com', 'password123')
     const { token } = await tokenOf(client)
@@ -139,9 +141,8 @@ describe('POST /api/merchants', () => {
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow & { trial?: boolean }
+    expect(m.trial).toBe(false)
     expect(m.status).toBe('pending')
-    // No trial field at all on this path — Pro never calls startCardlessTrial.
-    expect(m.trial).toBeUndefined()
 
     const { data: billing } = await serviceClient()
       .from('merchant_billing').select('merchant_id').eq('merchant_id', m.id).maybeSingle()
@@ -662,5 +663,177 @@ describe('PATCH /api/merchants/:id (shipping policy)', () => {
       expect(res.status).toBe(400)
       expect(((await res.json()) as any).error).toMatch(/pickup_enabled must be a boolean/)
     })
+  })
+})
+
+// Custom order dates (#210, ADR 0015). What is pinned here is the NORMALISATION: the bag the row
+// ends up holding is the one this handler produces — sorted, deduped, clamped, unknown keys
+// dropped — never the one that arrived, and a body that never mentions fulfilment must not
+// silently rewrite it.
+describe('PATCH /api/merchants/:id (custom order dates)', () => {
+  let merchantId: string
+  let ownerToken: string
+
+  // Dates computed from the run's own clock, so this suite cannot rot into the past.
+  const iso = (offsetDays: number) => {
+    const d = new Date(Date.now() + offsetDays * 86_400_000)
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+  }
+
+  beforeEach(async () => {
+    await resetMerchant('cfg-dates-shop')
+    const client = await makeUser('cfg-dates@example.com', 'password123')
+    const { token, userId } = await tokenOf(client)
+    merchantId = await seedMerchant({ slug: 'cfg-dates-shop', owner_id: userId })
+    ownerToken = token
+  })
+
+  const setStored = (fulfilment: Record<string, unknown>) =>
+    serviceClient().from('merchants').update({ config: { fulfilment } }).eq('id', merchantId)
+
+  const save = (fulfilment: Record<string, unknown>) =>
+    patch(`/api/merchants/${merchantId}`, { config: { fulfilment } }, ownerToken)
+
+  it('lets a shop switch to custom dates', async () => {
+    const res = await save({ mode: 'custom', custom_dates: [iso(7)] })
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as any
+    expect(row.config.fulfilment.mode).toBe('custom')
+    expect(row.config.fulfilment.custom_dates).toEqual([iso(7)])
+  })
+
+  // A paused shop must be able to make the ONE write that reopens it: clearing needs_review.
+  it('lets a paused shop confirm its window without touching the dates', async () => {
+    await setStored({ mode: 'rolling', custom_dates: [iso(7)], needs_review: true })
+    const res = await save({ mode: 'rolling', custom_dates: [iso(7)], needs_review: false })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).config.fulfilment.needs_review).toBe(false)
+  })
+
+  it('refuses a custom save with no dates — the merchant cannot pause their own shop from the form', async () => {
+    const res = await save({ mode: 'custom', custom_dates: [] })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toBe('no_dates')
+  })
+
+  it('refuses a date beyond the 90-day horizon', async () => {
+    const res = await save({ mode: 'custom', custom_dates: [iso(120)] })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toBe('beyond_horizon')
+  })
+
+  it('normalises the bag it stores rather than trusting the body', async () => {
+    const res = await patch(`/api/merchants/${merchantId}`, {
+      config: { fulfilment: { mode: 'custom', custom_dates: [iso(9), iso(7), iso(7)], junk: 'x', window_days: 9999 } },
+    }, ownerToken)
+    expect(res.status).toBe(200)
+    const f = ((await res.json()) as any).config.fulfilment
+    expect(f.custom_dates).toEqual([iso(7), iso(9)])   // sorted, deduped
+    expect(f.window_days).toBe(90)                     // clamped to the horizon
+    expect(f.junk).toBeUndefined()                     // unknown keys do not survive
+  })
+
+  // Found in review. `fulfilmentConfig` reads a bag with no `fulfilment` key as DEFAULT_FULFILMENT,
+  // so normalising on the PRESENCE of `config` writes that default over the row — clearing the
+  // dates and lifting the ADR 0015 pause behind a success toast. Latent (only FulfilmentTab sends
+  // `config` today, and it spreads the stored bag) but it is the presence-vs-change mistake sitting
+  // one function away from the gate that exists to avoid it.
+  it('carries the stored fulfilment forward when a config PATCH does not mention it', async () => {
+    await setStored({ mode: 'rolling', custom_dates: [iso(7)], needs_review: true })
+    const res = await patch(`/api/merchants/${merchantId}`, { config: { something_else: 1 } }, ownerToken)
+    expect(res.status).toBe(200)
+    const f = ((await res.json()) as any).config.fulfilment
+    expect(f.needs_review).toBe(true)          // the pause survives a write that never named it
+    expect(f.custom_dates).toEqual([iso(7)])
+  })
+
+  it('leaves a shop with no stored fulfilment alone rather than inventing one', async () => {
+    await serviceClient().from('merchants').update({ config: {} }).eq('id', merchantId)
+    const res = await patch(`/api/merchants/${merchantId}`, { config: { something_else: 1 } }, ownerToken)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).config.fulfilment).toBeUndefined()
+  })
+
+  // Found in review. `fulfilmentConfig` caps the array at MAX_CUSTOM_DATES, so validating the
+  // ALREADY-TRUNCATED list could never report `too_many` — a 200-date body saved 91 silently,
+  // which is exactly the "refused, never trimmed" rule the handler states one line above.
+  it('refuses an over-long allowlist rather than truncating it', async () => {
+    const many = Array.from({ length: 95 }, (_, i) => iso(i + 1))
+    const res = await save({ mode: 'custom', custom_dates: many })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toBe('too_many')
+  })
+
+  it('normalises the fulfilment key without disturbing the rest of the config bag', async () => {
+    const res = await patch(`/api/merchants/${merchantId}`, {
+      config: { fulfilment: { lead_days: 3 }, something_else: { kept: true } },
+    }, ownerToken)
+    expect(res.status).toBe(200)
+    const cfg = ((await res.json()) as any).config
+    expect(cfg.fulfilment.lead_days).toBe(3)
+    expect(cfg.something_else).toEqual({ kept: true })
+  })
+})
+
+// The shop's OWN advertising pixel (#220). What is pinned here is the id VALIDATION and the
+// public read: a malformed id is refused where the merchant can still see the form, and the ids
+// reach an anonymous storefront visitor, or the browser has nothing to decide with.
+describe('PATCH /api/merchants/:id — the shop’s own ad pixel', () => {
+  let merchantId: string
+  let ownerToken: string
+
+  beforeEach(async () => {
+    await resetMerchant('cfg-pixel-shop')
+    const client = await makeUser('cfg-pixel@example.com', 'password123')
+    const { token, userId } = await tokenOf(client)
+    merchantId = await seedMerchant({ slug: 'cfg-pixel-shop', owner_id: userId })
+    ownerToken = token
+  })
+
+  const setStored = (meta: string | null) =>
+    serviceClient().from('merchants').update({ meta_pixel_id: meta }).eq('id', merchantId)
+
+  const save = (body: Record<string, unknown>) =>
+    patch(`/api/merchants/${merchantId}`, body, ownerToken)
+
+  it('lets a shop set its pixel ids', async () => {
+    const res = await save({ meta_pixel_id: '123456789012345', tiktok_pixel_id: 'CQ1234567890ABCDEFGH' })
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as any
+    expect(row.meta_pixel_id).toBe('123456789012345')
+    expect(row.tiktok_pixel_id).toBe('CQ1234567890ABCDEFGH')
+  })
+
+  // ShopSettings resubmits a whole config bag, so an untouched pixel id rides along with an
+  // ordinary shipping edit.
+  it('lets a shop resubmit its existing pixel unchanged alongside other edits', async () => {
+    await setStored('123456789012345')
+    const res = await save({ meta_pixel_id: '123456789012345', pickup_address: 'Lot 4' })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).pickup_address).toBe('Lot 4')
+  })
+
+  // Removing a pixel STOPS third-party tracking, so it must always be possible.
+  it('lets a shop REMOVE its pixel', async () => {
+    await setStored('123456789012345')
+    const res = await save({ meta_pixel_id: '' })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).meta_pixel_id).toBeNull()
+  })
+
+  it('refuses a malformed id rather than storing it, where the merchant can still see the form', async () => {
+    const res = await save({ meta_pixel_id: 'act_12345678' })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toContain('meta_pixel_id')
+  })
+
+  // Public storefront read: the ids have to reach an anonymous visitor, or the browser has
+  // nothing to decide with. This is the only endpoint that carries them.
+  it('ships the pixel ids on the public storefront lookup', async () => {
+    await save({ meta_pixel_id: '123456789012345' })
+    const res = await app.request('/api/merchants/cfg-pixel-shop')
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as any
+    expect(row.meta_pixel_id).toBe('123456789012345')
   })
 })

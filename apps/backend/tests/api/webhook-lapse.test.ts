@@ -2,12 +2,12 @@
 // POST /api/stripe/webhook — `customer.subscription.deleted`, the event that closes a shop whose
 // trial ended unpaid or whose dunning ran out.
 //
-// A suite of its own rather than more cases in webhook-plan.test.ts, because it asserts a
+// A suite of its own rather than more cases in webhook-cycle.test.ts, because it asserts a
 // different thing: not which tier the shop is on, but that the shop STOPS. The two share the
 // signing helper by shape only — duplicating six lines beats coupling two suites that will drift
 // for unrelated reasons.
 //
-// Network-free by construction, exactly as webhook-plan.test.ts is: `generateTestHeaderString`
+// Network-free by construction, exactly as webhook-cycle.test.ts is: `generateTestHeaderString`
 // signs offline, and the one Stripe call this branch makes — "is the customer still paying
 // through some other subscription?" — goes through `billingSyncDeps`, which every case here
 // answers itself. A suite that let that call reach the network would decide whether it closes a
@@ -82,7 +82,7 @@ function postWebhook(payload: unknown) {
 
 async function shopOf(merchantId: string) {
   const { data } = await serviceClient()
-    .from('merchants').select('status, plan').eq('id', merchantId).single()
+    .from('merchants').select('status').eq('id', merchantId).single()
   return data!
 }
 
@@ -90,10 +90,10 @@ describe('POST /api/stripe/webhook — a subscription ending', () => {
   beforeEach(noOtherSubscription)
   afterEach(() => { billingSyncDeps.listSubscriptions = REAL_LIST })
 
-  it('suspends the shop and returns it to basic', async () => {
+  it('suspends the shop', async () => {
     await resetMerchant('lapse-pro-shop')
     const owner = await makeUser('lapse-pro@example.com', 'password123')
-    const id = await seedMerchant({ slug: 'lapse-pro-shop', owner_id: await userIdOf(owner), plan: 'pro' })
+    const id = await seedMerchant({ slug: 'lapse-pro-shop', owner_id: await userIdOf(owner) })
     const svc = serviceClient()
     await svc.from('merchant_billing').upsert({
       merchant_id: id, status: 'trialing', stripe_subscription_id: 'sub_lapse_pro',
@@ -101,10 +101,7 @@ describe('POST /api/stripe/webhook — a subscription ending', () => {
 
     expect((await postWebhook(subscriptionDeleted(id, 'sub_lapse_pro'))).status).toBe(200)
 
-    // BOTH, and the plan half is the one that was missing: suspension alone left `plan` on 'pro',
-    // so a superadmin un-suspending the shop — or any surface reading the column without also
-    // reading the status — handed back every Pro feature the merchant had stopped paying for.
-    expect(await shopOf(id)).toEqual({ status: 'suspended', plan: 'basic' })
+    expect(await shopOf(id)).toEqual({ status: 'suspended' })
 
     const { data: billing } = await svc
       .from('merchant_billing').select('status').eq('merchant_id', id).single()
@@ -113,13 +110,13 @@ describe('POST /api/stripe/webhook — a subscription ending', () => {
     await svc.from('merchants').delete().eq('id', id)
   })
 
-  // Same cutoff the portal downgrade already performs (webhook-plan.test.ts), now reached by the
-  // other road out of Pro. Without it a lapsed shop's vouchers stay redeemable — and the order
-  // path is plan-blind by design, so nothing downstream would ever refuse them.
-  it('deactivates vouchers and ends running promos on the way out', async () => {
+  // A closed shop refuses every order at the storefront gate, so its vouchers and sale prices
+  // need no revoking — they are unreachable, and they work again the day it resubscribes. This
+  // used to be a bulk cutoff, back when a lapse also took a tier away (#222).
+  it('leaves the shop’s vouchers and promos intact on the way out', async () => {
     await resetMerchant('lapse-artifacts-shop')
     const owner = await makeUser('lapse-artifacts@example.com', 'password123')
-    const id = await seedMerchant({ slug: 'lapse-artifacts-shop', owner_id: await userIdOf(owner), plan: 'pro' })
+    const id = await seedMerchant({ slug: 'lapse-artifacts-shop', owner_id: await userIdOf(owner) })
     const svc = serviceClient()
     await svc.from('merchant_billing').upsert({
       merchant_id: id, status: 'trialing', stripe_subscription_id: 'sub_lapse_artifacts',
@@ -132,33 +129,9 @@ describe('POST /api/stripe/webhook — a subscription ending', () => {
     expect((await postWebhook(subscriptionDeleted(id, 'sub_lapse_artifacts'))).status).toBe(200)
 
     const { data: vouchers } = await svc.from('vouchers').select('active').eq('merchant_id', id)
-    expect(vouchers!.map(v => v.active)).toEqual([false])
+    expect(vouchers!.map(v => v.active)).toEqual([true])
     const { data: products } = await svc.from('products').select('promo_end').eq('merchant_id', id)
-    expect(new Date(products![0].promo_end as string).getTime()).toBeLessThanOrEqual(Date.now())
-
-    await svc.from('merchants').delete().eq('id', id)
-  })
-
-  // A basic shop has no Pro artifacts to revoke, and the plan write must be a no-op rather than
-  // a second, pointless transition — the same read-before-write discipline reconcileMerchantPlan
-  // uses so a replayed event cannot re-revoke what a merchant has since restored.
-  it('suspends a basic shop without touching its plan', async () => {
-    await resetMerchant('lapse-basic-shop')
-    const owner = await makeUser('lapse-basic@example.com', 'password123')
-    const id = await seedMerchant({ slug: 'lapse-basic-shop', owner_id: await userIdOf(owner), plan: 'basic' })
-    const svc = serviceClient()
-    await svc.from('merchant_billing').upsert({
-      merchant_id: id, status: 'trialing', stripe_subscription_id: 'sub_lapse_basic',
-    })
-    await svc.from('vouchers').insert({ merchant_id: id, code: 'STILLHERE', kind: 'percent', amount: 10 })
-
-    expect((await postWebhook(subscriptionDeleted(id, 'sub_lapse_basic'))).status).toBe(200)
-
-    expect(await shopOf(id)).toEqual({ status: 'suspended', plan: 'basic' })
-    // Untouched: this shop never left Pro, so nothing was revoked. A cutoff keyed on "is basic"
-    // rather than on the transition would have switched this off.
-    const { data } = await svc.from('vouchers').select('active').eq('merchant_id', id)
-    expect(data!.map(v => v.active)).toEqual([true])
+    expect(products![0].promo_end).toBeNull()
 
     await svc.from('merchants').delete().eq('id', id)
   })
@@ -168,7 +141,7 @@ describe('POST /api/stripe/webhook — a subscription ending', () => {
   it('ignores the cancellation of a subscription that is no longer the current one', async () => {
     await resetMerchant('lapse-stale-shop')
     const owner = await makeUser('lapse-stale@example.com', 'password123')
-    const id = await seedMerchant({ slug: 'lapse-stale-shop', owner_id: await userIdOf(owner), plan: 'pro' })
+    const id = await seedMerchant({ slug: 'lapse-stale-shop', owner_id: await userIdOf(owner) })
     const svc = serviceClient()
     await svc.from('merchant_billing').upsert({
       merchant_id: id, status: 'active', stripe_subscription_id: 'sub_lapse_current',
@@ -176,7 +149,7 @@ describe('POST /api/stripe/webhook — a subscription ending', () => {
 
     expect((await postWebhook(subscriptionDeleted(id, 'sub_lapse_old'))).status).toBe(200)
 
-    expect(await shopOf(id)).toEqual({ status: 'active', plan: 'pro' })
+    expect(await shopOf(id)).toEqual({ status: 'active' })
 
     await svc.from('merchants').delete().eq('id', id)
   })
@@ -192,7 +165,7 @@ describe('POST /api/stripe/webhook — a subscription ending', () => {
   it('does not close a shop whose customer is still paying through a newer subscription', async () => {
     await resetMerchant('lapse-replaced-shop')
     const owner = await makeUser('lapse-replaced@example.com', 'password123')
-    const id = await seedMerchant({ slug: 'lapse-replaced-shop', owner_id: await userIdOf(owner), plan: 'basic' })
+    const id = await seedMerchant({ slug: 'lapse-replaced-shop', owner_id: await userIdOf(owner) })
     const svc = serviceClient()
     // Exactly the shape production was in: the row still names the trial that is ending, because
     // nothing ever recorded the subscription bought to replace it.
@@ -204,7 +177,7 @@ describe('POST /api/stripe/webhook — a subscription ending', () => {
     expect((await postWebhook(subscriptionDeleted(id, 'sub_lapse_replaced_old'))).status).toBe(200)
 
     // Open, and reconciled to what it is actually paying for — not merely spared.
-    expect(await shopOf(id)).toEqual({ status: 'active', plan: 'pro' })
+    expect((await shopOf(id)).status).toBe('active')
     const { data: billing } = await svc
       .from('merchant_billing').select('status, stripe_subscription_id').eq('merchant_id', id).single()
     expect(billing).toEqual({ status: 'active', stripe_subscription_id: 'sub_lapse_replaced_new' })

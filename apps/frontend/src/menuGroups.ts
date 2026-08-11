@@ -36,8 +36,8 @@ interface Categorized {
  *
  *   * **Only ACTIVE categories get a heading.** A hidden category is not a hole in the menu:
  *     its products fall to the trailing block and keep selling. Hiding a heading must never
- *     quietly pull items off sale — which is also what makes a downgrade safe, since it hides
- *     every category and touches no product, leaving exactly the flat menu the shop had before.
+ *     quietly pull items off sale: all categories hidden is exactly the flat menu the shop had
+ *     before it authored any.
  *   * **An unresolvable `category_id` is uncategorized, never an error.** Deleting a category
  *     rewrites no product row, so its products are left pointing at an id the list no longer
  *     holds. That is the whole reason the delete is one write.

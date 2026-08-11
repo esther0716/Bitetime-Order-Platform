@@ -59,7 +59,7 @@ export default function FeaturesPage() {
       <section className="border-t border-border px-8 py-16 text-center bg-brand-100 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
           <h2 className={sectionTitle}>
-            {t('Every one of these is on Basic, free for seven days', '以上都在基础版，免费试用七天')}
+            {t('Every one of these is included, free for seven days', '以上功能全包含，免费试用七天')}
           </h2>
           <Link to="/merchant/signup" className={ctaPrimary}>
             {t('Start your shop', '开始建店')}
@@ -68,7 +68,7 @@ export default function FeaturesPage() {
               crawler working out which pages belong to which. */}
           <p className="mt-6 mb-0 text-[13px] text-muted-foreground">
             <Link to="/pricing" className="underline underline-offset-4 hover:text-primary">
-              {t('See Basic and Pro pricing', '查看基础版与 Pro 版价格')}
+              {t('See the price', '查看价格')}
             </Link>
           </p>
         </Reveal>

@@ -3,10 +3,16 @@ import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import { updateMerchantConfig } from '../store'
 import { useSaved } from './useSaved'
-import { fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import CustomDatesCalendar from './CustomDatesCalendar'
+import {
+  fulfilmentConfig, customDateBounds, pruneCustomDates, validateCustomDates,
+  DEFAULT_TIMEZONE, FULFILMENT_HORIZON_DAYS,
+  type FulfilmentMode, type CustomDatesError,
+} from '@bitetime/shared'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 
 const CARD = 'bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6'
@@ -30,7 +36,7 @@ const WEEKDAYS: { value: number; en: string; zh: string }[] = [
 interface TabProps { onDirtyChange: (dirty: boolean) => void }
 
 export default function FulfilmentTab({ onDirtyChange }: TabProps) {
-  const { t, merchant, refreshMerchant } = useSession()
+  const { t, lang, merchant, refreshMerchant } = useSession()
 
   // fulfilmentConfig, not a local `?? 0` / `?? 14`: this form shows the merchant what a shop
   // with no saved config ACTUALLY OFFERS, and that is decided by one function on both sides of
@@ -38,9 +44,11 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
   const initial = () => {
     const cfg = fulfilmentConfig(merchant!.config)
     return {
+      mode: cfg.mode as FulfilmentMode,
       lead: String(cfg.lead_days),
       window: String(cfg.window_days),
       closed: cfg.closed_weekdays,
+      dates: cfg.custom_dates,
       timezone: merchant!.timezone ?? DEFAULT_TIMEZONE,
     }
   }
@@ -48,20 +56,39 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
   const [fields, setFields] = useState(initialFields)
   const [busy, setBusy] = useState(false)
 
+  // The shop is PAUSED until this merchant confirms (ADR 0015). Read off the SAVED config, never
+  // off form state: it must survive every re-render and clear only when a save actually lands.
+  const needsReview = fulfilmentConfig(merchant!.config).needs_review
+
   // Same shared save-cycle hook as ShopSettings' tabs (#123), but with this tab's own `eq`:
-  // the shape carries a `number[]` of closed weekdays that the flat-map `isDirty` cannot hold.
+  // the shape carries two arrays that the flat-map `isDirty` cannot hold.
   const { commit } = useSaved(
     initialFields,
     fields,
     (a, b) =>
+      a.mode === b.mode &&
       a.lead === b.lead &&
       a.window === b.window &&
       a.timezone === b.timezone &&
-      a.closed.join(',') === b.closed.join(','),
+      a.closed.join(',') === b.closed.join(',') &&
+      a.dates.join(',') === b.dates.join(','),
     onDirtyChange,
   )
 
-  const allClosed = fields.closed.length === 7
+  const custom = fields.mode === 'custom'
+  const allClosed = !custom && fields.closed.length === 7
+  // The browser's own clock rather than the server-corrected one the storefront uses: this is a
+  // settings form, where being a second out cannot cost an order, and the backend re-judges the
+  // horizon against the shop's timezone anyway.
+  const bounds = customDateBounds(fields.timezone, new Date())
+
+  const dateErrorMessage = (code: CustomDatesError): string => ({
+    no_dates: t('Pick at least one date, or customers cannot order at all.', '请至少选择一个日期，否则顾客无法下单。'),
+    too_many: t('That is more dates than a shop can offer at once.', '所选日期数量超过上限。'),
+    past_date: t('One of those dates has already passed.', '其中有日期已过期。'),
+    beyond_horizon: t(`You can only take orders up to ${FULFILMENT_HORIZON_DAYS} days ahead.`,
+                      `最多只能接受 ${FULFILMENT_HORIZON_DAYS} 天内的订单。`),
+  })[code]
 
   function toggleDay(d: number) {
     setFields(f => ({
@@ -79,15 +106,30 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
       toast.error(t('Leave at least one day open, or customers cannot order at all.', '请至少保留一天营业，否则顾客无法下单。'))
       return
     }
+    // Pruned BEFORE validating, so a stale tick left over from last month is dropped quietly
+    // rather than refused: the merchant did nothing wrong, time passed.
+    const dates = custom
+      ? pruneCustomDates({ ...fulfilmentConfig(merchant!.config), custom_dates: fields.dates }, fields.timezone, new Date())
+      : fields.dates
+    if (custom) {
+      const bad = validateCustomDates(dates, fields.timezone, new Date())
+      if (bad) { toast.error(dateErrorMessage(bad)); return }
+    }
     setBusy(true)
     try {
       // fulfilmentConfig is what READS this bag on both sides of the wire, so it is what WRITES
       // it too — the form cannot save a shape the storefront then reads back differently.
       const fulfilment = fulfilmentConfig({
         fulfilment: {
+          mode: fields.mode,
           lead_days: Number(fields.lead),
           window_days: Number(fields.window),
           closed_weekdays: fields.closed,
+          custom_dates: dates,
+          // Saving IS the confirmation. The alert above the fields is what makes it deliberate.
+          // Requiring an EDIT was rejected: change-then-revert is undetectable, and it would
+          // force a merchant whose window was already right to make it wrong first (ADR 0015).
+          needs_review: false,
         },
       })
       const saved = await updateMerchantConfig(merchant!.id, {
@@ -99,14 +141,18 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
       // Show back what was SAVED, not what was typed: `fulfilmentConfig` clamps, and a merchant
       // who typed 999 must not be left reading 999 while their shop offers 90.
       const applied = {
+        mode: fulfilment.mode,
         lead: String(fulfilment.lead_days),
         window: String(fulfilment.window_days),
         closed: fulfilment.closed_weekdays,
+        dates: fulfilment.custom_dates,
         timezone: fields.timezone,
       }
       setFields(applied)
       commit(applied)
-      toast.success(t('Fulfilment saved', '取货设置已保存'))
+      toast.success(needsReview
+        ? t('Your shop is open again', '店铺已重新开放')
+        : t('Fulfilment saved', '取货设置已保存'))
     } catch (err: any) {
       toast.error(err.message || t('Save failed', '保存失败'))
     } finally { setBusy(false) }
@@ -114,32 +160,110 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
 
   return (
     <form onSubmit={save}>
-      <div className={CARD}>
-        <h3 className={HEADING}>{t('Order dates', '可选日期')}</h3>
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-[6px]">
-            <Label htmlFor="ff-lead">{t('Days of notice you need', '需要提前的天数')}</Label>
-            <Input id="ff-lead" type="number" min="0" max="30" value={fields.lead} variant="compact"
-              onChange={e => setFields(f => ({ ...f, lead: e.target.value }))} />
-            <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
-              {t('0 lets customers order for today. 1 means the earliest they can pick is tomorrow.',
-                 '填 0 表示顾客可选当天。填 1 表示最早只能选明天。')}
-            </p>
-          </div>
-          <div className="flex flex-col gap-[6px]">
-            <Label htmlFor="ff-window">{t('How many days ahead you take orders', '可提前预订的天数')}</Label>
-            <Input id="ff-window" type="number" min="1" max="90" value={fields.window} variant="compact"
-              onChange={e => setFields(f => ({ ...f, window: e.target.value }))} />
-            <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
-              {t('Counted from the earliest date above. Closed days come out of this range — they do not extend it.',
-                 '从上面最早可选日期起算。休息日会从这段日期中扣除，不会顺延。')}
-            </p>
-          </div>
+      {/* The merchant-facing half of the pause. Not dismissible: a shop that has stopped taking
+          orders is not a thing its owner should be able to hide from themselves. */}
+      {needsReview && (
+        <div className="bg-brand-100 border-[0.5px] border-primary rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4">
+          <h3 className="font-heading text-[15px] font-medium text-primary mb-2">
+            {t('Your shop is paused', '店铺已暂停接单')}
+          </h3>
+          <p className="text-[13px] text-foreground leading-[1.6]">
+            {t('Your shop is back on the rolling window below. Customers cannot order until you confirm it.',
+               '店铺已改回下方的滚动日期范围。确认后顾客才能继续下单。')}
+          </p>
         </div>
-      </div>
+      )}
 
       <div className={CARD}>
+        <h3 className={HEADING}>{t('Order dates', '可选日期')}</h3>
+
+        <RadioGroup
+          value={fields.mode}
+          onValueChange={v => setFields(f => ({ ...f, mode: v === 'custom' ? 'custom' : 'rolling' }))}
+          className="flex flex-col gap-3 mb-5"
+        >
+          <label className="flex items-start gap-3 cursor-pointer">
+            <RadioGroupItem value="rolling" id="ff-mode-rolling" className="mt-[3px]" />
+            <span>
+              <span className="block text-[14px] font-medium text-foreground">
+                {t('Rolling window', '滚动日期范围')}
+              </span>
+              <span className="block text-[12px] text-muted-foreground leading-[1.5]">
+                {t('Customers pick any day in a range that moves with today.', '顾客可在随当天滚动的日期范围内选择。')}
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <RadioGroupItem value="custom" id="ff-mode-custom" className="mt-[3px]" />
+            <span>
+              <span className="flex items-center gap-2 text-[14px] font-medium text-foreground">
+                {t('Specific dates', '指定日期')}
+              </span>
+              <span className="block text-[12px] text-muted-foreground leading-[1.5]">
+                {t('You tick the exact dates you deliver on. Days of notice and closed days do not apply.',
+                   '由你勾选具体的配送日期，提前天数与休息日不再适用。')}
+              </span>
+            </span>
+          </label>
+        </RadioGroup>
+
+        {custom ? (
+          bounds && (
+            <>
+              <CustomDatesCalendar
+                value={fields.dates}
+                onChange={dates => setFields(f => ({ ...f, dates }))}
+                first={bounds.first}
+                last={bounds.last}
+                t={t}
+                lang={lang}
+              />
+              {/* The count lives on the list's own heading now, so this says only the thing the
+                  list cannot: that removing a date is not retroactive. */}
+              <p className="text-[12px] text-muted-foreground mt-3 leading-[1.5]">
+                {fields.dates.length === 0
+                  ? t('No dates picked — customers would have none to choose.', '尚未选择任何日期，顾客将无日期可选。')
+                  : t('Removing a date only stops new orders — orders already placed for it are unaffected.',
+                      '取消某个日期只会停止新订单，已下单的订单不受影响。')}
+              </p>
+            </>
+          )
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="ff-lead">{t('Days of notice you need', '需要提前的天数')}</Label>
+              <Input id="ff-lead" type="number" min="0" max="30" value={fields.lead} variant="compact"
+                onChange={e => setFields(f => ({ ...f, lead: e.target.value }))} />
+              <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
+                {t('0 lets customers order for today. 1 means the earliest they can pick is tomorrow.',
+                   '填 0 表示顾客可选当天。填 1 表示最早只能选明天。')}
+              </p>
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <Label htmlFor="ff-window">{t('How many days ahead you take orders', '可提前预订的天数')}</Label>
+              <Input id="ff-window" type="number" min="1" max="90" value={fields.window} variant="compact"
+                onChange={e => setFields(f => ({ ...f, window: e.target.value }))} />
+              <p className="text-[12px] text-muted-foreground mt-1 leading-[1.5]">
+                {t('Counted from the earliest date above. Closed days come out of this range — they do not extend it.',
+                   '从上面最早可选日期起算。休息日会从这段日期中扣除，不会顺延。')}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Greyed rather than hidden in custom mode: these settings are dormant, not gone, and they
+          come back exactly as they were the moment the merchant returns to a rolling window. */}
+      <div className={CARD}>
         <h3 className={HEADING}>{t('Closed days', '休息日')}</h3>
+        {/* Live in BOTH modes, and deliberately not disabled in custom.
+            Greying these out took the documented disabled treatment (one grey for every control),
+            which erased WHICH days were closed — the merchant could not see their own setting
+            until they switched back. Every other dormant setting in this dashboard stays legible:
+            a disabled tax still shows its rate, and the express fee fields stay editable while
+            express is off. So does this. Toggling here while custom dates are on is a real edit
+            to what applies the moment the shop returns to a rolling window; the line below is
+            what says it is not in effect right now. */}
         <div className="flex flex-wrap gap-2" role="group" aria-label={t('Closed days', '休息日')}>
           {WEEKDAYS.map(d => {
             const on = fields.closed.includes(d.value)
@@ -163,9 +287,12 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
           })}
         </div>
         <p className="text-[12px] text-muted-foreground mt-3 leading-[1.5]">
-          {allClosed
-            ? t('Every day is marked closed — customers would have no date to pick.', '所有日期都标记为休息，顾客将无日期可选。')
-            : t('Days you take no orders. Customers cannot pick these.', '不接单的日子，顾客无法选择。')}
+          {custom
+            ? t('Not in effect while you are picking specific dates. These apply again if you switch back to a rolling window.',
+                 '使用指定日期期间不生效。切换回滚动日期范围后将重新适用。')
+            : allClosed
+              ? t('Every day is marked closed — customers would have no date to pick.', '所有日期都标记为休息，顾客将无日期可选。')
+              : t('Days you take no orders. Customers cannot pick these.', '不接单的日子，顾客无法选择。')}
         </p>
       </div>
 
@@ -189,7 +316,11 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
       </div>
 
       <Button type="submit" size="md" className="mt-1" disabled={busy || allClosed}>
-        {busy ? t('Saving…', '保存中…') : t('Save fulfilment', '保存取货设置')}
+        {busy
+          ? t('Saving…', '保存中…')
+          : needsReview
+            ? t('Confirm and reopen shop', '确认并重新开放店铺')
+            : t('Save fulfilment', '保存取货设置')}
       </Button>
     </form>
   )

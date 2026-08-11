@@ -69,13 +69,10 @@ export const env = {
   // trialFeedbackSweepSecret: unset means the endpoint always refuses (503).
   sampleShopScreenshotSweepSecret: process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET || '',
 
-  // Stripe Price IDs (MYR), keyed by `${plan}_${cycle}`. We charge MYR for every
-  // subscription, so there is one set and all four are required. Point these at
-  // your MYR Prices.
+  // Stripe Price IDs (MYR), keyed by billing cycle. One plan, charged in MYR to every
+  // subscriber, so there is one pair and both are required. Point these at your MYR Prices.
   prices: {
-    basic_monthly: required('STRIPE_PRICE_BASIC_MONTHLY'),
-    basic_yearly: required('STRIPE_PRICE_BASIC_YEARLY'),
-    pro_monthly: required('STRIPE_PRICE_PRO_MONTHLY'),
-    pro_yearly: required('STRIPE_PRICE_PRO_YEARLY'),
+    monthly: required('STRIPE_PRICE_PRO_MONTHLY'),
+    yearly: required('STRIPE_PRICE_PRO_YEARLY'),
   },
 }

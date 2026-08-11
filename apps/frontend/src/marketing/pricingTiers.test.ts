@@ -1,17 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { PRICING_TIERS, PLAN_COMPARISON_GROUPS, type ComparisonValue } from './pricingTiers'
+import { PRICING_TIERS, INCLUDED_GROUPS } from './pricingTiers'
 
 // Same job as faq.test.ts: this content is BILINGUAL, and a half-translated entry is invisible to
 // the compiler — both fields are strings, so an entry carrying English in its Chinese slot type
 // checks perfectly and ships inside a Chinese page. Nothing here tests rendering.
 
 /** The flat row list, the shape most of these tests actually care about. */
-const PLAN_COMPARISON = PLAN_COMPARISON_GROUPS.flatMap(g => g.rows)
-
-/** A comparison row's `basic`/`pro` is a plain boolean where text checks don't apply. */
-function isText(value: ComparisonValue): value is { en: string; zh: string } {
-  return typeof value === 'object'
-}
+const INCLUDED_ROWS = INCLUDED_GROUPS.flatMap(g => g.rows)
 
 /** Every `{en, zh}` pair in the tier data, labelled well enough to name the one that failed. */
 function pairs(): [string, { en: string; zh: string }][] {
@@ -21,24 +16,28 @@ function pairs(): [string, { en: string; zh: string }][] {
     out.push([`${tier.id}.blurb`, tier.blurb])
     out.push([`${tier.id}.cta`, tier.cta])
     out.push([`${tier.id}.note`, tier.note])
-    if (tier.inherits) out.push([`${tier.id}.inherits`, tier.inherits])
     if (tier.badge) out.push([`${tier.id}.badge`, tier.badge])
     tier.features.forEach((f, i) => out.push([`${tier.id}.features[${i}]`, f]))
   }
-  for (const group of PLAN_COMPARISON_GROUPS) {
+  for (const group of INCLUDED_GROUPS) {
     out.push([`group:${group.id}.label`, group.label])
   }
-  for (const row of PLAN_COMPARISON) {
+  for (const row of INCLUDED_ROWS) {
     out.push([`${row.id}.label`, row.label])
-    if (isText(row.basic)) out.push([`${row.id}.basic`, row.basic])
-    if (isText(row.pro)) out.push([`${row.id}.pro`, row.pro])
+    if (row.detail) out.push([`${row.id}.detail`, row.detail])
   }
   return out
 }
 
 describe('pricing content', () => {
-  it('has both tiers, basic before pro', () => {
-    expect(PRICING_TIERS.map(t => t.id)).toEqual(['basic', 'pro'])
+  it('sells exactly one plan', () => {
+    expect(PRICING_TIERS.map(t => t.id)).toEqual(['pro'])
+  })
+
+  // The trial is the risk reversal, and it sits on the plan we sell rather than on a cheaper one
+  // the visitor would then have to be moved off.
+  it('promises the cardless trial on the plan it sells', () => {
+    expect(PRICING_TIERS[0].note.en).toContain('no card')
   })
 
   it('fills both languages on every string', () => {
@@ -66,32 +65,20 @@ describe('pricing content', () => {
     }
   })
 
-  it('highlights exactly one tier, so one card carries the badge', () => {
-    expect(PRICING_TIERS.filter(t => t.highlight)).toHaveLength(1)
+  it('gives every included row a unique id, and no tier left in the shape', () => {
+    const ids = INCLUDED_ROWS.map(r => r.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const row of INCLUDED_ROWS) {
+      expect(row).not.toHaveProperty('basic')
+      expect(row).not.toHaveProperty('pro')
+    }
   })
 
-  it('gives every comparison row a unique id', () => {
-    const ids = PLAN_COMPARISON.map(r => r.id)
+  it('gives every included group a unique id, and no empty groups', () => {
+    const ids = INCLUDED_GROUPS.map(g => g.id)
     expect(new Set(ids).size).toBe(ids.length)
-  })
-
-  it('gives every comparison group a unique id, and no empty groups', () => {
-    const ids = PLAN_COMPARISON_GROUPS.map(g => g.id)
-    expect(new Set(ids).size).toBe(ids.length)
-    for (const group of PLAN_COMPARISON_GROUPS) {
+    for (const group of INCLUDED_GROUPS) {
       expect(group.rows.length, `group ${group.id} has no rows`).toBeGreaterThan(0)
     }
-  })
-
-  // The comparison is the page's argument for Pro. A table where no row differs is a table that
-  // argues for Basic — worth failing on, because it is the shape a careless edit leaves behind.
-  it('has rows where the two plans actually differ', () => {
-    const rowDiffers = (r: (typeof PLAN_COMPARISON)[number]) => {
-      if (typeof r.basic === 'boolean' && typeof r.pro === 'boolean') return r.basic !== r.pro
-      if (isText(r.basic) && isText(r.pro)) return r.basic.en !== r.pro.en
-      return true // a boolean paired with text is a shape mismatch, not a row that agrees
-    }
-    const differing = PLAN_COMPARISON.filter(rowDiffers)
-    expect(differing.length).toBeGreaterThan(0)
   })
 })

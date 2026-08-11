@@ -52,7 +52,7 @@ export default function ReferralTab() {
           <CardTitle>{t('Invite & earn', '邀请赚奖励')}</CardTitle>
           <CardDescription>
             {t(
-              'Share your referral code with other shop owners. Every shop that signs up with it and starts paying earns you one month free of your own plan.',
+              'Share your referral code with other shop owners. Every shop that signs up with it and starts paying earns you one free month of your own subscription.',
               '把您的推荐码分享给其他店主。每有一家用您的推荐码注册的店铺开始付费，您就获得一个月您当前方案的免费额度。',
             )}
           </CardDescription>
@@ -105,8 +105,8 @@ export default function ReferralTab() {
           </CardTitle>
           <CardDescription>
             {t(
-              'One month free of your current plan — Basic if you are on Basic, Pro if you are on Pro.',
-              '获得一个月您当前方案的免费额度 — 基础版就是基础版，专业版就是专业版。',
+              'One month of your subscription, free — at whatever you pay today.',
+              '免费获得一个月订阅 — 按您当前的付费金额计算。',
             )}
           </CardDescription>
         </CardHeader>
@@ -128,8 +128,8 @@ export default function ReferralTab() {
               '以账户余额形式自动抵扣您的下一张账单。',
             )}</li>
             <li>{t(
-              'You need an active paid plan of your own when their first payment goes through.',
-              '在对方首次付款时，您本人需处于有效的付费方案中。',
+              'You need an active paid subscription of your own when their first payment goes through.',
+              '在对方首次付款时，您本人需处于有效的付费订阅中。',
             )}</li>
           </ul>
           {rewardsError ? (

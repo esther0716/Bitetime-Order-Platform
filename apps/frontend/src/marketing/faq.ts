@@ -34,8 +34,8 @@ export const FAQ: FaqEntry[] = [
       zh: '有免费试用吗？',
     },
     a: {
-      en: 'Yes — seven days on Basic, and you do not need a card to start it. We will remind you before it ends, and if you decide not to continue it simply stops and you are never charged. Starting on Pro goes through payment up front.',
-      zh: '有——基础版七天，开始时无需绑定信用卡。结束前我们会提醒你；若不想继续，试用期结束即自动停止，不会产生任何费用。直接选择 Pro 版则需先行付款。',
+      en: 'Yes — seven days, and you do not need a card to start it. We will remind you before it ends, and if you decide not to continue it simply stops and you are never charged.',
+      zh: '有——七天，开始时无需绑定信用卡。结束前我们会提醒你；若不想继续，试用期结束即自动停止，不会产生任何费用。',
     },
   },
   {
@@ -67,19 +67,19 @@ export const FAQ: FaqEntry[] = [
       zh: '订单进来了我怎么知道？',
     },
     a: {
-      en: 'Every shop, on every plan, gets an email the moment an order lands — with the customer, their number, what they ordered and the total. Your dashboard also updates on its own while it is open. Pro adds an instant Telegram alert, which is the one that buzzes your phone and reaches everyone in your shop group at once.',
-      zh: '所有店铺、所有方案，订单一进来就会收到电邮——包含顾客、联络号码、订购内容和总额。仪表板开着时也会自动更新。Pro 版另加 Telegram 即时通知，会震动你的手机，并同时通知店里群组的所有人。',
+      en: 'Every shop gets an email the moment an order lands — with the customer, their number, what they ordered and the total. Your dashboard also updates on its own while it is open. Set up Telegram and you get an instant alert too, which is the one that buzzes your phone and reaches everyone in your shop group at once.',
+      zh: '每家店铺在订单一进来时都会收到电邮——包含顾客、联络号码、订购内容和总额。仪表板开着时也会自动更新。设置 Telegram 后还会收到即时通知，会震动你的手机，并同时通知店里群组的所有人。',
     },
   },
   {
-    id: 'pro',
+    id: 'included',
     q: {
-      en: 'What does Pro add?',
-      zh: 'Pro 版多了什么？',
+      en: 'What is included?',
+      zh: '包含哪些功能？',
     },
     a: {
-      en: 'Instant Telegram alerts, discount vouchers, promotional pricing on individual items, and priority support. Everything else — your order page, your full product list, delivery fees, order emails — is on Basic.',
-      zh: 'Telegram 即时通知、优惠券、单品促销价，以及优先支持。其余功能——订单页面、完整产品列表、配送费、订单电邮——基础版都有。',
+      en: 'Everything: your order page, your full product list, delivery fees, order emails, instant Telegram alerts, discount vouchers, promotional pricing on individual items, the option to take orders only on specific dates you pick, your own ad pixel, and priority support. There is one plan and it holds all of it.',
+      zh: '全部：订单页面、完整产品列表、配送费、订单电邮、Telegram 即时通知、优惠券、单品促销价、只在你指定日期接单的选项、自有广告像素，以及优先支持。只有一个方案，功能全包含。',
     },
   },
   {

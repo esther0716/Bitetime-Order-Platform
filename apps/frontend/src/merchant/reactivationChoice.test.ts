@@ -2,25 +2,20 @@ import { describe, it, expect } from 'vitest'
 import { defaultReactivation, yearlySavingPercent } from './reactivationChoice'
 
 describe('defaultReactivation', () => {
-  it('starts on the tier and cycle the shop last had', () => {
-    expect(defaultReactivation({ plan: 'pro', billing_cycle: 'yearly' }))
-      .toEqual({ plan: 'pro', cycle: 'yearly' })
+  it('starts on the cycle the shop last paid on', () => {
+    expect(defaultReactivation({ billing_cycle: 'yearly' })).toEqual({ cycle: 'yearly' })
   })
 
-  // A NULL plan column reads as basic everywhere else — the Pro gate is `plan === 'pro'` and
-  // nothing else — and must here.
-  it('reads a missing plan or cycle as basic and monthly', () => {
-    expect(defaultReactivation({ plan: null, billing_cycle: null }))
-      .toEqual({ plan: 'basic', cycle: 'monthly' })
-    expect(defaultReactivation(null)).toEqual({ plan: 'basic', cycle: 'monthly' })
-    expect(defaultReactivation(undefined)).toEqual({ plan: 'basic', cycle: 'monthly' })
+  it('reads a missing cycle as monthly', () => {
+    expect(defaultReactivation({ billing_cycle: null })).toEqual({ cycle: 'monthly' })
+    expect(defaultReactivation(null)).toEqual({ cycle: 'monthly' })
+    expect(defaultReactivation(undefined)).toEqual({ cycle: 'monthly' })
   })
 
   // LOAD-BEARING. This value is posted straight to /api/checkout, which refuses anything outside
   // its own allowlist — so an unrecognised column must be normalised, never passed through.
   it('normalises an unrecognised value rather than passing it on', () => {
-    expect(defaultReactivation({ plan: 'enterprise', billing_cycle: 'weekly' }))
-      .toEqual({ plan: 'basic', cycle: 'monthly' })
+    expect(defaultReactivation({ billing_cycle: 'weekly' })).toEqual({ cycle: 'monthly' })
   })
 })
 

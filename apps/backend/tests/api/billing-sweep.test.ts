@@ -64,18 +64,17 @@ function answerWith(sub: { id: string }, asked: string[] = []) {
 
 async function shopOf(merchantId: string) {
   const { data } = await serviceClient()
-    .from('merchants').select('status, plan').eq('id', merchantId).single()
+    .from('merchants').select('status, billing_cycle').eq('id', merchantId).single()
   return data!
 }
 
 async function seedShop(slug: string, email: string, opts: {
-  plan?: 'basic' | 'pro'
   billing: Record<string, unknown>
 }) {
   await resetMerchant(slug)
   const owner = await makeUser(email, 'password123')
   const { data } = await owner.auth.getSession()
-  const id = await seedMerchant({ slug, owner_id: data.session!.user.id, plan: opts.plan ?? 'basic' })
+  const id = await seedMerchant({ slug, owner_id: data.session!.user.id })
   await serviceClient().from('merchant_billing').upsert({ merchant_id: id, ...opts.billing })
   return id
 }
@@ -102,7 +101,6 @@ describe('POST /api/internal/billing-sweep', () => {
   // the webhook never arrived — so the shop is still open, still Pro, still selling.
   it('closes a shop whose trial ended while the webhook never arrived', async () => {
     const id = await seedShop('sweep-lapsed-shop', 'sweep-lapsed@example.com', {
-      plan: 'pro',
       billing: {
         status: 'trialing',
         stripe_subscription_id: 'sub_sweep_lapsed',
@@ -119,12 +117,14 @@ describe('POST /api/internal/billing-sweep', () => {
 
     // Identical outcome to the webhook path (webhook-lapse.test.ts) — the two share lapseMerchant
     // precisely so they cannot mean different things by "closed".
-    expect(await shopOf(id)).toEqual({ status: 'suspended', plan: 'basic' })
+    expect((await shopOf(id)).status).toBe('suspended')
     const { data: billing } = await svc
       .from('merchant_billing').select('status').eq('merchant_id', id).single()
     expect(billing!.status).toBe('canceled')
+    // A closed shop refuses every order at the storefront gate, so its vouchers need no revoking
+    // — they are simply unreachable, and they work again the day the merchant resubscribes.
     const { data: vouchers } = await svc.from('vouchers').select('active').eq('merchant_id', id)
-    expect(vouchers!.map(v => v.active)).toEqual([false])
+    expect(vouchers!.map(v => v.active)).toEqual([true])
 
     await svc.from('merchants').delete().eq('id', id)
   })
@@ -133,7 +133,6 @@ describe('POST /api/internal/billing-sweep', () => {
   // is a stale row too, and the repair is to write the truth — not to close the shop.
   it('brings a converted trial up to date without closing the shop', async () => {
     const id = await seedShop('sweep-converted-shop', 'sweep-converted@example.com', {
-      plan: 'basic',
       billing: {
         status: 'trialing',
         stripe_subscription_id: 'sub_sweep_converted',
@@ -145,9 +144,9 @@ describe('POST /api/internal/billing-sweep', () => {
     const res = await sweep(env.billingSweepSecret)
     expect((await res.json() as { refreshed: number }).refreshed).toBeGreaterThanOrEqual(1)
 
-    // Plan follows the price actually on the subscription, exactly as the updated webhook does —
-    // so a portal swap lost with the rest of the events is repaired here too.
-    expect(await shopOf(id)).toEqual({ status: 'active', plan: 'pro' })
+    // The billing cycle follows the price actually on the subscription, exactly as the updated
+    // webhook does — so a cycle change lost with the rest of the events is repaired here too.
+    expect(await shopOf(id)).toEqual({ status: 'active', billing_cycle: 'monthly' })
     const { data } = await serviceClient()
       .from('merchant_billing').select('status').eq('merchant_id', id).single()
     expect(data!.status).toBe('active')
@@ -180,7 +179,6 @@ describe('POST /api/internal/billing-sweep', () => {
   // "lapsed" and suspends the shops a superadmin deliberately opened for free.
   it('never touches a comped shop', async () => {
     const id = await seedShop('sweep-comped-shop', 'sweep-comped@example.com', {
-      plan: 'pro',
       billing: {
         status: 'active',
         comped: true,
@@ -193,7 +191,7 @@ describe('POST /api/internal/billing-sweep', () => {
     await sweep(env.billingSweepSecret)
 
     expect(asked).not.toContain('sub_sweep_comped')
-    expect(await shopOf(id)).toEqual({ status: 'active', plan: 'pro' })
+    expect((await shopOf(id)).status).toBe('active')
 
     await serviceClient().from('merchants').delete().eq('id', id)
   })
@@ -203,7 +201,6 @@ describe('POST /api/internal/billing-sweep', () => {
   // next run picks it up again.
   it('leaves a shop alone when Stripe cannot be read, and still reports success', async () => {
     const id = await seedShop('sweep-error-shop', 'sweep-error@example.com', {
-      plan: 'pro',
       billing: {
         status: 'trialing',
         stripe_subscription_id: 'sub_sweep_error',
@@ -216,7 +213,7 @@ describe('POST /api/internal/billing-sweep', () => {
     expect(res.status).toBe(200)
     expect((await res.json() as { failed: number }).failed).toBeGreaterThanOrEqual(1)
 
-    expect(await shopOf(id)).toEqual({ status: 'active', plan: 'pro' })
+    expect((await shopOf(id)).status).toBe('active')
 
     await serviceClient().from('merchants').delete().eq('id', id)
   })

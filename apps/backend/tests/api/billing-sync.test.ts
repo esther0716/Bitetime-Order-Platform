@@ -17,8 +17,8 @@ import { makeUser, seedMerchant, serviceClient, resetMerchant } from '../rls/hel
 const REAL_LIST = billingSyncDeps.listSubscriptions
 const REAL_FETCH = billingSyncDeps.fetchSubscription
 
-const BASIC_MONTHLY = process.env.STRIPE_PRICE_BASIC_MONTHLY!
-const PRO_MONTHLY = process.env.STRIPE_PRICE_PRO_MONTHLY!
+const MONTHLY = process.env.STRIPE_PRICE_PRO_MONTHLY!
+const YEARLY = process.env.STRIPE_PRICE_PRO_YEARLY!
 
 function post(token?: string) {
   return app.request('/api/billing/sync', {
@@ -29,7 +29,7 @@ function post(token?: string) {
 
 /**
  * A Stripe subscription as this route reads one — only the fields `pickSubscription`,
- * `billingFromSubscription` and `reconcileMerchantPlan` touch.
+ * `billingFromSubscription` and `reconcileBillingCycle` touch.
  */
 function subscription(id: string, status: string, opts: { price?: string; created?: number } = {}) {
   return {
@@ -44,7 +44,7 @@ function subscription(id: string, status: string, opts: { price?: string; create
     metadata: {},
     items: {
       object: 'list',
-      data: [{ id: 'si_sync', price: { id: opts.price ?? BASIC_MONTHLY }, current_period_end: 1893456000 }],
+      data: [{ id: 'si_sync', price: { id: opts.price ?? MONTHLY }, current_period_end: 1893456000 }],
     },
   } as never
 }
@@ -71,7 +71,6 @@ function answerWith(customerId: string, subs: unknown[], asked: string[] = []) {
 
 async function seedShop(slug: string, email: string, opts: {
   status?: 'pending' | 'active' | 'suspended'
-  plan?: 'basic' | 'pro'
   billing?: Record<string, unknown>
 }) {
   await resetMerchant(slug)
@@ -81,7 +80,6 @@ async function seedShop(slug: string, email: string, opts: {
     slug,
     owner_id: data.session!.user.id,
     status: opts.status ?? 'pending',
-    plan: opts.plan ?? 'basic',
   })
   if (opts.billing) {
     await serviceClient().from('merchant_billing').upsert({ merchant_id: id, ...opts.billing })
@@ -91,7 +89,7 @@ async function seedShop(slug: string, email: string, opts: {
 
 async function shopOf(merchantId: string) {
   const { data } = await serviceClient()
-    .from('merchants').select('status, plan').eq('id', merchantId).single()
+    .from('merchants').select('status, billing_cycle').eq('id', merchantId).single()
   return data!
 }
 
@@ -107,8 +105,8 @@ describe('POST /api/billing/sync', () => {
     billingSyncDeps.fetchSubscription = REAL_FETCH
   })
 
-  // This route writes `merchants.status` and `merchants.plan`. An unauthenticated caller reaching
-  // it would be an entitlement change with no one attached to it.
+  // This route writes `merchants.status`. An unauthenticated caller reaching it would be an
+  // activation with no one attached to it.
   it('refuses an unauthenticated caller and a bad token', async () => {
     expect((await post()).status).toBe(401)
     expect((await post('not-a-jwt')).status).toBe(401)
@@ -128,15 +126,15 @@ describe('POST /api/billing/sync', () => {
       status: 'pending',
       billing: { stripe_customer_id: 'cus_sync' },
     })
-    answerWith('cus_sync', [subscription('sub_sync_paid', 'active', { price: PRO_MONTHLY })])
+    answerWith('cus_sync', [subscription('sub_sync_paid', 'active', { price: YEARLY })])
 
     const res = await post(token)
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ merchantStatus: 'active', activated: true })
 
-    // Identical outcome to the webhook path — the tier follows the price actually paid (#112),
+    // Identical outcome to the webhook path — the billing cycle follows the price actually paid,
     // not what signup wrote.
-    expect(await shopOf(id)).toEqual({ status: 'active', plan: 'pro' })
+    expect(await shopOf(id)).toEqual({ status: 'active', billing_cycle: 'yearly' })
     expect(await billingOf(id)).toEqual({ status: 'active', stripe_subscription_id: 'sub_sync_paid' })
 
     await serviceClient().from('merchants').delete().eq('id', id)
@@ -173,14 +171,13 @@ describe('POST /api/billing/sync', () => {
   it('never reopens a shop suspended while its subscription is still running', async () => {
     const { id, token } = await seedShop('sync-moderated', 'sync-moderated@example.com', {
       status: 'suspended',
-      plan: 'pro',
       billing: {
         stripe_customer_id: 'cus_sync',
         stripe_subscription_id: 'sub_sync_moderated',
         status: 'active',
       },
     })
-    answerWith('cus_sync', [subscription('sub_sync_moderated', 'active', { price: PRO_MONTHLY })])
+    answerWith('cus_sync', [subscription('sub_sync_moderated', 'active')])
 
     const res = await post(token)
     expect(await res.json()).toMatchObject({ merchantStatus: 'suspended', activated: false, reason: 'suspended_by_admin' })
@@ -227,7 +224,6 @@ describe('POST /api/billing/sync', () => {
   it('never asks Stripe about a comped shop', async () => {
     const { id, token } = await seedShop('sync-comped', 'sync-comped@example.com', {
       status: 'active',
-      plan: 'pro',
       billing: { comped: true, status: 'active', stripe_customer_id: 'cus_sync_comped' },
     })
     const asked = answerWith('cus_sync', [])
@@ -235,7 +231,7 @@ describe('POST /api/billing/sync', () => {
     const res = await post(token)
     expect(await res.json()).toMatchObject({ activated: false, reason: 'comped' })
     expect(asked).toEqual([])
-    expect(await shopOf(id)).toEqual({ status: 'active', plan: 'pro' })
+    expect((await shopOf(id)).status).toBe('active')
 
     await serviceClient().from('merchants').delete().eq('id', id)
   })
