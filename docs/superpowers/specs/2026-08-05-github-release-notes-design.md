@@ -1,5 +1,15 @@
 # GitHub release notes for merchants (#163)
 
+> **Amended 2026-08-11 — the model changed.** This document records the design as decided on
+> 2026-08-05 and is left intact below. One decision no longer holds: the humanizer runs on
+> **`claude-haiku-4-5`**, not `claude-opus-5`, and it sends **no `effort` parameter** (Haiku 4.5
+> rejects `effort` with a 400, and the error would surface as a `humanize_error` that reads like
+> a Claude outage). The pull also humanizes every new release **concurrently** rather than one at
+> a time — serially it was one full round trip per release, so a first pull of ten looked like a
+> hung button. Nothing else in this design moved: same `HumanizedRelease` contract, same
+> structured-output schema, same best-effort posture, same draft-then-publish gate.
+> `apps/backend/src/releases.ts` is authoritative.
+
 ## What we are building
 
 Superadmin pulls GitHub releases from `leongcheefai/Bitetime-Order-Platform` into the app, and merchants see them as a "what's new" bell in the dashboard sidebar — Notion's `Help → What's new` popover, listing recent updates, each opening a dedicated release-notes page in a new tab.
@@ -10,7 +20,7 @@ Decisions taken during brainstorming:
 
 | Question | Decision |
 |---|---|
-| Content source | Claude (`claude-opus-5`) rewrites the raw GitHub body into a short title + summary. No manual copy-editing UI. |
+| Content source | Claude (`claude-opus-5` — **superseded, now `claude-haiku-4-5`; see the amendment above**) rewrites the raw GitHub body into a short title + summary. No manual copy-editing UI. |
 | Language | English only — release notes are not folded into the app's `t(en, zh)` bilingual pattern. |
 | Fetch mechanism | Superadmin-triggered pull (`POST /api/admin/releases/pull`) into a DB table, not a live fetch on every dashboard load or a cron sweep. Matches the issue's literal "superadmin can pull the release." |
 | Publish gate | Pulling humanizes and stores as `draft`; a release only reaches merchants after a superadmin explicitly publishes it. Guards against bad AI output reaching every shop unreviewed. |
@@ -96,7 +106,7 @@ export type HumanizeRelease = (
   input: { tag: string; name: string; body: string },
 ) => Promise<HumanizedRelease | null>
 
-// Anthropic SDK, claude-opus-5, output_config.effort: "low" (plain summarization),
+// Anthropic SDK, claude-opus-5, output_config.effort: "low" (plain summarization),   // superseded: claude-haiku-4-5, no effort param
 // structured output (json_schema: {title, summary}) instead of a prefill. Best-effort:
 // catches and logs, returns null — the caller stores humanize_error and leaves the release
 // in `draft` with no title/summary, same shape as a GitHub-fetch failure.

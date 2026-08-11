@@ -1601,20 +1601,24 @@ app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
   const existingTags = new Set(await listReleaseTags())
   const toPull = fetched.filter((r) => !existingTags.has(r.tag_name))
 
-  let pulled = 0
-  for (const release of toPull) {
-    const row = await insertDraftRelease({
-      tag: release.tag_name,
-      name: release.name,
-      htmlUrl: release.html_url,
-      rawBody: release.body,
-      publishedAt: release.published_at,
-    })
-    await humanizeAndStore(row)
-    pulled++
-  }
+  // One Claude call per release, ALL AT ONCE. Serially this was N × a full Opus round trip —
+  // a first pull of 10 releases took minutes and looked like a hung button. The calls are
+  // independent (each release humanizes from its own raw body, and every write is a single
+  // row keyed by its own id), so the wall clock is now the slowest call, not the sum.
+  const pulled = await Promise.all(
+    toPull.map(async (release) => {
+      const row = await insertDraftRelease({
+        tag: release.tag_name,
+        name: release.name,
+        htmlUrl: release.html_url,
+        rawBody: release.body,
+        publishedAt: release.published_at,
+      })
+      await humanizeAndStore(row)
+    }),
+  )
 
-  return c.json({ pulled })
+  return c.json({ pulled: pulled.length })
 })
 
 app.get('/api/admin/releases', requireSuperadmin, async (c) => {
