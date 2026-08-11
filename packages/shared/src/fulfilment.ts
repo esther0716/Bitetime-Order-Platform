@@ -26,6 +26,13 @@ export interface FulfilmentConfig {
    * rule both sides of the wire share, rather than in the storefront — a pause the backend does
    * not honour is a pause a scripted POST walks straight through.
    */
+  /**
+   * The shop is PAUSED until its owner confirms its dates: `offerableDates` answers empty and the
+   * storefront refuses every order. Nothing writes this any more — it was set when a shop lost
+   * custom dates by stepping down from Pro (ADR 0015), and there is no step down (#222). The flag
+   * and its readers survive so a row written before that still behaves as its owner was told it
+   * would, and so the Fulfilment tab's Confirm control can still clear it.
+   */
   needs_review: boolean
 }
 
@@ -293,33 +300,3 @@ export function fulfilmentWarning(cfg: FulfilmentConfig, tz: string, now: Date):
   return daysLeft <= DATES_ENDING_SOON_DAYS ? { kind: 'ending', last, daysLeft } : { kind: 'none' }
 }
 
-/**
- * The config a shop stepping down from Pro is left with, or null when there is nothing to do.
- *
- * Reverting the mode WITHOUT the flag would quietly resume a rolling window the merchant never
- * agreed to — very possibly the untouched 0/14/none default — and start taking same-day orders on
- * their behalf. The flag is what makes the revert honest. See ADR 0015.
- *
- * Returning null rather than an unchanged config is what makes the caller idempotent: a replayed
- * webhook does no write at all.
- */
-export function pauseFulfilment(cfg: FulfilmentConfig): FulfilmentConfig | null {
-  if (cfg.mode !== 'custom') return null
-  return { ...cfg, mode: 'rolling', needs_review: true }
-}
-
-/**
- * The config a shop coming BACK to Pro is restored to, or null when there is nothing to restore.
- *
- * Deliberately not symmetric with vouchers and promos, which stay revoked (ADR 0010). The
- * difference is that this dormant state is a STOPPED SHOP, and there is nothing ambiguous to
- * decide on the way back — these are the merchant's own dates, unchanged. A paying shop staying
- * dark for want of a click is not a rule worth having.
- *
- * A paused shop with no dates left is NOT resumed: there is nothing to go back to, so the review
- * still stands.
- */
-export function resumeFulfilment(cfg: FulfilmentConfig): FulfilmentConfig | null {
-  if (!cfg.needs_review || cfg.custom_dates.length === 0) return null
-  return { ...cfg, mode: 'custom', needs_review: false }
-}

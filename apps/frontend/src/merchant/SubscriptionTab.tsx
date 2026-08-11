@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react'
-import { AlertTriangle, Check, ExternalLink, Timer } from 'lucide-react'
+import { AlertTriangle, ExternalLink, Timer } from 'lucide-react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import {
@@ -19,33 +19,18 @@ import {
 } from '../components/ui/dialog'
 import { SkeletonText } from '../components/Loaders'
 
-// Settings → Subscription (#112). The one place that answers "what plan am I on, what does it
-// cost, when does it renew" — BillingBanner only speaks in trouble states, so a healthy paying
-// merchant previously saw nothing about their subscription anywhere in the app.
+// Settings → Subscription (#112). The one place that answers "what does this cost and when does
+// it renew" — BillingBanner only speaks in trouble states, so a healthy paying merchant
+// previously saw nothing about their subscription anywhere in the app.
 //
-// The UPGRADE happens in Stripe's Customer Portal: a mid-period tier increase is a proration
-// argument, and the portal is a screen built to have it. The wind-down actions — cancel, step
-// down to Basic, and undoing either — happen HERE, because they all land on a period boundary,
-// so no money moves and there is nothing a payment screen needs to explain. What that buys is
-// the thing the portal cannot say: that cancelling suspends this shop, on a named date, in the
-// merchant's own language.
+// Cancelling and undoing a cancellation happen HERE rather than in Stripe's portal, because they
+// land on a period boundary: no money moves and there is nothing a payment screen needs to
+// explain. What that buys is the thing the portal cannot say — that cancelling suspends this
+// shop, on a named date, in the merchant's own language.
 
 const CARD = 'bg-card border-[0.5px] border-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4'
 const HEADING = 'font-heading text-[15px] font-medium text-primary mb-4 flex items-center gap-2'
 
-// What Pro adds, as it exists in code today — the gated surfaces and nothing else; the rest of
-// what the marketing page advertises is not built, and listing it here would be selling vapour.
-//
-// This list is where every Pro lock in the dashboard sends the merchant, so a gated feature
-// missing from it is a merchant clicking a padlock and landing on a page that never mentions
-// the thing they wanted.
-const PRO_FEATURES: [string, string][] = [
-  ['Telegram order alerts', 'Telegram 订单通知'],
-  ['Discount vouchers', '优惠券'],
-  ['Product promo pricing', '商品优惠价'],
-  ['Specific order dates', '指定可选日期'],
-  ['Revenue reports as Excel', '营收报表导出 Excel'],
-]
 
 /**
  * The Stripe portal hand-off, shared by every control that opens it — the `PortalButton` and the
@@ -261,8 +246,9 @@ function CancelBody({ renewsAt }: { renewsAt: string | null }) {
  * `requireOwnMerchant` in the backend's mw.ts, where that asymmetry is deliberate. A superadmin
  * owns no shop, so the honest answer is that this is the owner's to do.
  *
- * Rendered ONCE per card, never twice on the same screen: the plan card and the upgrade card are
- * separate surfaces, but the Summary grid sits directly under the plan card and simply drops its
+ * Rendered ONCE per card, never twice on the same screen: the subscription card and the subscribe
+ * card are separate surfaces, but the Summary grid sits directly under the subscription card and
+ * simply drops its
  * portal cells rather than repeating this sentence a few pixels below itself.
  */
 function OwnerOnlyNote() {
@@ -348,7 +334,7 @@ function SummaryGrid({ nextPayment, renewalLabel, renewalValue, readOnly }: {
         </div>
         {/* Both cells are nothing but a door to the portal, so an admin who cannot open it is
             better off not seeing them at all — a "Payment method" label above a dead link says
-            less than nothing. The plan card immediately above has already said why. */}
+            less than nothing. The subscription card immediately above has already said why. */}
         {!readOnly && (
           <>
             <div>
@@ -373,7 +359,7 @@ function SummaryGrid({ nextPayment, renewalLabel, renewalValue, readOnly }: {
 export default function SubscriptionTab() {
   // `impersonating` is what makes this tab read-only. Everything ABOVE the buttons keeps working
   // while it is true — the card is fetched by explicit merchant id through `requireMerchantOwns`,
-  // which superadmins do pass — and that split is exactly the trap: a fully populated plan card
+  // which superadmins do pass — and that split is exactly the trap: a fully populated card
   // implies the buttons under it belong to the same shop, and they do not. They post to routes
   // with no id in them, which resolve the caller's own shop and answer 404 to a superadmin who
   // owns none. Read `readOnly` as "these controls are not this viewer's to use", not "loading".
@@ -395,11 +381,10 @@ export default function SubscriptionTab() {
 
   // The clock is read once per render pass and handed to the pure module, rather than consulted
   // inside it — same discipline as ProductsManager's promoEnded.
-  const state = subscriptionTabState(billing, merchant?.plan, new Date())
+  const state = subscriptionTabState(billing, new Date())
 
   const cycle = merchant?.billing_cycle === 'yearly' ? 'yearly' : 'monthly'
   const planPrice = pricing.prices.pro[cycle]
-  const proPrice = pricing.prices.pro[cycle]
   const per = cycle === 'yearly' ? t('/year', '/年') : t('/month', '/月')
 
   if (!loaded) return <div className={CARD}><SkeletonText /></div>
@@ -418,26 +403,18 @@ export default function SubscriptionTab() {
       <div className={CARD}>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0">
-            <h3 className={HEADING}>{t('Your plan', '您的方案')}</h3>
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="font-heading text-[22px] text-primary">
-                {state.plan === 'pro' ? 'Pro' : t('Basic', '基础版')}
-              </span>
-              <Badge variant={state.plan === 'pro' ? 'default' : 'outline'} className="uppercase tracking-[0.08em]">
-                {state.plan === 'pro' ? 'Pro' : t('Basic', '基础版')}
-              </Badge>
-            </div>
+            <h3 className={HEADING}>{t('Your subscription', '您的订阅')}</h3>
             <a
-              href="/#pricing" target="_blank" rel="noopener"
-              className="inline-flex items-center gap-1 text-[13px] text-primary underline underline-offset-2 mt-2"
+              href="/pricing" target="_blank" rel="noopener"
+              className="inline-flex items-center gap-1 text-[13px] text-primary underline underline-offset-2 mt-1"
             >
-              {t('Plan details', '方案详情')}
+              {t('What is included', '包含什么')}
               <ExternalLink size={13} strokeWidth={2} aria-hidden />
             </a>
           </div>
           <span className="font-heading text-[18px] text-primary whitespace-nowrap shrink-0">
-            {/* A comped shop is Pro and pays nothing. Quoting the Pro price here — beside a Pro
-                badge, with no subscription behind it — reads as a bill. */}
+            {/* A comped shop pays nothing. Quoting the price here, with no subscription behind
+                it, reads as a bill. */}
             {state.comped
               ? t('Free', '免费')
               : <>{formatMoney(planPrice, pricing.currency)}<span className="text-[13px] text-muted-foreground">{per}</span></>}
@@ -521,7 +498,7 @@ export default function SubscriptionTab() {
 
       {/* Not for past-due: that shop has no renewal date (the card is failing), and a Summary
           that answered "Renewal: Active" would flatly contradict the payment-failed line above.
-          The plan card's Manage button already routes it to the portal to fix the card. */}
+          The card's Manage button already routes it to the portal to fix the card. */}
       {state.canManage && state.kind !== 'past-due' && (
         <SummaryGrid
           nextPayment={
@@ -540,56 +517,24 @@ export default function SubscriptionTab() {
         />
       )}
 
-      {/* The pitch is shown to any shop that is not already Pro, INCLUDING one with no
-          subscription behind it: a Pro lock's CTA promises "see the price and what Pro adds",
-          and a comped or pre-checkout shop that lands here must find that, not a blank tab.
-          Only the BUTTON depends on there being a Stripe customer to send them to. */}
-      {state.canUpgrade && (
+      {/* The shop is open but nothing is paying for it — a comp that was revoked, or a
+          subscription that lapsed before a superadmin reopened the shop. It reaches the dashboard
+          (it is neither pending nor suspended), so this is the only place it can buy one, and
+          telling it to "contact us" is the dead end ADR 0004 set out to remove.
+          `canSubscribe` is the exact complement of `canManage`, so this and the portal button can
+          never both appear and a second subscription cannot be created on a shop that pays. */}
+      {state.canSubscribe && (
         <div className={CARD}>
-          <h3 className={HEADING}>
-            {t('Upgrade to Pro', '升级到 Pro')}
-            <Badge variant="default" className="uppercase tracking-[0.08em]">Pro</Badge>
-          </h3>
+          <h3 className={HEADING}>{t('Subscribe', '订阅')}</h3>
           <p className="text-[13px] text-muted-foreground mb-4">
-            {t(`${formatMoney(proPrice, pricing.currency)}${per} — everything in Basic, plus:`,
-              `${formatMoney(proPrice, pricing.currency)}${per} — 包含基础版全部功能，另加：`)}
+            {t(`This shop has no subscription yet. ${formatMoney(planPrice, pricing.currency)}${per}, cancel anytime.`,
+              `此店铺尚无订阅。${formatMoney(planPrice, pricing.currency)}${per}，可随时取消。`)}
           </p>
-          <ul className="flex flex-col gap-2 mb-5">
-            {PRO_FEATURES.map(([en, zh]) => (
-              <li key={en} className="flex items-center gap-2 text-[13px] text-foreground">
-                <Check size={15} strokeWidth={2} className="text-primary shrink-0" aria-hidden />
-                {t(en, zh)}
-              </li>
-            ))}
-          </ul>
-          {/* Two routes to the same tier, decided by whether there is a subscription to change.
-              With one: the portal swaps the price on it, and owns the proration argument that
-              comes with a mid-period increase. Without one (an active shop approved without a
-              trial, or one whose subscription lapsed): Checkout sells a new one, which the
-              `checkout.session.completed` reconciliation then turns into real Pro access. */}
-          {/* The pitch above stays — an admin has every reason to read what Pro costs and adds.
-              Only the act of buying is withheld, and BOTH branches have to be: `/api/checkout`
-              is guarded by `requireOwnMerchant` exactly as the portal is, so the no-subscription
-              path 404s for an admin just as the portal path does. */}
-          {readOnly ? (
-            <OwnerOnlyNote />
-          ) : state.canManage ? (
-            <>
-              <PortalButton label={t('Upgrade to Pro', '升级到 Pro')} />
-              <p className="text-[12px] text-muted-foreground mt-3">
-                {t('You will pick the Pro plan in the billing portal. You can step back down to Basic from this page later; that takes effect at the end of the period you have paid for.',
-                  '您将在账单门户中选择 Pro 方案。日后可在此页面转回基础版，将在已付费周期结束时生效。')}
-              </p>
-            </>
-          ) : (
-            <>
-              <CheckoutButton cycle={cycle} label={t('Upgrade to Pro', '升级到 Pro')} />
-              <p className="text-[12px] text-muted-foreground mt-3">
-                {t('This shop has no subscription yet, so this starts a new one at the Pro price.',
-                  '此店铺尚无订阅，将以 Pro 价格开始新的订阅。')}
-              </p>
-            </>
-          )}
+          {/* Withheld from an impersonating superadmin, and it has to be: `/api/checkout` is
+              guarded by `requireOwnMerchant`, so the button would 404 for them. */}
+          {readOnly
+            ? <OwnerOnlyNote />
+            : <CheckoutButton cycle={cycle} label={t('Subscribe', '订阅')} />}
         </div>
       )}
     </div>

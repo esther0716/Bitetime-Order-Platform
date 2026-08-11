@@ -39,7 +39,7 @@ export {
   fulfilmentConfig, isTimezone, todayInZone,
   isDateSelectable, selectableDates,
   customDateBounds, pruneCustomDates, validateCustomDates,
-  fulfilmentWarning, pauseFulfilment, resumeFulfilment,
+  fulfilmentWarning,
   DEFAULT_FULFILMENT, DEFAULT_TIMEZONE,
   FULFILMENT_HORIZON_DAYS, MAX_CUSTOM_DATES, DATES_ENDING_SOON_DAYS,
 } from './fulfilment.js'

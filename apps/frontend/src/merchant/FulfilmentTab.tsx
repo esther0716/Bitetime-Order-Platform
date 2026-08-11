@@ -168,8 +168,8 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
             {t('Your shop is paused', '店铺已暂停接单')}
           </h3>
           <p className="text-[13px] text-foreground leading-[1.6]">
-            {t('Specific dates ended when your plan changed, so your shop is back on the rolling window below. Customers cannot order until you confirm it.',
-               '方案变更后，指定日期功能已停用，店铺已改回下方的滚动日期范围。确认后顾客才能继续下单。')}
+            {t('Your shop is back on the rolling window below. Customers cannot order until you confirm it.',
+               '店铺已改回下方的滚动日期范围。确认后顾客才能继续下单。')}
           </p>
         </div>
       )}

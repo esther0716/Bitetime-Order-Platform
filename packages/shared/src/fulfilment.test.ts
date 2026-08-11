@@ -4,7 +4,6 @@ import {
   todayInZone, isDateSelectable, selectableDates,
   FULFILMENT_HORIZON_DAYS, MAX_CUSTOM_DATES, DATES_ENDING_SOON_DAYS,
   customDateBounds, pruneCustomDates, validateCustomDates, fulfilmentWarning,
-  pauseFulfilment, resumeFulfilment,
   type FulfilmentConfig,
 } from './fulfilment.js'
 
@@ -279,45 +278,6 @@ describe('fulfilmentWarning', () => {
 
   it('says nothing while the last date is comfortably ahead', () => {
     expect(fulfilmentWarning(custom(['2026-09-01']), KL, NOON_MYT)).toEqual({ kind: 'none' })
-  })
-})
-
-describe('pauseFulfilment / resumeFulfilment', () => {
-  it('pausing a custom shop reverts the mode, keeps the dates and raises the flag', () => {
-    const cfg = custom(['2026-08-01'], { lead_days: 3, window_days: 7, closed_weekdays: [0] })
-    const paused = pauseFulfilment(cfg)!
-    expect(paused.mode).toBe('rolling')
-    expect(paused.needs_review).toBe(true)
-    expect(paused.custom_dates).toEqual(['2026-08-01'])
-    expect(paused.lead_days).toBe(3)
-    expect(paused.window_days).toBe(7)
-    expect(paused.closed_weekdays).toEqual([0])
-  })
-
-  it('pausing a shop that was never on custom dates is a no-op the caller can skip', () => {
-    expect(pauseFulfilment(fulfilmentConfig({}))).toBeNull()
-  })
-
-  it('is idempotent — pausing an already-paused shop changes nothing further', () => {
-    const paused = pauseFulfilment(custom(['2026-08-01']))!
-    expect(pauseFulfilment(paused)).toBeNull()
-  })
-
-  it('resuming restores custom mode and clears the flag', () => {
-    const paused = pauseFulfilment(custom(['2026-08-01']))!
-    const back = resumeFulfilment(paused)!
-    expect(back.mode).toBe('custom')
-    expect(back.needs_review).toBe(false)
-    expect(back.custom_dates).toEqual(['2026-08-01'])
-  })
-
-  it('does not resume a paused shop with no dates to go back to — the review still stands', () => {
-    const paused = fulfilmentConfig({ fulfilment: { needs_review: true, custom_dates: [] } })
-    expect(resumeFulfilment(paused)).toBeNull()
-  })
-
-  it('resuming a shop that was never paused is a no-op', () => {
-    expect(resumeFulfilment(custom(['2026-08-01']))).toBeNull()
   })
 })
 

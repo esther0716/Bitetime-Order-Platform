@@ -74,17 +74,15 @@ const columns: ColumnDef<MerchantRow>[] = [
   },
   {
     id: 'subscription',
-    accessorFn: (r) => `${r.plan ?? ''} ${r.billingStatus ?? ''}`.trim(),
+    accessorFn: (r) => r.billingStatus ?? '',
     header: ({ column, table }) => (
       <SortableHeader column={column} label={(table.options.meta as AdminTableMeta).t('Subscription', '订阅')} />
     ),
     cell: ({ row, table }) => {
       const { t } = table.options.meta as AdminTableMeta
       const m = row.original
-      const plan = m.plan === 'pro' ? t('Pro', 'Pro')
-        : m.plan === 'basic' ? t('Basic', '基础版') : null
       const sub = m.billingStatus
-      if (!plan && !sub) return <span className="text-muted-foreground">—</span>
+      if (!sub) return <span className="text-muted-foreground">—</span>
       const subLabel = m.comped ? t('comped', '赠送')
         : sub === 'active' ? t('active', '有效')
         : sub === 'trialing' ? t('trialing', '试用')
@@ -101,14 +99,7 @@ const columns: ColumnDef<MerchantRow>[] = [
         : 'text-muted-foreground'
       return (
         <span className="inline-flex items-center gap-[6px] whitespace-nowrap">
-          {plan && (
-            <Badge className={
-              'px-[10px] ' + (m.plan === 'pro'
-                ? 'border-transparent bg-brand-100 text-primary'
-                : 'bg-transparent border-border text-muted-foreground')
-            }>{plan}</Badge>
-          )}
-          {sub && <span className={'text-[12px] ' + subCls}>{subLabel}</span>}
+          <span className={'text-[12px] ' + subCls}>{subLabel}</span>
         </span>
       )
     },
@@ -170,9 +161,9 @@ const columns: ColumnDef<MerchantRow>[] = [
                 <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onUncomp(m.id)}>
                   {t('Un-comp', '取消赠送')}
                 </DropdownMenuItem>
-              ) : !(m.status === 'active' && m.plan === 'pro') && (
+              ) : (
                 <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onComp(m.id)}>
-                  {t('Comp Pro', '赠送 Pro')}
+                  {t('Comp this shop', '赠送此店铺')}
                 </DropdownMenuItem>
               )}
               {m.is_sample ? (

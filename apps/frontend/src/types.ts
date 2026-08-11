@@ -23,7 +23,6 @@ export interface Merchant {
   status: MerchantStatus
   order_prefix?: string
   owner_id?: string
-  plan?: string
   billing_cycle?: string
   currency?: string
   pickup_address?: string

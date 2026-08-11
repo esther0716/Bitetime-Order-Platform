@@ -3,7 +3,7 @@
 // It reuses decision, load, track, consent and the banner exactly as #217 left them — the seam
 // that made this possible is that all five take their inputs as arguments and read no environment
 // and no route table. What this file adds is where a shop's inputs come from: the ids off the
-// merchant row, the entitlement off its plan, and a consent scope of its own.
+// merchant row and a consent scope of its own.
 //
 // THE MERCHANT IS THE DATA CONTROLLER HERE, not TinyOrder. `documents.ts` §1 already makes a shop
 // separately responsible for the customer data it receives, and the Terms now say so about its
