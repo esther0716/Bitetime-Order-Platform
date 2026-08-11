@@ -6,7 +6,7 @@ import { isTimezone, validateMenuCategories } from '@bitetime/shared'
 
 export const ORDER_STATUSES = ['pending_payment', 'new', 'preparing', 'ready', 'completed', 'cancelled']
 
-// Owner-editable shop config. Deliberately EXCLUDES status, owner_id, slug, plan, billing_*, id.
+// Owner-editable shop config. Deliberately EXCLUDES status, owner_id, slug, billing_*, id.
 // Mirrors what the browser could safely write under the old RLS+trigger regime. This is the
 // union of every updateMerchantConfig call site: ShopSettings.tsx Shipping tab writes
 // { shipping, pickup_address, method flags, distance pricing, origin_*, onboarding_shipping_set };

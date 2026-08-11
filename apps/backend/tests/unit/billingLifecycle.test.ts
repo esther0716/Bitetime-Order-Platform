@@ -20,29 +20,13 @@ describe('canStartTrial', () => {
 })
 
 describe('trialStartRefusal', () => {
-  it('allows a pending basic shop', () => {
-    expect(trialStartRefusal({ status: 'pending', plan: 'basic' })).toBeNull()
-  })
-
-  // A NULL plan column reads as basic everywhere else (see seedMerchant's note), and must here.
-  it('allows a pending shop whose plan column was never set', () => {
-    expect(trialStartRefusal({ status: 'pending', plan: null })).toBeNull()
+  it('allows a pending shop', () => {
+    expect(trialStartRefusal({ status: 'pending' })).toBeNull()
   })
 
   it('refuses a shop that is not pending', () => {
-    expect(trialStartRefusal({ status: 'active', plan: 'basic' })).toBe('Merchant is not pending')
-    expect(trialStartRefusal({ status: 'suspended', plan: 'basic' })).toBe('Merchant is not pending')
-  })
-
-  // Pro is pay-upfront: granting it a cardless trial would hand away the paid tier for a week.
-  it('refuses a pro shop even when pending', () => {
-    expect(trialStartRefusal({ status: 'pending', plan: 'pro' }))
-      .toBe('Pro shops activate via payment, not approval')
-  })
-
-  // Status is checked first: a suspended pro shop is refused for the reason a caller can act on.
-  it('reports the status refusal before the plan refusal', () => {
-    expect(trialStartRefusal({ status: 'suspended', plan: 'pro' })).toBe('Merchant is not pending')
+    expect(trialStartRefusal({ status: 'active' })).toBe('Merchant is not pending')
+    expect(trialStartRefusal({ status: 'suspended' })).toBe('Merchant is not pending')
   })
 })
 

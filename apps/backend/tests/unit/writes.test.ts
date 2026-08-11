@@ -26,7 +26,7 @@ describe('pickMerchantConfig — fulfilment', () => {
   })
 
   it('still refuses the privilege columns', () => {
-    expect(pickMerchantConfig({ status: 'active', owner_id: 'x', slug: 'y', plan: 'pro' }, SHOP)).toEqual({ ok: true, patch: {} })
+    expect(pickMerchantConfig({ status: 'active', owner_id: 'x', slug: 'y', billing_cycle: 'yearly' }, SHOP)).toEqual({ ok: true, patch: {} })
   })
 })
 

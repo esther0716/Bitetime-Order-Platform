@@ -163,7 +163,7 @@ app.get('/api/billing', requireSuperadmin, async (c) => {
 // ── Merchant creation (any authenticated user creates their own shop) ──────────
 // The insert goes through `admin` (service_role), which bypasses guard_merchant_status —
 // so `status: 'pending'`, `owner_id: user.id` and `billing_region: 'MY'` are forced here,
-// never read from the body. Only name/plan/billing/referredByCode are accepted from the
+// never read from the body. Only name/billing/referredByCode are accepted from the
 // client (Global Constraint 1). Slug uniqueness resolution moved server-side now that the
 // browser can no longer SELECT merchants.slug directly.
 app.post('/api/merchants', requireUser, async (c) => {
@@ -621,8 +621,6 @@ app.get('/api/merchants/:id/secret', requireMerchantOwns, async (c) => {
 // see 20260627120150_secure_merchant_secrets.sql), so the product-PUT hijack class (Global
 // Constraint 2) does not apply here: there is no client-supplied child id to nest a foreign
 // row under. No separate tenancy check is needed.
-// Only the WRITE is gated: the send path (`notify`) carries no plan check, because a shop that
-// already has a token configured must keep receiving its orders. See CONTEXT.md → Plan entitlement.
 app.put('/api/merchants/:id/secret', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const b = await c.req.json().catch(() => ({}) as any)
@@ -823,9 +821,6 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
 // class (conflict-resolving onto a stranger's row) does not apply here — there is no
 // client-supplied id to collide on. `code` is uppercased/trimmed server-side, matching the
 // old client-side `input.code.trim().toUpperCase()`.
-// Vouchers are a Pro feature (#110). Only the merchant's MUTATIONS are gated — the customer's
-// code lookup above stays public and redemption inside the order transaction stays plan-blind,
-// so the gate can never break the ordering hot path.
 app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const b = await c.req.json().catch(() => ({} as any))
@@ -1017,7 +1012,7 @@ app.post('/api/admin/approve-merchant', requireSuperadmin, async (c) => {
   const [merchantRes, billingRes] = await Promise.all([
     admin
       .from('merchants')
-      .select('id, name, status, plan, billing_cycle, owner_id')
+      .select('id, name, status, billing_cycle, owner_id')
       .eq('id', merchantId)
       .maybeSingle(),
     admin.from('merchant_billing').select('*').eq('merchant_id', merchantId).maybeSingle(),
@@ -2029,7 +2024,7 @@ export const trialFeedbackDeps: { email: typeof resendSend } = { email: resendSe
 //   * Telegram is Pro-only and undeduplicated — a repeat ping is merchant noise.
 //   * The customer receipt is signed-in-only (a guest has no account, so no
 //     recipient) and one-shot.
-//   * The merchant email sends on EVERY plan and is one-shot. It exists because a
+//   * The merchant email always sends and is one-shot. It exists because a
 //     basic shop, having no Telegram, otherwise learned of an order by refreshing.
 //
 // `lang` selects the CUSTOMER email's presentation only (never identity or money),
@@ -2200,7 +2195,6 @@ app.post('/api/stripe/webhook', async (c) => {
           const sub = await stripe.subscriptions.retrieve(subscriptionId)
           await upsertBilling(merchantId, billingFromSubscription(sub))
           // The tier comes from the price they just paid, not from what signup wrote (#112).
-          // A body claiming `plan: 'pro'` that checked out at the basic price lands on basic.
           await reconcileBillingCycle(merchantId, sub)
           await setMerchantStatus(merchantId, 'active')
         }

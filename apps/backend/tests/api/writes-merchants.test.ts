@@ -43,7 +43,7 @@ describe('POST /api/merchants', () => {
     const client = await makeUser('create-shop@example.com', 'password123')
     const { token, userId } = await tokenOf(client)
 
-    const res = await post('/api/merchants', { name: 'Joe Coffee', plan: 'basic', billing: 'monthly', region: 'US', businessNature: 'bakery' }, token)
+    const res = await post('/api/merchants', { name: 'Joe Coffee', billing: 'monthly', businessNature: 'bakery' }, token)
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow
@@ -110,7 +110,7 @@ describe('POST /api/merchants', () => {
     const client = await makeUser('stripe-down@example.com', 'password123')
     const { token } = await tokenOf(client)
 
-    const res = await post('/api/merchants', { name: 'Stripe Down Cafe', plan: 'basic', billing: 'monthly', businessNature: 'bakery' }, token)
+    const res = await post('/api/merchants', { name: 'Stripe Down Cafe', billing: 'monthly', businessNature: 'bakery' }, token)
 
     expect(res.status).toBe(200)
     const m = (await res.json()) as MerchantRow & { trial: boolean }

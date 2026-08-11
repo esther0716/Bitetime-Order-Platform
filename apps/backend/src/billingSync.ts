@@ -2,7 +2,7 @@
 // end at "Setting up your subscription…" forever.
 //
 // WHY THIS EXISTS. Everything that makes a paid shop OPEN was carried by one delivery of
-// `checkout.session.completed`: the billing row, the tier reconciliation, and the flip of
+// `checkout.session.completed`: the billing row, the cycle reconciliation, and the flip of
 // `merchants.status` to 'active'. Miss that request — an endpoint subscribed to the wrong events,
 // a deploy mid-delivery, five 500s exhausting Stripe's retries — and the merchant is left on a
 // screen that polls a status nothing will ever change, having already been charged. The hourly
@@ -26,8 +26,8 @@ import { env } from './env.js'
 
 /**
  * Everything Stripe lists for a customer, minus anything this account sells that is not a shop
- * plan. Without it, a merchant who also bought some other product from the same Stripe account
- * has a subscription in this list that has nothing to do with their shop — enough for
+ * subscription. Without it, a merchant who also bought some other product from the same Stripe
+ * account has a subscription in this list that has nothing to do with their shop — enough for
  * `liveSubscriptionBesides` to call a cancellation "replaced" and leave a lapsed shop open, or for
  * `resolveSubscription` to write a foreign subscription id onto the billing row.
  */

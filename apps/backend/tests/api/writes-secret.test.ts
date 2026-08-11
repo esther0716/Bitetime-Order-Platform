@@ -4,7 +4,6 @@
 // row rather than duplicating it (merchant_secrets.merchant_id is the primary key / conflict
 // target — see 20260627120150_secure_merchant_secrets.sql), and (3) tenancy is enforced by
 // requireMerchantOwns exactly as it is on every other owner-scoped write (#110,
-// CONTEXT.md → Plan entitlement). Every success case therefore seeds `plan: 'pro'`; without
 // it the write is refused by the plan gate and the assertion below would prove nothing.
 // See CLAUDE.md → Backend, Global Constraint 1.
 import { describe, it, expect } from 'vitest'
@@ -42,7 +41,7 @@ describe('PUT /api/merchants/:id/secret', () => {
     await resetMerchant('secret-owner-shop')
     const client = await makeUser('secret-owner@example.com', 'password123')
     const { token, userId } = await tokenOf(client)
-    const id = await seedMerchant({ slug: 'secret-owner-shop', owner_id: userId, plan: 'pro' })
+    const id = await seedMerchant({ slug: 'secret-owner-shop', owner_id: userId })
 
     const res = await put(`/api/merchants/${id}/secret`, { tg_token: 'tok-123', tg_chat_id: 'chat-456' }, token)
     expect(res.status).toBe(200)
@@ -61,7 +60,7 @@ describe('PUT /api/merchants/:id/secret', () => {
     await resetMerchant('secret-update-shop')
     const client = await makeUser('secret-update@example.com', 'password123')
     const { token, userId } = await tokenOf(client)
-    const id = await seedMerchant({ slug: 'secret-update-shop', owner_id: userId, plan: 'pro' })
+    const id = await seedMerchant({ slug: 'secret-update-shop', owner_id: userId })
 
     const first = await put(`/api/merchants/${id}/secret`, { tg_token: 'first-tok', tg_chat_id: 'first-chat' }, token)
     expect(first.status).toBe(200)
@@ -83,7 +82,7 @@ describe('PUT /api/merchants/:id/secret', () => {
     await resetMerchant('secret-a-shop')
     const owner = await makeUser('secret-a@example.com', 'password123')
     const { userId: ownerId } = await tokenOf(owner)
-    const id = await seedMerchant({ slug: 'secret-a-shop', owner_id: ownerId, plan: 'pro' })
+    const id = await seedMerchant({ slug: 'secret-a-shop', owner_id: ownerId })
 
     const other = await makeUser('secret-b@example.com', 'password123')
     const { token: otherToken } = await tokenOf(other)
@@ -138,7 +137,7 @@ describe('PUT /api/merchants/:id/secret', () => {
     await resetMerchant('secret-anon-shop')
     const client = await makeUser('secret-anon@example.com', 'password123')
     const { userId } = await tokenOf(client)
-    const id = await seedMerchant({ slug: 'secret-anon-shop', owner_id: userId, plan: 'pro' })
+    const id = await seedMerchant({ slug: 'secret-anon-shop', owner_id: userId })
 
     const res = await put(`/api/merchants/${id}/secret`, { tg_token: 'x', tg_chat_id: 'y' })
     expect(res.status).toBe(401)

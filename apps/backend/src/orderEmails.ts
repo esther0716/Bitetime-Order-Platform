@@ -2,7 +2,7 @@
 // the shop owner's new-order alert.
 //
 // They sit together because they are one shape twice over — same order lookup, same atomic
-// one-shot claim, same HTML shell and items table — differing in audience, language, plan
+// one-shot claim, same HTML shell and items table — differing in audience, language
 // sensitivity and which stamp they claim. Keeping them apart would mean two drifting copies of
 // a claim that is a security control, not a convenience (see ADR 0006).
 //
@@ -320,7 +320,7 @@ export async function emailOrderConfirmation(
 }
 
 // ── Merchant new-order email ──────────────────────────────────────────────────
-// The THIRD recipient of the fan-out, and the one that sends on every plan.
+// The THIRD recipient of the fan-out.
 //
 // Telegram is a Pro entitlement, so a basic shop had no notification at all: the customer got
 // their receipt and the shop got nothing, learning about the order only by refreshing the
@@ -410,7 +410,7 @@ export function buildMerchantOrderEmail(
 // not extend to a recipient who is not the customer: without this claim, a guessable per-shop
 // daily order number is an unbounded mail flood at a merchant's inbox.
 //
-// Deliberately does NOT read `merchants.plan`. This is the arm every shop gets.
+// This is the arm every shop gets, whether or not it has set Telegram up.
 export async function emailMerchantOrder(
   db: any,
   admin: any,

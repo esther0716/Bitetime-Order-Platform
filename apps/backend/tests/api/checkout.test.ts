@@ -19,7 +19,7 @@ function post(token?: string) {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ plan: 'basic', billing: 'monthly' }),
+    body: JSON.stringify({ billing: 'monthly' }),
   })
 }
 

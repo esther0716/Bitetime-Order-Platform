@@ -49,7 +49,7 @@ describe('POST /api/merchants/:id/start-trial', () => {
   it('refuses a shop the caller does not own', async () => {
     const owner = await makeUser('trial-owner@example.com', 'password123')
     const { userId } = await tokenOf(owner)
-    const merchantId = await seedMerchant({ slug: 'retry-owned', owner_id: userId, status: 'pending', plan: 'basic' })
+    const merchantId = await seedMerchant({ slug: 'retry-owned', owner_id: userId, status: 'pending' })
 
     const stranger = await makeUser('trial-stranger@example.com', 'password123')
     const { token } = await tokenOf(stranger)
@@ -60,28 +60,18 @@ describe('POST /api/merchants/:id/start-trial', () => {
   it('refuses a shop that is already active', async () => {
     const owner = await makeUser('trial-active@example.com', 'password123')
     const { token, userId } = await tokenOf(owner)
-    const merchantId = await seedMerchant({ slug: 'retry-active', owner_id: userId, status: 'active', plan: 'basic' })
+    const merchantId = await seedMerchant({ slug: 'retry-active', owner_id: userId, status: 'active' })
 
     const res = await post(merchantId, token)
     expect(res.status).toBe(409)
     expect(((await res.json()) as { error: string }).error).toBe('Merchant is not pending')
   })
 
-  it('refuses a pending pro shop — Pro pays upfront', async () => {
-    const owner = await makeUser('trial-pro@example.com', 'password123')
-    const { token, userId } = await tokenOf(owner)
-    const merchantId = await seedMerchant({ slug: 'retry-pro', owner_id: userId, status: 'pending', plan: 'pro' })
-
-    const res = await post(merchantId, token)
-    expect(res.status).toBe(409)
-    expect(((await res.json()) as { error: string }).error).toBe('Pro shops activate via payment, not approval')
-  })
-
   // One trial ever. Without this an owner could park a shop at pending and re-trial it forever.
   it('refuses a shop that has already had a subscription', async () => {
     const owner = await makeUser('trial-used@example.com', 'password123')
     const { token, userId } = await tokenOf(owner)
-    const merchantId = await seedMerchant({ slug: 'retry-used', owner_id: userId, status: 'pending', plan: 'basic' })
+    const merchantId = await seedMerchant({ slug: 'retry-used', owner_id: userId, status: 'pending' })
     await serviceClient().from('merchant_billing').upsert({
       merchant_id: merchantId,
       stripe_customer_id: 'cus_test_used',
