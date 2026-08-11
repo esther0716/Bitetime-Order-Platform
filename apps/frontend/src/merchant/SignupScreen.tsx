@@ -68,7 +68,7 @@ export default function SignupScreen() {
 
   const planName = plan === 'pro' ? 'Pro' : t('Basic', '基础版')
   const cycleName = billing === 'yearly' ? t('Yearly', '按年') : t('Monthly', '按月')
-  const planPrices = pricing.prices[plan as 'basic' | 'pro']
+  const planPrices = pricing.prices.pro
   const perMoAmount = billing === 'yearly' ? planPrices.yearly / 12 : planPrices.monthly
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {

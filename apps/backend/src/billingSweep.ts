@@ -21,7 +21,7 @@ import type Stripe from 'stripe'
 import { stripe } from './stripe.js'
 import { admin } from './supabase.js'
 import {
-  upsertBilling, billingFromSubscription, reconcileMerchantPlan, lapseMerchant,
+  upsertBilling, billingFromSubscription, reconcileBillingCycle, lapseMerchant,
 } from './billing.js'
 import { isLapsed, needsReconcile, type BillingRow } from './billingLifecycle.js'
 
@@ -105,7 +105,7 @@ async function reconcileOne(row: StaleRow): Promise<'lapsed' | 'refreshed'> {
   // Alive after all — a trial that converted, or a period that renewed. Reconcile the tier for
   // the same reason `customer.subscription.updated` does: the price on the subscription is what
   // the shop is actually paying for, and a missed portal swap leaves the column lying.
-  await reconcileMerchantPlan(row.merchant_id, sub)
+  await reconcileBillingCycle(row.merchant_id, sub)
   return 'refreshed'
 }
 

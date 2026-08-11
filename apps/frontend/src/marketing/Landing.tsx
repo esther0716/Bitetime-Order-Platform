@@ -234,7 +234,7 @@ export default function Landing() {
               </dt>
               <dd className="m-0 mt-2 flex items-baseline gap-[0.35rem]">
                 <span className="font-heading text-[30px] font-semibold text-primary leading-none">
-                  {formatMoney(pricing.prices[tier.id].monthly, pricing.currency)}
+                  {formatMoney(pricing.prices.pro.monthly, pricing.currency)}
                 </span>
                 <span className="text-sm text-muted-foreground">{t('/mo', '/月')}</span>
               </dd>

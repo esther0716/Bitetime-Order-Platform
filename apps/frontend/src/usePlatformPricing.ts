@@ -5,10 +5,7 @@ import { fetchPlatformPricing, type PlatformPricing } from './store'
 // price if the backend is slow or unavailable. Real amounts come from Stripe.
 export const FALLBACK_PRICING: PlatformPricing = {
   currency: 'MYR',
-  prices: {
-    basic: { monthly: 9.99, yearly: 99.9 },
-    pro: { monthly: 39.99, yearly: 399.9 },
-  },
+  prices: { pro: { monthly: 39.9, yearly: 399 } },
   estimate: null,
 }
 

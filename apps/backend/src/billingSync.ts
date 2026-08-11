@@ -18,7 +18,7 @@ import type Stripe from 'stripe'
 import { stripe } from './stripe.js'
 import { admin } from './supabase.js'
 import {
-  LIVE_STATUSES, upsertBilling, billingFromSubscription, reconcileMerchantPlan, setMerchantStatus,
+  LIVE_STATUSES, upsertBilling, billingFromSubscription, reconcileBillingCycle, setMerchantStatus,
 } from './billing.js'
 import { pickSubscription } from './billingLifecycle.js'
 import { isOurSubscription } from './webhookOwnership.js'
@@ -129,9 +129,9 @@ export async function syncMerchantBilling(
     return { merchantStatus, subscriptionStatus: sub.status, activated: false, reason: 'suspended_by_admin' }
   }
 
-  // The tier follows the money, exactly as it does in the webhook (#112) — a shop that checked
-  // out at the basic price lands on basic whatever signup wrote.
-  await reconcileMerchantPlan(merchantId, sub)
+  // The billing cycle follows the money, exactly as it does in the webhook — a shop that checked
+  // out yearly is yearly whatever signup wrote.
+  await reconcileBillingCycle(merchantId, sub)
   if (merchantStatus === 'active') {
     return { merchantStatus, subscriptionStatus: sub.status, activated: false }
   }

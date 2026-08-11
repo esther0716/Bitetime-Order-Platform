@@ -45,7 +45,7 @@ export default function SuspendedScreen() {
     }
   }
 
-  const saving = yearlySavingPercent(pricing.prices[plan].monthly, pricing.prices[plan].yearly)
+  const saving = yearlySavingPercent(pricing.prices.pro.monthly, pricing.prices.pro.yearly)
   const per = cycle === 'yearly' ? t('/year', '/年') : t('/month', '/月')
 
   return (
@@ -96,7 +96,7 @@ export default function SuspendedScreen() {
         <div role="radiogroup" aria-label={t('Plan', '方案')} className="flex flex-col gap-3 mb-5">
           {PRICING_TIERS.map((tier) => {
             const selected = plan === tier.id
-            const price = pricing.prices[tier.id][cycle]
+            const price = pricing.prices.pro[cycle]
             return (
               <button
                 key={tier.id}

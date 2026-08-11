@@ -53,14 +53,14 @@ describe('POST /api/checkout', () => {
     const res = await app.request('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: 'enterprise', billing: 'monthly' }),
+      body: JSON.stringify({ billing: 'fortnightly' }),
     })
     expect(res.status).toBe(401)
   })
 
-  // Still a 400 for a signed-in caller: the plan really is the thing wrong with the request, and
+  // Still a 400 for a signed-in caller: the cycle really is the thing wrong with the request, and
   // by this point saying so tells them nothing they could not already read on the pricing page.
-  it('refuses an invalid plan for a signed-in caller who owns a shop', async () => {
+  it('refuses an invalid billing cycle for a signed-in caller who owns a shop', async () => {
     const user = await makeUser('checkout-bad-plan@example.com', 'password123')
     const { data } = await user.auth.getSession()
     await seedMerchant({ slug: 'checkout-bad-plan', owner_id: data.session!.user.id })
@@ -70,7 +70,7 @@ describe('POST /api/checkout', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${await tokenOf(user)}`,
       },
-      body: JSON.stringify({ plan: 'enterprise', billing: 'monthly' }),
+      body: JSON.stringify({ billing: 'fortnightly' }),
     })
     expect(res.status).toBe(400)
   })

@@ -74,7 +74,7 @@ export default function PricingCards() {
         {/* Cards stretch to a shared height; cardCta* pins each CTA to the bottom edge */}
         <div className="grid [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))] gap-6 mt-10 text-left">
           {PRICING_TIERS.map(tier => {
-            const tierPrices = pricing.prices[tier.id]
+            const tierPrices = pricing.prices.pro
             // Yearly is billed at 10× monthly (2 months free) and shown as an effective /mo.
             const amount = billing === 'yearly' ? tierPrices.yearly / 12 : tierPrices.monthly
             return (

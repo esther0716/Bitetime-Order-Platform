@@ -398,7 +398,7 @@ export default function SubscriptionTab() {
   const state = subscriptionTabState(billing, merchant?.plan, new Date())
 
   const cycle = merchant?.billing_cycle === 'yearly' ? 'yearly' : 'monthly'
-  const planPrice = pricing.prices[state.plan === 'pro' ? 'pro' : 'basic'][cycle]
+  const planPrice = pricing.prices.pro[cycle]
   const proPrice = pricing.prices.pro[cycle]
   const per = cycle === 'yearly' ? t('/year', '/年') : t('/month', '/月')
 

@@ -219,7 +219,6 @@ export async function syncBilling(): Promise<Result<BillingSync>> {
 export interface PlatformPricing {
   currency: string
   prices: {
-    basic: { monthly: number; yearly: number }
     pro: { monthly: number; yearly: number }
   }
   estimate: { currency: string; rate: number } | null

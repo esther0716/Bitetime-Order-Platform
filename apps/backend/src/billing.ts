@@ -6,7 +6,7 @@ import {
 import type Stripe from 'stripe'
 import { admin } from './supabase.js'
 import { env } from './env.js'
-import { planFromPriceId } from './pricing.js'
+import { cycleFromPriceId } from './pricing.js'
 
 const toIso = (unix: number | null | undefined) =>
   unix ? new Date(unix * 1000).toISOString() : null
@@ -37,53 +37,35 @@ export async function upsertBilling(merchantId: string, fields: Record<string, u
 }
 
 /**
- * Bring `merchants.plan` / `billing_cycle` into line with the price the shop is ACTUALLY paying
- * for (#112). Called from the two money-moving webhook events — the Customer Portal's plan swap
+ * Bring `merchants.billing_cycle` into line with the price the shop is ACTUALLY paying on.
+ * Called from the two money-moving webhook events — a subscription change
  * (`customer.subscription.updated`) and the paid signup (`checkout.session.completed`).
  *
- * This is the reconciliation CONTEXT.md's entitlement invariant always named as future work, and
- * it reverses where the tier comes from: signup writes a PROVISIONAL value from the owner's
- * chosen tier, and the first webhook after money moves confirms or corrects it. A shop can no
- * longer end up entitled to a tier it never bought by declaring one at signup.
+ * The column stops being the signup body's claim: signup writes a PROVISIONAL cycle, and the
+ * first webhook after money moves confirms or corrects it.
  *
- * Reads the price CURRENTLY on the subscription, which is what makes period-end downgrades free:
- * a downgrade scheduled in the portal has not touched the item yet, so this keeps returning Pro
- * until the schedule executes — no "is a change pending?" branch anywhere.
+ * Reads the price CURRENTLY on the subscription, so a change that has not touched the item yet
+ * does not register — no "is a change pending?" branch anywhere.
  *
- * An unrecognised price is a NO-OP, never a downgrade: see planFromPriceId. The shop keeps the
- * tier it had and the mismatch is logged for a human.
+ * An unrecognised price is a NO-OP: see cycleFromPriceId. The shop keeps the cycle it had and the
+ * mismatch is logged for a human.
  */
-export async function reconcileMerchantPlan(merchantId: string, sub: Stripe.Subscription) {
+export async function reconcileBillingCycle(merchantId: string, sub: Stripe.Subscription) {
   const priceId = sub.items?.data?.[0]?.price?.id
-  const tier = planFromPriceId(env.prices, priceId ?? '')
+  const tier = cycleFromPriceId(env.prices, priceId ?? '')
   if (!tier) {
     console.warn(
       `Subscription ${sub.id} carries price ${priceId ?? '(none)'}, which is not a configured ` +
-        `plan price — leaving merchant ${merchantId} on its existing plan.`,
+        `plan price — leaving merchant ${merchantId} on its existing billing cycle.`,
     )
     return
   }
 
-  // Read before write: the artifact cutoff below has to fire on the TRANSITION, not on the
-  // state. Every renewal of a Basic shop replays this event, and a cutoff keyed on "is basic"
-  // would deactivate vouchers the merchant had re-enabled, once a month, forever.
-  const { data: before } = await admin
-    .from('merchants').select('plan').eq('id', merchantId).maybeSingle()
-
   const { error } = await admin
     .from('merchants')
-    .update({ plan: tier.plan, billing_cycle: tier.cycle })
+    .update({ billing_cycle: tier.cycle })
     .eq('id', merchantId)
   if (error) throw error
-
-  if (before?.plan === 'pro' && tier.plan === 'basic') {
-    await revokeProArtifacts(merchantId)
-  }
-  // The one artifact that comes BACK (ADR 0015). Idempotent: a shop with no pause to lift and no
-  // dates to restore writes nothing, so a replayed event is free.
-  if (before?.plan !== 'pro' && tier.plan === 'pro') {
-    await restoreCustomDates(merchantId)
-  }
 }
 
 /**

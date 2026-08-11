@@ -16,8 +16,8 @@ import { cors } from 'hono/cors'
 import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
 import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, requirePro, hasProAccess, REQUIRES_PRO, type AppEnv } from './mw.js'
-import { stripe, priceFor, isValidPlan, isValidCycle, isStripeError } from './stripe.js'
-import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileMerchantPlan, lapseMerchant, LIVE_STATUSES } from './billing.js'
+import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
+import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
 import { startCardlessTrial } from './trialSubscription.js'
 import { runBillingSweep } from './billingSweep.js'
@@ -972,9 +972,9 @@ app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
 app.post('/api/checkout', requireOwnMerchant, async (c) => {
   const body = await c.req.json().catch(() => ({}))
-  const { plan, billing } = body
-  if (!isValidPlan(plan) || !isValidCycle(billing)) {
-    return c.json({ error: 'Invalid plan or billing cycle' }, 400)
+  const { billing } = body
+  if (!isValidCycle(billing)) {
+    return c.json({ error: 'Invalid billing cycle' }, 400)
   }
   // Caller and their own shop both resolved by `requireOwnMerchant` — one merchant per owner.
   const user = c.get('user')
@@ -1010,11 +1010,11 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
     await upsertBilling(merchant.id, { stripe_customer_id: customerId })
   }
 
-  const metadata = { merchant_id: merchant.id, plan, billing, region: 'MY' }
+  const metadata = { merchant_id: merchant.id, billing, region: 'MY' }
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
-    line_items: [{ price: priceFor(plan, billing), quantity: 1 }],
+    line_items: [{ price: priceFor(billing), quantity: 1 }],
     client_reference_id: merchant.id,
     metadata,
     // Stripe hides the promo-code field unless asked, so a coupon we hand a merchant is
@@ -1028,7 +1028,7 @@ app.post('/api/checkout', requireOwnMerchant, async (c) => {
     // subscriber on the Subscription tab once it clears. Query before hash — MerchantHome reads
     // the query, the hash survives the param clear and deep-links the tab.
     success_url: `${env.frontendUrl}/merchant?checkout=success#settings/subscription`,
-    cancel_url: `${env.frontendUrl}/merchant/signup?plan=${plan}&billing=${billing}&canceled=1`,
+    cancel_url: `${env.frontendUrl}/merchant/signup?billing=${billing}&canceled=1`,
   })
 
   return c.json({ url: session.url })
@@ -1118,13 +1118,12 @@ app.post('/api/merchants/:id/start-trial', requireMerchantOwns, async (c) => {
   }
 
   // Named rather than spread: `c.get('merchant')` is the whole row as `Record<string, any>`, and
-  // listing the five columns the provisioning actually reads is what keeps that untyped bag from
+  // listing the four columns the provisioning actually reads is what keeps that untyped bag from
   // reaching it.
   const outcome = await startCardlessTrial({
     id: merchant.id,
     name: merchant.name,
     owner_id: merchant.owner_id,
-    plan: merchant.plan,
     billing_cycle: merchant.billing_cycle,
   }, billing)
   if (!outcome.ok) return c.json({ error: outcome.error }, outcome.http)
@@ -2269,7 +2268,7 @@ app.post('/api/stripe/webhook', async (c) => {
           await upsertBilling(merchantId, billingFromSubscription(sub))
           // The tier comes from the price they just paid, not from what signup wrote (#112).
           // A body claiming `plan: 'pro'` that checked out at the basic price lands on basic.
-          await reconcileMerchantPlan(merchantId, sub)
+          await reconcileBillingCycle(merchantId, sub)
           await setMerchantStatus(merchantId, 'active')
         }
         break
@@ -2293,7 +2292,7 @@ app.post('/api/stripe/webhook', async (c) => {
           // This is the plan-switch path: the Customer Portal swaps the price and Stripe fires
           // this event, so the tier follows the money (#112). Also repairs `billing_cycle`,
           // which a monthly↔yearly switch in the portal used to leave stale.
-          await reconcileMerchantPlan(merchantId, sub)
+          await reconcileBillingCycle(merchantId, sub)
         }
         break
       }
@@ -2319,7 +2318,7 @@ app.post('/api/stripe/webhook', async (c) => {
           const replacement = await liveSubscriptionBesides(sub)
           if (replacement) {
             await upsertBilling(merchantId, billingFromSubscription(replacement))
-            await reconcileMerchantPlan(merchantId, replacement)
+            await reconcileBillingCycle(merchantId, replacement)
             console.log(
               `Subscription ${sub.id} ended for merchant ${merchantId}, but ${replacement.id} is ` +
                 `live — reconciled to it instead of closing the shop.`,

@@ -15,7 +15,7 @@
 // TWO markers, either sufficient:
 //   * `metadata.merchant_id` — written by every subscription and every Checkout session we create
 //     (see /api/checkout and startCardlessTrial), and by nothing else in the account.
-//   * a configured plan price id — the four `STRIPE_PRICE_*` ids, which are ours by definition.
+//   * a configured plan price id — the `STRIPE_PRICE_*` ids, which are ours by definition.
 //
 // Either alone is conclusive, so this asks for one, not both: the metadata survives on payloads
 // that carry no price (a trial reminder), and the price survives if metadata is ever lost.
@@ -26,7 +26,7 @@
 // hourly sweep or the merchant's own sync will redo, and the cost of accepting a stranger's is a
 // write against a shop that has nothing to do with it.
 import type Stripe from 'stripe'
-import { planFromPriceId, type Prices } from './pricing.js'
+import { cycleFromPriceId, type Prices } from './pricing.js'
 
 /** What an event offers as evidence of being ours. */
 interface OwnershipProof {
@@ -96,9 +96,9 @@ function ownershipProof(event: Stripe.Event): OwnershipProof | null {
   }
 }
 
-/** Is this price one of the four plan prices we sell? */
+/** Is this price one of the plan prices we sell? */
 function isOurPrice(prices: Prices, id: string): boolean {
-  return planFromPriceId(prices, id) !== null
+  return cycleFromPriceId(prices, id) !== null
 }
 
 /**
