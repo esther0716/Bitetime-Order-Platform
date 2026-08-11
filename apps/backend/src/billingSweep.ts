@@ -2,10 +2,10 @@
 // webhook that never arrives.
 //
 // WHY THIS EXISTS. Every consequence of a subscription ending was, until this file, carried by a
-// single `customer.subscription.deleted` delivery: the shop's suspension, the return to Basic,
-// the revocation of Pro artifacts. Miss that one HTTP request — an endpoint subscribed to the
-// wrong events, a deploy mid-delivery, five 500s exhausting Stripe's retries — and the shop stays
-// open and entitled FOREVER, because nothing else ever looks. That is not a hypothetical: a
+// single `customer.subscription.deleted` delivery: the shop's suspension. Miss that one HTTP
+// request — an endpoint subscribed to the wrong events, a deploy mid-delivery, five 500s
+// exhausting Stripe's retries — and the shop stays OPEN AND SELLING forever, because nothing else
+// ever looks. That is not a hypothetical: a
 // production endpoint subscribed only to `checkout.session.completed` left expired trials
 // selling, with no trace anywhere in the app that anything had gone wrong.
 //

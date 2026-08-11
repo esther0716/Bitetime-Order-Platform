@@ -21,7 +21,7 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const OK_QUERY = '?days=30&granularity=day'
 
 describe('GET /api/merchants/:id/report.xlsx', () => {
-  it('returns a workbook to a Pro shop’s owner', async () => {
+  it('returns a workbook to the shop’s owner', async () => {
     await resetMerchant('report-pro-shop')
     const client = await makeUser('report-pro@example.com', 'password123')
     const { token, userId } = await tokenOf(client)

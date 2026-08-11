@@ -193,7 +193,7 @@ export function pickMerchantConfig(body: any, merchantId: string): PickResult {
     if (out[key] === undefined) continue
     // '' is what the settings form sends when the merchant clears the field, and null is what a
     // non-UI caller would send. Both mean "take it down" — the ONLY way back to no pixel, and
-    // deliberately never gated on the plan (see pixelIdsChanged).
+    // and the only way back to no pixel at all.
     if (out[key] === null || (typeof out[key] === 'string' && (out[key] as string).trim() === '')) {
       out[key] = null
       continue
@@ -216,6 +216,14 @@ export function pickMerchantConfig(body: any, merchantId: string): PickResult {
 const META_PIXEL_ID = /^\d{15,16}$/
 const TIKTOK_PIXEL_ID = /^[A-Z0-9]{20}$/
 
+// Caller's GLOBAL profile (merchant_id IS NULL). EXACT union of the two writers,
+// verified 2026-07-18:
+//   ensureGlobalProfile (store.ts:31, :370) sets: name, email, email_confirmed, referral_code
+//   saveCustomerDetails (store.ts:123, via SavedDetails) sets: whatsapp, delivery_address (jsonb)
+// user_id is FORCED to the caller server-side; app_role / merchant_id / id / created_at are
+// never accepted — service_role bypasses guard_profile_privileges, so this allowlist is the
+// only thing stopping a caller from granting themselves superadmin or attaching to another
+// merchant via a crafted body (Global Constraint 1).
 const PROFILE_FIELDS = [
   'name', 'email', 'email_confirmed', 'referral_code', 'whatsapp', 'delivery_address',
 ] as const
@@ -254,7 +262,7 @@ export function pickProfileFields(body: any): Record<string, unknown> {
 // `merchants.product_categories`, with no foreign key behind it. NOT validated against the shop's
 // list here on purpose: an id the list no longer holds is the load-bearing "uncategorized"
 // reading, not an error, and checking it would need the merchant row on a path that does not read
-// one. Pro-gated by `categoryChanged` at the route, the same way `option_groups` is.
+// one.
 const PRODUCT_FIELDS = [
   'id', 'name', 'name_zh', 'descr', 'price', 'unit', 'unit_quantity', 'active',
   'image_urls', 'promo_price', 'promo_limit', 'promo_end', 'option_groups', 'category_id',

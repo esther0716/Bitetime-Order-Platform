@@ -759,7 +759,7 @@ export async function fetchOrderCount(
 }
 
 /**
- * The Pro-only revenue export. Hands back the workbook and the name the server chose for it.
+ * The revenue export. Hands back the workbook and the name the server chose for it.
  *
  * The range and granularity are the ones the merchant is looking at on the Overview chart — the
  * file is that panel's contents, not a second range concept in the dashboard. `auth: 'required'`
@@ -828,8 +828,8 @@ export async function fetchShopCustomerOrders(merchantId: string, phoneKey: stri
 }
 
 /**
- * Save what the merchant wrote about one customer. Pro-only, and the row is created on the
- * first write — most customers never have one.
+ * Save what the merchant wrote about one customer. The row is created on the first write — most
+ * customers never have one.
  *
  * Sends BOTH fields every time rather than patching one: the dashboard edits them in one panel
  * with one save, and a partial write would need the server to distinguish "cleared the note"

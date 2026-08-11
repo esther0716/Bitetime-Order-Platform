@@ -20,18 +20,15 @@ export interface FulfilmentConfig {
   /** The dates a `custom` shop offers, `YYYY-MM-DD`, sorted and deduped. CUSTOM ONLY. */
   custom_dates: string[]
   /**
-   * The shop is PAUSED until its owner confirms its dates in the Fulfilment tab.
+   * The shop is PAUSED until its owner confirms its dates in the Fulfilment tab. It is checked
+   * here, in the rule both sides of the wire share, rather than in the storefront — a pause the
+   * backend does not honour is a pause a scripted POST walks straight through. While it is set,
+   * `offerableDates` answers empty and the storefront refuses every order.
    *
-   * Set when a Pro shop steps down and loses custom dates (ADR 0015). It is checked here, in the
-   * rule both sides of the wire share, rather than in the storefront — a pause the backend does
-   * not honour is a pause a scripted POST walks straight through.
-   */
-  /**
-   * The shop is PAUSED until its owner confirms its dates: `offerableDates` answers empty and the
-   * storefront refuses every order. Nothing writes this any more — it was set when a shop lost
-   * custom dates by stepping down from Pro (ADR 0015), and there is no step down (#222). The flag
-   * and its readers survive so a row written before that still behaves as its owner was told it
-   * would, and so the Fulfilment tab's Confirm control can still clear it.
+   * NOTHING WRITES IT ANY MORE. It was set when a shop lost custom dates by stepping down from
+   * Pro (ADR 0015), and there is no step down (#222). The flag and its readers survive so a row
+   * written before that still behaves as its owner was told it would, and so the Fulfilment tab's
+   * Confirm control can still clear it.
    */
   needs_review: boolean
 }

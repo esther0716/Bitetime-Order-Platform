@@ -3,8 +3,7 @@
 // (1) the write round-trips through the Phase A GET, (2) a second upsert UPDATES the existing
 // row rather than duplicating it (merchant_secrets.merchant_id is the primary key / conflict
 // target — see 20260627120150_secure_merchant_secrets.sql), and (3) tenancy is enforced by
-// requireMerchantOwns exactly as it is on every other owner-scoped write (#110,
-// it the write is refused by the plan gate and the assertion below would prove nothing.
+// requireMerchantOwns exactly as it is on every other owner-scoped write.
 // See CLAUDE.md → Backend, Global Constraint 1.
 import { describe, it, expect } from 'vitest'
 import { app } from '../../src/app.js'
@@ -89,25 +88,6 @@ describe('PUT /api/merchants/:id/secret', () => {
 
     const res = await put(`/api/merchants/${id}/secret`, { tg_token: 'x', tg_chat_id: 'y' }, otherToken)
     expect(res.status).toBe(403)
-
-    await serviceClient().from('merchants').delete().eq('id', id)
-  })
-
-  // The tier is gone (#222): configuring Telegram is an ordinary owner write. Kept as a positive
-  // test rather than deleted — a removed refusal with nothing in its place leaves the route
-  // unexercised on the very path that used to be refused.
-  it('stores the token for the shop’s own owner', async () => {
-    await resetMerchant('secret-owner-shop')
-    const client = await makeUser('secret-owner@example.com', 'password123')
-    const { token, userId } = await tokenOf(client)
-    const id = await seedMerchant({ slug: 'secret-owner-shop', owner_id: userId })
-
-    const res = await put(`/api/merchants/${id}/secret`, { tg_token: 'tok-123', tg_chat_id: 'chat-456' }, token)
-    expect(res.status).toBe(200)
-
-    const { data: rows } = await serviceClient()
-      .from('merchant_secrets').select('merchant_id').eq('merchant_id', id)
-    expect(rows!.map(r => r.merchant_id)).toEqual([id])
 
     await serviceClient().from('merchants').delete().eq('id', id)
   })

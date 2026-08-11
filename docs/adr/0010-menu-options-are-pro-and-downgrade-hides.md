@@ -5,9 +5,10 @@ Status: Accepted and implemented (#145). **Amended by [ADR 0016](0016-one-plan.m
 
 > Menu options are no longer Pro and no downgrade hides them — there is one plan (#222). What
 > survives is the reason `active` exists at all: it is the merchant's own Hide control and a soft
-> delete, and a *required* group switched off still takes its product off sale, because a product
-> whose mandatory question cannot be asked is unfulfillable rather than merely degraded. The bulk
-> `deactivateGroups` helper went with the revocation that called it.
+> delete, and `validateSelections` still reads a switched-off group as no question at all. The
+> SECOND clause does NOT survive: `hasRequiredGroup` — the take-the-product-off-sale rule — had
+> exactly one caller, the bulk revocation, and went with it. A merchant who hides a required group
+> now has a product that stops asking that question rather than one that leaves the menu.
 
 ## Context
 

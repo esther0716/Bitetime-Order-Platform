@@ -116,9 +116,9 @@ export function validateSelections(
   groups: OptionGroup[],
   selections: Selection[],
 ): SelectionError | null {
-  // A SWITCHED-OFF group is not a question, so it is neither enforced nor answerable. That is
-  // what makes the Pro downgrade survivable: `active: false` on every group leaves optional ones
-  // simply gone, without `priceOrder` ever asking what tier the shop is on (ADR 0010).
+  // A SWITCHED-OFF group is not a question, so it is neither enforced nor answerable — the
+  // merchant's Hide toggle removes the question rather than blocking the product, and
+  // `priceOrder` never asks anything about billing (ADR 0010, ADR 0016).
   const asked = groups.filter(g => g.active)
 
   // IDS FIRST, and the order is load-bearing: a stale answer naming a group this product no
@@ -297,8 +297,8 @@ export function picksDelta(picks: PickSnapshot[]): number {
  * customer's drink because one milk ran out, when three remain, is the wrong recovery.
  *
  * Only REQUIRED groups can make a product unanswerable. An optional group losing every option
- * costs an upsell, not the product. A switched-off group is not a question at all, which is what
- * keeps the Pro downgrade from turning products unanswerable rather than merely unasked.
+ * costs an upsell, not the product. A switched-off group is not a question at all, so hiding one
+ * leaves a product unasked rather than unanswerable.
  *
  * Capacity is `active options x maxPerOption` (uncapped means one option can fill the group), so
  * a six-muffin box down to a single flavour capped at one each cannot be answered.

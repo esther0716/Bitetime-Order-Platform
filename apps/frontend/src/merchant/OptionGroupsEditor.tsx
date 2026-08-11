@@ -241,8 +241,7 @@ export default function OptionGroupsEditor({
                 </div>
                 {/* THE 3PM CONTROL, and the reason `option_unavailable` exists at all: a shop
                     that runs out of oat milk switches it off rather than deleting it, keeping the
-                    price and the name for tomorrow. Without this the only way an option ever went
-                    inactive was a Pro downgrade. */}
+                    price and the name for tomorrow. */}
                 <div className="flex items-center gap-1 shrink-0 ml-auto">
                 <Tooltip>
                   <TooltipTrigger

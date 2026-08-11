@@ -93,10 +93,8 @@ type ChildTable = 'products' | 'vouchers' | 'orders'
  * create a product". It is a named mode now, read at the route.
  *
  * The loaded row IS stashed, under `child` — and it is the WHOLE row, not just the `merchant_id`
- * this guard reads. A handler now needs it: the product upsert's Pro gate asks whether the write
- * CHANGES the promo, which is a comparison against the stored values (#145). Re-querying for a row
- * the guard has already fetched would be a second round trip to answer a question the first one
- * could have. `null` on the `mayCreate` path means "no such row yet", which is a real answer and
+ * this guard reads, so a handler that needs to compare a write against the stored values does not
+ * have to re-query for a row the guard has already fetched. `null` on the `mayCreate` path means "no such row yet", which is a real answer and
  * not an absence — a handler must be able to tell it from "guard did not run".
  */
 export const requireOwnsChild = (

@@ -423,7 +423,6 @@ app.get('/api/merchants/:id/customers', requireMerchantOwns, async (c) => {
   if (!isShopCustomerSort(sort)) return c.json({ error: 'invalid_sort' }, 400)
   const tag = q.get('tag') ?? undefined
 
-
   const [groups, records] = await Promise.all([shopCustomerGroups(m.id), shopCustomerRecords(m.id)])
   return c.json(shopCustomers(groups, records, {
     now: new Date(),
@@ -501,10 +500,7 @@ app.get('/api/merchants/:id/orders/count', requireMerchantOwns, async (c) => {
   return c.json({ count: count ?? 0 })
 })
 
-// The Pro-only revenue export (CONTEXT.md → Plan entitlement). The gate is HERE — the padlock in
-// the dashboard is UX, and this refuses a crafted request from a basic shop's own owner. It sits
-// ahead of the range check on purpose: a basic shop probing the endpoint learns that it needs
-// Pro, not which ranges the paid feature accepts.
+// The revenue export.
 //
 // Read-only and single-statement, so it goes through `admin` and not `db.ts`; there is nothing to
 // keep atomic. Every sheet is confined to the window, which is why the orders are narrowed BEFORE
@@ -2021,7 +2017,7 @@ export const trialFeedbackDeps: { email: typeof resendSend } = { email: resendSe
 // or suppresses the others, and none touches the already-committed order.
 //
 // The three are NOT interchangeable, and the differences are deliberate:
-//   * Telegram is Pro-only and undeduplicated — a repeat ping is merchant noise.
+//   * Telegram needs a configured token and is undeduplicated — a repeat ping is merchant noise.
 //   * The customer receipt is signed-in-only (a guest has no account, so no
 //     recipient) and one-shot.
 //   * The merchant email always sends and is one-shot. It exists because a
@@ -2254,8 +2250,8 @@ app.post('/api/stripe/webhook', async (c) => {
           }
 
           await upsertBilling(merchantId, billingFromSubscription(sub))
-          // Suspends AND returns the shop to basic — see lapseMerchant. Shared with the
-          // reconciliation sweep so a shop closed by either road is closed the same way.
+          // Suspends the shop — see lapseMerchant. Shared with the reconciliation sweep so a
+          // shop closed by either road is closed the same way.
           await lapseMerchant(merchantId)
         }
         break

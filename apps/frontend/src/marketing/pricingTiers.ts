@@ -157,7 +157,7 @@ export const INCLUDED_GROUPS: IncludedGroup[] = [
       {
         id: 'customers',
         label: { en: 'Your customer list', zh: '顾客名单' },
-        detail: { en: 'With sorting and tag filters', zh: '可排序与标签筛选' },
+        detail: { en: 'Included, plus sorting and tag filters', zh: '包含，另可排序与标签筛选' },
       },
       {
         id: 'notes',

@@ -48,7 +48,7 @@ export const ROUTE_META: Record<string, RouteMeta> = {
   '/faq': {
     title: 'FAQ — Answers for Shop Owners | TinyOrder',
     description:
-      'What TinyOrder costs, how the free trial works, how customers pay you, and what Pro adds. The questions shop owners ask us before they sign up.',
+      'What TinyOrder costs, how the free trial works, how customers pay you, and what is included. The questions shop owners ask us before they sign up.',
   },
   // The one prerendered page whose MAIN CONTENT cannot be baked: the shop list is read from the
   // database in the browser, and a build must never reach for it (a build that cannot would ship a
@@ -67,7 +67,7 @@ export const ROUTE_META: Record<string, RouteMeta> = {
   '/merchant/signup': {
     title: 'Sign Up — Start Your Food Shop Free | TinyOrder',
     description:
-      'Create your shop page in minutes. No card for the 7-day trial and no commission on your orders. Pick a plan and start taking orders today.',
+      'Create your shop page in minutes. No card for the 7-day trial and no commission on your orders. Start taking orders today.',
   },
   '/merchant/login': {
     title: 'Log In to Your Shop Dashboard | TinyOrder',

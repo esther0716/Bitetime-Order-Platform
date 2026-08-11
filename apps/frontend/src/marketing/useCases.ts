@@ -11,7 +11,7 @@
 // EVERY CLAIM HERE MUST BE TRUE OF THE PRODUCT AS SHIPPED. public/llms.txt is the authoritative
 // list of what a shop gets. These are pre-purchase pages; an aspirational sentence is a promise the
 // software has to keep, and a visitor who signs up for a feature that does not exist churns on day
-// one. Where a fact changes — the trial, what Pro adds, how delivery is priced — this file changes.
+// one. Where a fact changes — the trial, what is included, how delivery is priced — this file changes.
 //
 // AND NO CLAIM ABOUT WHO ALREADY SELLS HERE. No maker, café or meal-prep shop has been onboarded;
 // verticals.ts carries the same note for the same reason. These pages position TinyOrder for a
@@ -228,8 +228,8 @@ export const USE_CASES: UseCase[] = [
           zh: '你不煮了，订单就关上',
         },
         body: {
-          en: 'Every order names the day it is for, and you set which days can be named: the notice you need, how far ahead your page takes orders, and the weekdays you are closed. Pro adds picking the exact dates instead.',
-          zh: '每笔订单都注明是哪一天的，而哪些日子可选由你决定：需要提前几天、页面最远接单到多久之后，以及每周固定休息的日子。Pro 版还能改为指定确切日期。',
+          en: 'Every order names the day it is for, and you set which days can be named: the notice you need, how far ahead your page takes orders, and the weekdays you are closed. Or pick the exact dates instead.',
+          zh: '每笔订单都注明是哪一天的，而哪些日子可选由你决定：需要提前几天、页面最远接单到多久之后，以及每周固定休息的日子。也可以改为指定确切日期。',
         },
       },
       {
@@ -511,8 +511,8 @@ export const USE_CASES: UseCase[] = [
           zh: '需要打印机或平板吗？',
         },
         a: {
-          en: 'No. The order list is a web page, so the phone in your apron works. An email arrives on every plan when an order lands, and Pro adds a Telegram alert for everyone working the stall.',
-          zh: '不需要。订单清单就是一个网页，围裙口袋里的手机就够用。所有方案都会在订单进来时寄电邮，Pro 版另加 Telegram 通知，摊位上的每个人都收得到。',
+          en: 'No. The order list is a web page, so the phone in your apron works. An email arrives when an order lands, and a Telegram alert reaches everyone working the stall.',
+          zh: '不需要。订单清单就是一个网页，围裙口袋里的手机就够用。订单进来时会寄电邮，Telegram 通知则让摊位上的每个人都收得到。',
         },
       },
     ],

@@ -248,8 +248,6 @@ export default function CustomersView() {
  * row would set the height of every row around it. Which three is the merchant's own order —
  * tags are stored as written, and re-sorting here would be a second opinion nothing asked for.
  *
- * Pro-only, and gated by the CALLER rather than here: a basic shop must not render this column at
- * all, header included, or the table grows an empty column that says a feature is missing.
  */
 function RowTags({ tags }: { tags: string[] }) {
   const shown = tags.slice(0, ROW_TAG_CAP)
@@ -319,11 +317,6 @@ function SortControl({
  * A chip row rather than a dropdown because the gap being closed is DISCOVERABILITY — the
  * vocabulary has to be visible without a click, or the merchant still does not know the filter
  * is there.
- *
- * Basic shops render nothing here, which inverts the shown-but-locked rule the sort control
- * beside it follows, and deliberately: notes and tags survive a downgrade hidden-not-deleted,
- * so a disabled chip row would print the very vocabulary the downgrade hides. The pitch is not
- * lost — it lives in the drawer's Notes & tags panel and in the sort control's own badge.
  */
 function TagFilterRow({
   shopTags, selectedTag, onSelect,

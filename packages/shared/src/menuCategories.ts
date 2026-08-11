@@ -2,8 +2,7 @@
 // decide whether a submitted list is legal configuration.
 //
 // Shared because both sides of the wire read the same column: the backend validates it at the
-// write endpoints and compares it there to decide a Pro gate, and the storefront maps the same
-// row to render its headings. A row mapped on one side and not the other is the failure mode
+// write endpoints, and the storefront maps the same row to render its headings. A row mapped on one side and not the other is the failure mode
 // `productFromRow` records — here it would be a shop's menu structure silently gone, not a
 // refused checkout, but the reason to share the mapper is identical.
 //
@@ -16,9 +15,8 @@
  * One section of a shop's menu.
  *
  * `name_zh` is optional and falls back to the English string, matching `products.name_zh`.
- * `active` does double duty on purpose: it is the merchant's own Hide toggle AND the flag a
- * downgrade writes, which is what lets a re-upgrade need no resurrection logic — the merchant
- * switches them back on. The storefront reads this flag and never the shop's plan.
+ * `active` is the merchant's own Hide toggle, and a soft delete: the storefront reads this flag
+ * and nothing else, so hiding a category never touches a product.
  */
 export interface MenuCategory {
   id: string
