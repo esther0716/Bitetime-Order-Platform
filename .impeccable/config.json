@@ -4,10 +4,10 @@
     "ignoreFiles": [],
     "ignoreValues": [
       {
-        "rule": "design-system-font",
-        "value": "dm_sans",
-        "reason": "DM Sans is the documented body font in DESIGN.md (Body Font line 181, type scale lines 55/61, button spec line 217). Underscore form is Tailwind arbitrary-value syntax for the space in the font name — not a different font.",
-        "createdAt": "2026-06-30T08:12:22.974Z"
+        "rule": "design-system-color",
+        "value": "#000",
+        "reason": "Print-only: [data-receipt] forces pure black because browsers drop backgrounds when printing",
+        "createdAt": "2026-08-11T09:35:21.713Z"
       }
     ]
   }

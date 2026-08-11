@@ -37,31 +37,31 @@ colors:
   neutral-fg: "#3F3F46"
 typography:
   display:
-    fontFamily: "Poppins, system-ui, sans-serif"
+    fontFamily: "Poppins, Poppins Fallback, Noto Sans SC, system-ui, sans-serif"
     fontSize: "48px"
     fontWeight: 600
     lineHeight: 1.05
     letterSpacing: "-0.03em"
   headline:
-    fontFamily: "Poppins, system-ui, sans-serif"
+    fontFamily: "Poppins, Poppins Fallback, Noto Sans SC, system-ui, sans-serif"
     fontSize: "36px"
     fontWeight: 600
     lineHeight: 1.1
     letterSpacing: "-0.025em"
   title:
-    fontFamily: "Poppins, system-ui, sans-serif"
+    fontFamily: "Poppins, Poppins Fallback, Noto Sans SC, system-ui, sans-serif"
     fontSize: "20px"
     fontWeight: 500
     lineHeight: 1.3
     letterSpacing: "-0.01em"
   body:
-    fontFamily: "Poppins, system-ui, sans-serif"
+    fontFamily: "Poppins, Poppins Fallback, Noto Sans SC, system-ui, sans-serif"
     fontSize: "16px"
     fontWeight: 400
     lineHeight: 1.5
     letterSpacing: "normal"
   label:
-    fontFamily: "Poppins, system-ui, sans-serif"
+    fontFamily: "Poppins, Poppins Fallback, Noto Sans SC, system-ui, sans-serif"
     fontSize: "11px"
     fontWeight: 500
     lineHeight: 1.3

@@ -1,130 +1,259 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-04T05:45:12.000Z",
-  "title": "Design System: BiteTime",
+  "generatedAt": "2026-08-11T09:30:00.000Z",
+  "title": "Design System: TinyOrder",
   "extensions": {
     "colorMeta": {
-      "oxblood": { "role": "primary", "displayName": "Oxblood", "canonical": "#7A1028", "tonalRamp": ["#2B0A10", "#46101C", "#5C0C1E", "#7A1028", "#9A3A4E", "#B86B6B", "#D9A8B0", "#F5E6E8"] },
-      "cream": { "role": "neutral", "displayName": "Cream", "canonical": "#F2EAE0", "tonalRamp": ["#4A3020", "#6E5240", "#937360", "#B89A85", "#D9C8BC", "#E8D8D0", "#EDE4D8", "#F2EAE0"] },
-      "ink": { "role": "neutral", "displayName": "Maroon Ink", "canonical": "#2B0A10", "tonalRamp": ["#2B0A10", "#4A2530", "#5A3A40", "#7A4F55", "#8A5550", "#A07070", "#C9B8B0", "#E8D8D0"] },
-      "text-tertiary": { "role": "neutral", "displayName": "Tertiary Text", "canonical": "#8A5550", "tonalRamp": ["#2B0A10", "#4A2530", "#7A4F55", "#8A5550", "#A07070", "#B89090", "#C9B8B0", "#E8D8D0"] },
-      "gold-accent": { "role": "secondary", "displayName": "Tracking Gold", "canonical": "#C9A030", "tonalRamp": ["#4A3A10", "#7A5810", "#A07820", "#C9A030", "#E8C96A", "#F0DDA0", "#FFF3CD", "#FFF8E6"] }
+      "brand-500": {
+        "role": "primary",
+        "displayName": "Oxblood",
+        "canonical": "#7A1028",
+        "tonalRamp": [
+          "#3F0713",
+          "#550A1A",
+          "#7A1028",
+          "#D4708A",
+          "#EBCDD3",
+          "#F5E6E8",
+          "#FDF0F2"
+        ]
+      },
+      "cream": {
+        "role": "neutral",
+        "displayName": "Cream canvas",
+        "canonical": "#F2EAE0",
+        "tonalRamp": [
+          "#F2EAE0"
+        ]
+      },
+      "ink-900": {
+        "role": "neutral",
+        "displayName": "Zinc ladder",
+        "canonical": "#18181B",
+        "tonalRamp": [
+          "#09090B",
+          "#18181B",
+          "#3F3F46",
+          "#636369",
+          "#71717A",
+          "#A1A1AA",
+          "#D4D4D8",
+          "#E4E4E7",
+          "#F4F4F5",
+          "#FAFAFA",
+          "#FFFFFF"
+        ]
+      },
+      "info-500": {
+        "role": "semantic",
+        "displayName": "Status: new / preparing",
+        "canonical": "#2563EB",
+        "tonalRamp": [
+          "#1E40AF",
+          "#2563EB",
+          "#DBEAFE"
+        ]
+      },
+      "success-500": {
+        "role": "semantic",
+        "displayName": "Status: ready",
+        "canonical": "#059669",
+        "tonalRamp": [
+          "#065F46",
+          "#059669",
+          "#D1FAE5"
+        ]
+      },
+      "warning-500": {
+        "role": "semantic",
+        "displayName": "Status: pending payment",
+        "canonical": "#F59E0B",
+        "tonalRamp": [
+          "#92400E",
+          "#F59E0B",
+          "#FEF3C7"
+        ]
+      },
+      "danger-500": {
+        "role": "semantic",
+        "displayName": "Status: cancelled",
+        "canonical": "#EF4444",
+        "tonalRamp": [
+          "#991B1B",
+          "#EF4444",
+          "#FEE2E2"
+        ]
+      }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display (Lora)", "purpose": "Wordmark and primary headings — the painted shop sign. Landing hero scales up from here." },
-      "title": { "displayName": "Title (Lora small)", "purpose": "Panel and card titles — serif kept small to hold warmth in dense UI." },
-      "body": { "displayName": "Body (DM Sans)", "purpose": "All running copy, form values, table cells." },
-      "label": { "displayName": "Label (DM Sans caps)", "purpose": "Field-group labels, eyebrows, role tags — 10–11px, +0.09em, uppercase." },
-      "mono": { "displayName": "Mono (DM Mono)", "purpose": "Order numbers, voucher codes, AWB — read character by character." }
+      "display": {
+        "displayName": "Display (Poppins 600, 48px)",
+        "purpose": "The landing hero, and nothing else."
+      },
+      "headline": {
+        "displayName": "Headline (Poppins 600, 36px)",
+        "purpose": "Section heads on marketing pages."
+      },
+      "title": {
+        "displayName": "Title (Poppins 500, 20px)",
+        "purpose": "Panel titles and card headings."
+      },
+      "body": {
+        "displayName": "Body (Poppins 400, 16px)",
+        "purpose": "All running copy, form values, inputs, buttons, table cells. text-sm is redefined to 16px — the body floor is an accessibility decision, not a style choice."
+      },
+      "label": {
+        "displayName": "Eyebrow / tag (Poppins 500, 11px, +0.08em caps)",
+        "purpose": "Section eyebrows and role tags; stays small through its own utility, unaffected by the body floor."
+      },
+      "mono": {
+        "displayName": "Mono (system stack, 13px)",
+        "purpose": "Order numbers, voucher codes, AWB — strings read character by character. Deliberately not a webfont."
+      }
     },
     "shadows": [
-      { "name": "focus-ring", "value": "0 0 0 2px rgba(122,16,40,0.1)", "purpose": "Standard focused-input affordance; 3px variant on larger controls." },
-      { "name": "popover", "value": "0 8px 24px rgba(43,10,16,0.16)", "purpose": "Notification panel, dropdowns floating above the page." },
-      { "name": "sidebar", "value": "0 2px 12px rgba(122,16,40,0.07)", "purpose": "Quiet lift of the sticky sidebar rail." },
-      { "name": "sticky-bar", "value": "0 -4px 20px rgba(43,10,16,0.10)", "purpose": "Mobile sticky checkout/submit bar lifting from the bottom edge." },
-      { "name": "modal", "value": "0 12px 48px rgba(43,10,16,0.25)", "purpose": "Overlay dialogs only." }
+      {
+        "name": "elev-1",
+        "value": "0 1px 2px rgba(24,24,27,0.05)",
+        "purpose": "The faintest lift, for a resting surface the ladder alone does not separate."
+      },
+      {
+        "name": "elev-2",
+        "value": "0 8px 24px rgba(24,24,27,0.16)",
+        "purpose": "Popovers, dropdowns, tooltips, dialogs."
+      },
+      {
+        "name": "elev-3",
+        "value": "0 16px 40px -18px rgba(24,24,27,0.22)",
+        "purpose": "The largest float — hero cards, lifted panels."
+      },
+      {
+        "name": "elev-rail",
+        "value": "6px 0 32px rgba(24,24,27,0.12)",
+        "purpose": "The slide-in rail. Horizontal, so it is not a step on the ramp and carries its own name."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 2px rgba(122,16,40,0.40)",
+        "purpose": "Every focused control. Always on — never removed for aesthetics."
+      }
     ],
     "motion": [
-      { "name": "state-fast", "value": "0.15s", "purpose": "Default duration for hover/colour state changes (background, border, color)." },
-      { "name": "press", "value": "transform 0.1s", "purpose": "Active press feedback; primary buttons scale(0.99)." },
-      { "name": "ease-out-recommended", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Recommended ease-out for new motion; current build defaults to browser ease — no bounce/elastic." }
+      {
+        "name": "dur-fast",
+        "value": "120ms",
+        "purpose": "Hover and colour state changes."
+      },
+      {
+        "name": "dur-base",
+        "value": "200ms",
+        "purpose": "The default transition."
+      },
+      {
+        "name": "dur-slow",
+        "value": "320ms",
+        "purpose": "Panel and drawer movement."
+      },
+      {
+        "name": "dur-slower",
+        "value": "480ms",
+        "purpose": "The longest move on screen."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Entrances. No bounce, no elastic."
+      },
+      {
+        "name": "ease-in-out",
+        "value": "cubic-bezier(0.65, 0, 0.35, 1)",
+        "purpose": "Moves that start and end on screen."
+      },
+      {
+        "name": "ease-in",
+        "value": "cubic-bezier(0.4, 0, 1, 1)",
+        "purpose": "Exits."
+      }
     ],
     "breakpoints": [
-      { "name": "form", "value": "600px" },
-      { "name": "form-wide", "value": "900px" },
-      { "name": "form-owner", "value": "1100px" }
-    ]
-  },
-  "components": [
-    {
-      "name": "Primary Button",
-      "kind": "button",
-      "refersTo": "button-primary",
-      "description": "Main commit action — submit order, save settings, apply voucher.",
-      "html": "<button class=\"ds-btn-primary\">Place order</button>",
-      "css": ".ds-btn-primary { font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 500; letter-spacing: 0.01em; color: #F2EAE0; background: #7A1028; border: none; border-radius: 12px; padding: 14px; cursor: pointer; transition: background 0.15s, transform 0.1s; } .ds-btn-primary:hover { background: #550A1A; } .ds-btn-primary:active { transform: scale(0.99); } .ds-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }"
-    },
-    {
-      "name": "Ghost / Add Button",
-      "kind": "button",
-      "refersTo": "button-ghost",
-      "description": "Low-emphasis additive action — add a product row, add a field.",
-      "html": "<button class=\"ds-btn-ghost\">+ Add product</button>",
-      "css": ".ds-btn-ghost { font-family: 'DM Sans', sans-serif; font-size: 13px; color: #7A4F55; background: #FBF6F0; border: 1px dashed #C9A090; border-radius: 8px; padding: 7px 14px; cursor: pointer; transition: all 0.15s; } .ds-btn-ghost:hover { border-color: #7A1028; color: #7A1028; background: #F5E6E8; }"
-    },
-    {
-      "name": "Pill Toggle",
-      "kind": "button",
-      "refersTo": "pill-button",
-      "description": "Language / account / segmented toggle. Active state takes the oxblood fill.",
-      "html": "<div class=\"ds-pill-row\"><button class=\"ds-pill active\">EN</button><button class=\"ds-pill\">中文</button></div>",
-      "css": ".ds-pill-row { display: flex; gap: 6px; } .ds-pill { font-family: 'DM Sans', sans-serif; font-size: 13px; color: #7A4F55; background: #FBF6F0; border: 1px solid #C9A090; border-radius: 20px; padding: 5px 14px; cursor: pointer; transition: all 0.15s; } .ds-pill:hover { border-color: #7A1028; color: #7A1028; } .ds-pill.active { background: #7A1028; color: #F2EAE0; border-color: #7A1028; font-weight: 500; }"
-    },
-    {
-      "name": "Text Input",
-      "kind": "input",
-      "refersTo": "input",
-      "description": "Standard form field — cream fill, clay border, oxblood focus ring.",
-      "html": "<input class=\"ds-input\" placeholder=\"Recipient name\" />",
-      "css": ".ds-input { font-family: 'DM Sans', sans-serif; font-size: 13px; color: #2B0A10; background: #F2EAE0; border: 1.5px solid #C9A090; border-radius: 10px; padding: 7px 10px; width: 100%; } .ds-input::placeholder { color: #A07070; } .ds-input:focus { outline: none; border-color: #7A1028; box-shadow: 0 0 0 2px rgba(122,16,40,0.1); }"
-    },
-    {
-      "name": "Status Chip",
-      "kind": "chip",
-      "refersTo": "status-chip",
-      "description": "Order status indicator — one of six semantic colours; shown here as Pending.",
-      "html": "<span class=\"ds-status ds-status-pending\">Pending</span>",
-      "css": ".ds-status { font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 600; border-radius: 20px; padding: 3px 10px; } .ds-status-pending { background: #C3E6CB; color: #155724; } .ds-status-confirmed { background: #D1ECF1; color: #0C5460; } .ds-status-preparing { background: #E8D5F5; color: #5A1A7A; } .ds-status-ready { background: #FFF3CD; color: #856404; } .ds-status-completed { background: #EDE4D8; color: #4A3020; } .ds-status-cancelled { background: #F8D7DA; color: #721C24; }"
-    },
-    {
-      "name": "Panel / Card",
-      "kind": "card",
-      "refersTo": null,
-      "description": "Content panel — raised surface, clay hairline border, no resting shadow.",
-      "html": "<div class=\"ds-panel\"><h3 class=\"ds-panel-title\">Shop settings</h3><p class=\"ds-panel-body\">Configure shipping, payment and notifications.</p></div>",
-      "css": ".ds-panel { background: #FBF6F0; border: 1.5px solid #C9A090; border-radius: 16px; padding: 1.25rem; } .ds-panel-title { font-family: 'Lora', Georgia, serif; font-size: 15px; font-weight: 500; color: #7A1028; margin: 0 0 0.75rem; } .ds-panel-body { font-family: 'DM Sans', sans-serif; font-size: 13px; line-height: 1.5; color: #7A4F55; margin: 0; }"
-    },
-    {
-      "name": "Sidebar Nav Item",
-      "kind": "nav",
-      "refersTo": null,
-      "description": "Merchant/admin rail item — oxblood left-marker and sliding arrow on hover/active.",
-      "html": "<nav class=\"ds-nav\"><button class=\"ds-nav-item active\">Orders</button><button class=\"ds-nav-item\">Products</button></nav>",
-      "css": ".ds-nav { display: flex; flex-direction: column; background: #EDE4D8; border-radius: 20px; padding: 0.75rem 0; overflow: hidden; width: 210px; } .ds-nav-item { position: relative; display: flex; align-items: center; width: 100%; padding: 13px 1.25rem; border: none; background: none; color: #4A2530; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: background 0.15s, color 0.15s; } .ds-nav-item::after { content: '→'; margin-left: auto; color: #C9A090; transition: transform 0.15s, color 0.15s; } .ds-nav-item::before { content: ''; position: absolute; left: 0; top: 20%; bottom: 20%; width: 3px; background: #7A1028; border-radius: 0 2px 2px 0; transform: scaleY(0); transition: transform 0.15s; } .ds-nav-item:hover { background: #DDD0C4; color: #7A1028; } .ds-nav-item:hover::after { color: #7A1028; transform: translateX(4px); } .ds-nav-item:hover::before { transform: scaleY(1); } .ds-nav-item.active { background: #F5E6E8; color: #7A1028; font-weight: 600; } .ds-nav-item.active::before { transform: scaleY(1); } .ds-nav-item.active::after { color: #7A1028; }"
-    },
-    {
-      "name": "Order Number Stamp",
-      "kind": "custom",
-      "refersTo": null,
-      "description": "Signature receipt stamp — the only monospace in customer UI.",
-      "html": "<span class=\"ds-order-stamp\">BT-20260627-0042</span>",
-      "css": ".ds-order-stamp { font-family: 'DM Mono', 'Courier New', monospace; font-size: 14px; font-weight: 700; letter-spacing: 1px; color: #7A1028; }"
-    },
-    {
-      "name": "Empty State",
-      "kind": "custom",
-      "refersTo": null,
-      "description": "No-records placeholder for merchant lists (products, vouchers) — dashed clay frame on a faint cream wash, oxblood-tint icon tile, optional action.",
-      "html": "<div class=\"ds-empty\"><div class=\"ds-empty-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M16.5 9.4 7.55 4.24\"/><path d=\"M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\"/><path d=\"m3.3 7 8.7 5 8.7-5\"/><path d=\"M12 22V12\"/></svg></div><div class=\"ds-empty-title\">No products yet</div><div class=\"ds-empty-desc\">Add your first product to start taking orders in your storefront.</div><button class=\"ds-empty-action\">+ Add product</button></div>",
-      "css": ".ds-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 24px; border: 1.5px dashed #C9A090; border-radius: 12px; background: rgba(242,234,224,0.5); } .ds-empty-icon { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin-bottom: 8px; border-radius: 8px; background: #F5E6E8; color: #7A1028; } .ds-empty-icon svg { width: 16px; height: 16px; } .ds-empty-title { font-family: 'Lora', Georgia, serif; font-size: 15px; font-weight: 500; color: #7A1028; } .ds-empty-desc { max-width: 24rem; font-family: 'DM Sans', sans-serif; font-size: 13px; line-height: 1.6; color: #7A4F55; } .ds-empty-action { margin-top: 2px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; color: #F2EAE0; background: #7A1028; border: none; border-radius: 20px; padding: 6px 14px; cursor: pointer; transition: background 0.15s; } .ds-empty-action:hover { background: #550A1A; }"
+      {
+        "name": "form",
+        "value": "600px"
+      },
+      {
+        "name": "form-wide",
+        "value": "900px"
+      },
+      {
+        "name": "form-owner",
+        "value": "1100px"
+      }
+    ],
+    "roundedMeta": {
+      "xs": {
+        "canonical": "2px"
+      },
+      "sm": {
+        "canonical": "4px"
+      },
+      "md": {
+        "canonical": "4px"
+      },
+      "lg": {
+        "canonical": "8px"
+      },
+      "xl": {
+        "canonical": "8px"
+      },
+      "2xl": {
+        "canonical": "12px"
+      },
+      "pill": {
+        "role": "pill",
+        "canonical": "9999px"
+      },
+      "round": {
+        "canonical": "50%"
+      }
     }
-  ],
+  },
+  "components": [],
   "narrative": {
-    "northStar": "The Hand-Lettered Shopfront",
-    "overview": "BiteTime is a small food shop's signage made digital. The wordmark and headings are set in Lora — a humanist serif that reads like painted shop lettering — on warm cream surfaces the colour of unbleached paper and pastry. The signature colour is oxblood (#7A1028): a deep, confident wine-red borrowed from awnings and a stamped receipt, never bright or fast-food-loud. The system works by tonal layering, not decoration: depth comes from stepping warm neutrals separated by 1.5px clay strokes, not from shadows or gradients. Type carries the warmth; the background stays quietly committed to its warm hue. It explicitly rejects the generic SaaS dashboard and corporate fintech — even the merchant and admin screens stay on this warm palette.",
+    "northStar": "Sharp by default",
+    "overview": "TinyOrder is engineered geometry on a warm canvas. Corners are tight (4px on most surfaces), borders are half-pixel hairlines, and depth comes from stepping UP off a cream page (#F2EAE0) onto white surfaces and cool zinc rails — not from shadow or ornament. The signature colour is oxblood (#7A1028), a deep wine-red that earns attention by being rare: it is the only accent on any screen. The cream canvas is the one warm value kept from the retired shopfront identity and it is load-bearing — it is what stops the neutral system reading as generic SaaS. Two token layers: primitives (--ink-*, --brand-*, --cream, the four status ramps) stay in the system; semantic tokens reach product code through the shadcn bridge. This SUPERSEDES \"The Hand-Lettered Shopfront\" — the oxblood-on-cream identity with Lora signage that this sidecar described until 2026-08-05. See docs/adr/0012-the-warm-identity-is-retired.md before arguing from it.",
     "keyCharacteristics": [
-      "Oxblood-on-cream identity, warm through and through — operational screens included",
-      "Lora serif signage paired with DM Sans body on a serif/sans contrast axis",
-      "Flat surfaces, tonal warm-neutral layering, 1.5px clay hairline borders",
-      "Soft pill geometry (20px) and gentle tinted hover states",
+      "One oxblood accent over a cool zinc ladder — operational screens included",
+      "A single Latin family (Poppins) at three weights; hierarchy from size and weight, not a second face",
+      "Flat surfaces, hairline 0.5px borders, sharp 4px corners",
+      "Two token layers: primitives stay in the system, semantics reach product code",
       "Full EN / 中文 parity as a structural constraint, not a translation layer"
     ],
     "rules": [
-      { "name": "The One Voice Rule", "body": "Oxblood is the only brand accent. It does not compete with a second saturated colour — gold is functional (tracking) and the semantic set is reserved for status. If a screen has two accents fighting, one is wrong.", "section": "colors" },
-      { "name": "The Warm-Floor Rule", "body": "No surface is cooler than its hue allows. Every neutral steps along the cream→taupe ladder; never reach for a grey. A cool neutral reads instantly as the SaaS default the brand rejects.", "section": "colors" },
-      { "name": "The Serif-Signage Rule", "body": "Lora is for names and headings — the shop's lettering. It never sets body copy, form labels, or table data; that is always DM Sans.", "section": "typography" },
-      { "name": "The Modest-Display Rule", "body": "Display tops out around the landing hero; everywhere else serif stays small (≤26px). Warmth comes from the typeface, not from shouting size. Keep display letter-spacing ≥ -0.02em.", "section": "typography" },
-      { "name": "The Flat-Rest Rule", "body": "A surface at rest has a border and a tonal step, never a drop shadow. Shadows answer only to 'this floats' (popover, sticky, modal, focus), never to 'this is a card.'", "section": "elevation" }
+      {
+        "name": "The One Voice Rule",
+        "body": "Oxblood is the only brand accent. It does not compete with a second saturated colour — gold is functional (tracking) and the semantic set is reserved for status. If a screen has two accents fighting, one is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Warm-Floor Rule",
+        "body": "No surface is cooler than its hue allows. Every neutral steps along the cream→taupe ladder; never reach for a grey. A cool neutral reads instantly as the SaaS default the brand rejects.",
+        "section": "colors"
+      },
+      {
+        "name": "The Serif-Signage Rule",
+        "body": "Lora is for names and headings — the shop's lettering. It never sets body copy, form labels, or table data; that is always DM Sans.",
+        "section": "typography"
+      },
+      {
+        "name": "The Modest-Display Rule",
+        "body": "Display tops out around the landing hero; everywhere else serif stays small (≤26px). Warmth comes from the typeface, not from shouting size. Keep display letter-spacing ≥ -0.02em.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-Rest Rule",
+        "body": "A surface at rest has a border and a tonal step, never a drop shadow. Shadows answer only to 'this floats' (popover, sticky, modal, focus), never to 'this is a card.'",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do keep oxblood (#7A1028) as the single brand voice; hover to #550A1A, never a second resting accent.",
