@@ -9,6 +9,7 @@ import RequireRole from './RequireRole'
 import { useCanonical } from './canonical'
 import { useDocumentMeta } from './documentMeta'
 import { usePixels } from './pixels/usePixels'
+import { ShopPixelsProvider } from './pixels/ShopPixels'
 import { Spinner } from './components/Loaders'
 import Wordmark from './components/Wordmark'
 // STATICALLY IMPORTED, and it is the one route that must be. `/` is prerendered into the HTML
@@ -102,13 +103,19 @@ function StorefrontShell() {
   )
 
   return (
-    <Routes>
-      <Route index element={<Storefront />} />
-      {/* A destination, not a dialog: deep-linkable and shareable. Signed out it renders the
-          auth panel in place — deliberately NOT behind RequireRole, which bounces to the
-          merchant login: wrong framing, wrong bundle, wrong destination for a customer. */}
-      <Route path="orders" element={<OrderHistory />} />
-    </Routes>
+    // The SHOP's own advertising pixels (#220), and TinyOrder's never — `pixelDecision` answers
+    // no to every question off a marketing path, which a storefront is. Mounted here, below the
+    // not-found and status gates, so the subtree existing IS the proof that this is an active
+    // shop's storefront: the hook can then state `inScope: true` as a fact.
+    <ShopPixelsProvider merchant={merchant}>
+      <Routes>
+        <Route index element={<Storefront />} />
+        {/* A destination, not a dialog: deep-linkable and shareable. Signed out it renders the
+            auth panel in place — deliberately NOT behind RequireRole, which bounces to the
+            merchant login: wrong framing, wrong bundle, wrong destination for a customer. */}
+        <Route path="orders" element={<OrderHistory />} />
+      </Routes>
+    </ShopPixelsProvider>
   )
 }
 
