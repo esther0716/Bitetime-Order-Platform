@@ -1594,6 +1594,13 @@ async function humanizeAndStore(row: { id: string; tag: string; name: string; ra
   else await updateReleaseHumanization(row.id, { error: 'Claude could not summarize this release' })
 }
 
+// The humanization the pull route deliberately does NOT await, exposed so tests can. A test
+// cannot assert on a summary that is still being written, and polling for one in a suite is
+// how you get a flake. Production never reads this — it is the seam, in the same spirit as
+// releaseDeps: the route's contract is "the drafts are stored", and this is the handle on
+// the rest. Reassigned per pull, so awaiting it awaits the most recent pull's work.
+export let releaseHumanization: Promise<unknown> = Promise.resolve()
+
 app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
   const fetched = await releaseDeps.listReleases(env.githubToken, 10)
   if (fetched === null) return c.json({ error: 'Could not reach GitHub' }, 502)
@@ -1601,20 +1608,34 @@ app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
   const existingTags = new Set(await listReleaseTags())
   const toPull = fetched.filter((r) => !existingTags.has(r.tag_name))
 
-  let pulled = 0
-  for (const release of toPull) {
-    const row = await insertDraftRelease({
+  // Store every draft first, and answer the moment they are stored. The rewrite is one Claude
+  // call per release and the superadmin is sat on a button: awaiting it here made a first pull
+  // of ten releases hold the request open for the slowest of ten round trips, which reads as a
+  // hung page. The row IS the receipt — it carries the tag, the raw body and the GitHub URL,
+  // and `title`/`summary` fill in behind it.
+  const rows = await Promise.all(
+    toPull.map((release) => insertDraftRelease({
       tag: release.tag_name,
       name: release.name,
       htmlUrl: release.html_url,
       rawBody: release.body,
       publishedAt: release.published_at,
-    })
-    await humanizeAndStore(row)
-    pulled++
-  }
+    })),
+  )
 
-  return c.json({ pulled })
+  // Fired, not awaited. All at once rather than one after another: the calls are independent
+  // (each release rewrites from its own raw body, and every write is a single row keyed by its
+  // own id). humanizeAndStore never rejects — it records a humanize_error instead — so the
+  // catch is a backstop for the unforeseen, there so a rejection can never take down the
+  // process as an unhandled rejection.
+  releaseHumanization = Promise.all(rows.map((row) => humanizeAndStore(row)))
+    .catch((e) => console.error('Release humanization batch failed:', e instanceof Error ? e.message : String(e)))
+
+  // A crash or a redeploy between here and the last write leaves those rows with no title and
+  // no humanize_error — indistinguishable from still-in-progress. That is what the per-row
+  // Regenerate action is for; the dashboard stops waiting after a bounded spell and leaves
+  // the row sat there rather than pretending the work is still coming.
+  return c.json({ pulled: rows.length })
 })
 
 app.get('/api/admin/releases', requireSuperadmin, async (c) => {

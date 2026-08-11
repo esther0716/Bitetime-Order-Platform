@@ -2,6 +2,15 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { app, releaseDeps } from '../../src/app.js'
 import { makeUser, serviceClient } from '../rls/helpers.js'
 
+// The pull answers as soon as the drafts are stored and rewrites them afterwards, so every
+// assertion about a title or a summary has to await the work the route let run on. Importing
+// the live binding (rather than destructuring it) matters: the route REASSIGNS it per pull,
+// and a destructured copy would forever hold the resolved promise from module load.
+async function settleHumanization() {
+  const { releaseHumanization } = await import('../../src/app.js')
+  await releaseHumanization
+}
+
 async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
   const { data } = await client.auth.getSession()
   return { token: data.session!.access_token, userId: data.session!.user.id }
@@ -70,6 +79,7 @@ describe('releases', () => {
     const first = await post('/api/admin/releases/pull', superToken)
     expect(first.status).toBe(200)
     expect(await first.json()).toEqual({ pulled: 1 })
+    await settleHumanization()
 
     const list = await get('/api/admin/releases', superToken)
     const rows = (await list.json()) as Array<{ tag: string; title: string | null; status: string }>
@@ -94,12 +104,49 @@ describe('releases', () => {
 
     const res = await post('/api/admin/releases/pull', superToken)
     expect(await res.json()).toEqual({ pulled: 1 })
+    await settleHumanization()
 
     const list = await get('/api/admin/releases', superToken)
     const rows = (await list.json()) as Array<{ tag: string; title: string | null; humanize_error: string | null }>
     const row = rows.find((r) => r.tag === 'releases-test-2')
     expect(row?.title).toBeNull()
     expect(row?.humanize_error).toBeTruthy()
+  })
+
+  it('answers the pull before the rewrite finishes, and fills the title in afterwards', async () => {
+    releaseDeps.listReleases = async () => [
+      {
+        tag_name: 'releases-test-slow', name: 'Slow', body: 'raw body slow',
+        html_url: 'https://github.com/x/y/releases/tag/releases-test-slow',
+        published_at: '2026-08-05T00:00:00Z',
+      },
+    ]
+    // Held open until this test says so — the whole point of the route is that it does not
+    // wait for this, so a rewrite that never returns must not hold the response.
+    let release: (v: { title: string; summary: string }) => void
+    const held = new Promise<{ title: string; summary: string }>((resolve) => { release = resolve })
+    releaseDeps.humanize = () => held
+
+    const res = await post('/api/admin/releases/pull', superToken)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ pulled: 1 })
+
+    // Draft is already readable, still unwritten — this is the state the dashboard polls on.
+    const during = (await (await get('/api/admin/releases', superToken)).json()) as Array<{
+      tag: string; title: string | null; humanize_error: string | null; status: string
+    }>
+    const pending = during.find((r) => r.tag === 'releases-test-slow')
+    expect(pending?.status).toBe('draft')
+    expect(pending?.title).toBeNull()
+    expect(pending?.humanize_error).toBeNull()
+
+    release!({ title: 'Slow release', summary: 'Written late.' })
+    await settleHumanization()
+
+    const after = (await (await get('/api/admin/releases', superToken)).json()) as Array<{
+      tag: string; title: string | null
+    }>
+    expect(after.find((r) => r.tag === 'releases-test-slow')?.title).toBe('Slow release')
   })
 
   it('regenerates a failed humanization', async () => {
@@ -112,6 +159,10 @@ describe('releases', () => {
     ]
     releaseDeps.humanize = async () => null
     await post('/api/admin/releases/pull', superToken)
+    // Settle before swapping the stub: the pull's own rewrite is still in flight, and letting
+    // it land AFTER the regenerate below would overwrite the regenerated title with the
+    // failure this test set up.
+    await settleHumanization()
 
     const list = await get('/api/admin/releases', superToken)
     const rows = (await list.json()) as Array<{ id: string; tag: string }>
@@ -135,6 +186,7 @@ describe('releases', () => {
     ]
     releaseDeps.humanize = async () => ({ title: 'Public title', summary: 'Public summary.' })
     await post('/api/admin/releases/pull', superToken)
+    await settleHumanization()
 
     const list = await get('/api/admin/releases', superToken)
     const rows = (await list.json()) as Array<{ id: string; tag: string }>

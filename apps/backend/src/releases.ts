@@ -58,14 +58,25 @@ export const humanizeRelease: HumanizeRelease = async (apiKey, input) => {
   try {
     const client = new Anthropic({ apiKey })
     const response = await client.messages.create({
-      model: 'claude-opus-5',
-      max_tokens: 1024,
+      // Haiku, not Opus: this is a rewrite of text that already exists, not a reasoning task,
+      // and the pull is a superadmin waiting on a button. Haiku 4.5 does NOT accept the
+      // `effort` parameter — it 400s — so `output_config` carries the schema only. It also
+      // does no thinking unless asked, which is the other half of why it is quick here.
+      model: 'claude-haiku-4-5',
+      // `max_tokens` bounds the whole response. 4096 is well clear of a few-hundred-token
+      // summary; at the old 1024 a long release body could return truncated JSON, which
+      // `JSON.parse` throws on — recorded as a humanize_error that looks like an outage.
+      max_tokens: 4096,
       output_config: {
-        effort: 'low',
         format: { type: 'json_schema', schema: RELEASE_SCHEMA },
       },
       messages: [{ role: 'user', content: buildPrompt(input) }],
     })
+
+    if (response.stop_reason === 'max_tokens') {
+      console.error(`Release humanization for ${input.tag} ran out of tokens`)
+      return null
+    }
 
     if (response.stop_reason === 'refusal') {
       console.error(`Release humanization refused for ${input.tag}`)
