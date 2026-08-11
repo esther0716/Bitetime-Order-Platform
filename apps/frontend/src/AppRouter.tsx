@@ -8,6 +8,7 @@ import { MerchantProvider, useMerchant } from './MerchantContext'
 import RequireRole from './RequireRole'
 import { useCanonical } from './canonical'
 import { useDocumentMeta } from './documentMeta'
+import { usePixels } from './pixels/usePixels'
 import { Spinner } from './components/Loaders'
 import Wordmark from './components/Wordmark'
 // STATICALLY IMPORTED, and it is the one route that must be. `/` is prerendered into the HTML
@@ -47,6 +48,10 @@ const ReleaseNotes = lazy(() => import('./marketing/ReleaseNotes'))
 const TermsPage = lazy(() => import('./legal/TermsPage'))
 const PrivacyPage = lazy(() => import('./legal/PrivacyPage'))
 const Toaster = lazy(() => import('./components/ui/sonner').then(m => ({ default: m.Toaster })))
+// Lazy for the same reason the toaster is: the marketing entry chunk must not carry a component
+// that most visits never render. It is only ever asked for after a visitor with a pixel
+// configured reaches a marketing route without having answered.
+const ConsentBanner = lazy(() => import('./pixels/ConsentBanner'))
 
 function RouteFallback() {
   return (
@@ -134,6 +139,7 @@ export default function AppRouter() {
         <AnimatedRoutes />
       </TooltipProvider>
       <RouteToaster />
+      <PixelConsent />
     </SessionProvider>
   )
 }
@@ -159,6 +165,22 @@ function RouteToaster() {
   return (
     <Suspense fallback={null}>
       <Toaster position="bottom-center" />
+    </Suspense>
+  )
+}
+
+// The advertising pixels and the question that gates them. Mounted here, beside RouteToaster and
+// for the same reason: it is route-aware and app-wide, and it belongs outside AnimatedRoutes so a
+// page transition does not animate it.
+//
+// The hook is called unconditionally — the pageview effects live inside it and must run whether or
+// not the banner is on screen. Only the banner itself is conditional.
+function PixelConsent() {
+  const { showBanner, accept, reject } = usePixels()
+  if (!showBanner) return null
+  return (
+    <Suspense fallback={null}>
+      <ConsentBanner onAccept={accept} onReject={reject} />
     </Suspense>
   )
 }
