@@ -1,10 +1,8 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { useProAccess } from '../plan'
 import { updateMerchantConfig } from '../store'
 import { useSaved } from './useSaved'
-import { ProBadge, UpgradeLink } from './ProLock'
 import CustomDatesCalendar from './CustomDatesCalendar'
 import {
   fulfilmentConfig, customDateBounds, pruneCustomDates, validateCustomDates,
@@ -39,7 +37,6 @@ interface TabProps { onDirtyChange: (dirty: boolean) => void }
 
 export default function FulfilmentTab({ onDirtyChange }: TabProps) {
   const { t, lang, merchant, refreshMerchant } = useSession()
-  const pro = useProAccess()
 
   // fulfilmentConfig, not a local `?? 0` / `?? 14`: this form shows the merchant what a shop
   // with no saved config ACTUALLY OFFERS, and that is decided by one function on both sides of
@@ -196,24 +193,16 @@ export default function FulfilmentTab({ onDirtyChange }: TabProps) {
               </span>
             </span>
           </label>
-          {/* Show-but-lock, like every other Pro surface (#110): hiding it would read as a
-              missing feature, and there would be nothing to sell against. */}
-          <label className={'flex items-start gap-3 ' + (pro ? 'cursor-pointer' : 'cursor-not-allowed opacity-70')}>
-            <RadioGroupItem value="custom" id="ff-mode-custom" disabled={!pro} className="mt-[3px]" />
+          <label className="flex items-start gap-3 cursor-pointer">
+            <RadioGroupItem value="custom" id="ff-mode-custom" className="mt-[3px]" />
             <span>
               <span className="flex items-center gap-2 text-[14px] font-medium text-foreground">
-                {/* Marks what the shop CANNOT have, so it goes when the shop can. Every other
-                    part of this block is already gated — the radio, the cursor, the dimming,
-                    the upgrade link — and a badge left behind tells a paying merchant the
-                    feature they just paid for is still locked. Same shape as CustomersView's
-                    two badges and the settings tab rail. */}
-                {t('Specific dates', '指定日期')} {!pro && <ProBadge />}
+                {t('Specific dates', '指定日期')}
               </span>
               <span className="block text-[12px] text-muted-foreground leading-[1.5]">
                 {t('You tick the exact dates you deliver on. Days of notice and closed days do not apply.',
                    '由你勾选具体的配送日期，提前天数与休息日不再适用。')}
               </span>
-              {!pro && <UpgradeLink className="mt-2" />}
             </span>
           </label>
         </RadioGroup>

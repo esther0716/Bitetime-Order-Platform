@@ -41,8 +41,6 @@ export function usePixels(): PixelsState {
   // See decision.ts for what happened when they were two separate conditions.
   const { load, pageView, banner } = pixelDecision({
     configured: CONFIGURED,
-    // The platform's pixels are on no plan — `entitled` exists for a shop's own (#220).
-    entitled: true,
     inScope: isMarketingPath(pathname),
     choice,
   })

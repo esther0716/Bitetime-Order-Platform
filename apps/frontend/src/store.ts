@@ -133,14 +133,14 @@ export async function setMerchantStatus(id: string, status: string): Promise<Res
   return apiSend<any>('/api/admin/set-merchant-status', 'POST', { merchantId: id, status }, { auth: 'required' })
 }
 
-// Superadmin: grant a merchant free Pro (active + pro, no Stripe charge). Goes
-// through the backend, which writes status/plan/billing with the service-role key.
+// Superadmin: comp a merchant — the shop runs with no subscription behind it. Goes through the
+// backend, which writes status and the billing row with the service-role key.
 export async function compMerchant(id: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/comp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
 }
 
-// Superadmin: revoke a comp. Drops the shop to Basic and clears the flag; the shop's own
-// status is untouched, because suspending is a separate decision.
+// Superadmin: revoke a comp. Clears the flag so the shop has to pay; its own status is
+// untouched, because suspending is a separate decision.
 export async function uncompMerchant(id: string): Promise<Result<any>> {
   return apiSend<any>('/api/admin/uncomp-merchant', 'POST', { merchantId: id }, { auth: 'required' })
 }
@@ -797,9 +797,6 @@ export async function setOrderTracking(orderId: string, courier: string | null, 
  * and it sat on top of an orders endpoint that truncated at 1000 rows without saying so (fixed
  * separately in #144). All of it now happens in SQL and one pure module; see CONTEXT.md → Shop
  * customer.
- *
- * `sort` other than `recent`, and `tag`, are Pro: the backend answers `403 requires_pro`, which
- * `isRequiresPro` turns into an upgrade prompt rather than a bare error.
  */
 export async function fetchShopCustomers(
   merchantId: string,

@@ -97,8 +97,7 @@ export async function apiGet<T>(path: string, opts?: Opts): Promise<Result<T>> {
  *
  * `apiGet` parses the body and would choke on a workbook. Everything else is shared with it —
  * the same headers, the same `errorFromResponse` (failures are still JSON), and the same Result
- * convention (#122), so a `403 requires_pro` arrives as an `ApiError` that `isRequiresPro`
- * already recognises.
+ * convention (#122).
  *
  * The filename comes from `Content-Disposition`, which the backend must EXPOSE via CORS for this
  * to be readable across origins; `null` when the header is missing, and the caller names the

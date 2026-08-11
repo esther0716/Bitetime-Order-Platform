@@ -51,15 +51,6 @@ export function useMerchantPixels(merchant: Merchant | null): MerchantPixelsStat
 
   const ids = merchantPixelIds(merchant)
   const configured = hasAnyPixel(ids)
-  // `plan === 'pro'` and nothing else — the same field the backend's `hasProAccess` reads, so the
-  // two cannot disagree about what Pro means. A shop that stops paying stops tracking: the id
-  // stays in its row (a downgrade hides, it does not delete) and the LOAD is what stops, which
-  // matters because the load is the third-party request and the advertising cookie.
-  //
-  // Not `useProAccess`: that hook answers about the signed-in merchant's OWN shop and lets a
-  // superadmin through. The person here is a customer, and whose storefront they are standing on
-  // has nothing to do with who they are signed in as.
-  const entitled = merchant?.plan === 'pro'
   const slug = merchant?.slug ?? ''
   const scope = shopConsentScope(slug)
 
@@ -83,7 +74,7 @@ export function useMerchantPixels(merchant: Merchant | null): MerchantPixelsStat
   // below its not-found and status gates, so reaching this line IS being on an active shop's
   // storefront. Stated as an argument anyway rather than dropped, because the decision has to be
   // readable in one place — see decision.ts's own header for what happened when it was not.
-  const { load, pageView, banner } = pixelDecision({ configured, entitled, inScope: true, choice })
+  const { load, pageView, banner } = pixelDecision({ configured, inScope: true, choice })
 
   useEffect(() => {
     if (load) loadPixels(ids)

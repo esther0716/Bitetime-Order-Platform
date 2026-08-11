@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 import type { Order, ShopCustomer, ShopCustomerSort } from '../types'
 import { useSession } from '../SessionContext'
 import { fetchShopCustomers, fetchShopCustomerOrders, saveShopCustomer } from '../store'
-import { useProAccess } from '../plan'
 import { SkeletonText } from '../components/Loaders'
 import { formatMoney } from '../currency'
 import { fmtDate } from '../merchantDate'
@@ -17,7 +16,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import OrderDetailSheet from './OrderDetailSheet'
-import { ProBadge, UpgradeLink } from './ProLock'
 import { filterChips, mergeShopTags, TAG_CHIP_CAP, tagSuggestions } from './tagSuggestions'
 import WaLink from './WaLink'
 
@@ -66,13 +64,11 @@ const PAGE_SIZE = 50
  * silently sat on a 1000-row truncation (#144). The browser now asks a question and draws the
  * answer.
  *
- * The list is FREE. Sorting, the tag filter and writing a note or tags are Pro, and they are
- * shown-but-locked rather than hidden: hiding them reads as a missing feature and leaves
- * nothing to sell against.
+ * Sorting, the tag filter and writing a note or tags were the paid half of this screen until the
+ * tier went (#222); they are ordinary controls now.
  */
 export default function CustomersView() {
   const { t, merchant } = useSession()
-  const isPro = useProAccess()
   const merchantId = merchant!.id
 
   const [customers, setCustomers] = useState<ShopCustomer[] | null>(null)
@@ -88,15 +84,11 @@ export default function CustomersView() {
 
   const [selected, setSelected] = useState<ShopCustomer | null>(null)
 
-  // The filter goes with the entitlement, and it is DERIVED rather than cleared in an effect: a
-  // plan can go stale mid-session (see `plan.ts`), and a basic shop still sending a tag is a 403
-  // on every load — the error panel, with the row that would have cleared it already gone.
-  const activeTag = isPro ? tag : null
 
   const load = useCallback(async () => {
     const r = await fetchShopCustomers(merchantId, {
       sort,
-      tag: activeTag ?? undefined,
+      tag: tag ?? undefined,
       search,
       page,
       pageSize: PAGE_SIZE,
@@ -107,7 +99,7 @@ export default function CustomersView() {
     setShopTags(r.data.shopTags)
     setTotal(r.data.total)
     setUnattributed(r.data.unattributedOrders)
-  }, [merchantId, sort, activeTag, search, page])
+  }, [merchantId, sort, tag, search, page])
 
   // Debounced so typing a name is one request per pause, not one per keystroke.
   useEffect(() => {
@@ -143,7 +135,7 @@ export default function CustomersView() {
     )
   }
 
-  const narrowed = search.trim() !== '' || activeTag !== null
+  const narrowed = search.trim() !== '' || tag !== null
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
@@ -156,16 +148,16 @@ export default function CustomersView() {
           className="max-w-sm bg-background border-border text-[13px]"
         />
 
-        <SortControl sort={sort} onSort={narrow(setSort)} isPro={isPro} />
+        <SortControl sort={sort} onSort={narrow(setSort)} />
       </div>
 
-      {/* `|| activeTag !== null` is not belt-and-braces. A shop whose whole vocabulary was the one tag
+      {/* `|| tag !== null` is not belt-and-braces. A shop whose whole vocabulary was the one tag
           currently filtering loses it the moment its last holder does: the next load answers
           `shopTags: []`, and on `shopTags.length > 0` alone the row would vanish while the filter
           stayed on — an empty table, "No customers match that", and nothing on screen to clear it
           with. That is the dead end `filterChips` keeps an unrecognised selection for. */}
-      {isPro && (shopTags.length > 0 || activeTag !== null) && (
-        <TagFilterRow shopTags={shopTags} selectedTag={activeTag} onSelect={narrow(setTag)} />
+      {(shopTags.length > 0 || tag !== null) && (
+        <TagFilterRow shopTags={shopTags} selectedTag={tag} onSelect={narrow(setTag)} />
       )}
 
       {customers!.length === 0 ? (
@@ -190,7 +182,7 @@ export default function CustomersView() {
                   <th className={TH}>{t('Orders', '订单数')}</th>
                   <th className={TH}>{t('Spent', '消费额')}</th>
                   <th className={TH}>{t('Last Order', '最近订单')}</th>
-                  {isPro && <th className={TH}>{t('Tags', '标签')}</th>}
+                  <th className={TH}>{t('Tags', '标签')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -216,7 +208,7 @@ export default function CustomersView() {
                         <span className="text-[11px] text-muted-foreground">{agoLabel(c.daysSinceLastOrder, t)}</span>
                       </span>
                     </td>
-                    {isPro && <td className={TD}><RowTags tags={c.tags} /></td>}
+                    <td className={TD}><RowTags tags={c.tags} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -236,7 +228,6 @@ export default function CustomersView() {
       <CustomerDrawer
         customer={selected}
         merchantId={merchantId}
-        isPro={isPro}
         shopTags={shopTags}
         onClose={() => setSelected(null)}
         onWritten={applyWrite}
@@ -289,8 +280,8 @@ function AccountMark() {
 }
 
 function SortControl({
-  sort, onSort, isPro,
-}: { sort: ShopCustomerSort; onSort: (s: ShopCustomerSort) => void; isPro: boolean }) {
+  sort, onSort,
+}: { sort: ShopCustomerSort; onSort: (s: ShopCustomerSort) => void }) {
   const { t } = useSession()
   // One array feeds both `items` (what the trigger reads a label from) and the rendered
   // list, so the two cannot drift apart. Annotated rather than inferred: a typo'd value would
@@ -301,11 +292,9 @@ function SortControl({
     { value: 'spend', label: t('Highest spend', '消费最高') },
     { value: 'orders', label: t('Most orders', '订单最多') },
   ]
-  // A basic shop sees the control, disabled, beside the badge — the lock has to name what it
-  // is locking or it reads as a broken dropdown.
   return (
     <div className="flex items-center gap-2">
-      <Select value={sort} onValueChange={v => onSort(v as ShopCustomerSort)} disabled={!isPro} items={sortItems}>
+      <Select value={sort} onValueChange={v => onSort(v as ShopCustomerSort)} items={sortItems}>
         <SelectTrigger className="w-[190px] bg-background border-border text-[13px]">
           <SelectValue />
         </SelectTrigger>
@@ -315,12 +304,6 @@ function SortControl({
           ))}
         </SelectContent>
       </Select>
-      {!isPro && (
-        <Tooltip>
-          <TooltipTrigger render={<span />}><ProBadge /></TooltipTrigger>
-          <TooltipContent>{t('Sorting and tags are a Pro feature.', '排序和标签是 Pro 功能。')}</TooltipContent>
-        </Tooltip>
-      )}
     </div>
   )
 }
@@ -436,11 +419,10 @@ function ListFooter({
  * is the mistake this whole change removes.
  */
 function CustomerDrawer({
-  customer, merchantId, isPro, shopTags, onClose, onWritten, onTagClicked,
+  customer, merchantId, shopTags, onClose, onWritten, onTagClicked,
 }: {
   customer: ShopCustomer | null
   merchantId: string
-  isPro: boolean
   shopTags: string[]
   onClose: () => void
   onWritten: (phoneKey: string, fields: { note: string | null; tags: string[] }) => void
@@ -456,8 +438,7 @@ function CustomerDrawer({
             key={customer.phoneKey}
             customer={customer}
             merchantId={merchantId}
-            isPro={isPro}
-            shopTags={shopTags}
+                shopTags={shopTags}
             onWritten={onWritten}
             onTagClicked={onTagClicked}
           />
@@ -468,11 +449,10 @@ function CustomerDrawer({
 }
 
 function DrawerContents({
-  customer, merchantId, isPro, shopTags, onWritten, onTagClicked,
+  customer, merchantId, shopTags, onWritten, onTagClicked,
 }: {
   customer: ShopCustomer
   merchantId: string
-  isPro: boolean
   shopTags: string[]
   onWritten: (phoneKey: string, fields: { note: string | null; tags: string[] }) => void
   onTagClicked: (tag: string) => void
@@ -521,8 +501,7 @@ function DrawerContents({
               <NotesPanel
                 customer={customer}
                 merchantId={merchantId}
-                isPro={isPro}
-                shopTags={shopTags}
+                        shopTags={shopTags}
                 onWritten={onWritten}
                 onTagClicked={onTagClicked}
               />
@@ -568,11 +547,10 @@ function DrawerContents({
  * which is what makes it worth writing candidly — so the panel says so.
  */
 function NotesPanel({
-  customer, merchantId, isPro, shopTags, onWritten, onTagClicked,
+  customer, merchantId, shopTags, onWritten, onTagClicked,
 }: {
   customer: ShopCustomer
   merchantId: string
-  isPro: boolean
   shopTags: string[]
   onWritten: (phoneKey: string, fields: { note: string | null; tags: string[] }) => void
   onTagClicked: (tag: string) => void
@@ -600,26 +578,6 @@ function NotesPanel({
     save({ note: customer.note, tags: [...customer.tags, next] })
   }
 
-  if (!isPro) {
-    return (
-      <div className="mx-4 my-4 rounded-lg border border-border bg-muted px-3 py-3 text-center">
-        <div className="mb-1.5 flex items-center justify-center gap-2">
-          <span className="text-[13px] font-medium text-primary">{t('Notes & tags', '备注与标签')}</span>
-          <ProBadge />
-        </div>
-        <p className="mb-3 text-[12px] leading-[1.6] text-muted-foreground">
-          {t(
-            'Keep a private note against a customer and tag your regulars. Only you can see it.',
-            '为顾客保存私密备注并为常客添加标签，仅你可见。',
-          )}
-        </p>
-        <UpgradeLink />
-      </div>
-    )
-  }
-
-  // Computed below the gate, not above it: a basic shop renders none of this, and filtering a
-  // vocabulary nobody is going to see is work done for an audience that does not exist.
   const suggestions = tagSuggestions(shopTags, customer.tags, tagDraft)
 
   return (

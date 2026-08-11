@@ -8,8 +8,6 @@ import { fetchMerchantStats, downloadRevenueReport } from '../store'
 import { SkeletonText } from '../components/Loaders'
 import { StatCard, ChartPanel, RevenueBarChart, DonutCard, BreakdownList } from '../components/charts/DashCharts'
 import { granularityFor, REVENUE_RANGES, type Granularity, type MerchantStats, type RevenueRange } from '@bitetime/shared'
-import { useProAccess, isRequiresPro } from '../plan'
-import { useUpgradeNav } from './UpgradeNav'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { formatMoney } from '../currency'
 import ShareStorefront from './ShareStorefront'
@@ -35,20 +33,9 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
   )
 }
 
-/**
- * The Pro revenue export, as a button on the panel it exports.
- *
- * Show-but-lock, the shape every other Pro surface uses (ProLock.tsx): a basic shop SEES this,
- * because hiding it would read as a missing feature and leave nothing to sell against. The lock
- * goes to Settings → Subscription, where the price is — never straight to Stripe.
- *
- * None of this is the gate. `GET …/report.xlsx` is `requirePro` and refuses a basic shop whether
- * or not this renders locked.
- */
+/** The revenue export, as a button on the panel it exports. */
 function DownloadReport({ days, granularity }: { days: number; granularity: Granularity }) {
   const { t, merchant } = useSession()
-  const isPro = useProAccess()
-  const { goToSubscription } = useUpgradeNav()
   const [busy, setBusy] = useState(false)
 
   async function download() {
@@ -57,9 +44,6 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
     const r = await downloadRevenueReport(merchant.id, { days, granularity })
     setBusy(false)
     if (!r.ok) {
-      // A shop downgraded under a long-open tab still reaches here — an upgrade prompt, not the
-      // raw code (#110).
-      if (isRequiresPro(r.error)) { goToSubscription(); return }
       toast.error(r.error.message || t('Could not build the report', '无法生成报表'))
       return
     }
@@ -81,15 +65,9 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
   // the shared button's smallest size is px-[18px] py-[10px], which next to 11px pills reads as
   // the panel's primary action when it is a quiet affordance on a chart header.
   //
-  // The words the icon drops live in the tooltip and in `aria-label`, and for a basic shop that
-  // is where the padlock gets explained — at this size there is no room for the Pro badge, so
-  // the icon carries the signal and the tooltip says what pressing it would buy.
+  // The words the icon drops live in the tooltip and in `aria-label`.
   const label = t('Download revenue report', '下载营收报表')
-  const hint = busy
-    ? t('Preparing…', '生成中…')
-    : isPro
-      ? label
-      : t('Download revenue report — available on Pro', '下载营收报表 — Pro 方案可用')
+  const hint = busy ? t('Preparing…', '生成中…') : label
 
   return (
     <Tooltip>
@@ -101,7 +79,7 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
             size="none"
             aria-label={label}
             disabled={busy}
-            onClick={isPro ? download : goToSubscription}
+            onClick={download}
             className={cn(
               'rounded-pill p-1.5',
               'hover:border-primary hover:bg-transparent hover:text-primary',
@@ -112,9 +90,7 @@ function DownloadReport({ days, granularity }: { days: number; granularity: Gran
       >
         {busy
           ? <Loader2 size={14} strokeWidth={1.75} className="animate-spin" />
-          : isPro
-            ? <Download size={14} strokeWidth={1.75} />
-            : <Lock size={14} strokeWidth={1.75} />}
+          : <Download size={14} strokeWidth={1.75} />}
       </TooltipTrigger>
       <TooltipContent>{hint}</TooltipContent>
     </Tooltip>

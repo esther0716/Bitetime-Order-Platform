@@ -43,8 +43,7 @@ export function platformPixelIds(): PixelIds {
  * existed has neither. Absent, null and blank are one state — no pixel — and reading them as
  * three is how a shop ends up initialising a pixel with no id.
  *
- * Says NOTHING about the shop's plan. Whether a configured pixel may fire is `entitled` in
- * pixelDecision, which is where a downgrade is answered.
+ * Says only whether ids are CONFIGURED. Whether they may fire is pixelDecision's answer.
  */
 export function merchantPixelIds(merchant: {
   meta_pixel_id?: string | null

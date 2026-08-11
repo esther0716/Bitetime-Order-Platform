@@ -16,10 +16,8 @@ import { isDirty, type SettingsFields } from './settingsDirty'
 import { useSaved } from './useSaved'
 import ReferralTab from './ReferralTab'
 import FulfilmentTab from './FulfilmentTab'
-import { ProLock } from './ProLock'
 import SubscriptionTab from './SubscriptionTab'
 import { useDashboardSubsection } from '../useDashboardSection'
-import { useProAccess, isRequiresPro } from '../plan'
 import AddressAutocomplete from '../store/AddressAutocomplete'
 import PaymentQrPicker from './PaymentQrPicker'
 
@@ -31,7 +29,6 @@ type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'marketing' | 'notificatio
 // container tracks a single `dirty` flag and registers it with the NavGuard.
 export default function ShopSettings() {
   const { t } = useSession()
-  const pro = useProAccess()
   const { guard, registerBlocker } = useNavGuard()
   // WHICH tab is dirty, not merely whether one is. Only the active tab can be, so `dirty` falls
   // out of the comparison — and a tab switch clears it by construction rather than by an effect
@@ -40,16 +37,12 @@ export default function ShopSettings() {
   // navigation and warn on reload about edits that no longer exist.
   const [dirtyTab, setDirtyTab] = useState<TabKey | null>(null)
 
-  const TABS: { key: TabKey; label: string; tag?: string }[] = [
+  const TABS: { key: TabKey; label: string }[] = [
     { key: 'shipping', label: t('Shipping', '运费') },
     { key: 'fulfilment', label: t('Fulfilment', '取货') },
     { key: 'payment', label: t('Payment', '付款') },
-    // Same reasoning as Notifications below: marked from the tab bar, so a Basic shop learns the
-    // ad pixel is paid for before it goes looking for the form (#220).
-    { key: 'marketing', label: t('Marketing', '营销'), tag: pro ? undefined : 'Pro' },
-    // Marked from the tab bar, not only once opened — a basic shop should see that alerts are
-    // a paid feature before it goes looking for the form (#110).
-    { key: 'notifications', label: t('Notifications', '通知'), tag: pro ? undefined : 'Pro' },
+    { key: 'marketing', label: t('Marketing', '营销') },
+    { key: 'notifications', label: t('Notifications', '通知') },
     { key: 'subscription', label: t('Subscription', '订阅') },
     { key: 'referral', label: t('Referral', '推荐') },
   ]
@@ -105,19 +98,9 @@ export default function ShopSettings() {
             a `max-sm:` here would leave the tablet widths overflowing — which is the bug this
             replaced. */}
         <TabsList className="flex-wrap">
-          {TABS.map(({ key, label, tag }) => (
+          {TABS.map(({ key, label }) => (
             <TabsTrigger key={key} value={key} className="group/tab">
               {label}
-              {/* The active trigger fills with oxblood, so the outline badge's `text-foreground` would
-                  sit near-invisible on it — invert to cream while the tab is selected. */}
-              {tag && (
-                <Badge
-                  variant="outline"
-                  className="ml-2 uppercase tracking-[0.08em] group-data-active/tab:border-background/40 group-data-active/tab:text-background"
-                >
-                  {tag}
-                </Badge>
-              )}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -126,26 +109,8 @@ export default function ShopSettings() {
       {tab === 'shipping' && <ShippingTab onDirtyChange={setDirty} />}
       {tab === 'fulfilment' && <FulfilmentTab onDirtyChange={setDirty} />}
       {tab === 'payment' && <PaymentTab onDirtyChange={setDirty} />}
-      {/* The shop's own ad pixel is Pro-only (#220), shown-but-locked for the same reason
-          Notifications is. The refusal that actually matters is the backend's `403 requires_pro`
-          on PATCH /api/merchants/:id when an id is set or changed. */}
-      {tab === 'marketing' && (pro
-        ? <MarketingTab onDirtyChange={setDirty} />
-        : <ProLock
-            what={t('Your own ad pixel', '你自己的广告像素')}
-            why={t('Run Facebook and TikTok ads for your shop and see which ones actually bring orders, using your own pixel and your own ad account. Available on the Pro plan.',
-              '为你的店铺投放 Facebook 与 TikTok 广告，用你自己的像素和广告账户，看清哪些广告真的带来订单。Pro 方案专享。')}
-          />)}
-      {/* Telegram alerts are Pro-only (#110). The tab stays — the feature must be visible to
-          be sold — but a basic shop gets the upgrade prompt in place of the form. The refusal
-          that actually matters is the backend's `403 requires_pro` on PUT …/secret. */}
-      {tab === 'notifications' && (pro
-        ? <NotificationsTab onDirtyChange={setDirty} />
-        : <ProLock
-            what={t('Order notifications', '订单通知')}
-            why={t('Get a Telegram message the moment an order comes in, so you never have to watch the dashboard. Available on the Pro plan.',
-              '订单一进来就收到 Telegram 消息，无需盯着后台。Pro 方案专享。')}
-          />)}
+      {tab === 'marketing' && <MarketingTab onDirtyChange={setDirty} />}
+      {tab === 'notifications' && <NotificationsTab onDirtyChange={setDirty} />}
       {tab === 'subscription' && <SubscriptionTab />}
       {tab === 'referral' && <ReferralTab />}
     </div>
@@ -651,10 +616,7 @@ function MarketingTab({ onDirtyChange }: TabProps) {
         tiktok_pixel_id: String(fields.tiktokPixel ?? ''),
       })
       if (!saved.ok) {
-        toast.error(isRequiresPro(saved.error)
-          ? t('Your own ad pixel is a Pro feature. Upgrade to Pro to switch it on.',
-              '自有广告像素是 Pro 功能。升级到 Pro 即可开启。')
-          : saved.error.message || t('Save failed', '保存失败'))
+        toast.error(saved.error.message || t('Save failed', '保存失败'))
         return
       }
       await refreshMerchant()
@@ -758,12 +720,7 @@ function NotificationsTab({ onDirtyChange }: TabProps) {
       commit(fields)
       toast.success(t('Notifications saved', '通知已保存'))
     } else {
-      // The form only renders for a Pro shop, so this is the fallback for a `plan` that moved
-      // under a long-open tab — an upgrade prompt, not the raw `requires_pro` code (#110).
-      toast.error(isRequiresPro(r.error)
-        ? t('Order notifications are a Pro feature. Upgrade to Pro to turn them on.',
-            '订单通知是 Pro 功能。升级到 Pro 即可开启。')
-        : r.error.message || t('Save failed', '保存失败'))
+      toast.error(r.error.message || t('Save failed', '保存失败'))
     }
     setBusy(false)
   }

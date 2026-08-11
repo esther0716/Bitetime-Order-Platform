@@ -10,10 +10,8 @@ import { Button } from './ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
-// `badge` is a count (pending orders); `tag` is a short word — today only the "Pro" marker on
-// a section a basic shop cannot use (#110). They are separate because they mean opposite
-// things: a count says "there is work here", a tag says "this is not yours yet".
-export interface NavItem { key: string; label: string; icon: ReactNode; badge?: number; tag?: string }
+// `badge` is a count — today only the pending-order count on the Orders section.
+export interface NavItem { key: string; label: string; icon: ReactNode; badge?: number }
 
 interface DashboardShellProps {
   title?: string
@@ -187,10 +185,6 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
               {/* Count badge — e.g. pending "new" orders */}
               {n.badge != null && n.badge > 0 && (
                 <Badge className="ml-auto tabular-nums">{n.badge > 99 ? '99+' : n.badge}</Badge>
-              )}
-              {/* Tier marker — e.g. "Pro" on a section this shop's plan does not include */}
-              {n.tag && (
-                <Badge variant="outline" className="ml-auto uppercase tracking-[0.08em]">{n.tag}</Badge>
               )}
             </button>
           ))}
