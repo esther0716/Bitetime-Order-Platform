@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useParams, Link } from 'react-router-dom'
 import { signUp, signIn, createMerchant, startCheckout } from '../store'
+import { pixelTrack } from '../pixels/track'
 import { toSlugBase } from '../slug'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
@@ -85,6 +86,11 @@ export default function SignupScreen() {
       }
       const created = await createMerchant({ name, plan, billing, referredByCode: ref, businessNature, currency })
       if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
+      // The one conversion the marketing pixels report, and it has to be here rather than on the
+      // page the merchant lands on: /merchant is outside the marketing scope, and a Pro signup
+      // leaves for Stripe Checkout without ever reaching it. The shop exists at this line in both
+      // branches. A no-op unless the visitor accepted the pixels — see pixels/track.ts.
+      pixelTrack('CompleteRegistration')
       await refreshMerchant()
       if (plan === 'basic') {
         // Cardless trial: no Checkout. The backend provisioned the trial and activated the shop
