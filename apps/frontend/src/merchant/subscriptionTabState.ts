@@ -12,8 +12,6 @@ import type { BillingSnapshot } from './billingBannerState'
 // row, and two hand-maintained copies of one payload shape drift.
 export interface SubscriptionSnapshot extends BillingSnapshot {
   stripe_customer_id?: string | null
-  /** The tier scheduled to take effect next period. Intent, never entitlement — see below. */
-  pending_plan?: string | null
   /**
    * Complimentary tier, granted by a superadmin, with no Stripe subscription behind it. Every
    * billing action is off: there is nothing to manage, buy, cancel or downgrade, and only a
@@ -35,24 +33,15 @@ interface Actions {
   canSubscribe: boolean
   /** Cancel at the end of the current period. */
   canCancel: boolean
-  /** Schedule the step down to Basic at the end of the current period. */
-  canDowngrade: boolean
-  /** Undo whatever wind-down is pending. */
+  /** Undo the pending cancellation — the only wind-down there is (#222). */
   canResume: boolean
   /** Complimentary tier — the tab says so instead of quoting a price the shop does not pay. */
   comped: boolean
-  /** The tier taking effect next period, or null when nothing is scheduled. */
-  pendingPlan: 'basic' | 'pro' | null
-  /** When that scheduled change lands. */
-  pendingAt: string | null
 }
 
 /**
  * `plan` is what the shop is entitled to RIGHT NOW; it comes from `merchants.plan`, which moves
- * only when money does (`reconcileMerchantPlan`). `pendingPlan` is what it will become. Keeping
- * the two apart is the point: a shop that has scheduled a downgrade keeps every Pro feature
- * until the period it paid for runs out, and a tab showing the pending tier as the current one
- * would have the merchant believe they had already lost them.
+ * only when money does.
  *
  * `ending` outranks every other kind, including `past-due`. Once a subscription is winding down,
  * "your shop closes on the 1st" is the only fact that matters — a failing card no longer is one.
@@ -95,11 +84,6 @@ export function subscriptionTabState(
   const live = !!customer && !!status && LIVE.includes(status) && !comped
 
   const ending = live && !!billing?.cancel_at_period_end
-  // A pending tier means nothing without a subscription running, and a cancellation supersedes
-  // it — the backend releases the schedule in order to cancel, so this is belt-and-braces
-  // against reading the row mid-flight.
-  const raw = billing?.pending_plan
-  const pendingPlan = live && !ending && (raw === 'basic' || raw === 'pro') ? raw : null
 
   const actions: Actions = {
     comped,
@@ -111,11 +95,7 @@ export function subscriptionTabState(
     // and stands between a future Basic comp and an Upgrade button /api/checkout now refuses.
     canUpgrade: tier !== 'pro' && !comped && !ending && status !== 'past_due',
     canCancel: live && !ending,
-    // There is nothing below Basic but leaving, so a Basic shop is offered Cancel instead.
-    canDowngrade: live && tier === 'pro' && !ending && pendingPlan !== 'basic',
-    canResume: live && (ending || pendingPlan !== null),
-    pendingPlan,
-    pendingAt: pendingPlan ? billing?.current_period_end ?? null : null,
+    canResume: live && ending,
   }
 
   // No customer, or nothing running: there is no subscription to manage or change here.

@@ -4,12 +4,11 @@ import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import {
   fetchMyBilling, openBillingPortal, startCheckout,
-  cancelSubscription, downgradeToBasic, resumeSubscription,
+  cancelSubscription, resumeSubscription,
 } from '../store'
 import type { Result } from '../api'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
-import { fulfilmentConfig } from '@bitetime/shared'
 import { fmtDate } from '../merchantDate'
 import { subscriptionTabState, type SubscriptionSnapshot } from './subscriptionTabState'
 import { billingErrorMessage } from './billingErrors'
@@ -227,53 +226,10 @@ function ConfirmAction({
 }
 
 /**
- * The downgrade confirm body: a lead line, the three Pro features that stop as a bulleted list,
- * then the reassurance the shop stays open. A list rather than a sentence because three distinct
- * things stop and a merchant deciding needs to weigh each — the run-on version buried them.
- * Mirrors the PRO_FEATURES the upgrade pitch lists, phrased as losses.
- */
-function DowngradeBody({ renewsAt }: { renewsAt: string | null }) {
-  const { t, merchant } = useSession()
-  // Read through `fulfilmentConfig` rather than poking at the raw bag, so this asks the same
-  // question the storefront and the backend do.
-  const usesCustomDates = fulfilmentConfig(merchant?.config).mode === 'custom'
-  const stops: [string, string][] = [
-    ['Telegram order alerts stop', 'Telegram 订单通知将停止'],
-    ['Your discount vouchers stop working', '优惠券将失效'],
-    ['Any running promo prices end', '进行中的优惠价将结束'],
-    // The only entry on this list that STOPS THE SHOP rather than removing a feature from it, so
-    // it says so. A shop on specific dates reverts to its rolling window and pauses until its
-    // owner confirms that window — the alternative was selling on dates they never chose
-    // (ADR 0015). Shown only to a shop this can actually happen to.
-    ...(usesCustomDates
-      ? [['Specific order dates stop — your shop pauses until you confirm its dates',
-          '指定日期功能将停止——店铺将暂停接单，直至你确认可选日期'] as [string, string]]
-      : []),
-    // The dashboard keeps showing the revenue chart on Basic — only the download goes.
-    ['You can no longer download revenue reports', '将无法下载营收报表'],
-  ]
-  return (
-    <>
-      <p>
-        {renewsAt
-          ? t(`You keep Pro until ${fmtDate(renewsAt)}, then this shop moves to Basic and:`,
-              `在 ${fmtDate(renewsAt)} 之前 Pro 功能仍可使用，之后店铺将转为基础版：`)
-          : t('At the end of the period you have paid for, this shop moves to Basic and:',
-              '在您已付费的周期结束后，店铺将转为基础版：')}
-      </p>
-      <ul className="flex flex-col gap-1 list-disc pl-5">
-        {stops.map(([en, zh]) => <li key={en}>{t(en, zh)}</li>)}
-      </ul>
-      <p>{t('Your shop stays open.', '店铺本身照常营业。')}</p>
-    </>
-  )
-}
-
-/**
  * The cancel confirm body. Paired with the red `alert` callout above it: the callout states the
  * one fact that must not be missed (the shop closes), this fills in the timeline and the way
- * back. A list, same reasoning as DowngradeBody — the suspension is the point and must not be
- * buried mid-sentence.
+ * back. A list rather than a sentence: the suspension is the point and must not be buried
+ * mid-sentence.
  */
 function CancelBody({ renewsAt }: { renewsAt: string | null }) {
   const { t } = useSession()
@@ -428,9 +384,7 @@ export default function SubscriptionTab() {
   const [loaded, setLoaded] = useState(false)
   const merchantId = merchant?.id
 
-  // Extracted so the wind-down actions can re-read after Stripe has been told. `merchant.plan`
-  // deliberately does NOT change here: the tier moves only when `reconcileMerchantPlan` sees the
-  // price actually change, which is the whole reason a pending downgrade keeps its Pro features.
+  // Extracted so the wind-down actions can re-read after Stripe has been told.
   const load = useCallback(() => {
     if (!merchantId) return
     fetchMyBilling(merchantId)
@@ -453,8 +407,7 @@ export default function SubscriptionTab() {
   // Named once: every wind-down sentence has to say WHEN, and a date-less "your shop will be
   // suspended" is the sort of warning that reads as a threat rather than information.
   const endsAt = state.kind === 'ending' ? state.endsAt : null
-  // When the period the merchant has already paid for runs out — the moment a downgrade would
-  // take effect. Only ever read while `canDowngrade`, which requires a live subscription.
+  // When the period the merchant has already paid for runs out.
   const renewsAt = state.kind === 'live' ? state.renewsAt : state.kind === 'trial' ? state.trialEndsAt : null
 
   return (
@@ -518,16 +471,6 @@ export default function SubscriptionTab() {
                         '此店铺尚无订阅记录。')}
         </p>
 
-        {/* A scheduled downgrade is NOT the same state as a cancellation — the shop stays open
-            and keeps being billed, at the lower tier — so it gets its own line rather than
-            being folded into the sentence above. */}
-        {state.pendingPlan === 'basic' && state.pendingAt && (
-          <p className="text-[13px] text-muted-foreground leading-[1.6] mt-2">
-            {t(`Switching to Basic on ${fmtDate(state.pendingAt)}. You keep Pro features until then.`,
-              `将于 ${fmtDate(state.pendingAt)} 转为基础版。在此之前 Pro 功能仍可使用。`)}
-          </p>
-        )}
-
         {/* Gated on canManage, NOT on canUpgrade: a Pro shop cannot upgrade but must still be
             able to change its card and read invoices — a sentence promising the billing portal
             with no way to reach it is the same dead end in a different costume. */}
@@ -547,26 +490,8 @@ export default function SubscriptionTab() {
                     else toast.error(r.error.message || t('Could not undo that', '无法撤销'))
                   })}
                 >
-                  {state.kind === 'ending'
-                    ? t('Keep my subscription', '继续订阅')
-                    : t('Keep Pro', '保留 Pro')}
+                  {t('Keep my subscription', '继续订阅')}
                 </Button>
-              )}
-
-              {state.canDowngrade && (
-                <ConfirmAction
-                  label={t('Switch to Basic', '转为基础版')}
-                  title={t('Switch to Basic?', '转为基础版？')}
-                  // Names what the cutoff actually does, because it is not reversible by
-                  // re-upgrading: the vouchers already in customers' hands are deactivated for
-                  // good, and a running sale is ended rather than paused. The consequences are a
-                  // list, not a run-on sentence — three separate things stop, and a merchant
-                  // scanning this needs to see each one.
-                  body={<DowngradeBody renewsAt={renewsAt} />}
-                  confirmLabel={t('Switch to Basic', '转为基础版')}
-                  run={downgradeToBasic}
-                  onDone={load}
-                />
               )}
 
               {state.canCancel && (

@@ -235,23 +235,6 @@ describe('POST /api/stripe/webhook — plan reconciliation', () => {
     await svc.from('merchants').delete().eq('id', id)
   })
 
-  // The scheduled change has landed, so the intent is spent. A `pending_plan` left behind would
-  // keep the Subscription tab saying "Switching to Basic on…" after it already had.
-  it('clears the pending plan once the change has happened', async () => {
-    await resetMerchant('wh-pending-shop')
-    const owner = await makeUser('wh-pending@example.com', 'password123')
-    const id = await seedMerchant({ slug: 'wh-pending-shop', owner_id: await userIdOf(owner), plan: 'pro' })
-    const svc = serviceClient()
-    await svc.from('merchant_billing').upsert({ merchant_id: id, pending_plan: 'basic', status: 'active' })
-
-    expect((await postWebhook(subscriptionUpdated(id, PRICES.basicMonthly))).status).toBe(200)
-
-    const { data } = await svc.from('merchant_billing').select('pending_plan').eq('merchant_id', id).single()
-    expect(data!.pending_plan).toBeNull()
-
-    await svc.from('merchants').delete().eq('id', id)
-  })
-
   // The signature check is the only thing standing between this endpoint and anyone on the
   // internet handing themselves a Pro subscription with a curl.
   it('refuses an unsigned body and changes nothing', async () => {

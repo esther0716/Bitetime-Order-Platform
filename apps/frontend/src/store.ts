@@ -324,23 +324,21 @@ export async function openBillingPortal(): Promise<Result<string>> {
 }
 
 /**
- * The three wind-down actions, which unlike the portal stay inside the dashboard: cancelling and
- * downgrading both land on a period boundary, so no money moves and there is nothing a payment
- * screen needs to explain. See CONTEXT.md → Plan entitlement.
+ * The two wind-down actions, which unlike the portal stay inside the dashboard: cancelling lands
+ * on a period boundary, so no money moves and there is nothing a payment screen needs to explain.
+ * See CONTEXT.md → Subscription.
  *
  * Each returns `Result<void>` and carries the backend's error code in `error.code` on failure —
  * the caller decides what `no_live_subscription` should say, because it means "the subscription
  * changed under this tab", not "something broke".
  */
-async function billingAction(path: 'cancel' | 'resume' | 'downgrade'): Promise<Result<void>> {
+async function billingAction(path: 'cancel' | 'resume'): Promise<Result<void>> {
   return toVoid(await apiSend(`/api/billing/${path}`, 'POST', undefined, { auth: 'required' }))
 }
 
-/** Step down to Basic when the paid-for period ends. Pro features stay until then. */
-export const downgradeToBasic = () => billingAction('downgrade')
 /** End the subscription when the paid-for period ends. The shop is suspended at that point. */
 export const cancelSubscription = () => billingAction('cancel')
-/** Undo whichever wind-down is pending — a cancellation, a scheduled downgrade, or both. */
+/** Undo the pending cancellation. */
 export const resumeSubscription = () => billingAction('resume')
 
 export async function updateMerchantSlug(id: string, slug: string): Promise<Result<any>> {

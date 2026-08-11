@@ -16,7 +16,7 @@ const toIso = (unix: number | null | undefined) =>
  *
  * One list, because two routes read it in opposite directions and they must not disagree:
  * `/api/checkout` refuses these (there is already something to bill, so selling a second
- * subscription would double-charge), while cancel/downgrade/resume REQUIRE one (there is
+ * subscription would double-charge), while cancel/resume REQUIRE one (there is
  * nothing to change otherwise). Drift between the two copies would open a window where a shop
  * can do neither, or both.
  *
@@ -75,15 +75,6 @@ export async function reconcileMerchantPlan(merchantId: string, sub: Stripe.Subs
     .update({ plan: tier.plan, billing_cycle: tier.cycle })
     .eq('id', merchantId)
   if (error) throw error
-
-  // The scheduled change has landed, so the intent is spent. Cleared on any reconcile that
-  // reaches the pending tier — whether it arrived by the schedule executing or by the merchant
-  // changing their mind through some other route.
-  const { data: billing } = await admin
-    .from('merchant_billing').select('pending_plan').eq('merchant_id', merchantId).maybeSingle()
-  if (billing?.pending_plan === tier.plan) {
-    await upsertBilling(merchantId, { pending_plan: null })
-  }
 
   if (before?.plan === 'pro' && tier.plan === 'basic') {
     await revokeProArtifacts(merchantId)

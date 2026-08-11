@@ -170,7 +170,6 @@ describe('subscriptionTabState', () => {
       canSubscribe: false,
       canUpgrade: false,
       canCancel: false,
-      canDowngrade: false,
       canResume: false,
     })
   })
@@ -223,11 +222,9 @@ describe('subscriptionTabState — pending cancellation', () => {
       .toMatchObject({ canResume: true, canCancel: false })
   })
 
-  // Selling Pro to someone on their way out, and scheduling a tier for a period that will never
-  // be billed, are both nonsense — and the backend refuses the second with `subscription_ending`.
-  it('offers neither an upgrade nor a downgrade while it is ending', () => {
+  // Selling Pro to someone on their way out is nonsense.
+  it('offers no upgrade while it is ending', () => {
     expect(subscriptionTabState(ending, 'basic', NOW)).toMatchObject({ canUpgrade: false })
-    expect(subscriptionTabState(ending, 'pro', NOW)).toMatchObject({ canDowngrade: false })
   })
 
   // Cancelling suspends the shop, so the merchant must still reach the portal for the invoices
@@ -252,60 +249,42 @@ describe('subscriptionTabState — pending cancellation', () => {
   })
 })
 
-describe('subscriptionTabState — pending downgrade', () => {
-  const downgrading = {
-    status: 'active',
-    stripe_customer_id: 'cus_1',
-    current_period_end: '2026-09-01T00:00:00Z',
-    pending_plan: 'basic',
-  }
-
-  // LOAD-BEARING. The shop paid for Pro through this period and keeps it — `pending_plan` is
-  // intent, never entitlement. A tab that already showed Basic would have the merchant believe
-  // they had lost features they can still use.
-  it('still reports the shop as pro until the change lands', () => {
-    expect(subscriptionTabState(downgrading, 'pro', NOW))
-      .toMatchObject({ plan: 'pro', pendingPlan: 'basic', pendingAt: '2026-09-01T00:00:00Z' })
-  })
-
-  it('offers resume rather than a second downgrade', () => {
-    expect(subscriptionTabState(downgrading, 'pro', NOW))
-      .toMatchObject({ canResume: true, canDowngrade: false })
-  })
-
-  // Cancelling outright is strictly more than downgrading, and the backend releases the schedule
-  // to do it — so the option must stay open.
-  it('still allows cancelling outright', () => {
-    expect(subscriptionTabState(downgrading, 'pro', NOW)).toMatchObject({ canCancel: true })
-  })
-
-  // Not the same state as a cancellation: the shop stays open and keeps being billed, just at
-  // the lower tier. Conflating them would tell a downgrading merchant their shop is closing.
-  it('is not reported as ending', () => {
-    expect(subscriptionTabState(downgrading, 'pro', NOW).kind).toBe('live')
+describe('subscriptionTabState — a row left over from the two-tier release', () => {
+  // The step down to Basic is gone (#222), and so is the column that recorded it. A row written
+  // before the change can still carry one, and it must read as an ordinary live subscription
+  // rather than as a wind-down the merchant can no longer undo.
+  it('ignores a pending_plan left on the row by an older release', () => {
+    const state = subscriptionTabState(
+      {
+        status: 'active',
+        stripe_customer_id: 'cus_1',
+        current_period_end: '2026-09-01T00:00:00Z',
+        pending_plan: 'basic',
+      } as never,
+      'pro',
+      NOW,
+    )
+    expect(state.kind).toBe('live')
+    expect(state.canCancel).toBe(true)
+    expect(state.canResume).toBe(false)
+    expect('canDowngrade' in state).toBe(false)
+    expect('pendingPlan' in state).toBe(false)
   })
 })
 
 describe('subscriptionTabState — the ordinary case', () => {
   const live = { status: 'active', stripe_customer_id: 'cus_1', current_period_end: '2026-09-01T00:00:00Z' }
 
-  it('offers a pro shop the downgrade and the cancel, and nothing to resume', () => {
+  it('offers the cancel, and nothing to resume', () => {
     expect(subscriptionTabState(live, 'pro', NOW))
-      .toMatchObject({ canDowngrade: true, canCancel: true, canResume: false, pendingPlan: null })
-  })
-
-  // There is nothing below Basic but leaving, so the step-down must not be offered to a shop
-  // that is already on the floor.
-  it('offers a basic shop the cancel but not the downgrade', () => {
-    expect(subscriptionTabState(live, 'basic', NOW))
-      .toMatchObject({ canDowngrade: false, canCancel: true })
+      .toMatchObject({ canCancel: true, canResume: false })
   })
 
   // Every one of these calls Stripe against a subscription id. Without one there is nothing to
   // act on, and the routes answer 409 `no_live_subscription`.
   it('offers none of them without a live subscription', () => {
     expect(subscriptionTabState(null, 'pro', NOW))
-      .toMatchObject({ canDowngrade: false, canCancel: false, canResume: false })
+      .toMatchObject({ canCancel: false, canResume: false })
   })
 
   // A past-due subscription is still a real subscription — a merchant whose card is failing must
