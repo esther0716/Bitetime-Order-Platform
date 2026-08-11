@@ -48,6 +48,23 @@ reuses the machinery rather than reimplementing it.
 | Pixel ids | `VITE_META_PIXEL_ID`, `VITE_TIKTOK_PIXEL_ID`; absent means the feature is fully off |
 | Sequencing | This ships first; merchant pixels are a separate issue reusing this machinery |
 
+### Only the Meta account exists today
+
+There is a Meta ad account and no TikTok one. The **code supports both**, because each pixel is
+already independent and the TikTok half costs one snippet in `load.ts` and one line in `track.ts` —
+far less than reopening five files later. With no `VITE_TIKTOK_PIXEL_ID` set, TikTok ships inert and
+no TikTok script is ever requested.
+
+The **privacy notice names Meta only**. Naming TikTok as a recipient of personal data while it
+receives none is a false statement in a legal document, and "we might use it later" is not a
+disclosure. This creates a rule that outlives this change:
+
+> Setting `VITE_TIKTOK_PIXEL_ID` in Vercel requires updating `src/legal/documents.ts` to name TikTok
+> **first**. The env var is the switch; the notice is the precondition.
+
+The same rule holds for any vendor added to `PixelIds` afterwards. `.env.example` carries the rule
+as a comment next to the variable, since that is the file someone reads when they go to set it.
+
 ## Alternatives considered
 
 **Google Tag Manager container.** One script; both pixels configured in the GTM UI and gated by GTM
@@ -146,10 +163,10 @@ Required, not optional — the current text is false the moment a pixel loads. I
 
 - **§3, the line "We do not sell personal data, and we do not use it for advertising."** Replaced by
   something true: we do not sell personal data; we do not use shop or order data for advertising; on
-  our own marketing pages, and only if you agree, Meta and TikTok advertising pixels measure our
-  advertising.
-- **§4** — Meta Platforms and TikTok added to the named-providers list, scoped explicitly to the
-  marketing pages and to consent.
+  our own marketing pages, and only if you agree, a Meta advertising pixel measures our advertising.
+- **§4** — Meta Platforms added to the named-providers list, scoped explicitly to the marketing
+  pages and to consent.
+- **TikTok is not named**, because it receives nothing. See *Only the Meta account exists today*.
 - **A new short section on cookies and similar technologies**, because the banner links to
   `/privacy` and there must be something there to read.
 - `legal.test.ts` extended; the effective-date and draft-notice machinery in `draftNotice.ts`
@@ -179,12 +196,12 @@ The banner UI is verified by running the app, per CLAUDE.md. There are no compon
 - Reject governs these two pixels only. Vercel Analytics and `praxor` keep running — both are
   first-party and cookieless, which is why that is defensible, and why the privacy text must not
   claim the banner covers all analytics.
-- Nothing fires until real Meta and TikTok ad accounts exist and the env vars are set in Vercel.
-  Until then this ships fully inert, which is the intended state.
+- Nothing fires until the env vars are set in Vercel. Meta can be switched on as soon as this ships;
+  TikTok has no account and stays inert until one exists and the privacy notice names it.
 
 ## Follow-up: merchant pixels
 
-The higher-value feature, and a separate issue and spec. A merchant running ads for their own shop
+The higher-value feature, tracked as [#220](https://github.com/leongcheefai/Bitetime-Order-Platform/issues/220), with its own spec. A merchant running ads for their own shop
 wants a pixel on their own storefront, firing on their own orders with their own order values. It is
 also cleaner legally: `documents.ts` §1 already makes a shop separately responsible for the customer
 data it receives, so a merchant's own pixel makes the merchant the data controller.
