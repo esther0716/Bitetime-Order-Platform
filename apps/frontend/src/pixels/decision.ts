@@ -17,8 +17,24 @@ import type { ConsentChoice } from './consent'
 export interface PixelDecisionInput {
   /** Is any pixel id configured at all? */
   configured: boolean
-  /** Is the current route one of TinyOrder's own published pages? */
-  onMarketingPath: boolean
+  /**
+   * May these pixels be used at all?
+   *
+   * Always true for TinyOrder's own (#217) — the platform's pixels are on no plan. For a shop's
+   * own (#220) it is `plan === 'pro'`, and it is an input here rather than an `if` inside the
+   * hook so the plan gate is a row in this file's truth table instead of a branch only a click
+   * through a settings form can reach. A downgrade therefore stops the LOAD, not just the
+   * events — the load is the third-party request and the advertising cookie.
+   */
+  entitled: boolean
+  /**
+   * Is the current route one this set of pixels may fire on?
+   *
+   * TinyOrder's own pixels: one of its published marketing pages. A shop's own: that shop's
+   * storefront and nowhere else. Deliberately not named after either — the two answers must not
+   * be able to leak into each other, and a shared name is how that starts.
+   */
+  inScope: boolean
   /** What the visitor answered, or null if they have not been asked yet. */
   choice: ConsentChoice | null
 }
@@ -33,12 +49,17 @@ export interface PixelDecision {
 }
 
 /**
- * Off a marketing page, every answer is no — including for a visitor who accepted earlier.
- * Consent given on our own pages is consent for OUR pages; it does not travel onto a shop's
- * storefront, where the audience is the merchant's customers rather than ours.
+ * Out of scope, every answer is no — including for a visitor who accepted earlier. Consent given
+ * on our own pages is consent for OUR pages; it does not travel onto a shop's storefront, where
+ * the audience is the merchant's customers rather than ours. The same holds in the other
+ * direction: an answer given at one shop is not an answer at the next one.
+ *
+ * Not entitled is the same "no", and for a reason worth stating: a shop that stops paying stops
+ * tracking, and the banner stops asking its customers a question that can no longer lead
+ * anywhere.
  */
-export function pixelDecision({ configured, onMarketingPath, choice }: PixelDecisionInput): PixelDecision {
-  if (!configured || !onMarketingPath) return { load: false, pageView: false, banner: false }
+export function pixelDecision({ configured, entitled, inScope, choice }: PixelDecisionInput): PixelDecision {
+  if (!configured || !entitled || !inScope) return { load: false, pageView: false, banner: false }
   return {
     load: choice === 'accepted',
     pageView: choice === 'accepted',

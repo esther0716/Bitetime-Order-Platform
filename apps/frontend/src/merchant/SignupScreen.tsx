@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useSearchParams, useParams, Link } from 'react-router-dom'
 import { signUp, signIn, createMerchant, startCheckout } from '../store'
 import { pixelTrack } from '../pixels/track'
+// TinyOrder's OWN ids, deliberately — a shop signing up is our conversion, never a merchant's.
+import { platformPixelIds } from '../pixels/ids'
 import { toSlugBase } from '../slug'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
@@ -90,7 +92,7 @@ export default function SignupScreen() {
       // page the merchant lands on: /merchant is outside the marketing scope, and a Pro signup
       // leaves for Stripe Checkout without ever reaching it. The shop exists at this line in both
       // branches. A no-op unless the visitor accepted the pixels — see pixels/track.ts.
-      pixelTrack('CompleteRegistration')
+      pixelTrack(platformPixelIds(), 'CompleteRegistration')
       await refreshMerchant()
       if (plan === 'basic') {
         // Cardless trial: no Checkout. The backend provisioned the trial and activated the shop

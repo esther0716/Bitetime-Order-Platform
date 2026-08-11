@@ -41,7 +41,9 @@ export function usePixels(): PixelsState {
   // See decision.ts for what happened when they were two separate conditions.
   const { load, pageView, banner } = pixelDecision({
     configured: CONFIGURED,
-    onMarketingPath: isMarketingPath(pathname),
+    // The platform's pixels are on no plan — `entitled` exists for a shop's own (#220).
+    entitled: true,
+    inScope: isMarketingPath(pathname),
     choice,
   })
 
@@ -55,7 +57,7 @@ export function usePixels(): PixelsState {
   // route is what stops a storefront visit from reporting anything. The script itself stays in the
   // document once loaded — an SPA cannot unload it — but it is never told anything again.
   useEffect(() => {
-    if (pageView) pixelPageView()
+    if (pageView) pixelPageView(IDS)
   }, [pageView, pathname])
 
   return {

@@ -36,6 +36,27 @@ export function platformPixelIds(): PixelIds {
 }
 
 /**
+ * A shop's OWN ids, off its merchant row (#220).
+ *
+ * The same `configured` trim as the platform's, and for a sharper version of the same reason: a
+ * merchant clearing the field in Shop Settings sends `''`, and a row written before the columns
+ * existed has neither. Absent, null and blank are one state — no pixel — and reading them as
+ * three is how a shop ends up initialising a pixel with no id.
+ *
+ * Says NOTHING about the shop's plan. Whether a configured pixel may fire is `entitled` in
+ * pixelDecision, which is where a downgrade is answered.
+ */
+export function merchantPixelIds(merchant: {
+  meta_pixel_id?: string | null
+  tiktok_pixel_id?: string | null
+} | null | undefined): PixelIds {
+  return {
+    meta: configured(merchant?.meta_pixel_id ?? undefined),
+    tiktok: configured(merchant?.tiktok_pixel_id ?? undefined),
+  }
+}
+
+/**
  * Is anything configured at all?
  *
  * The gate on the whole feature, banner included. With neither id set nothing loads and nothing

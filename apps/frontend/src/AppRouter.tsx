@@ -176,11 +176,19 @@ function RouteToaster() {
 // The hook is called unconditionally — the pageview effects live inside it and must run whether or
 // not the banner is on screen. Only the banner itself is conditional.
 function PixelConsent() {
+  const { t } = useSession()
   const { showBanner, accept, reject } = usePixels()
   if (!showBanner) return null
   return (
     <Suspense fallback={null}>
-      <ConsentBanner onAccept={accept} onReject={reject} />
+      <ConsentBanner
+        onAccept={accept}
+        onReject={reject}
+        message={t(
+          'We use advertising cookies on our own pages to measure our advertising. They load only if you accept, and never on a shop’s page.',
+          '我们在自己的页面上使用广告 Cookie 来衡量广告效果。只有你接受后才会加载，店铺页面上永远不会使用。',
+        )}
+      />
     </Suspense>
   )
 }

@@ -13,9 +13,20 @@ import { Button } from '../components/ui/button'
 export default function ConsentBanner({
   onAccept,
   onReject,
+  message,
 }: {
   onAccept: () => void
   onReject: () => void
+  /**
+   * What is being asked, already translated by the caller.
+   *
+   * A prop, because the two askers are not asking the same question. TinyOrder asks about its
+   * own pixels on its own pages; a shop asks about ITS pixel on ITS storefront, and it is the
+   * merchant — not TinyOrder — who is the controller of that tracking (#220). The wording below
+   * used to be fixed and said the pixels load "never on a shop's page", which the shop pixels
+   * made false the moment they shipped.
+   */
+  message: string
 }) {
   const { t } = useSession()
   return (
@@ -26,10 +37,7 @@ export default function ConsentBanner({
     >
       <div className="mx-auto flex max-w-[720px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-[13px] leading-[1.6] text-muted-foreground">
-          {t(
-            'We use advertising cookies on our own pages to measure our advertising. They load only if you accept, and never on a shop’s page.',
-            '我们在自己的页面上使用广告 Cookie 来衡量广告效果。只有你接受后才会加载，店铺页面上永远不会使用。',
-          )}{' '}
+          {message}{' '}
           <Link to="/privacy" className="text-primary underline underline-offset-2">
             {t('Privacy Policy', '隐私政策')}
           </Link>
