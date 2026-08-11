@@ -15,7 +15,7 @@ import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
-import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, requirePro, hasProAccess, REQUIRES_PRO, type AppEnv } from './mw.js'
+import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, type AppEnv } from './mw.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
@@ -67,7 +67,7 @@ import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOpt
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
-import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, menuCategoriesChanged, customDatesChanged, pixelIdsChanged, categoryChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
+import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
 
@@ -249,34 +249,13 @@ app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
   // WHY, in time for the merchant still looking at the form, instead of a bare 500 out of
   // PostgREST.
   const stored = c.get('merchant')
-  // Menu categories are Pro, gated the same way `option_groups` is one endpoint over and for the
-  // same recorded reason (ADR 0013): the question is whether the list CHANGED, never whether the
-  // body carried it. ShopSettings resubmits a whole config bag, so a presence check would refuse
-  // a Basic ex-Pro shop editing its shipping rates. Clearing counts as a change, so a shop that
-  // stepped down cannot delete the categories it can no longer edit — the downgrade hides them,
-  // and ceasing to pay must not be a way to destroy them.
-  if (menuCategoriesChanged(patch, stored) && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
-  }
-  // Custom order dates are Pro, gated the same way and for the same recorded reason (ADR 0015).
-  // `needs_review` sits OUTSIDE the comparison so a paused Basic shop can still press Confirm and
-  // reopen — see customDatesChanged.
-  if (customDatesChanged(patch, stored) && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
-  }
-  // A shop's own advertising pixel is Pro, gated the same way and for the same reason (#220).
-  // CLEARING one sits outside the comparison — a downgraded shop must always be able to switch
-  // off tracking of its own customers, which is why `pixelIdsChanged` ignores a change to null.
-  if (pixelIdsChanged(patch, stored) && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
-  }
   // The body is merchant-controlled and `admin` bypasses RLS, so the fulfilment bag that lands in
   // the row is the one THIS function produces, never the one that arrived: sorted, deduped,
   // clamped, unknown keys dropped. One writer, one reader — the storefront can never read back a
   // shape the settings form did not save.
   //
   // Keyed on whether the body actually CARRIES a fulfilment bag, never on whether it carries a
-  // `config` — the same distinction `customDatesChanged` is built on, three lines up. Deriving
+  // `config`. Deriving
   // the bag from an absent key reads as DEFAULT_FULFILMENT and writes it over the row, which
   // clears `custom_dates` and lifts the ADR 0015 pause behind a success toast. `config` is a
   // whole-column overwrite, so an untouched bag has to be carried forward explicitly.
@@ -432,10 +411,9 @@ app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
  * cap — a shop past its 1000th order still gets a complete customer list here. This was the
  * first escape from that cap; the orders endpoint above took its own in #144.
  *
- * The plan gate is CONDITIONAL, so it cannot be `requirePro` middleware: the list itself is free
- * (it shipped to basic shops before Pro existed and withdrawing it would be a regression), while
- * sorting and tag filtering are the Pro capability. Same shape as the product upsert's promo
- * gate — inside the handler, once we know what the request is actually asking for.
+ * The list, its sorting and its tag filter are one free feature. Sorting and filtering used to be
+ * the paid half of it, gated inside the handler rather than by middleware because the list itself
+ * never was — that split went with the tier (#222).
  */
 app.get('/api/merchants/:id/customers', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
@@ -445,9 +423,6 @@ app.get('/api/merchants/:id/customers', requireMerchantOwns, async (c) => {
   if (!isShopCustomerSort(sort)) return c.json({ error: 'invalid_sort' }, 400)
   const tag = q.get('tag') ?? undefined
 
-  if ((sort !== DEFAULT_SHOP_CUSTOMER_SORT || tag !== undefined) && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
-  }
 
   const [groups, records] = await Promise.all([shopCustomerGroups(m.id), shopCustomerRecords(m.id)])
   return c.json(shopCustomers(groups, records, {
@@ -483,10 +458,10 @@ app.get('/api/merchants/:id/customers/:phoneKey/orders', requireMerchantOwns, as
   return c.json(data ?? [])
 })
 
-// Writing is wholly Pro, so the gate is middleware here rather than a branch. `phoneKey` on the
-// path parameter is a SHAPE check, not a lookup: a key with no orders behind it is a harmless
+// `phoneKey` on the path parameter is a SHAPE check, not a lookup: a key with no orders behind it
+// is a harmless
 // row that never joins, but a path segment that is not a key at all is a caller bug.
-app.put('/api/merchants/:id/customers/:phoneKey', requireMerchantOwns, requirePro, async (c) => {
+app.put('/api/merchants/:id/customers/:phoneKey', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
   const key = phoneKey(c.req.param('phoneKey'))
   if (key === null || key !== c.req.param('phoneKey')) return c.json({ error: 'invalid_phone_key' }, 400)
@@ -552,7 +527,7 @@ function stampInZone(timeZone: string, at: Date): string {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
 }
 
-app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, requirePro, async (c) => {
+app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, async (c) => {
   const days = Number(c.req.query('days'))
   const granularity = c.req.query('granularity')
   // Refused, not clamped: a clamped request hands back a file that quietly answers a different
@@ -646,10 +621,9 @@ app.get('/api/merchants/:id/secret', requireMerchantOwns, async (c) => {
 // see 20260627120150_secure_merchant_secrets.sql), so the product-PUT hijack class (Global
 // Constraint 2) does not apply here: there is no client-supplied child id to nest a foreign
 // row under. No separate tenancy check is needed.
-// Telegram alerts are a Pro feature, so `requirePro` chains after the ownership check (#110).
 // Only the WRITE is gated: the send path (`notify`) carries no plan check, because a shop that
 // already has a token configured must keep receiving its orders. See CONTEXT.md → Plan entitlement.
-app.put('/api/merchants/:id/secret', requireMerchantOwns, requirePro, async (c) => {
+app.put('/api/merchants/:id/secret', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const b = await c.req.json().catch(() => ({}) as any)
   const row: Record<string, unknown> = { merchant_id: id }
@@ -793,50 +767,16 @@ app.get('/api/merchants/:id/products', async (c) => {
 // in place (including merchant_id reassigned to A) instead of a new row being inserted. Loading
 // the product and checking merchant_id === :id before upserting is what closes that hole
 // (Global Constraint 2), mirroring the DELETE handler below.
-// Product promos are Pro-only, but this endpoint is NOT — basic shops legitimately edit their
-// menu through it, so it cannot carry `requirePro` as a whole (#110). The gate is inside, and it
-// asks whether the write CHANGES the promo, comparing the body against the row `requireOwnsChild`
-// already loaded (#145). A change from a non-Pro shop is REFUSED, never silently stripped — a
-// saved product whose sale price vanished without a word is exactly the "success toast, wrong
-// data" failure pickMerchantConfig refuses elsewhere.
-//
-// CHANGE, not presence, and the difference is a bug this used to have. Presence (`fields[k] !=
-// null`) refuses a body that merely CARRIES the promo it already has — so a shop that dropped from
-// pro to basic could not rename its own product, because the dashboard resubmits the whole row.
-// The workaround was for the client to omit the columns, which leaves a shop's live sale one
-// payload mistake away from being cleared behind a success toast: precisely what the rule above
-// exists to stop. Comparing against the stored row lets the unchanged resubmit through and still
-// refuses every real edit, on all three columns — a body moving only `promo_limit`/`promo_end`
-// would otherwise raise the cap or push back the end date on a live sale for free.
-//
-// Clearing a promo is a change like any other, so a basic shop cannot do that either: the promo it
-// may no longer edit stays put until the shop is Pro again. See promoChanged in writes.ts, and
-// note that `promo_price: 0` is a real promo (a free item) — it is compared for null, never for
-// truthiness. #145 gives `option_groups` the same shape on this endpoint.
+// The promo, option-group and category columns on this endpoint used to be gated on the shop's
+// tier, which is what made the body-vs-stored comparison in writes.ts necessary. The tier is gone
+// (#222) and so is that gate; all three are ordinary product fields now, saved like any other.
 app.put('/api/merchants/:id/products/:productId', requireMerchantOwns, requireOwnsChild('products', 'productId', { mayCreate: true }), async (c) => {
   const id = c.req.param('id')
   const productId = c.req.param('productId')
   const fields = pickProductFields(await c.req.json().catch(() => ({})))
-  // THREE Pro columns on one endpoint, asked as one question. Each is change-based for the same
-  // recorded reason (the promo comment above), and they share an answer, so they share the plan
-  // lookup — three separate `await hasProAccess(c)` calls asked billing the same thing three
-  // times to reach one 403.
-  //
-  //   * `optionGroupsChanged` — menu options, ADR 0010.
-  //   * `categoryChanged` — which section the product sits in, ADR 0013. The submitted id is
-  //     deliberately NOT checked against the shop's category list: an id the list no longer
-  //     holds is the "uncategorized" reading the whole delete story rests on, so validating it
-  //     here would turn a stale dashboard into a refused save.
-  //
-  // Clearing counts as a change in all three, so a shop that stepped down to basic cannot delete
-  // what it can no longer edit — a Pro feature must not be removable by ceasing to pay for it.
-  const child = c.get('child')
-  const touchesPro = promoChanged(fields, child)
-    || optionGroupsChanged(fields, child)
-    || categoryChanged(fields, child)
-  if (touchesPro && !(await hasProAccess(c))) {
-    return c.json({ error: REQUIRES_PRO }, 403)
-  }
+  // The submitted `category_id` is deliberately NOT checked against the shop's category list: an
+  // id the list no longer holds is the "uncategorized" reading the whole delete story rests on
+  // (ADR 0013), so validating it here would turn a stale dashboard into a refused save.
   // ADR 0008 traded every `check` constraint on these groups for atomic saves and a jsonb column
   // that both drivers parse identically. THIS is what stands in their place: Postgres will store
   // `minSelect: 9, maxSelect: 2` without complaint, and a customer would then meet a question no
@@ -886,7 +826,7 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
 // Vouchers are a Pro feature (#110). Only the merchant's MUTATIONS are gated — the customer's
 // code lookup above stays public and redemption inside the order transaction stays plan-blind,
 // so the gate can never break the ordering hot path.
-app.post('/api/merchants/:id/vouchers', requireMerchantOwns, requirePro, async (c) => {
+app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const b = await c.req.json().catch(() => ({} as any))
   const code = String(b?.code ?? '').trim().toUpperCase()
@@ -906,7 +846,7 @@ app.post('/api/merchants/:id/vouchers', requireMerchantOwns, requirePro, async (
 // about voucherId, so an owner of shop A could otherwise delete shop B's voucher by nesting
 // it under :id = A. Loading the voucher and checking merchant_id === :id before deleting is
 // what closes that hole (Global Constraint 2), mirroring the product DELETE handler above.
-app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requirePro, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
+app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
   const voucherId = c.req.param('voucherId')
   const { error } = await admin.from('vouchers').delete().eq('id', voucherId)
   if (error) return c.json({ error: 'Delete failed' }, 500)

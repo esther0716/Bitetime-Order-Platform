@@ -666,10 +666,10 @@ describe('PATCH /api/merchants/:id (shipping policy)', () => {
   })
 })
 
-// Custom order dates (#210, ADR 0015). Two things are being pinned here and they pull in
-// opposite directions: a Basic shop must not be able to SET custom dates, and a Basic shop must
-// still be able to save everything else while its body CARRIES the dates it already has —
-// ShopSettings resubmits the whole config bag. That is why the gate compares rather than sniffs.
+// Custom order dates (#210, ADR 0015). What is pinned here is the NORMALISATION: the bag the row
+// ends up holding is the one this handler produces — sorted, deduped, clamped, unknown keys
+// dropped — never the one that arrived, and a body that never mentions fulfilment must not
+// silently rewrite it.
 describe('PATCH /api/merchants/:id (custom order dates)', () => {
   let merchantId: string
   let ownerToken: string
@@ -688,17 +688,13 @@ describe('PATCH /api/merchants/:id (custom order dates)', () => {
     ownerToken = token
   })
 
-  const setPlan = (plan: 'basic' | 'pro') =>
-    serviceClient().from('merchants').update({ plan }).eq('id', merchantId)
-
   const setStored = (fulfilment: Record<string, unknown>) =>
     serviceClient().from('merchants').update({ config: { fulfilment } }).eq('id', merchantId)
 
   const save = (fulfilment: Record<string, unknown>) =>
     patch(`/api/merchants/${merchantId}`, { config: { fulfilment } }, ownerToken)
 
-  it('lets a Pro shop switch to custom dates', async () => {
-    await setPlan('pro')
+  it('lets a shop switch to custom dates', async () => {
     const res = await save({ mode: 'custom', custom_dates: [iso(7)] })
     expect(res.status).toBe(200)
     const row = (await res.json()) as any
@@ -706,46 +702,27 @@ describe('PATCH /api/merchants/:id (custom order dates)', () => {
     expect(row.config.fulfilment.custom_dates).toEqual([iso(7)])
   })
 
-  it('refuses a Basic shop switching to custom dates', async () => {
-    await setPlan('basic')
-    const res = await save({ mode: 'custom', custom_dates: [iso(7)] })
-    expect(res.status).toBe(403)
-    expect(((await res.json()) as any).error).toBe('requires_pro')
-  })
-
-  it('lets a Basic ex-Pro shop confirm its paused window without touching the dates', async () => {
-    // The failure this prevents: a presence-based gate would 403 the ONE write a paused Basic
-    // shop must be able to make — clearing needs_review to reopen.
-    await setPlan('basic')
+  // A paused shop must be able to make the ONE write that reopens it: clearing needs_review.
+  it('lets a paused shop confirm its window without touching the dates', async () => {
     await setStored({ mode: 'rolling', custom_dates: [iso(7)], needs_review: true })
     const res = await save({ mode: 'rolling', custom_dates: [iso(7)], needs_review: false })
     expect(res.status).toBe(200)
     expect(((await res.json()) as any).config.fulfilment.needs_review).toBe(false)
   })
 
-  it('refuses a Basic shop CLEARING the dates it may no longer edit', async () => {
-    await setPlan('basic')
-    await setStored({ mode: 'rolling', custom_dates: [iso(7)] })
-    const res = await save({ mode: 'rolling', custom_dates: [] })
-    expect(res.status).toBe(403)
-  })
-
   it('refuses a custom save with no dates — the merchant cannot pause their own shop from the form', async () => {
-    await setPlan('pro')
     const res = await save({ mode: 'custom', custom_dates: [] })
     expect(res.status).toBe(400)
     expect(((await res.json()) as any).error).toBe('no_dates')
   })
 
   it('refuses a date beyond the 90-day horizon', async () => {
-    await setPlan('pro')
     const res = await save({ mode: 'custom', custom_dates: [iso(120)] })
     expect(res.status).toBe(400)
     expect(((await res.json()) as any).error).toBe('beyond_horizon')
   })
 
   it('normalises the bag it stores rather than trusting the body', async () => {
-    await setPlan('pro')
     const res = await patch(`/api/merchants/${merchantId}`, {
       config: { fulfilment: { mode: 'custom', custom_dates: [iso(9), iso(7), iso(7)], junk: 'x', window_days: 9999 } },
     }, ownerToken)
@@ -762,7 +739,6 @@ describe('PATCH /api/merchants/:id (custom order dates)', () => {
   // `config` today, and it spreads the stored bag) but it is the presence-vs-change mistake sitting
   // one function away from the gate that exists to avoid it.
   it('carries the stored fulfilment forward when a config PATCH does not mention it', async () => {
-    await setPlan('pro')
     await setStored({ mode: 'rolling', custom_dates: [iso(7)], needs_review: true })
     const res = await patch(`/api/merchants/${merchantId}`, { config: { something_else: 1 } }, ownerToken)
     expect(res.status).toBe(200)
@@ -772,7 +748,6 @@ describe('PATCH /api/merchants/:id (custom order dates)', () => {
   })
 
   it('leaves a shop with no stored fulfilment alone rather than inventing one', async () => {
-    await setPlan('pro')
     await serviceClient().from('merchants').update({ config: {} }).eq('id', merchantId)
     const res = await patch(`/api/merchants/${merchantId}`, { config: { something_else: 1 } }, ownerToken)
     expect(res.status).toBe(200)
@@ -783,7 +758,6 @@ describe('PATCH /api/merchants/:id (custom order dates)', () => {
   // ALREADY-TRUNCATED list could never report `too_many` — a 200-date body saved 91 silently,
   // which is exactly the "refused, never trimmed" rule the handler states one line above.
   it('refuses an over-long allowlist rather than truncating it', async () => {
-    await setPlan('pro')
     const many = Array.from({ length: 95 }, (_, i) => iso(i + 1))
     const res = await save({ mode: 'custom', custom_dates: many })
     expect(res.status).toBe(400)
@@ -791,7 +765,6 @@ describe('PATCH /api/merchants/:id (custom order dates)', () => {
   })
 
   it('normalises the fulfilment key without disturbing the rest of the config bag', async () => {
-    await setPlan('pro')
     const res = await patch(`/api/merchants/${merchantId}`, {
       config: { fulfilment: { lead_days: 3 }, something_else: { kept: true } },
     }, ownerToken)
@@ -802,9 +775,9 @@ describe('PATCH /api/merchants/:id (custom order dates)', () => {
   })
 })
 
-// The shop's OWN advertising pixel (#220). Pro to set, and — unlike menu categories and custom
-// dates — always removable, because a downgraded shop must be able to stop tracking its own
-// customers. See pixelIdsChanged in writes.ts.
+// The shop's OWN advertising pixel (#220). What is pinned here is the id VALIDATION and the
+// public read: a malformed id is refused where the merchant can still see the form, and the ids
+// reach an anonymous storefront visitor, or the browser has nothing to decide with.
 describe('PATCH /api/merchants/:id — the shop’s own ad pixel', () => {
   let merchantId: string
   let ownerToken: string
@@ -817,17 +790,13 @@ describe('PATCH /api/merchants/:id — the shop’s own ad pixel', () => {
     ownerToken = token
   })
 
-  const setPlan = (plan: 'basic' | 'pro') =>
-    serviceClient().from('merchants').update({ plan }).eq('id', merchantId)
-
   const setStored = (meta: string | null) =>
     serviceClient().from('merchants').update({ meta_pixel_id: meta }).eq('id', merchantId)
 
   const save = (body: Record<string, unknown>) =>
     patch(`/api/merchants/${merchantId}`, body, ownerToken)
 
-  it('lets a Pro shop set its pixel ids', async () => {
-    await setPlan('pro')
+  it('lets a shop set its pixel ids', async () => {
     const res = await save({ meta_pixel_id: '123456789012345', tiktok_pixel_id: 'CQ1234567890ABCDEFGH' })
     expect(res.status).toBe(200)
     const row = (await res.json()) as any
@@ -835,28 +804,17 @@ describe('PATCH /api/merchants/:id — the shop’s own ad pixel', () => {
     expect(row.tiktok_pixel_id).toBe('CQ1234567890ABCDEFGH')
   })
 
-  it('refuses a Basic shop setting one', async () => {
-    await setPlan('basic')
-    const res = await save({ meta_pixel_id: '123456789012345' })
-    expect(res.status).toBe(403)
-    expect(((await res.json()) as any).error).toBe('requires_pro')
-  })
-
-  // The failure a presence-based gate would produce: ShopSettings resubmits a whole config bag,
-  // so a Basic ex-Pro shop editing its shipping rates would 403 on a field it did not touch.
-  it('lets a Basic shop resubmit its existing pixel unchanged alongside other edits', async () => {
-    await setPlan('basic')
+  // ShopSettings resubmits a whole config bag, so an untouched pixel id rides along with an
+  // ordinary shipping edit.
+  it('lets a shop resubmit its existing pixel unchanged alongside other edits', async () => {
     await setStored('123456789012345')
     const res = await save({ meta_pixel_id: '123456789012345', pickup_address: 'Lot 4' })
     expect(res.status).toBe(200)
     expect(((await res.json()) as any).pickup_address).toBe('Lot 4')
   })
 
-  // The one deliberate departure from ADR 0013. Removing a pixel destroys nothing and STOPS
-  // third-party tracking; refusing it would trap a downgraded shop's customers under a pixel the
-  // shop can no longer switch off.
-  it('lets a Basic shop REMOVE the pixel it can no longer edit', async () => {
-    await setPlan('basic')
+  // Removing a pixel STOPS third-party tracking, so it must always be possible.
+  it('lets a shop REMOVE its pixel', async () => {
     await setStored('123456789012345')
     const res = await save({ meta_pixel_id: '' })
     expect(res.status).toBe(200)
@@ -864,21 +822,18 @@ describe('PATCH /api/merchants/:id — the shop’s own ad pixel', () => {
   })
 
   it('refuses a malformed id rather than storing it, where the merchant can still see the form', async () => {
-    await setPlan('pro')
     const res = await save({ meta_pixel_id: 'act_12345678' })
     expect(res.status).toBe(400)
     expect(((await res.json()) as any).error).toContain('meta_pixel_id')
   })
 
-  // Public storefront read: the ids and the plan both have to reach an anonymous visitor, or the
-  // browser has nothing to decide with. This is the only endpoint that carries them.
+  // Public storefront read: the ids have to reach an anonymous visitor, or the browser has
+  // nothing to decide with. This is the only endpoint that carries them.
   it('ships the pixel ids on the public storefront lookup', async () => {
-    await setPlan('pro')
     await save({ meta_pixel_id: '123456789012345' })
     const res = await app.request('/api/merchants/cfg-pixel-shop')
     expect(res.status).toBe(200)
     const row = (await res.json()) as any
     expect(row.meta_pixel_id).toBe('123456789012345')
-    expect(row.plan).toBe('pro')
   })
 })

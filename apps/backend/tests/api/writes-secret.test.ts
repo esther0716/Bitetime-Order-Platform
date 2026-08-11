@@ -3,8 +3,7 @@
 // (1) the write round-trips through the Phase A GET, (2) a second upsert UPDATES the existing
 // row rather than duplicating it (merchant_secrets.merchant_id is the primary key / conflict
 // target — see 20260627120150_secure_merchant_secrets.sql), and (3) tenancy is enforced by
-// requireMerchantOwns exactly as it is on every other owner-scoped write, and (4) Telegram
-// alerts are a Pro feature — a basic shop's owner is refused with `403 requires_pro` (#110,
+// requireMerchantOwns exactly as it is on every other owner-scoped write (#110,
 // CONTEXT.md → Plan entitlement). Every success case therefore seeds `plan: 'pro'`; without
 // it the write is refused by the plan gate and the assertion below would prove nothing.
 // See CLAUDE.md → Backend, Global Constraint 1.
@@ -95,47 +94,32 @@ describe('PUT /api/merchants/:id/secret', () => {
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 
-  // Telegram alerts are Pro-only (#110). The gate is the backend, not the hidden UI: a crafted
-  // request from a basic shop's own owner is refused outright, with the shared `requires_pro`
-  // code the frontend maps to its upgrade prompt.
-  it('403 requires_pro for a basic shop’s owner, and writes nothing', async () => {
-    await resetMerchant('secret-basic-shop')
-    const client = await makeUser('secret-basic@example.com', 'password123')
+  // The tier is gone (#222): configuring Telegram is an ordinary owner write. Kept as a positive
+  // test rather than deleted — a removed refusal with nothing in its place leaves the route
+  // unexercised on the very path that used to be refused.
+  it('stores the token for the shop’s own owner', async () => {
+    await resetMerchant('secret-owner-shop')
+    const client = await makeUser('secret-owner@example.com', 'password123')
     const { token, userId } = await tokenOf(client)
-    const id = await seedMerchant({ slug: 'secret-basic-shop', owner_id: userId, plan: 'basic' })
+    const id = await seedMerchant({ slug: 'secret-owner-shop', owner_id: userId })
 
     const res = await put(`/api/merchants/${id}/secret`, { tg_token: 'tok-123', tg_chat_id: 'chat-456' }, token)
-    expect(res.status).toBe(403)
-    expect(await res.json()).toEqual({ error: 'requires_pro' })
+    expect(res.status).toBe(200)
 
     const { data: rows } = await serviceClient()
       .from('merchant_secrets').select('merchant_id').eq('merchant_id', id)
-    expect(rows).toEqual([])
+    expect(rows!.map(r => r.merchant_id)).toEqual([id])
 
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 
-  // `plan` is nullable and pre-billing shops carry NULL. Absence of Pro is not Pro.
-  it('403 requires_pro when the shop has no plan at all', async () => {
-    await resetMerchant('secret-noplan-shop')
-    const client = await makeUser('secret-noplan@example.com', 'password123')
-    const { token, userId } = await tokenOf(client)
-    const id = await seedMerchant({ slug: 'secret-noplan-shop', owner_id: userId })
-
-    const res = await put(`/api/merchants/${id}/secret`, { tg_token: 'x', tg_chat_id: 'y' }, token)
-    expect(res.status).toBe(403)
-    expect(await res.json()).toEqual({ error: 'requires_pro' })
-
-    await serviceClient().from('merchants').delete().eq('id', id)
-  })
-
-  // A superadmin passes the plan gate on any shop, exactly as they pass requireMerchantOwns —
-  // support and impersonation must not be obstructed by the tier the shop pays for.
-  it('lets a superadmin configure Telegram on a basic shop', async () => {
+  // A superadmin writes on any shop, exactly as they pass requireMerchantOwns — support and
+  // impersonation must not be obstructed.
+  it('lets a superadmin configure Telegram on someone else’s shop', async () => {
     await resetMerchant('secret-super-shop')
     const owner = await makeUser('secret-super-owner@example.com', 'password123')
     const { userId: ownerId } = await tokenOf(owner)
-    const id = await seedMerchant({ slug: 'secret-super-shop', owner_id: ownerId, plan: 'basic' })
+    const id = await seedMerchant({ slug: 'secret-super-shop', owner_id: ownerId })
 
     const superClient = await makeUser('secret-super-admin@example.com', 'password123')
     const { token: superToken, userId: superUserId } = await tokenOf(superClient)

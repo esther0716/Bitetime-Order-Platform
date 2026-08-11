@@ -82,9 +82,9 @@ describe('shop customers', () => {
     await resetMerchant('cust-other-shop')
     await resetMerchant('cust-pro-shop')
 
-    basicId = await seedMerchant({ slug: 'cust-basic-shop', owner_id: as.session!.user.id, plan: 'basic' })
+    basicId = await seedMerchant({ slug: 'cust-basic-shop', owner_id: as.session!.user.id })
     await seedMerchant({ slug: 'cust-other-shop', owner_id: bs.session!.user.id })
-    proId = await seedMerchant({ slug: 'cust-pro-shop', owner_id: ps.session!.user.id, plan: 'pro' })
+    proId = await seedMerchant({ slug: 'cust-pro-shop', owner_id: ps.session!.user.id })
 
     aToken = await tokenOf(a)
     bToken = await tokenOf(b)
@@ -120,9 +120,13 @@ describe('shop customers', () => {
     expect((await put(`/api/merchants/${basicId}/customers/23456789`, { note: 'x' }, bToken)).status).toBe(403)
   })
 
-  // ── The plan gate ──────────────────────────────────────────────────────────
+  // ── The list, whole ────────────────────────────────────────────────────────
+  // Sorting, tag filtering and the note/tag write used to be the paid half of this endpoint. The
+  // tier is gone (#222), so every one of them is an ordinary owner capability — and each is kept
+  // as a positive test rather than deleted, because a removed refusal with nothing in its place
+  // leaves exactly these paths unexercised.
 
-  it('gives a basic shop the list itself — it shipped before Pro existed', async () => {
+  it('gives an owner the list itself', async () => {
     await seedOrder(basicId, {})
     const res = await get(`/api/merchants/${basicId}/customers`, aToken)
 
@@ -130,40 +134,25 @@ describe('shop customers', () => {
     expect((await pageOf(res)).customers[0]?.bookedOrders).toBe(1)
   })
 
-  it('gives a basic shop search, which is part of the free list', async () => {
+  it('gives an owner search', async () => {
     await seedOrder(basicId, {})
     expect((await get(`/api/merchants/${basicId}/customers?search=meng`, aToken)).status).toBe(200)
   })
 
-  it('refuses a basic shop the Pro sorts', async () => {
-    for (const sort of ['spend', 'orders']) {
-      const res = await get(`/api/merchants/${basicId}/customers?sort=${sort}`, aToken)
-      expect(res.status).toBe(403)
-      expect(await res.json()).toEqual({ error: 'requires_pro' })
+  it('gives an owner every sort', async () => {
+    for (const sort of ['spend', 'orders', 'recent']) {
+      expect((await get(`/api/merchants/${basicId}/customers?sort=${sort}`, aToken)).status).toBe(200)
     }
-  })
-
-  it('allows the default sort for a basic shop, named or not', async () => {
-    expect((await get(`/api/merchants/${basicId}/customers?sort=recent`, aToken)).status).toBe(200)
     expect((await get(`/api/merchants/${basicId}/customers`, aToken)).status).toBe(200)
   })
 
-  it('refuses a basic shop the tag filter', async () => {
-    expect((await get(`/api/merchants/${basicId}/customers?tag=vip`, aToken)).status).toBe(403)
+  it('gives an owner the tag filter', async () => {
+    expect((await get(`/api/merchants/${basicId}/customers?tag=vip`, aToken)).status).toBe(200)
   })
 
-  it('refuses a basic shop the note and tag write', async () => {
+  it('gives an owner the note and tag write', async () => {
     const res = await put(`/api/merchants/${basicId}/customers/23456789`, { note: 'no peanuts' }, aToken)
-
-    expect(res.status).toBe(403)
-    expect(await res.json()).toEqual({ error: 'requires_pro' })
-  })
-
-  it('lets a Pro shop sort, filter and write', async () => {
-    await seedOrder(proId, {})
-    expect((await get(`/api/merchants/${proId}/customers?sort=spend`, proToken)).status).toBe(200)
-    expect((await get(`/api/merchants/${proId}/customers?tag=vip`, proToken)).status).toBe(200)
-    expect((await put(`/api/merchants/${proId}/customers/23456789`, { note: 'ok' }, proToken)).status).toBe(200)
+    expect(res.status).toBe(200)
   })
 
   // ── What the door accepts ──────────────────────────────────────────────────

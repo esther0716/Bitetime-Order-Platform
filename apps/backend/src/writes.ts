@@ -1,7 +1,4 @@
-import {
-  canonicalJson, optionGroupsFromRow, isTimezone,
-  menuCategoriesFromRow, validateMenuCategories, fulfilmentConfig,
-} from '@bitetime/shared'
+import { isTimezone, validateMenuCategories } from '@bitetime/shared'
 
 // Column allowlists for write endpoints. The service-role `admin` client bypasses RLS and the
 // guard_merchant_status / guard_profile_privileges triggers, so these picks are the ONLY thing
@@ -38,15 +35,11 @@ const MERCHANT_CONFIG_FIELDS = [
   // the public `payment-qr` bucket, never a URL — see isOwnStoragePath below for why it is
   // checked against the merchant it is being written for.
   'payment_qr',
-  // The sections a merchant arranges their menu into (ADR 0013). A jsonb list, and the only
-  // field in here that is Pro-gated — the gate itself is `menuCategoriesChanged`, at the route,
-  // because whether a shop may write this depends on its plan and on whether the value moved,
-  // neither of which an allowlist knows. What this allowlist owns is the SHAPE.
+  // The sections a merchant arranges their menu into (ADR 0013). A jsonb list; what this
+  // allowlist owns is the SHAPE.
   'product_categories',
   // The shop's OWN advertising pixel ids (#220). Public values — they ship in the storefront's
-  // page — so they are ordinary config, not a secret. Pro-gated the same way
-  // `product_categories` is, by `pixelIdsChanged` at the route rather than here, for the same
-  // reason: an allowlist cannot see a plan and cannot see whether a value moved.
+  // page — so they are ordinary config, not a secret.
   'meta_pixel_id', 'tiktok_pixel_id',
 ] as const
 
@@ -223,43 +216,6 @@ export function pickMerchantConfig(body: any, merchantId: string): PickResult {
 const META_PIXEL_ID = /^\d{15,16}$/
 const TIKTOK_PIXEL_ID = /^[A-Z0-9]{20}$/
 
-/**
- * Does this shop-config PATCH SET or CHANGE an advertising pixel id? (#220)
- *
- * The third sibling of `menuCategoriesChanged` and `customDatesChanged`, and it exists for the
- * same recorded reason: ShopSettings resubmits a whole config bag, so asking whether the body
- * CARRIES the field would refuse a Basic ex-Pro shop editing its delivery fees.
- *
- * CLEARING IS NOT A CHANGE HERE, and that is the one place this departs from ADR 0013. Deleting
- * menu categories destroys shop data, so a downgrade must not be able to; removing a pixel
- * destroys nothing — the id is a public number the merchant can paste again — and it STOPS
- * third-party tracking of that shop's customers. Refusing it would leave a downgraded shop's
- * customers under a pixel the shop can no longer switch off, which is worse than anything the
- * symmetry would buy.
- *
- * Call AFTER pickMerchantConfig, whose normalisation is what makes '' and null the same value.
- */
-export function pixelIdsChanged(
-  patch: Record<string, unknown>,
-  stored: Record<string, any> | null,
-): boolean {
-  for (const key of ['meta_pixel_id', 'tiktok_pixel_id'] as const) {
-    const submitted = patch[key]
-    if (submitted === undefined) continue
-    if (submitted === null) continue // clearing — always allowed, see above
-    if (submitted !== (stored?.[key] ?? null)) return true
-  }
-  return false
-}
-
-// Caller's GLOBAL profile (merchant_id IS NULL). EXACT union of the two writers,
-// verified 2026-07-18:
-//   ensureGlobalProfile (store.ts:31, :370) sets: name, email, email_confirmed, referral_code
-//   saveCustomerDetails (store.ts:123, via SavedDetails) sets: whatsapp, delivery_address (jsonb)
-// user_id is FORCED to the caller server-side; app_role / merchant_id / id / created_at are
-// never accepted — service_role bypasses guard_profile_privileges, so this allowlist is the
-// only thing stopping a caller from granting themselves superadmin or attaching to another
-// merchant via a crafted body (Global Constraint 1).
 const PROFILE_FIELDS = [
   'name', 'email', 'email_confirmed', 'referral_code', 'whatsapp', 'delivery_address',
 ] as const
@@ -310,56 +266,6 @@ export function pickProductFields(body: any): Record<string, unknown> {
   return out
 }
 
-const PROMO_FIELDS = ['promo_price', 'promo_limit', 'promo_end'] as const
-
-/**
- * Is one promo column's submitted value the same promo as the stored one?
- *
- * The two sides do NOT arrive in the same shape, which is the whole reason this is a function and
- * not `===`. PostgREST hands back `numeric` as a string (`'8.00'`) and `timestamptz` with a
- * `+00:00` offset, while the browser sends a JSON number and a `Z` ISO string. A strict compare
- * would call every one of those a change, which is a 403 on an ordinary rename.
- *
- * NOTHING here tests truthiness. `promo_price: 0` is a real promo (a free item), so 0 and null are
- * different promos in both directions, and so are 0 and a missing cap.
- *
- * Unreadable input fails CLOSED — "not a number I can compare" is a CHANGE, never "unchanged".
- * The alternative would let a junk value slip past the gate to Postgres's own constraints, which
- * answer with a 500, not with an entitlement decision.
- */
-function samePromoValue(key: string, submitted: unknown, stored: unknown): boolean {
-  const s = stored ?? null
-  if (submitted === null && s === null) return true
-  if (submitted === null || s === null) return false
-  if (key === 'promo_end') {
-    const a = Date.parse(String(submitted)), b = Date.parse(String(s))
-    return Number.isFinite(a) && Number.isFinite(b) && a === b
-  }
-  const a = Number(submitted), b = Number(s)
-  return Number.isFinite(a) && Number.isFinite(b) && a === b
-}
-
-/**
- * Does this product upsert CHANGE the promo, versus the row already in the table? (#145)
- *
- * This is what the Pro gate on `PUT /api/merchants/:id/products/:productId` asks. It used to ask
- * whether a promo column was PRESENT, and presence is the wrong question: a shop that dropped from
- * pro to basic still has promo columns on its rows, so a client resubmitting the whole row — which
- * the dashboard does — was refused an ordinary name edit. The workaround (omit the columns and
- * trust the upsert to leave them alone) put the shop's promo one payload mistake away from being
- * silently cleared, which is the exact "success toast, wrong data" failure the refuse-don't-strip
- * rule exists to prevent.
- *
- * A column ABSENT from `fields` is not a change: `pickProductFields` drops undefined, and the
- * upsert's ON CONFLICT DO UPDATE only touches columns present in the payload.
- *
- * `stored` is null on the create path (`mayCreate`), where any promo at all is new — so a basic
- * shop still cannot be born with one.
- */
-export function promoChanged(fields: Record<string, unknown>, stored: Record<string, any> | null): boolean {
-  return PROMO_FIELDS.some(k => fields[k] !== undefined && !samePromoValue(k, fields[k], stored?.[k] ?? null))
-}
-
 // Order patch. EXACT union of the three writers in OrdersView.tsx (via store.ts), verified
 // 2026-07-18:
 //   setOrderStatus (store.ts:662) writes { status } — checked against ORDER_STATUSES
@@ -377,119 +283,4 @@ export function pickOrderFields(body: any): Record<string, unknown> {
   if (body?.courier !== undefined) out.courier = body.courier || null
   if (body?.awb !== undefined) out.awb = String(body.awb ?? '').trim() || null
   return out
-}
-
-/**
- * Does this product upsert CHANGE the option groups, versus the row already in the table? (#145)
- *
- * `promoChanged`'s twin, on the same endpoint, and deliberately the same shape — including the
- * reason. Asking whether the column is PRESENT is the wrong question: a shop that dropped from
- * pro to basic still has groups on its rows, and the dashboard resubmits the whole row, so
- * presence would refuse an ordinary rename. The workaround (omit the column) would leave a
- * shop's menu one payload mistake from being cleared behind a success toast.
- *
- * The comparison is `canonicalJson` rather than `===` for the jsonb equivalent of the reason
- * `samePromoValue` is not `===`: the two sides do not arrive in the same shape. The browser sends
- * an object graph in whatever key order it built, PostgREST hands back parsed jsonb in the order
- * Postgres stored it, and a stored value can arrive as text. A strict compare would call every
- * one of those a change — a 403 on a rename.
- *
- * THAT SERIALISER IS ALSO THE CART LINE KEY, which is not a coincidence and is the point: if it
- * normalises away a real difference a Basic shop can edit its groups for free, and if it invents
- * one no Basic shop can save a product at all. One function, one test, one blast radius.
- *
- * CLEARING IS A CHANGE. `[]` against stored groups is refused, so the groups a Basic shop may no
- * longer edit stay put until it is Pro again — a Pro feature must not be removable by the act of
- * ceasing to pay for it.
- *
- * `stored` is null on the create path (`mayCreate`), where any groups at all are new — so a basic
- * shop cannot be born with them. An empty list is not "groups", so a plain product still saves.
- */
-export function optionGroupsChanged(
-  fields: Record<string, unknown>,
-  stored: Record<string, any> | null,
-): boolean {
-  const submitted = fields.option_groups
-  if (submitted === undefined) return false
-  return canonicalJson(optionGroupsFromRow(submitted))
-    !== canonicalJson(optionGroupsFromRow(stored?.option_groups ?? null))
-}
-
-/**
- * Does this shop-config PATCH CHANGE the menu categories, versus the merchant row? (ADR 0013)
- *
- * `optionGroupsChanged`'s sibling one endpoint over, deliberately the same shape and for the same
- * recorded reason: asking whether the field is PRESENT is the wrong question. `ShopSettings`
- * resubmits a whole config bag, so presence would 403 a Basic ex-Pro shop editing its shipping
- * rates — and the workaround (omit the field) would leave the shop's menu structure one payload
- * mistake from being cleared behind a success toast.
- *
- * `canonicalJson` rather than `===` because the two sides do not arrive in the same shape: the
- * browser sends an object graph in whatever key order it built it, PostgREST hands back parsed
- * jsonb in Postgres's order, and a stored value can arrive as text.
- *
- * A REORDER IS A CHANGE, and must stay one — array order *is* display order here, so a serialiser
- * that sorted its input before hashing would let a Basic shop rearrange its storefront for free.
- * `canonicalJson` sorts KEYS, never array members, which is exactly the property needed.
- *
- * CLEARING IS A CHANGE. `[]` against a stored list is refused, so the categories a Basic shop may
- * no longer edit stay put — hidden by the downgrade, never removable by ceasing to pay.
- */
-export function menuCategoriesChanged(
-  patch: Record<string, unknown>,
-  stored: Record<string, any> | null,
-): boolean {
-  const submitted = patch.product_categories
-  if (submitted === undefined) return false
-  return canonicalJson(menuCategoriesFromRow(submitted))
-    !== canonicalJson(menuCategoriesFromRow(stored?.product_categories ?? null))
-}
-
-/**
- * Does this shop-config PATCH CHANGE the shop's custom order dates? (ADR 0015)
- *
- * `menuCategoriesChanged`'s sibling, same shape and same recorded reason: asking whether the
- * field is PRESENT is the wrong question, because `ShopSettings` resubmits a whole config bag.
- *
- * The compared slice is deliberately `{ mode, custom_dates }` and NOTHING ELSE. `needs_review` is
- * excluded on purpose: clearing it is exactly what a downgraded BASIC shop must be able to do to
- * reopen, and folding it into this comparison would lock a paused shop out of its own
- * confirmation — the one write here that is not a Pro capability.
- *
- * Both sides go through `fulfilmentConfig` rather than being compared raw, so a body that merely
- * re-orders or re-spells the same allowlist is not a change. That is the same courtesy the other
- * three gates extend, and it is what lets a Basic ex-Pro shop keep saving its other settings.
- *
- * CLEARING IS A CHANGE, as everywhere else: the dates a Basic shop may no longer edit stay put
- * until it is Pro again. A Pro feature must not be removable by ceasing to pay for it.
- */
-export function customDatesChanged(
-  patch: Record<string, unknown>,
-  stored: Record<string, any> | null,
-): boolean {
-  if (patch.config === undefined) return false
-  const a = fulfilmentConfig(patch.config)
-  const b = fulfilmentConfig(stored?.config ?? null)
-  return canonicalJson({ mode: a.mode, custom_dates: a.custom_dates })
-    !== canonicalJson({ mode: b.mode, custom_dates: b.custom_dates })
-}
-
-/**
- * Does this product upsert CHANGE which section the product sits in? (ADR 0013)
- *
- * A string compare would do but for the two shapes "uncategorized" arrives in — `null` from
- * Postgres, and `undefined` on a row written before the column existed. Those are ONE state, and
- * calling them different would 403 a Basic shop renaming an old product, which is the failure
- * `promoChanged` and `optionGroupsChanged` both exist to avoid.
- *
- * `stored` is null on the create path (`mayCreate`), where any category at all is new — so a
- * Basic shop cannot be born filed, while a plain uncategorized product still saves.
- */
-export function categoryChanged(
-  fields: Record<string, unknown>,
-  stored: Record<string, any> | null,
-): boolean {
-  const submitted = fields.category_id
-  if (submitted === undefined) return false
-  return (submitted ?? null) !== (stored?.category_id ?? null)
 }
