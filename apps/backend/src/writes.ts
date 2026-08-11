@@ -43,6 +43,11 @@ const MERCHANT_CONFIG_FIELDS = [
   // because whether a shop may write this depends on its plan and on whether the value moved,
   // neither of which an allowlist knows. What this allowlist owns is the SHAPE.
   'product_categories',
+  // The shop's OWN advertising pixel ids (#220). Public values — they ship in the storefront's
+  // page — so they are ordinary config, not a secret. Pro-gated the same way
+  // `product_categories` is, by `pixelIdsChanged` at the route rather than here, for the same
+  // reason: an allowlist cannot see a plan and cannot see whether a value moved.
+  'meta_pixel_id', 'tiktok_pixel_id',
 ] as const
 
 // A Storage object path the given merchant owns: `{merchantId}/{filename}`, one segment deep,
@@ -188,7 +193,63 @@ export function pickMerchantConfig(body: any, merchantId: string): PickResult {
     if (bad) return { ok: false, error: `product_categories is invalid: ${bad}` }
   }
 
+  // The shop's own advertising pixel ids (#220). Refused, never coerced, for the reason every
+  // field above is — but the failure this one prevents is quieter than most: a wrong id reports
+  // to nowhere and looks exactly like a working pixel until a campaign has already run.
+  for (const [key, shape] of [['meta_pixel_id', META_PIXEL_ID], ['tiktok_pixel_id', TIKTOK_PIXEL_ID]] as const) {
+    if (out[key] === undefined) continue
+    // '' is what the settings form sends when the merchant clears the field, and null is what a
+    // non-UI caller would send. Both mean "take it down" — the ONLY way back to no pixel, and
+    // deliberately never gated on the plan (see pixelIdsChanged).
+    if (out[key] === null || (typeof out[key] === 'string' && (out[key] as string).trim() === '')) {
+      out[key] = null
+      continue
+    }
+    const trimmed = typeof out[key] === 'string' ? (out[key] as string).trim() : out[key]
+    if (typeof trimmed !== 'string' || !shape.test(trimmed)) {
+      return { ok: false, error: `${key} does not look like a pixel id` }
+    }
+    out[key] = trimmed
+  }
+
   return { ok: true, patch: out }
+}
+
+// What each vendor's id looks like — a TYPO FILTER, not a proof that the pixel exists. Meta's is
+// a 15- or 16-digit number; TikTok's is 20 upper-case alphanumerics. Neither vendor publishes a
+// grammar, so these are drawn from the ids the vendors' own dashboards issue, and they are
+// deliberately loose enough to accept an id we have not seen and tight enough to refuse the
+// thing merchants actually paste by mistake: an ad ACCOUNT id, a whole snippet, or a URL.
+const META_PIXEL_ID = /^\d{15,16}$/
+const TIKTOK_PIXEL_ID = /^[A-Z0-9]{20}$/
+
+/**
+ * Does this shop-config PATCH SET or CHANGE an advertising pixel id? (#220)
+ *
+ * The third sibling of `menuCategoriesChanged` and `customDatesChanged`, and it exists for the
+ * same recorded reason: ShopSettings resubmits a whole config bag, so asking whether the body
+ * CARRIES the field would refuse a Basic ex-Pro shop editing its delivery fees.
+ *
+ * CLEARING IS NOT A CHANGE HERE, and that is the one place this departs from ADR 0013. Deleting
+ * menu categories destroys shop data, so a downgrade must not be able to; removing a pixel
+ * destroys nothing — the id is a public number the merchant can paste again — and it STOPS
+ * third-party tracking of that shop's customers. Refusing it would leave a downgraded shop's
+ * customers under a pixel the shop can no longer switch off, which is worse than anything the
+ * symmetry would buy.
+ *
+ * Call AFTER pickMerchantConfig, whose normalisation is what makes '' and null the same value.
+ */
+export function pixelIdsChanged(
+  patch: Record<string, unknown>,
+  stored: Record<string, any> | null,
+): boolean {
+  for (const key of ['meta_pixel_id', 'tiktok_pixel_id'] as const) {
+    const submitted = patch[key]
+    if (submitted === undefined) continue
+    if (submitted === null) continue // clearing — always allowed, see above
+    if (submitted !== (stored?.[key] ?? null)) return true
+  }
+  return false
 }
 
 // Caller's GLOBAL profile (merchant_id IS NULL). EXACT union of the two writers,

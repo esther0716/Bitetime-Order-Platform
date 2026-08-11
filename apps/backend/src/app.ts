@@ -68,7 +68,7 @@ import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOpt
 import type { CartLine } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename } from './report.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
-import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, menuCategoriesChanged, customDatesChanged, categoryChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
+import { pickMerchantConfig, pickProfileFields, pickProductFields, promoChanged, optionGroupsChanged, menuCategoriesChanged, customDatesChanged, pixelIdsChanged, categoryChanged, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
 
@@ -264,6 +264,12 @@ app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
   // `needs_review` sits OUTSIDE the comparison so a paused Basic shop can still press Confirm and
   // reopen — see customDatesChanged.
   if (customDatesChanged(patch, stored) && !(await hasProAccess(c))) {
+    return c.json({ error: REQUIRES_PRO }, 403)
+  }
+  // A shop's own advertising pixel is Pro, gated the same way and for the same reason (#220).
+  // CLEARING one sits outside the comparison — a downgraded shop must always be able to switch
+  // off tracking of its own customers, which is why `pixelIdsChanged` ignores a change to null.
+  if (pixelIdsChanged(patch, stored) && !(await hasProAccess(c))) {
     return c.json({ error: REQUIRES_PRO }, 403)
   }
   // The body is merchant-controlled and `admin` bypasses RLS, so the fulfilment bag that lands in

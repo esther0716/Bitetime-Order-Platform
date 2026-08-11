@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { BUSINESS_NATURES } from '@bitetime/shared'
-import { pickMerchantConfig, promoChanged, optionGroupsChanged, menuCategoriesChanged, categoryChanged } from '../../src/writes.js'
+import { pickMerchantConfig, promoChanged, optionGroupsChanged, menuCategoriesChanged, pixelIdsChanged, categoryChanged } from '../../src/writes.js'
 
 // The shop being written. Only `payment_qr` is judged against it (a Storage path belongs to one
 // merchant's folder); every other field in this file is tenant-agnostic, so these cases pass the
@@ -411,5 +411,80 @@ describe('categoryChanged', () => {
   it('treats a create as new only when a category is actually set', () => {
     expect(categoryChanged({ category_id: 'c1' }, null)).toBe(true)
     expect(categoryChanged({ category_id: null }, null)).toBe(false)
+  })
+})
+
+// The shop's own advertising pixel ids (#220). A wrong id is the quietest failure in this file:
+// it reports to nowhere and looks exactly like a working pixel until a campaign has run, so the
+// shape is checked at the door where the merchant is still looking at the form.
+describe('pickMerchantConfig — pixel ids', () => {
+  const pick = (body: any) => pickMerchantConfig(body, 'm1')
+
+  it('accepts the ids the vendors issue', () => {
+    const r = pick({ meta_pixel_id: '123456789012345', tiktok_pixel_id: 'CQ1234567890ABCDEFGH' })
+    expect(r).toEqual({ ok: true, patch: { meta_pixel_id: '123456789012345', tiktok_pixel_id: 'CQ1234567890ABCDEFGH' } })
+  })
+
+  it('accepts a 16-digit Meta id as well as a 15-digit one', () => {
+    expect(pick({ meta_pixel_id: '1234567890123456' })).toEqual({ ok: true, patch: { meta_pixel_id: '1234567890123456' } })
+  })
+
+  it('trims, because a pasted id carries whitespace', () => {
+    expect(pick({ meta_pixel_id: '  123456789012345 ' })).toEqual({ ok: true, patch: { meta_pixel_id: '123456789012345' } })
+  })
+
+  it('reads a cleared field and an explicit null as the same "take it down"', () => {
+    expect(pick({ meta_pixel_id: '' })).toEqual({ ok: true, patch: { meta_pixel_id: null } })
+    expect(pick({ meta_pixel_id: '   ' })).toEqual({ ok: true, patch: { meta_pixel_id: null } })
+    expect(pick({ tiktok_pixel_id: null })).toEqual({ ok: true, patch: { tiktok_pixel_id: null } })
+  })
+
+  // REFUSED, never dropped: a dropped field saves nothing and reports success, which is the
+  // merchant watching a pixel they believe is live send no events at all.
+  it('refuses what merchants actually paste by mistake', () => {
+    // An ad account id, a whole snippet, a URL, the other vendor's shape.
+    for (const bad of ['act_12345678', "fbq('init','123456789012345')", 'https://facebook.com/123', 'CQ1234567890ABCDEFGH', '12345']) {
+      expect(pick({ meta_pixel_id: bad }).ok).toBe(false)
+    }
+    for (const bad of ['cq1234567890abcdefgh', 'CQ123', '123456789012345', 'CQ1234567890ABCDEFG_']) {
+      expect(pick({ tiktok_pixel_id: bad }).ok).toBe(false)
+    }
+  })
+
+  it('refuses a non-string rather than coercing it', () => {
+    expect(pick({ meta_pixel_id: 123456789012345 }).ok).toBe(false)
+  })
+})
+
+// The Pro gate's question is whether the value MOVED, never whether the body carried it —
+// ShopSettings resubmits a whole config bag, so presence would 403 a Basic shop editing its
+// delivery fees.
+describe('pixelIdsChanged', () => {
+  it('is false when neither id is submitted', () => {
+    expect(pixelIdsChanged({ tax_rate: 6 }, { meta_pixel_id: '123456789012345' })).toBe(false)
+  })
+
+  it('is false on an unchanged resubmit', () => {
+    expect(pixelIdsChanged({ meta_pixel_id: '123456789012345' }, { meta_pixel_id: '123456789012345' })).toBe(false)
+  })
+
+  it('is true when an id is set for the first time, or changed', () => {
+    expect(pixelIdsChanged({ meta_pixel_id: '123456789012345' }, {})).toBe(true)
+    expect(pixelIdsChanged({ meta_pixel_id: '123456789012345' }, { meta_pixel_id: null })).toBe(true)
+    expect(pixelIdsChanged({ meta_pixel_id: '999999999999999' }, { meta_pixel_id: '123456789012345' })).toBe(true)
+    expect(pixelIdsChanged({ tiktok_pixel_id: 'CQ1234567890ABCDEFGH' }, {})).toBe(true)
+  })
+
+  // The one departure from ADR 0013: a downgraded shop must always be able to switch off
+  // tracking of its own customers. Removing a pixel destroys nothing; keeping menu categories
+  // does. See the function's own doc.
+  it('never treats clearing as a change, so a Basic shop can always remove its pixel', () => {
+    expect(pixelIdsChanged({ meta_pixel_id: null }, { meta_pixel_id: '123456789012345' })).toBe(false)
+    expect(pixelIdsChanged({ tiktok_pixel_id: null }, { tiktok_pixel_id: 'CQ1234567890ABCDEFGH' })).toBe(false)
+  })
+
+  it('reads an absent stored column and a null one as the same "no pixel"', () => {
+    expect(pixelIdsChanged({ meta_pixel_id: null }, {})).toBe(false)
+    expect(pixelIdsChanged({ meta_pixel_id: '123456789012345' }, { meta_pixel_id: undefined })).toBe(true)
   })
 })

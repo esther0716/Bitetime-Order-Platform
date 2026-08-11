@@ -60,6 +60,13 @@ export interface Merchant {
    *  signed up before the field existed — render it through `businessNatureLabel`, which names
    *  that state rather than dropping the shop. */
   business_nature?: string | null
+  /** The shop's OWN advertising pixels (#220), read through `merchantPixelIds` — never
+   *  directly, because a blank column and an absent one must mean the same thing. Public
+   *  values: they ship in the storefront's page, which is why they sit here and not in
+   *  `merchant_secrets`. Setting one is Pro; a downgrade stops the pixel loading and leaves
+   *  the id where it is. */
+  meta_pixel_id?: string | null
+  tiktok_pixel_id?: string | null
   /** Onboarding checklist flags (#102). Read via `onboardingSteps`; absent means false. */
   onboarding_shipping_set?: boolean
   onboarding_link_shared?: boolean

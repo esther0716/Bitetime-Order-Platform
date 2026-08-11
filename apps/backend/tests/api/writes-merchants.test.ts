@@ -800,3 +800,84 @@ describe('PATCH /api/merchants/:id (custom order dates)', () => {
     expect(cfg.something_else).toEqual({ kept: true })
   })
 })
+
+// The shop's OWN advertising pixel (#220). Pro to set, and — unlike menu categories and custom
+// dates — always removable, because a downgraded shop must be able to stop tracking its own
+// customers. See pixelIdsChanged in writes.ts.
+describe('PATCH /api/merchants/:id — the shop’s own ad pixel', () => {
+  let merchantId: string
+  let ownerToken: string
+
+  beforeEach(async () => {
+    await resetMerchant('cfg-pixel-shop')
+    const client = await makeUser('cfg-pixel@example.com', 'password123')
+    const { token, userId } = await tokenOf(client)
+    merchantId = await seedMerchant({ slug: 'cfg-pixel-shop', owner_id: userId })
+    ownerToken = token
+  })
+
+  const setPlan = (plan: 'basic' | 'pro') =>
+    serviceClient().from('merchants').update({ plan }).eq('id', merchantId)
+
+  const setStored = (meta: string | null) =>
+    serviceClient().from('merchants').update({ meta_pixel_id: meta }).eq('id', merchantId)
+
+  const save = (body: Record<string, unknown>) =>
+    patch(`/api/merchants/${merchantId}`, body, ownerToken)
+
+  it('lets a Pro shop set its pixel ids', async () => {
+    await setPlan('pro')
+    const res = await save({ meta_pixel_id: '123456789012345', tiktok_pixel_id: 'CQ1234567890ABCDEFGH' })
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as any
+    expect(row.meta_pixel_id).toBe('123456789012345')
+    expect(row.tiktok_pixel_id).toBe('CQ1234567890ABCDEFGH')
+  })
+
+  it('refuses a Basic shop setting one', async () => {
+    await setPlan('basic')
+    const res = await save({ meta_pixel_id: '123456789012345' })
+    expect(res.status).toBe(403)
+    expect(((await res.json()) as any).error).toBe('requires_pro')
+  })
+
+  // The failure a presence-based gate would produce: ShopSettings resubmits a whole config bag,
+  // so a Basic ex-Pro shop editing its shipping rates would 403 on a field it did not touch.
+  it('lets a Basic shop resubmit its existing pixel unchanged alongside other edits', async () => {
+    await setPlan('basic')
+    await setStored('123456789012345')
+    const res = await save({ meta_pixel_id: '123456789012345', pickup_address: 'Lot 4' })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).pickup_address).toBe('Lot 4')
+  })
+
+  // The one deliberate departure from ADR 0013. Removing a pixel destroys nothing and STOPS
+  // third-party tracking; refusing it would trap a downgraded shop's customers under a pixel the
+  // shop can no longer switch off.
+  it('lets a Basic shop REMOVE the pixel it can no longer edit', async () => {
+    await setPlan('basic')
+    await setStored('123456789012345')
+    const res = await save({ meta_pixel_id: '' })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).meta_pixel_id).toBeNull()
+  })
+
+  it('refuses a malformed id rather than storing it, where the merchant can still see the form', async () => {
+    await setPlan('pro')
+    const res = await save({ meta_pixel_id: 'act_12345678' })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toContain('meta_pixel_id')
+  })
+
+  // Public storefront read: the ids and the plan both have to reach an anonymous visitor, or the
+  // browser has nothing to decide with. This is the only endpoint that carries them.
+  it('ships the pixel ids on the public storefront lookup', async () => {
+    await setPlan('pro')
+    await save({ meta_pixel_id: '123456789012345' })
+    const res = await app.request('/api/merchants/cfg-pixel-shop')
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as any
+    expect(row.meta_pixel_id).toBe('123456789012345')
+    expect(row.plan).toBe('pro')
+  })
+})
