@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { MoreHorizontal } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -27,6 +27,19 @@ interface AdminTableMeta {
   onTogglePublish: (row: AdminRelease) => void
 }
 
+// A pull answers as soon as the drafts are stored; Claude rewrites them into merchant-facing
+// copy afterwards, so a fresh row arrives with no title. A row is PENDING until it resolves
+// one way or the other — a title, or a humanize_error. Both terminal states end the wait,
+// which is what stops the poll below from running forever on a release Claude refused.
+function isPending(r: AdminRelease) {
+  return !r.title && !r.humanize_error
+}
+
+const POLL_INTERVAL_MS = 2000
+// Generous against a pull of ten rewriting at once, and still short enough that a backend
+// that died mid-write stops being waited on within a minute and a half.
+const POLL_CEILING_MS = 90_000
+
 const columns: ColumnDef<AdminRelease>[] = [
   {
     accessorKey: 'tag',
@@ -41,11 +54,21 @@ const columns: ColumnDef<AdminRelease>[] = [
     header: ({ column, table }) => (
       <SortableHeader column={column} label={(table.options.meta as AdminTableMeta).t('Title', '标题')} />
     ),
-    cell: ({ row }) => {
+    cell: ({ row, table }) => {
+      const { t } = table.options.meta as AdminTableMeta
       const r = row.original
       return (
         <div>
           <span>{r.title ?? r.name}</span>
+          {isPending(r) && (
+            // Says the row is unfinished rather than leaving the raw GitHub name looking like
+            // the final copy. Without this a pending row and a rewritten one are identical at
+            // a glance, and the Publish action is already disabled on a row with no title —
+            // this is the line that explains why.
+            <div className="text-[11px] text-muted-foreground italic mt-0.5">
+              {t('Writing summary…', '正在生成摘要…')}
+            </div>
+          )}
           {r.humanize_error && (
             <div className="text-[11px] text-danger-fg mt-0.5">{r.humanize_error}</div>
           )}
@@ -135,16 +158,64 @@ export default function AdminReleases() {
   async function load() {
     setRows(unwrap(await adminListReleases()))
   }
+
+  // Refetch every couple of seconds while any row is still being written, then stop. The
+  // ceiling is what keeps a crashed or redeployed backend from spinning a timer forever:
+  // those rows keep a null title and a null humanize_error and would otherwise stay pending
+  // for good, so the wait ends and the operator is pointed at Regenerate.
+  const pollTimer = useRef<number | null>(null)
+  function stopPolling() {
+    if (pollTimer.current !== null) {
+      clearTimeout(pollTimer.current)
+      pollTimer.current = null
+    }
+  }
+  // Also cancels an in-flight poll on unmount — a setRows after the component is gone is a
+  // React warning at best and a leak at worst.
+  useEffect(() => stopPolling, [])
+
+  async function pollUntilWritten(deadline: number) {
+    stopPolling()
+    const r = await adminListReleases()
+    // A blip mid-poll is not worth a toast: the rows on screen are still valid, and the next
+    // poll (or the next pull) re-drives it. Only a hard stop is reported, below.
+    if (!r.ok) return
+    setRows(r.data)
+    if (!r.data.some(isPending)) return
+    if (Date.now() >= deadline) {
+      toast.error(t(
+        'Some summaries were not written. Use Regenerate on those rows.',
+        '部分摘要未生成。请对这些行使用「重新生成」。',
+      ))
+      return
+    }
+    pollTimer.current = window.setTimeout(() => { void pollUntilWritten(deadline) }, POLL_INTERVAL_MS)
+  }
+
   useEffect(() => {
-    adminListReleases().then((r) => setRows(unwrap(r)))
+    adminListReleases().then((r) => {
+      setRows(unwrap(r))
+      // Picks up a reload that lands mid-rewrite — the summaries are still coming, and the
+      // page should finish the wait rather than sit on "Writing summary…" until a manual pull.
+      if (r.ok && r.data.some(isPending)) void pollUntilWritten(Date.now() + POLL_CEILING_MS)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function pull() {
     setPulling(true)
     const r = await adminPullReleases()
     if (r.ok) {
-      toast.success(t(`Pulled ${r.data.pulled} release(s)`, `已拉取 ${r.data.pulled} 条更新`))
+      // Deliberately not "Pulled N" alone: the pull stored N drafts, and the copy for them is
+      // still being written. Saying so is what makes the empty titles below read as expected.
+      toast.success(r.data.pulled > 0
+        ? t(
+          `Pulled ${r.data.pulled} release(s) — writing summaries…`,
+          `已拉取 ${r.data.pulled} 条更新 — 正在生成摘要…`,
+        )
+        : t('No new releases', '没有新的更新'))
       await load()
+      if (r.data.pulled > 0) void pollUntilWritten(Date.now() + POLL_CEILING_MS)
     } else {
       toast.error(r.error.message || t('Pull failed', '拉取失败'))
     }
