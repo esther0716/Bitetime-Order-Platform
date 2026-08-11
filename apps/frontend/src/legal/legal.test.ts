@@ -146,3 +146,42 @@ describe('registration status', () => {
     expect(all).toContain(LEGAL_ENTITY.email)
   })
 })
+
+describe('advertising pixels', () => {
+  const text = PRIVACY.sections.flatMap(s => s.body).join(' ')
+
+  it('no longer claims we never use data for advertising, because we now do', () => {
+    // The sentence this replaces was true until the marketing pages carried a pixel (#217). A
+    // legal document that contradicts the code is the one failure this whole file exists to catch.
+    expect(text).not.toContain('we do not use it for advertising')
+  })
+
+  it('still promises we do not sell personal data', () => {
+    expect(text).toContain('We do not sell personal data')
+  })
+
+  it('names Meta as a recipient', () => {
+    expect(text).toContain('Meta')
+  })
+
+  it('does NOT name TikTok, which receives nothing', () => {
+    // Setting VITE_TIKTOK_PIXEL_ID means naming TikTok here FIRST. Naming a recipient of personal
+    // data that receives none is as false as omitting one that does.
+    expect(text).not.toContain('TikTok')
+  })
+
+  it('says the pixels are on our pages and not on a shop’s storefront', () => {
+    expect(text.toLowerCase()).toContain('storefront')
+  })
+
+  it('has a section about cookies that the consent banner can link a reader to', () => {
+    const cookies = PRIVACY.sections.find(s => s.id === 'cookies')
+    expect(cookies).toBeDefined()
+    expect(cookies!.body.length).toBeGreaterThan(0)
+  })
+
+  it('numbers the privacy sections 1..n with no gap and no repeat', () => {
+    const numbers = PRIVACY.sections.map(s => Number(s.heading.split('.')[0]))
+    expect(numbers).toEqual(Array.from({ length: PRIVACY.sections.length }, (_, i) => i + 1))
+  })
+})

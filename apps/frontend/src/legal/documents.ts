@@ -215,7 +215,8 @@ export const PRIVACY: LegalDocument = {
         'To bill shops for their subscriptions, and to handle trials, renewals and cancellations.',
         'To keep the service working and safe: to diagnose faults, to prevent abuse, and to enforce our terms.',
         'To contact you about the service where we need to — a trial ending, a failed payment, a material change to these documents.',
-        'We do not sell personal data, and we do not use it for advertising.',
+        'We do not sell personal data. We do not use what a shop tells us, or what its customers order, for advertising.',
+        'On our own marketing pages we use a Meta advertising pixel to measure our own advertising, and it runs only if you accept it. It is never present on a shop\'s storefront.',
       ],
     },
     {
@@ -224,13 +225,23 @@ export const PRIVACY: LegalDocument = {
       body: [
         'To the shop you ordered from. Placing an order sends the shop your name, contact number, what you ordered and, for a delivery, your address — because they cannot fulfil the order otherwise. Shops on our paid tier may also receive that order through a messaging service, which means those details are delivered into the shop\'s own messaging account.',
         'To the service providers we run on. Each receives only what it needs, and we name them rather than describe them: Supabase hosts our database and handles sign-in, and so stores the data described above; Stripe processes shops\' subscription payments; Resend delivers order confirmations and account email; Google Maps Platform receives a delivery address when a shop prices delivery by distance, and receives what you type when a shop uses address autocomplete; and Telegram delivers order alerts to shops that have enabled them.',
+        'To Meta, if you accept advertising cookies on our own marketing pages. Meta receives which of our pages you viewed and whether you created a shop. It does not receive your name, your email address, your contact number or any order. It receives nothing at all from a shop\'s storefront, and nothing at all if you decline.',
         'Where the law requires it, or to establish, exercise or defend legal claims.',
         'Some of these providers process data outside Malaysia. Where that happens we rely on the provider\'s own contractual protections.',
       ],
     },
     {
+      id: 'cookies',
+      heading: '5. Cookies and similar technologies',
+      body: [
+        'We use a small amount of storage in your browser to keep the service working — to keep you signed in, to remember the language you chose, and to remember a choice you made at a shop\'s checkout. These are necessary for the service to work and are not used for advertising.',
+        'We also measure how our pages are used. That measurement is done by our own systems and by our hosting provider, does not identify you, and does not follow you to other websites.',
+        'Advertising cookies are separate, and we only ever set them on our own marketing pages — never on a shop\'s storefront. We ask you before any of them are set, and we set none of them if you decline or if you do not answer. Your answer is remembered in your own browser, so a different browser or device asks you again.',
+      ],
+    },
+    {
       id: 'retention',
-      heading: '5. How long we keep it',
+      heading: '6. How long we keep it',
       body: [
         'Order records are kept for as long as the shop that received them is on the platform, because the shop needs its own trading history.',
         'Account data is kept while the account exists. If a shop closes, we keep its data for a reasonable period afterwards to settle billing and handle any dispute, and then remove it.',
@@ -239,7 +250,7 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'guest-orders',
-      heading: '6. Ordering as a guest',
+      heading: '7. Ordering as a guest',
       body: [
         'You can order without creating an account. If you do, the order is recorded against the shop but not against any account — including one you create later. This is permanent and cannot be undone: a guest order can never be attached to an account afterwards.',
         'That means a guest order will not appear in an account\'s order history, and you track it using the order number and the contact number you gave.',
@@ -248,7 +259,7 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'email-addresses',
-      heading: '7. A note about email addresses',
+      heading: '8. A note about email addresses',
       body: [
         'We do not verify a customer\'s email address when an account is created. A mistyped address therefore belongs to whoever actually owns it, and order confirmations sent to that account would reach them — including the order\'s name, items, total and delivery address.',
         'We state this plainly because it is a real consequence of not requiring verification. Please check your address when you sign up.',
@@ -256,7 +267,7 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'your-rights',
-      heading: '8. Your rights',
+      heading: '9. Your rights',
       body: [
         'Under Malaysian personal data protection law you may ask for a copy of the personal data we hold about you, ask us to correct it if it is wrong or incomplete, ask us to limit how we process it, and withdraw consent where our use of it rests on consent.',
         `To exercise any of these, write to ${email}. We may need to confirm who you are before we act, so that we do not disclose your data to someone else. We will respond within the period the law allows.`,
@@ -266,7 +277,7 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'security',
-      heading: '9. Security',
+      heading: '10. Security',
       body: [
         'Each shop\'s data is separated from every other shop\'s, and a shop can only reach its own orders and customers. Traffic is encrypted in transit, passwords are stored only as cryptographic hashes and never in a readable form, and access to production data is limited to those who need it.',
         'No system is perfectly secure, and we do not claim otherwise.',
@@ -274,14 +285,14 @@ export const PRIVACY: LegalDocument = {
     },
     {
       id: 'changes-privacy',
-      heading: '10. Changes to this notice',
+      heading: '11. Changes to this notice',
       body: [
         'We may update this notice. The date at the top of this page shows when it last changed. Where a change materially affects you, we will tell you.',
       ],
     },
     {
       id: 'contact-privacy',
-      heading: '11. Contact',
+      heading: '12. Contact',
       body: [
         `Questions, requests or complaints about your personal data go to ${email}.`,
       ],
