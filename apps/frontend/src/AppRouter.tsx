@@ -10,6 +10,7 @@ import { useCanonical } from './canonical'
 import { useDocumentMeta } from './documentMeta'
 import { usePixels } from './pixels/usePixels'
 import { ShopPixelsProvider } from './pixels/ShopPixels'
+import { useAnalytics } from './analytics/useAnalytics'
 import { Spinner } from './components/Loaders'
 import Wordmark from './components/Wordmark'
 // STATICALLY IMPORTED, and it is the one route that must be. `/` is prerendered into the HTML
@@ -147,6 +148,7 @@ export default function AppRouter() {
       </TooltipProvider>
       <RouteToaster />
       <PixelConsent />
+      <PlatformAnalytics />
     </SessionProvider>
   )
 }
@@ -198,6 +200,15 @@ function PixelConsent() {
       />
     </Suspense>
   )
+}
+
+// TinyOrder's own measurement, mounted here for the reason PixelConsent is: route-aware, app-wide,
+// and outside AnimatedRoutes so a page transition does not remount it. It renders nothing — the
+// hook is all of it. Unlike the pixels above it asks nobody: it sets no cookie, it reports to our
+// own systems only, and it never reports a storefront at all (analytics/scope.ts).
+function PlatformAnalytics() {
+  useAnalytics()
+  return null
 }
 
 function AnimatedRoutes() {
