@@ -205,3 +205,15 @@ state that hides both checkout buttons. It is the same one-line call as the four
 
 The run created `praxor-verify@example.com` / `Praxor Verify Shop` in the LOCAL database, with a
 Stripe **test-mode** trial subscription, alongside the other `*-verify` shops already there.
+
+### Re-run after the review fixes
+
+The hook changed after the run above — the client is now created only in scope, the pageview goes
+through `events.ts`, and the CTA rule moved to `cta.ts` — so the core checks were repeated:
+
+| Checked | Result |
+|---|---|
+| `/` and `/pricing` pageviews | reported |
+| Hero CTA on `/` | `cta_click` `{ from: "/", cta: "hero" }` — the label, not `link` |
+| Pricing card CTA | `cta_click` `{ from: "/pricing", cta: "pricing-card", billing: "monthly" }` |
+| Storefront, `/reset-password`, and a signup CTA and an outbound link clicked on a storefront | **no request at all** |
