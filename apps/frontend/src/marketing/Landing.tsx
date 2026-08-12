@@ -89,7 +89,7 @@ export default function Landing() {
           </HeroItem>
           <HeroItem>
             <div className="flex gap-4 justify-center flex-wrap max-[600px]:flex-col max-[600px]:items-center">
-              <MagneticButton to="/merchant/signup" className={ctaPrimary}>
+              <MagneticButton to="/merchant/signup" className={ctaPrimary} cta="hero">
                 {t('Start your shop', '开始建店')}
               </MagneticButton>
               {/* Points at a dedicated preview page (/sample-shops), never at a live storefront —
@@ -279,7 +279,7 @@ export default function Landing() {
           ))}
         </ul>
 
-        <MagneticButton to="/merchant/signup" className={ctaPrimary}>
+        <MagneticButton to="/merchant/signup" className={ctaPrimary} cta="pricing-section">
           {t(PRICING_TIERS[0].cta.en, PRICING_TIERS[0].cta.zh)}
         </MagneticButton>
         <p className="mt-2.5 mb-0 text-xs text-muted-foreground">
@@ -351,7 +351,7 @@ export default function Landing() {
         <p className="font-heading italic text-[18px] text-foreground mb-6 max-w-[520px] mx-auto">
           {t('Become a real, professional business — orders in one place, more time to make.', '成为真正专业的生意——订单集中一处，专注做好产品。')}
         </p>
-        <MagneticButton to="/merchant/signup" className={ctaPrimary}>
+        <MagneticButton to="/merchant/signup" className={ctaPrimary} cta="closing">
           {t('Start your shop', '开始建店')}
         </MagneticButton>
         </Reveal>

@@ -17,6 +17,19 @@ import type { PraxorClient } from 'praxor'
 /** The two billing cycles. One plan remains, so there is no `plan` property anywhere here. */
 export type Billing = 'monthly' | 'yearly'
 
+/**
+ * A cycle the rest of the app carries as a bare `string`, narrowed to the two words this module
+ * reports.
+ *
+ * One place rather than a `=== 'yearly' ? … : …` at each of the four call sites: they all answer
+ * the same question, and four copies is four chances for one of them to report the other cycle.
+ * Monthly is the fallback because it is what the backend defaults to (`billing = 'monthly'` in
+ * store.ts's createMerchant).
+ */
+export function toBilling(value: string): Billing {
+  return value === 'yearly' ? 'yearly' : 'monthly'
+}
+
 export type AnalyticsEvent =
   | 'merchant_signup'
   | 'trial_started'
@@ -59,5 +72,22 @@ export function trackEvent<E extends AnalyticsEvent>(
   } catch {
     // An ad blocker can leave a global that throws. A missing measurement is acceptable; a submit
     // handler or a checkout click that dies inside it is not.
+  }
+}
+
+/**
+ * Report one pageview, for the given path.
+ *
+ * Here rather than in the hook so this module really is the only door to the SDK, and so the
+ * pageview is guarded the same way an event is. It needs BOTH guards: `trackPageview` returns a
+ * promise, so a synchronous throw and a rejection are two different failures and neither may reach
+ * a route effect.
+ */
+export function trackPageview(path: string): void {
+  if (!client) return
+  try {
+    void client.trackPageview(path).catch(() => {})
+  } catch {
+    // Same trade as above: a missing pageview never costs a route transition.
   }
 }

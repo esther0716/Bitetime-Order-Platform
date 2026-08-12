@@ -297,6 +297,40 @@ that is visibly the lesser button is not a free choice.
 With no `VITE_*_PIXEL_ID` set the whole feature is inert — no banner, no script — which is the
 state of dev, CI and the e2e run, and why none of them stub anything.
 
+## Product analytics
+
+TinyOrder's own measurement of its own pages, through the `praxor` client (`analytics/`). It
+replaced `@vercel/analytics`, which is why `documents.ts` no longer names a hosting provider as a
+party that measures page use — a notice naming a recipient that receives nothing is a false
+statement in a legal document, the same rule the TikTok warning in `.env.example` states.
+
+Distinct from the [advertising pixel](#advertising-pixel) in what it may do, not just in what it
+reports: it sets **no cookie**, keeps only a server-computed visitor hash in `sessionStorage`, and
+follows nobody to another site — so it asks no consent question and is gated by no banner. It also
+covers **more** pages: the pixel fires only on published pages (`ROUTE_META`), this measures the
+merchant dashboard and admin too, because the question is where an owner stalls after signing up.
+
+**It reports nothing from a shop's storefront**, and that rule is why the SDK's own capture is
+switched off. `praxor` patches `history.pushState` and listens on `document`; both are global to
+the page and neither can be told to ignore `/s/:slug`, and this app is one SPA — a visitor reaches
+a storefront from `/pricing` with no document load. So `autoCapturePageviews` and
+`trackOutboundLinks` are both `false`, and `useAnalytics` sends each pageview itself behind
+`isPlatformPath` (`analytics/scope.ts`), which excludes `/s/` and `/reset-password` and nothing
+else. Its own `pathOnly` rather than `normalisedPath`: the canonical one collapses the signup
+preselection segment, which is the exact segment `cta.ts` reads.
+
+Five events, `analytics/events.ts`, a union so adding one is a type error until that file changes.
+`merchant_signup` and `trial_started` fire from **three** places — `SignupScreen`,
+`FinishSignupScreen` and `PendingScreen` — because a shop can be created at signup, later from the
+answers parked in auth metadata when email confirmation delays it, or by retrying a trial Stripe
+refused. Reporting from one would make the funnel's answer depend on a Supabase setting.
+`trial_started` follows the backend's own `trial` flag, never the shop's status: a shop that
+activates having already used its one trial started nothing.
+
+`cta_click` comes from one delegated listener on `document`, so the seven signup CTAs need no
+handler; `data-cta` on the link names which one. With no `VITE_PRAXOR_SITE_ID` set the client is
+never created — the inert state of dev, CI and the e2e run.
+
 ## Password reset
 
 The way back into a customer account — and therefore back to the order history, which is precisely

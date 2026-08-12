@@ -12,6 +12,8 @@
 // would report that navigation out of a merchant customer's browser. See pixels/decision.ts, which
 // holds the same line for the advertising pixels.
 
+import { pathOnly } from './path'
+
 /** A storefront lives under this segment, which RESERVED_SLUGS keeps any shop from claiming. */
 const STOREFRONT_PREFIX = '/s/'
 
@@ -28,7 +30,7 @@ const RESET_PASSWORD = '/reset-password'
  * an answer that depended on that would be wrong the first time a caller passed anything else.
  */
 export function isPlatformPath(pathname: string): boolean {
-  const path = pathname.split('?')[0].split('#')[0]
+  const path = pathOnly(pathname)
   if (path === STOREFRONT_PREFIX.slice(0, -1) || path.startsWith(STOREFRONT_PREFIX)) return false
   if (path === RESET_PASSWORD) return false
   return true

@@ -16,7 +16,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { createMerchant } from '../store'
-import { trackEvent } from '../analytics/events'
+import { trackEvent, toBilling } from '../analytics/events'
 import { useSession } from '../SessionContext'
 import { pendingShopFromMetadata } from './pendingShop'
 import type { PendingShop } from './pendingShop'
@@ -56,7 +56,7 @@ export default function FinishSignupScreen() {
     // and reporting in one of the two places would make the funnel's answer depend on a Supabase
     // setting. Same two events, same conditions, deliberately duplicated rather than shared: the
     // two screens agree on nothing else.
-    trackEvent('merchant_signup', { billing: shop.billing === 'yearly' ? 'yearly' : 'monthly' })
+    trackEvent('merchant_signup', { billing: toBilling(shop.billing) })
     if (created.data?.trial === true) trackEvent('trial_started')
     // Re-reading the shop is what changes this user's role to 'merchant', which is what lets
     // the guard above this screen render the dashboard instead of this form.

@@ -6,7 +6,7 @@ import {
   fetchMyBilling, openBillingPortal, startCheckout,
   cancelSubscription, resumeSubscription,
 } from '../store'
-import { trackEvent } from '../analytics/events'
+import { trackEvent, toBilling } from '../analytics/events'
 import type { Result } from '../api'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
@@ -93,7 +93,7 @@ function CheckoutButton({ cycle, label }: { cycle: string; label: string }) {
     // runs. See analytics/events.ts — the call swallows its own failure, so it cannot cost a
     // checkout.
     trackEvent('billing_checkout_started', {
-      billing: cycle === 'yearly' ? 'yearly' : 'monthly',
+      billing: toBilling(cycle),
       from: 'subscription',
     })
     const r = await startCheckout({ billing: cycle })

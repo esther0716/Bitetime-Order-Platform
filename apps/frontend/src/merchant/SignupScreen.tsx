@@ -4,7 +4,7 @@ import { signUp, signIn, createMerchant } from '../store'
 import { pixelTrack } from '../pixels/track'
 // TinyOrder's OWN ids, deliberately — a shop signing up is our conversion, never a merchant's.
 import { platformPixelIds } from '../pixels/ids'
-import { trackEvent } from '../analytics/events'
+import { trackEvent, toBilling } from '../analytics/events'
 import { toSlugBase } from '../slug'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
@@ -96,7 +96,7 @@ export default function SignupScreen() {
       pixelTrack(platformPixelIds(), 'CompleteRegistration')
       // The same moment, reported to our own analytics — which, unlike the pixels above, reports
       // whether or not the visitor accepted advertising cookies. See analytics/events.ts.
-      trackEvent('merchant_signup', { billing: billing === 'yearly' ? 'yearly' : 'monthly' })
+      trackEvent('merchant_signup', { billing: toBilling(billing) })
       // `trial` is the BACKEND's own answer, not a guess from the status: POST /api/merchants
       // returns `{ …, trial: false }` when Stripe refused and the shop stayed `pending`, and
       // `{ …, status: 'active', trial }` when it provisioned the cardless trial. A pending shop

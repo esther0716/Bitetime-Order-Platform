@@ -89,11 +89,17 @@ export function MagneticButton({
   className,
   children,
   strength = 0.3,
+  cta,
 }: {
   to: string
   className?: string
   children: ReactNode
   strength?: number
+  /**
+   * Which CTA this is, for `cta_click` (analytics/useAnalytics.ts). Passed through to BOTH
+   * branches below: the reduced-motion visitor's click must not report as an unnamed link.
+   */
+  cta?: string
 }) {
   const reduced = useReducedMotion()
   const x = useMotionValue(0)
@@ -101,12 +107,13 @@ export function MagneticButton({
   const sx = useSpring(x, { stiffness: 150, damping: 15, mass: 0.1 })
   const sy = useSpring(y, { stiffness: 150, damping: 15, mass: 0.1 })
 
-  if (reduced) return <Link to={to} className={className}>{children}</Link>
+  if (reduced) return <Link to={to} className={className} data-cta={cta}>{children}</Link>
 
   return (
     <MotionLink
       to={to}
       className={className}
+      data-cta={cta}
       style={{ x: sx, y: sy }}
       onMouseMove={(e) => {
         const r = e.currentTarget.getBoundingClientRect()

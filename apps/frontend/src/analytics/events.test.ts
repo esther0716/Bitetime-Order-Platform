@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { PraxorClient } from 'praxor'
-import { setAnalyticsClient, trackEvent } from './events'
+import { setAnalyticsClient, trackEvent, trackPageview, toBilling } from './events'
 
-function fakeClient(track: PraxorClient['track']): PraxorClient {
+function fakeClient(
+  track: PraxorClient['track'],
+  pageview: PraxorClient['trackPageview'] = async () => {},
+): PraxorClient {
   return {
     track,
-    trackPageview: async () => {},
+    trackPageview: pageview,
     getVisitorId: () => null,
     destroy: () => {},
   }
@@ -63,5 +66,47 @@ describe('trackEvent', () => {
     setAnalyticsClient(null)
     trackEvent('merchant_login')
     expect(track).not.toHaveBeenCalled()
+  })
+})
+
+describe('trackPageview', () => {
+  it('does nothing when Praxor is not configured', () => {
+    expect(() => trackPageview('/pricing')).not.toThrow()
+  })
+
+  it('sends the path it was given, rather than leaving the SDK to read the URL', () => {
+    const pageview = vi.fn(async () => {})
+    setAnalyticsClient(fakeClient(vi.fn(), pageview))
+    trackPageview('/pricing')
+    expect(pageview).toHaveBeenCalledWith('/pricing')
+  })
+
+  it('swallows a synchronous throw, so a route effect cannot die inside it', () => {
+    setAnalyticsClient(fakeClient(vi.fn(), () => { throw new Error('blocked') }))
+    expect(() => trackPageview('/pricing')).not.toThrow()
+  })
+
+  // The other half, and a different failure: trackPageview returns a promise, so a rejection is
+  // not caught by the try. Unhandled, it surfaces as an unhandledrejection in the visitor's
+  // console for a pageview nobody was waiting on.
+  it('swallows a rejection', async () => {
+    setAnalyticsClient(fakeClient(vi.fn(), async () => { throw new Error('offline') }))
+    trackPageview('/pricing')
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+})
+
+describe('toBilling', () => {
+  it('keeps the two cycles the app reports', () => {
+    expect(toBilling('yearly')).toBe('yearly')
+    expect(toBilling('monthly')).toBe('monthly')
+  })
+
+  // The four call sites hand this a bare `string` off a route param, a Stripe cancel_url or the
+  // auth user's metadata. Anything unrecognised is the backend's own default.
+  it('reads anything else as monthly, the backend’s default', () => {
+    expect(toBilling('')).toBe('monthly')
+    expect(toBilling('quarterly')).toBe('monthly')
+    expect(toBilling('YEARLY')).toBe('monthly')
   })
 })

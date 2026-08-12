@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Check } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { startCheckout } from '../store'
-import { trackEvent } from '../analytics/events'
+import { trackEvent, toBilling } from '../analytics/events'
 import { formatMoney } from '../currency'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { PRICING_TIERS } from '../marketing/pricingTiers'
@@ -33,7 +33,7 @@ export default function SuspendedScreen() {
     // this page and nothing after it runs. `from` is what separates a reactivation from an
     // ordinary upgrade in the funnel.
     trackEvent('billing_checkout_started', {
-      billing: cycle === 'yearly' ? 'yearly' : 'monthly',
+      billing: toBilling(cycle),
       from: 'suspended',
     })
     const r = await startCheckout({ billing: cycle })
