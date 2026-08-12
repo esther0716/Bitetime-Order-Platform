@@ -82,8 +82,8 @@ then a type error at every call site until someone edits this file.
 
 | Event | Properties | Where it fires |
 |---|---|---|
-| `merchant_signup` | `{ billing }` | `merchant/SignupScreen.tsx`, after `createMerchant` returns ok, beside the existing `pixelTrack('CompleteRegistration')` |
-| `trial_started` | none | Same call site, and only when the created shop's status is `active`. A `pending` shop means Stripe refused, so no trial started |
+| `merchant_signup` | `{ billing }` | **Both** `createMerchant` call sites: `merchant/SignupScreen.tsx` after it returns ok, beside the existing `pixelTrack('CompleteRegistration')`, and `merchant/FinishSignupScreen.tsx` — see below |
+| `trial_started` | none | The same two call sites, and only when the backend answers `trial: true`. A `pending` shop means Stripe refused, so no trial started |
 | `merchant_login` | none | `merchant/LoginScreen.tsx`, after `signIn` resolves |
 | `billing_checkout_started` | `{ billing, from }` | The two `startCheckout` call sites: `merchant/SubscriptionTab.tsx` (`from: 'subscription'`) and `merchant/SuspendedScreen.tsx` (`from: 'suspended'`) |
 | `cta_click` | `{ from, cta, billing? }` | The delegated listener described below |
@@ -95,6 +95,16 @@ one plan remains after the basic plan was removed.
 `trackEvent()` wraps the SDK call and swallows a throw, for the reason `pixels/track.ts` gives: these
 fire from click handlers, and a throw there trades a missing measurement for a broken page. It is
 also a no-op when Praxor is not configured.
+
+**A signup has two call sites, not one**, and this was found by running the app rather than by
+reading it. `SignupScreen` creates the shop only when its own `signIn` succeeds — and with Supabase
+email confirmation ON that sign-in fails by design, so the shop is created later by
+`FinishSignupScreen` from the answers parked in the auth user's metadata (`pendingShop.ts`).
+Reporting in one place only would make the funnel's answer depend on a Supabase setting: local has
+confirmation on and reports nothing. Both screens report the same two events under the same
+conditions. The `pixelTrack('CompleteRegistration')` in `SignupScreen` has the SAME gap and is left
+alone here — changing what an advertising pixel reports is a separate decision with its own consent
+argument.
 
 Analytics stays out of `store.ts`. That file is the data layer, and a `startCheckout` that also
 reports would make every future caller report too, whether it should or not.
@@ -172,3 +182,26 @@ Per CLAUDE.md, the UI is proven by running the app.
 4. Open a storefront at `/s/:slug`. Expect **no** request to the Praxor endpoint, on the initial
    load and on every in-storefront navigation.
 5. Log in at `/merchant/login`. Expect `merchant_login` and a dashboard pageview.
+
+## Verified on 2026-08-12
+
+Run against a stub Praxor endpoint, with the dev server, the billing backend and local Supabase up.
+Every line below is an observed request, not a reading of the code.
+
+| Checked | Result |
+|---|---|
+| `/` and `/pricing` pageviews | reported (twice each in dev — StrictMode mounts the effect twice) |
+| Signup CTA on `/` | `cta_click` `{ from: "/", cta: "link" }`, then the `/merchant/signup` pageview |
+| Storefront by document load, and by SPA navigation from `/pricing` | **no request at all**, either way |
+| An outbound link and a signup CTA clicked while on a storefront | **no request at all** |
+| `/reset-password` | no request |
+| `/merchant/login`, `/merchant` | reported |
+| Sign-in | `merchant_login`, and it still reported when the `refreshMerchant` that follows failed |
+| Shop created through `FinishSignupScreen` | `merchant_signup` `{ billing: "yearly" }` — the cycle survived the trip through auth metadata — then `trial_started` off a real Stripe test trial |
+| Site id unset | no request on any route, and nothing in the console |
+
+`billing_checkout_started` was **not** exercised: the fresh shop is trialing, which is exactly the
+state that hides both checkout buttons. It is the same one-line call as the four proven above.
+
+The run created `praxor-verify@example.com` / `Praxor Verify Shop` in the LOCAL database, with a
+Stripe **test-mode** trial subscription, alongside the other `*-verify` shops already there.
