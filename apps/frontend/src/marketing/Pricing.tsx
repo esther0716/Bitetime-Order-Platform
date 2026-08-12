@@ -61,7 +61,11 @@ export default function Pricing() {
           <h2 className={sectionTitle}>
             {t('What is included', '包含什么')}
           </h2>
-          <div className="flex flex-col gap-8 mt-2">
+          {/* One panel on bg-card, not rows laid straight on the page. This list is a spec sheet —
+              a single object a reader scans top to bottom — and on the page's own ground it had no
+              edges to say where it started or stopped. bg-card is the surface the plan card above
+              already uses, so the two read as the same kind of thing. */}
+          <div className="flex flex-col gap-8 mt-2 rounded-xl bg-card border-[0.5px] border-border p-8 shadow-[0_6px_24px_rgba(122,16,40,0.06)] max-[600px]:p-5 max-[600px]:gap-7">
             {INCLUDED_GROUPS.map(group => (
               <div key={group.id}>
                 <h3 className="font-sans text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground mb-3">
@@ -69,9 +73,11 @@ export default function Pricing() {
                 </h3>
                 <ul className="flex flex-col gap-2.5 list-none m-0 p-0">
                   {group.rows.map(row => (
+                    // last:border-b-0 — a rule under the final row of a group is a line with
+                    // nothing under it, which read as the group having lost a row.
                     <li
                       key={row.id}
-                      className="flex items-baseline gap-2 border-b border-border pb-2.5 text-sm leading-[1.55]"
+                      className="flex items-baseline gap-2 border-b border-border pb-2.5 last:border-b-0 last:pb-0 text-sm leading-[1.55]"
                     >
                       {/* aria-hidden and paired with nothing: every row in this list is included,
                           so the glyph is decoration and a screen reader announcing "included"

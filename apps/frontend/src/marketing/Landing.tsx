@@ -205,48 +205,96 @@ export default function Landing() {
       </section>
 
       {/* ── Pricing summary ── */}
-      {/* A SUMMARY, and the card it used to hold now lives on /pricing (#169). Both pages showing
+      {/* A SUMMARY, and the full card + billing toggle stay on /pricing (#169). Both pages showing
           the same card would be two URLs answering "what does TinyOrder cost" — they compete with
           each other and split whatever authority either has, which is the argument canonicalPath()
           already makes about the signup CTAs.
 
           The PRICE stays here even so. It is the objection this section exists to answer, and a
           pricing section that makes you click to see a number is the pattern every visitor has
-          learned means "expensive". What moved is the detail: the full feature list and the
-          billing rules. */}
-      <section id="pricing" className="px-8 py-16 max-w-[720px] mx-auto w-full text-center border-t border-border">
+          learned means "expensive".
+
+          Three things this section carries that the pre-#222 version did not, all of them fallout
+          from the second plan going away:
+
+          NO BOX. A bordered card is a comparison device; with one plan there is nothing on the
+          other side of it, so the box was a 320px column of decoration inside a 720px section. The
+          section's own border-t frames it.
+
+          FOUR FEATURES, sliced from the shared tier — never retyped here, or the landing page and
+          /pricing quietly disagree about what a shop gets (see pricingTiers.ts). Four is the
+          summary; the remaining three and the full list are the reason to click through. Without
+          them the section claimed "everything included" twice and named nothing.
+
+          A CTA. The reader who has just accepted the price is the readiest reader on the page, and
+          until now the only thing to click was a link to a different page. */}
+      {/* bg-card, the same band as "How it works" — the page ran three plain sections deep here
+          ("What you get", pricing, FAQ) and the conversion section was the one carrying the least
+          weight of the three. Not bg-brand-100: that tint belongs to the footer CTA, and a second
+          one this close stops the closing CTA reading as the end. No bottom border either — the
+          FAQ's own border-t closes the band, and two adjacent hairlines render as a 2px line.
+
+          The band is full-bleed and the measure sits in a wrapper inside it, the same shape as
+          "How it works": the section carries the ground, the content carries its own width. */}
+      <section id="pricing" className="bg-card border-t border-border px-8 py-16 max-[600px]:px-5 max-[600px]:py-10">
         <Reveal>
+        <div className="max-w-[720px] mx-auto w-full text-center">
         <h2 className={sectionTitle}>
           {t('Simple, honest pricing — start free', '简单透明的价格——免费开始')}
         </h2>
+        {/* The trial is NOT repeated here — it sits at the click, under the button, where it is
+            risk reversal instead of a claim. This line carries the other objection instead. */}
         <p className="-mt-7 mb-9 text-[15px] leading-[1.6] text-ink-700">
-          {t('One plan, everything included — 7 days free, no card required.', '一个方案，功能全包含——7 天免费，无需信用卡。')}
+          {t('One plan, everything included — and no commission on your orders.', '一个方案，功能全包含——而且不抽订单佣金。')}
         </p>
-        <dl className="max-w-[320px] mx-auto flex flex-col p-6 rounded-lg bg-card border border-border text-left">
-          <dt className="font-heading text-lg font-medium text-foreground">
-            {t(PRICING_TIERS[0].name.en, PRICING_TIERS[0].name.zh)}
-          </dt>
-          <dd className="m-0 mt-2 flex items-baseline gap-[0.35rem]">
-            <span className="font-heading text-[30px] font-semibold text-primary leading-none">
-              {formatMoney(pricing.prices.pro.monthly, pricing.currency)}
-            </span>
-            <span className="text-sm text-muted-foreground">{t('/mo', '/月')}</span>
-          </dd>
-          <dd className="m-0 mt-3 text-sm leading-[1.6] text-ink-700">
-            {t(PRICING_TIERS[0].blurb.en, PRICING_TIERS[0].blurb.zh)}
-          </dd>
-        </dl>
-        <p className="mt-9 mb-0 text-[13px] text-muted-foreground">
+
+        <div className="flex items-baseline justify-center gap-[0.35rem]">
+          <span className="font-heading text-[42px] font-semibold text-primary leading-none max-[600px]:text-[36px]">
+            {formatMoney(pricing.prices.pro.monthly, pricing.currency)}
+          </span>
+          <span className="text-sm text-muted-foreground">{t('/mo', '/月')}</span>
+        </div>
+        {pricing.estimate && (
+          <p className="mt-2 mb-0 text-xs text-muted-foreground">
+            ≈ {formatMoney(pricing.prices.pro.monthly * pricing.estimate.rate, pricing.estimate.currency)}{t('/mo', '/月')}
+          </p>
+        )}
+        {/* The yearly deal as the amount, not as arithmetic the reader has to do. Both halves come
+            off the same fetched pricing, so nothing here can drift from Stripe. */}
+        <p className="mt-2 mb-0 text-[13px] text-muted-foreground">
+          {t(
+            `or ${formatMoney(pricing.prices.pro.yearly, pricing.currency)} a year — two months free`,
+            `或 ${formatMoney(pricing.prices.pro.yearly, pricing.currency)}/年——免费两个月`,
+          )}
+        </p>
+
+        <ul className="list-none max-w-[380px] mx-auto mt-8 mb-8 p-0 flex flex-col gap-[0.6rem] text-left">
+          {PRICING_TIERS[0].features.slice(0, 4).map((f, i) => (
+            <li
+              key={i}
+              className="relative pl-6 text-sm leading-[1.5] text-foreground before:content-['✓'] before:absolute before:left-0 before:text-primary before:font-semibold"
+            >
+              {t(f.en, f.zh)}
+            </li>
+          ))}
+        </ul>
+
+        <MagneticButton to="/merchant/signup" className={ctaPrimary}>
+          {t(PRICING_TIERS[0].cta.en, PRICING_TIERS[0].cta.zh)}
+        </MagneticButton>
+        <p className="mt-2.5 mb-0 text-xs text-muted-foreground">
+          {t(PRICING_TIERS[0].note.en, PRICING_TIERS[0].note.zh)}
+        </p>
+
+        <p className="mt-8 mb-0 text-[13px] text-muted-foreground">
           <Link to="/pricing" className="underline underline-offset-4 hover:text-primary">
             {t('See everything that is included', '查看包含的全部功能')}
           </Link>
         </p>
         <p className="mt-2 mb-0 text-[13px] text-muted-foreground">
-          {t(
-            'Two months free on yearly · cancel anytime — no contracts, no lock-in.',
-            '年付免费两个月 · 随时取消——无合约，不绑定。',
-          )}
+          {t('Cancel anytime — no contracts, no lock-in.', '随时取消——无合约，不绑定。')}
         </p>
+        </div>
         </Reveal>
       </section>
 
