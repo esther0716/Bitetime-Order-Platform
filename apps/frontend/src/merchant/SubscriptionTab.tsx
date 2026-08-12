@@ -6,6 +6,7 @@ import {
   fetchMyBilling, openBillingPortal, startCheckout,
   cancelSubscription, resumeSubscription,
 } from '../store'
+import { trackEvent } from '../analytics/events'
 import type { Result } from '../api'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
@@ -88,6 +89,13 @@ function CheckoutButton({ cycle, label }: { cycle: string; label: string }) {
   const [busy, setBusy] = useState(false)
   async function go() {
     setBusy(true)
+    // Reported BEFORE the redirect: window.location.assign leaves this page, and nothing after it
+    // runs. See analytics/events.ts — the call swallows its own failure, so it cannot cost a
+    // checkout.
+    trackEvent('billing_checkout_started', {
+      billing: cycle === 'yearly' ? 'yearly' : 'monthly',
+      from: 'subscription',
+    })
     const r = await startCheckout({ billing: cycle })
     if (r.ok) window.location.assign(r.data)
     else {
