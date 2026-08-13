@@ -64,6 +64,14 @@ export const PRICING_TIERS: PricingTier[] = [
         zh: '看清哪些 Facebook 与 TikTok 广告带来订单——用你自己的像素和广告账户',
       },
       {
+        en: 'Turn a photo of your menu into your product list — you check every price before it saves',
+        zh: '拍张菜单照片就能生成产品列表——每个价格都由你确认后才保存',
+      },
+      {
+        en: 'Ask your dashboard about your own orders and get a straight answer',
+        zh: '直接询问仪表板你自己的订单，获得直接的答案',
+      },
+      {
         en: 'Priority support — your questions jump the queue',
         zh: '优先支持——你的问题优先处理',
       },
@@ -108,6 +116,11 @@ export const INCLUDED_GROUPS: IncludedGroup[] = [
         label: { en: 'Your own storefront link', zh: '专属店铺链接' },
       },
       {
+        id: 'menuimport',
+        label: { en: 'Build your product list from a photo of your menu', zh: '拍下菜单照片即可建立产品列表' },
+        detail: { en: 'You review and correct every draft before it saves', zh: '每份草稿都由你核对更正后才保存' },
+      },
+      {
         id: 'products',
         label: { en: 'Products on your menu', zh: '菜单上的产品' },
         detail: { en: 'Unlimited', zh: '无限制' },
@@ -134,6 +147,11 @@ export const INCLUDED_GROUPS: IncludedGroup[] = [
       {
         id: 'delivery',
         label: { en: 'Delivery tracking — flat, by region, or by road distance', zh: '运费——统一、按地区，或按实际路程' },
+      },
+      {
+        id: 'assistant',
+        label: { en: 'Ask questions about your orders in plain words', zh: '用日常语言询问你的订单' },
+        detail: { en: 'Answered from your own figures — never another shop\'s', zh: '依你自己的数据作答——绝不涉及其他店铺' },
       },
       {
         id: 'orderdates',

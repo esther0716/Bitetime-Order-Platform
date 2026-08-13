@@ -83,6 +83,32 @@ export const FAQ: FaqEntry[] = [
     },
   },
   {
+    // The objection that keeps a shop with a real menu from ever finishing setup. It belongs in
+    // the FAQ rather than only on /features because it is asked BEFORE signing up, and because
+    // the honest answer contains the reassurance ("you check every price") that the question is
+    // really asking for.
+    id: 'menuimport',
+    q: {
+      en: 'Do I have to type my whole menu in by hand?',
+      zh: '我必须把整份菜单手动输入吗？',
+    },
+    a: {
+      en: 'No. Photograph the menu you already have and TinyOrder reads it into draft products — names, prices, units and sections, and the Chinese names too where your menu prints them. You check every line before anything is saved, and a price it could not read is left blank rather than guessed. You can still add products by hand whenever you prefer.',
+      zh: '不需要。拍下你现有的菜单，TinyOrder 会读成产品草稿——名称、价格、单位与分类，菜单上有中文名称时也会一并读取。保存之前每一行都由你核对，读不出的价格会留空而不是猜测。你也可以随时手动新增产品。',
+    },
+  },
+  {
+    id: 'assistant',
+    q: {
+      en: 'Can I ask questions about how my shop is doing?',
+      zh: '可以询问店铺经营状况吗？',
+    },
+    a: {
+      en: 'Yes. Your dashboard takes a question in plain English or Chinese — which product made the least money, how the last 30 days compared with the 30 before — and answers from your own order figures, saying underneath which period it used. It reads your shop only, and it cannot change anything.',
+      zh: '可以。仪表板可接受中文或英文的日常提问——哪个产品营收最低、最近 30 天与之前 30 天相比如何——并依你自己的订单数据作答，下方注明所采用的时间范围。它只读取你的店铺，且无法更改任何内容。',
+    },
+  },
+  {
     id: 'cancel',
     q: {
       en: 'Can I cancel?',

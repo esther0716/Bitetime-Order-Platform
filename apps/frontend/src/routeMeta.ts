@@ -43,7 +43,7 @@ export const ROUTE_META: Record<string, RouteMeta> = {
   '/features': {
     title: 'Features — Everything Your Shop Needs | TinyOrder',
     description:
-      'A shop page you control, delivery fees that match how you deliver, numbered orders, instant alerts and a customer list that builds itself. See it all.',
+      'Build your product list from a photo of your menu, price delivery by real road distance, and ask your dashboard about your own orders. See everything included.',
   },
   '/faq': {
     title: 'FAQ — Answers for Shop Owners | TinyOrder',
