@@ -42,6 +42,15 @@ export interface MenuDraft {
 
 export type MenuMediaType = 'image/jpeg' | 'image/png'
 
+/**
+ * The largest menu photograph the import accepts, before base64 encoding.
+ *
+ * 5 MB is roughly a modern phone's own full-quality JPEG, so a merchant photographing a menu
+ * board is under it without being told to do anything. It lives here beside the reader rather
+ * than at the route because it is a fact about what this module can be asked to read.
+ */
+export const MAX_MENU_IMAGE_BYTES = 5 * 1024 * 1024
+
 export interface MenuImportInput {
   imageBase64: string
   mediaType: MenuMediaType

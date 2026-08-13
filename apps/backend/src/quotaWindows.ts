@@ -40,3 +40,21 @@ export const quoteMerchantWindow = createSlidingWindow({ limit: 500, windowMs: 2
 // Same in-memory weaknesses as every other limiter here, inherited knowingly: resets on redeploy,
 // stops working past one backend instance (#101, Out of Scope).
 export const placesGlobalWindow = createSlidingWindow({ limit: 20_000, windowMs: 24 * 60 * 60_000, now: () => Date.now() })
+
+// AI menu import (tasks/prd-ai-menu-import.md). Belongs in this file rather than beside the route
+// for the reason the file exists at all: it is a ceiling on money the PLATFORM spends on a
+// merchant's behalf, same as the Google windows above — one Claude bill for one shop.
+//
+// Keyed by merchant, not by IP, and there is no IP twin. The Google windows carry both because
+// their spender is reachable by an anonymous storefront visitor; this route is behind
+// `requireMerchantOwns`, so every call already has a named shop attached to it and the shop IS
+// the unit of spend.
+//
+// 20 a day is set against the WORKFLOW, not against a cost model there is no data for yet: a
+// menu is one photo per page, a merchant re-shooting a blurry page needs a handful of tries, and
+// a shop legitimately importing twenty pages in one day is not a shop this platform has. It is a
+// runaway stop, not a rationing device — reaching it should mean something is wrong.
+//
+// Same in-memory weaknesses as every other limiter here, inherited knowingly: resets on redeploy,
+// stops working past one backend instance (#101, Out of Scope).
+export const menuImportMerchantWindow = createSlidingWindow({ limit: 20, windowMs: 24 * 60 * 60_000, now: () => Date.now() })

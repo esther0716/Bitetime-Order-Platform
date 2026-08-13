@@ -38,7 +38,7 @@ import { statsOrders, distinctCustomerCount } from './ordersDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow } from './quotaWindows.js'
+import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow } from './quotaWindows.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
 import { detectCountry } from './region.js'
 import { fetchBasePricing, createPricingCache, type PricingPayload } from './pricing.js'
@@ -58,6 +58,7 @@ import {
   type CreateGithubIssue, type GithubIssueAction, type ListGithubReleases,
 } from './github.js'
 import { humanizeRelease, type HumanizeRelease } from './releases.js'
+import { extractMenu, MAX_MENU_IMAGE_BYTES, type ExtractMenu } from './menuImport.js'
 import {
   listReleaseTags, insertDraftRelease, listAllReleases, getReleaseById,
   updateReleaseStatus, updateReleaseHumanization,
@@ -795,6 +796,66 @@ app.delete('/api/merchants/:id/products/:productId', requireMerchantOwns, requir
   const { error } = await admin.from('products').delete().eq('id', productId)
   if (error) return c.json({ error: 'Delete failed' }, 500)
   return c.json({ ok: true })
+})
+
+// Same pattern as githubDeps and releaseDeps: held mutable so an API test can drive the real
+// route without a live Claude call.
+export const menuImportDeps: { extract: ExtractMenu } = { extract: extractMenu }
+
+/**
+ * AI menu import (tasks/prd-ai-menu-import.md).
+ *
+ * Reads a photograph of the shop's menu and returns DRAFT products. It is the one route in this
+ * file whose contract is that it changes nothing: no `products` row is created here, and none is
+ * updated. The merchant corrects the drafts in the editor and saves them through the ordinary
+ * product upsert above, under every rule that already applies there.
+ *
+ * That split is not tidiness. A reader that both guesses a price and commits it puts a wrong
+ * number in front of a customer with nobody in between; a reader that only proposes cannot.
+ *
+ * Refusals, not degradations. A missing API key answers 503 and an unreadable response answers
+ * 502 — never an empty draft list, which on screen is indistinguishable from "your menu has no
+ * items on it" and is the failure this endpoint exists to avoid.
+ */
+app.post('/api/merchants/:id/menu-import', requireMerchantOwns, async (c) => {
+  const m = c.get('merchant')
+  // A suspended or pending shop cannot sell, so it has no business spending the platform's
+  // Claude budget. Checked here rather than left to the storefront gate, which does not run on
+  // dashboard routes.
+  if (m.status !== 'active') return c.json({ error: 'shop_not_active' }, 403)
+
+  const body = await c.req.json().catch(() => null) as { image?: unknown; media_type?: unknown } | null
+  if (!body) return c.json({ error: 'bad_body' }, 400)
+
+  const mediaType = body.media_type
+  if (mediaType !== 'image/jpeg' && mediaType !== 'image/png') {
+    return c.json({ error: 'bad_media_type' }, 400)
+  }
+  const image = typeof body.image === 'string' ? body.image : ''
+  if (!image) return c.json({ error: 'missing_image' }, 400)
+
+  // Base64 carries 3 bytes per 4 characters. Checked on the ENCODED length so the cap is applied
+  // before anything decodes a payload an attacker chose the size of.
+  if (Math.floor((image.length * 3) / 4) > MAX_MENU_IMAGE_BYTES) {
+    return c.json({ error: 'image_too_large' }, 413)
+  }
+
+  // Ahead of the quota deliberately: an unconfigured platform must not burn a shop's daily
+  // allowance answering 503.
+  if (!env.anthropicApiKey) return c.json({ error: 'menu_import_unavailable' }, 503)
+
+  if (!menuImportMerchantWindow.allow(m.id)) {
+    return c.json({ error: 'daily_limit_reached', limit: 20 }, 429)
+  }
+
+  const draft = await menuImportDeps.extract(env.anthropicApiKey, {
+    imageBase64: image,
+    mediaType,
+    currency: m.currency ?? 'MYR',
+  })
+  if (!draft) return c.json({ error: 'could_not_read_menu' }, 502)
+
+  return c.json(draft)
 })
 
 app.get('/api/merchants/:id/vouchers/:code', async (c) => {
