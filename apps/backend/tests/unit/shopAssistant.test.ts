@@ -153,9 +153,51 @@ describe('askShopAssistant', () => {
     expect(resultText).toContain('are NOT limited to that window')
   })
 
-  it('returns null when the response is a refusal', async () => {
+  it('asks the API to fall back when the model declines', async () => {
+    let sentBody = ''
+    let betaHeader = ''
+    // `HeadersInit` is a DOM lib type this workspace does not load; derive it from `Headers`.
+    type HeadersArg = ConstructorParameters<typeof Headers>[0]
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: { body: string; headers: HeadersArg }) => {
+      sentBody = init.body
+      // The SDK sends a `Headers` instance, not a plain object — this reads either.
+      betaHeader = new Headers(init.headers).get('anthropic-beta') ?? ''
+      return textResponse('ok')
+    }))
+
+    await askShopAssistant('sk-ant-test', INPUT)
+
+    const sent = JSON.parse(sentBody)
+    // 'default' rather than a pinned model: routed by refusal category, and nothing to migrate
+    // when a model we would have pinned is deprecated.
+    expect(sent.fallbacks).toBe('default')
+    // The parameter and its beta flag are a pair — the scalar form under the older
+    // `-2026-06-01` header is a 400, so the header is asserted alongside it.
+    expect(betaHeader).toContain('server-side-fallback-2026-07-01')
+  })
+
+  // With fallbacks on, a refusal reaching us means EVERY model in the chain declined.
+  it('returns null when the whole fallback chain refused', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => claudeResponse({ stop_reason: 'refusal', content: [] })))
     expect(await askShopAssistant('sk-ant-test', INPUT)).toBeNull()
+  })
+
+  it('returns the answer when a fallback model served it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => claudeResponse({
+      stop_reason: 'end_turn',
+      model: 'claude-opus-4-8',
+      content: [
+        { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } },
+        { type: 'text', text: 'Revenue rose 9%.' },
+      ],
+      usage: { input_tokens: 10, output_tokens: 10, iterations: [{ type: 'fallback_message' }] },
+    })))
+
+    const answer = await askShopAssistant('sk-ant-test', INPUT)
+
+    // A fallback answer is an ANSWER. The merchant must not be shown an error because the
+    // platform's first-choice model declined.
+    expect(answer?.text).toBe('Revenue rose 9%.')
   })
 
   it('returns null when the answer ran out of tokens', async () => {

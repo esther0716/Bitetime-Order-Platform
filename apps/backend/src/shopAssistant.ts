@@ -161,6 +161,20 @@ export const askShopAssistant: AskShopAssistant = async (apiKey, input) => {
       model: 'claude-opus-5',
       max_tokens: 8000,
       thinking: { type: 'adaptive' },
+      // Claude Opus 5's safety classifiers can decline a request outright, and a merchant asking
+      // an ordinary question about cookie sales has no idea why their dashboard went quiet. With
+      // `fallbacks` the API re-runs the declined request on another model inside the same call,
+      // so the merchant gets an answer instead of a 502.
+      //
+      // `'default'` rather than a pinned model on purpose: it routes by refusal CATEGORY, so the
+      // substitute suits the reason for the decline — and there is no migration owed here the day
+      // a model we pinned is deprecated.
+      //
+      // A decline before any output is not billed; the rescue bills at the fallback model's own
+      // rates. `stop_reason: 'refusal'` on the final message therefore means the WHOLE chain
+      // declined, which is still handled below.
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
       system: buildSystem(input),
       tools: [statsTool],
       messages: [{ role: 'user', content: input.question }],
@@ -178,8 +192,16 @@ export const askShopAssistant: AskShopAssistant = async (apiKey, input) => {
       return null
     }
     if (last.stop_reason === 'refusal') {
+      // Every model in the chain declined, not just the first.
       console.error('Shop assistant was refused')
       return null
+    }
+
+    // Ops signal only. A fallback answer is a correct answer, so this changes nothing the merchant
+    // sees — but a spike in it means Claude Opus 5 is declining ordinary shop questions, which is
+    // worth knowing before the support tickets arrive.
+    if (last.usage?.iterations?.some(entry => entry.type === 'fallback_message')) {
+      console.warn(`Shop assistant answered via a fallback model: ${last.model}`)
     }
     if (last.stop_reason === 'max_tokens') {
       // A truncated answer about money is worse than no answer: the merchant cannot tell which
