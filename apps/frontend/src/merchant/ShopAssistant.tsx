@@ -48,6 +48,9 @@ export default function ShopAssistant() {
       const byCode: Record<string, string> = {
         assistant_unavailable: t('The assistant is not switched on for this platform yet.', '本平台尚未开启智能助手。'),
         daily_limit_reached: t('You have reached today’s limit of 50 questions.', '您已达到今天 50 个问题的上限。'),
+        // Deliberately not the daily wording: "come back tomorrow" and "come back next month" are
+        // different news, and the merchant can act on the difference.
+        monthly_limit_reached: t('You have reached this month’s limit of 60 questions. It resets on the 1st of next month.', '您已达到本月 60 个问题的上限。下月 1 日重置。'),
         could_not_answer: t('The assistant could not answer that. Try asking it more simply.', '智能助手无法回答。请换个更简单的问法。'),
         question_too_long: t('That question is too long.', '问题太长了。'),
         shop_not_active: t('Your shop is not active, so the assistant is switched off.', '您的店铺未启用，智能助手已关闭。'),

@@ -203,29 +203,27 @@ export const extractMenu: ExtractMenu = async (apiKey, input) => {
   }
   try {
     const client = new Anthropic({ apiKey })
-    // The BETA endpoint, purely so `fallbacks` below can be passed — everything else about this
-    // call is the ordinary Messages API.
-    const response = await client.beta.messages.create({
-      // Opus, not the Haiku releases.ts uses. That call rewrites text that already exists and a
-      // clumsy sentence costs nothing; this one reads PRICES off a photograph, and a misread
-      // price is money. Adaptive thinking for the same reason — a crowded menu board is a
-      // genuine reading problem, not a transcription.
-      model: 'claude-opus-5',
+    const response = await client.messages.create({
+      // Sonnet 5, not the Haiku releases.ts uses and not the Opus 5 this started on.
+      //
+      // Not Haiku, because Haiku's vision caps at 1568px against Sonnet 5's 2576px, and the input
+      // here is a phone photograph of a crowded menu board — the exact case that resolution
+      // decides. A misread price is money, and it arrives as a plausible number rather than an
+      // error.
+      //
+      // Not Opus, because a shop pays RM39.90 a month and Opus made this call cost roughly twice
+      // what Sonnet does for work that is extraction rather than reasoning. Sonnet 5 is in the
+      // same high-resolution vision tier as Opus 5 and supports structured outputs and adaptive
+      // thinking identically, so the swap costs nothing this call actually uses — except
+      // `fallbacks`, below.
+      model: 'claude-sonnet-5',
       max_tokens: 16000,
+      // Adaptive thinking stays on: a crowded menu board is a genuine reading problem, not a
+      // transcription. `medium` bounds how deep it goes — output tokens are five times the price
+      // of input, so this is the difference between a viable feature and an unpriced one.
       thinking: { type: 'adaptive' },
-      // Claude Opus 5's safety classifiers can decline a request, and a photograph of a menu is
-      // an odd thing to be declined over — which is exactly why it should not end the import. On
-      // a decline the API re-runs the request on another model inside the same call, so the
-      // merchant gets their drafts rather than "the menu could not be read".
-      //
-      // `'default'` rather than a pinned model: it routes by refusal CATEGORY, and it owes no
-      // migration the day a model we had named is deprecated.
-      //
-      // A decline before any output is not billed. `stop_reason: 'refusal'` still reaching the
-      // check below now means the whole chain declined.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
       output_config: {
+        effort: 'medium',
         format: { type: 'json_schema', schema: MENU_SCHEMA },
       },
       messages: [{
@@ -250,6 +248,16 @@ export const extractMenu: ExtractMenu = async (apiKey, input) => {
     }
 
     if (response.stop_reason === 'refusal') {
+      // There is no fallback behind this one. `fallbacks` re-ran a declined request on another
+      // model inside the same call, and Sonnet 5 does not accept the parameter at all — the API
+      // rejects it outright, and `/v1/models` reports Sonnet 5's `allowed_fallback_models` as
+      // empty. So a decline that Opus 5 would have quietly recovered from now reaches the
+      // merchant as "the menu could not be read".
+      //
+      // Judged acceptable rather than overlooked: a photograph of food is about as far from the
+      // classifiers that fire as this platform's inputs get, and the failure is a refusal rather
+      // than a wrong price. If this line starts appearing in the logs, that judgement was wrong
+      // and the model choice is what has to change.
       console.error('Menu import was refused')
       return null
     }

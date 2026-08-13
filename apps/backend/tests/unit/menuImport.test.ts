@@ -18,7 +18,7 @@ function claudeResponse(body: Record<string, unknown>) {
       id: 'msg_1',
       type: 'message',
       role: 'assistant',
-      model: 'claude-opus-5',
+      model: 'claude-sonnet-5',
       usage: { input_tokens: 10, output_tokens: 10 },
       ...body,
     }),
@@ -155,7 +155,14 @@ describe('extractMenu', () => {
     expect(result).toEqual({ items: [] })
   })
 
-  it('asks the API to fall back when the model declines', async () => {
+  // This asserts the ABSENCE of a parameter, which is unusual enough to justify itself: Sonnet 5
+  // does not merely ignore `fallbacks`, it rejects the whole request —
+  //   "'claude-sonnet-5' does not support the `fallbacks` parameter" (HTTP 400)
+  // — and `/v1/models` reports its `allowed_fallback_models` as empty. So a well-meaning
+  // reinstatement of the old parameter would not degrade menu import, it would break every
+  // import outright. Nothing else in the suite would notice, because every other test stubs a
+  // successful response.
+  it('never sends the fallbacks parameter, which Sonnet 5 rejects outright', async () => {
     let sentBody = ''
     let betaHeader = ''
     // `HeadersInit` is a DOM lib type this workspace does not load; derive it from `Headers`.
@@ -168,36 +175,15 @@ describe('extractMenu', () => {
 
     await extractMenu('sk-ant-test', INPUT)
 
-    // 'default' rather than a pinned model: routed by refusal category, nothing to migrate when a
-    // named model is deprecated.
-    expect(JSON.parse(sentBody).fallbacks).toBe('default')
-    // Parameter and beta flag are a pair — the scalar form under the older `-2026-06-01` header
-    // is a 400, so the header is asserted alongside it.
-    expect(betaHeader).toContain('server-side-fallback-2026-07-01')
+    expect(JSON.parse(sentBody).fallbacks).toBeUndefined()
+    expect(betaHeader).not.toContain('server-side-fallback')
   })
 
-  // With fallbacks on, a refusal reaching us means EVERY model in the chain declined.
-  it('returns null when the whole fallback chain refused', async () => {
+  // There is no fallback behind this one now — a refusal is the end of the import.
+  it('returns null when the model refused', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => claudeResponse({ stop_reason: 'refusal', content: [] })))
     const result = await extractMenu('sk-ant-test', INPUT)
     expect(result).toBeNull()
-  })
-
-  it('returns the drafts when a fallback model read the menu', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => claudeResponse({
-      stop_reason: 'end_turn',
-      model: 'claude-opus-4-8',
-      content: [
-        { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } },
-        { type: 'text', text: JSON.stringify({ items: [{ name: 'Brownie', price_text: '6.00' }] }) },
-      ],
-    })))
-
-    const result = await extractMenu('sk-ant-test', INPUT)
-
-    // A fallback read is a read. The merchant must not be told their menu was unreadable because
-    // the platform's first-choice model declined.
-    expect(result!.items[0]).toMatchObject({ name: 'Brownie', price: 6 })
   })
 
   it('returns null when the response ran out of tokens', async () => {
@@ -243,7 +229,13 @@ describe('extractMenu', () => {
     await extractMenu('sk-ant-test', INPUT)
 
     const sent = JSON.parse(sentBody)
-    expect(sent.model).toBe('claude-opus-5')
+    // Sonnet 5 specifically: it shares Opus 5's 2576px vision tier, and Haiku's 1568px cap is a
+    // downgrade on exactly this input — a phone photograph of a crowded menu board.
+    expect(sent.model).toBe('claude-sonnet-5')
+    // Thinking stays ON (a crowded board is a reading problem), bounded by effort rather than
+    // switched off. Output tokens are 5x the price of input, so this pins the cost model.
+    expect(sent.thinking).toEqual({ type: 'adaptive' })
+    expect(sent.output_config.effort).toBe('medium')
     const content = sent.messages[0].content
     expect(content[0]).toEqual({
       type: 'image',

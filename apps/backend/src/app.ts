@@ -38,7 +38,9 @@ import { statsOrders, distinctCustomerCount } from './ordersDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow } from './quotaWindows.js'
+import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT } from './quotaWindows.js'
+import { usagePeriod, nextResetDate, LIFETIME_PERIOD, type AiFeature } from './aiUsage.js'
+import { consumeAiCall } from './aiUsageDb.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
 import { detectCountry } from './region.js'
 import { fetchBasePricing, createPricingCache, type PricingPayload } from './pricing.js'
@@ -820,6 +822,52 @@ app.delete('/api/merchants/:id/products/:productId', requireMerchantOwns, requir
   return c.json({ ok: true })
 })
 
+/**
+ * Spend one call against a shop's Claude allowance. Returns null when the call may proceed, or
+ * the refusal body when the allowance is gone.
+ *
+ * Both AI routes are bounded twice over, and the two bounds guard different things — the same
+ * argument the Google quote endpoint makes in `quotaWindows.ts`:
+ *
+ *   * the DAILY in-memory window is the burst stop: free, and reset by a redeploy, which over a
+ *     day does not matter;
+ *   * this PERSISTED counter is the bill stop: it is in Postgres precisely because a redeploy
+ *     must not clear it, and it is what catches the loop that sits just under the daily figure.
+ *
+ * The daily window is checked FIRST, so a call the burst stop already refused never eats a
+ * month's allowance — it spent no money. This runs last of all the checks, immediately before the
+ * model call, for the same reason the key check runs before both: nothing that was going to be
+ * refused anyway may cost a merchant a unit.
+ *
+ * `lifetimeLimit` is the once-ever grant, spent BEFORE the month's — which is the whole point of
+ * having one. A merchant photographing their menu for the first time draws on the grant and
+ * leaves the month untouched; only once the grant is exhausted does the ordinary monthly figure
+ * start counting. Pass null for a feature that has no grant.
+ *
+ * The refusal always quotes the MONTHLY limit and its reset date, never the grant's: a merchant
+ * who has used their setup allowance cannot be told to wait for it to come back, because it never
+ * does. What returns on the 1st is the monthly figure, and that is the only true thing to say.
+ */
+async function spendAiAllowance(
+  m: Record<string, any>,
+  feature: AiFeature,
+  lifetimeLimit: number | null,
+  monthlyLimit: number,
+): Promise<{ error: string; limit: number; resets: string } | null> {
+  const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
+  const period = usagePeriod(timeZone, new Date())
+
+  if (
+    lifetimeLimit !== null
+    && await consumeAiCall({ merchantId: m.id, feature, period: LIFETIME_PERIOD, limit: lifetimeLimit })
+  ) {
+    return null
+  }
+  if (await consumeAiCall({ merchantId: m.id, feature, period, limit: monthlyLimit })) return null
+
+  return { error: 'monthly_limit_reached', limit: monthlyLimit, resets: nextResetDate(period) }
+}
+
 // Same pattern as githubDeps and releaseDeps: held mutable so an API test can drive the real
 // route without a live Claude call.
 export const menuImportDeps: { extract: ExtractMenu } = { extract: extractMenu }
@@ -870,6 +918,11 @@ app.post('/api/merchants/:id/menu-import', requireMerchantOwns, async (c) => {
     return c.json({ error: 'daily_limit_reached', limit: 20 }, 429)
   }
 
+  const importRefusal = await spendAiAllowance(
+    m, 'menu_import', MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT,
+  )
+  if (importRefusal) return c.json(importRefusal, 429)
+
   const draft = await menuImportDeps.extract(env.anthropicApiKey, {
     imageBase64: image,
     mediaType,
@@ -913,6 +966,10 @@ app.post('/api/merchants/:id/ask', requireMerchantOwns, async (c) => {
   if (!assistantMerchantWindow.allow(m.id)) {
     return c.json({ error: 'daily_limit_reached', limit: 50 }, 429)
   }
+
+  // No lifetime grant: asking questions is the ongoing use of the feature, not a setup burst.
+  const askRefusal = await spendAiAllowance(m, 'assistant', null, ASSISTANT_MONTHLY_LIMIT)
+  if (askRefusal) return c.json(askRefusal, 429)
 
   const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
 

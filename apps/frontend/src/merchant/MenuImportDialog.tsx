@@ -140,6 +140,14 @@ export default function MenuImportDialog({
       const byCode: Record<string, string> = {
         menu_import_unavailable: t('Menu reading is not switched on for this platform yet.', '本平台尚未开启菜单识别。'),
         daily_limit_reached: t('You have reached today’s limit of 20 menu reads.', '您已达到今天 20 次菜单识别的上限。'),
+        // A different message from the daily one on purpose. "Come back tomorrow" and "come back
+        // next month" are not the same news, and a merchant who reads the wrong one either waits
+        // a day for nothing or gives up on a feature that returns on the 1st.
+        //
+        // It names the MONTHLY figure and not the one-time setup grant, matching what the backend
+        // sends: by the time a merchant sees this the grant is gone for good, and promising its
+        // return would be a lie. Five a month is what actually comes back.
+        monthly_limit_reached: t('You have reached this month’s limit of 5 menu reads. It resets on the 1st of next month.', '您已达到本月 5 次菜单识别的上限。下月 1 日重置。'),
         could_not_read_menu: t('The menu could not be read. Try a sharper photo, or one page at a time.', '无法识别该菜单。请拍得更清晰，或每次只拍一页。'),
         image_too_large: t('That photo is larger than 5MB.', '照片超过 5MB。'),
         shop_not_active: t('Your shop is not active, so menu reading is switched off.', '您的店铺未启用，菜单识别已关闭。'),

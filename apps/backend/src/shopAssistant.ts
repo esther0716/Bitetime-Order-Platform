@@ -157,24 +157,22 @@ export const askShopAssistant: AskShopAssistant = async (apiKey, input) => {
       },
     })
 
+    // The beta namespace here is the TOOL RUNNER's own, not a fallback's: the runner drives the
+    // question → tool call → answer loop, and it is beta in the SDK regardless of model.
     const runner = client.beta.messages.toolRunner({
-      model: 'claude-opus-5',
+      // Sonnet 5 rather than Opus 5. The tool hands this model figures that are already computed
+      // — `labelled()` even pre-computes the month-on-month deltas — so its job is choosing a
+      // window and writing two sentences about numbers it did not have to derive. That is not
+      // work Opus wins, and at RM39.90 a month per shop the difference is most of the feature's
+      // viability.
+      model: 'claude-sonnet-5',
       max_tokens: 8000,
+      // Adaptive thinking stays on: choosing the right window for a vague question ("how did last
+      // month go?") is the judgement in this feature, and it happens before the tool call. The
+      // effort level bounds how deep it goes without switching it off — output tokens are five
+      // times the price of input, and this loop pays for them twice.
       thinking: { type: 'adaptive' },
-      // Claude Opus 5's safety classifiers can decline a request outright, and a merchant asking
-      // an ordinary question about cookie sales has no idea why their dashboard went quiet. With
-      // `fallbacks` the API re-runs the declined request on another model inside the same call,
-      // so the merchant gets an answer instead of a 502.
-      //
-      // `'default'` rather than a pinned model on purpose: it routes by refusal CATEGORY, so the
-      // substitute suits the reason for the decline — and there is no migration owed here the day
-      // a model we pinned is deprecated.
-      //
-      // A decline before any output is not billed; the rescue bills at the fallback model's own
-      // rates. `stop_reason: 'refusal'` on the final message therefore means the WHOLE chain
-      // declined, which is still handled below.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      output_config: { effort: 'medium' },
       system: buildSystem(input),
       tools: [statsTool],
       messages: [{ role: 'user', content: input.question }],
@@ -192,16 +190,16 @@ export const askShopAssistant: AskShopAssistant = async (apiKey, input) => {
       return null
     }
     if (last.stop_reason === 'refusal') {
-      // Every model in the chain declined, not just the first.
+      // Nothing catches this now. `fallbacks` used to re-run a declined request on another model
+      // inside the same call, and Sonnet 5 rejects that parameter outright — `/v1/models` reports
+      // its `allowed_fallback_models` as empty. A decline therefore reaches the merchant as a 502
+      // where it used to be recovered silently.
+      //
+      // A question about one's own order counts is an unlikely thing to be declined over, which
+      // is why this was judged an acceptable trade for the model's price. A run of these in the
+      // logs says the trade was wrong.
       console.error('Shop assistant was refused')
       return null
-    }
-
-    // Ops signal only. A fallback answer is a correct answer, so this changes nothing the merchant
-    // sees — but a spike in it means Claude Opus 5 is declining ordinary shop questions, which is
-    // worth knowing before the support tickets arrive.
-    if (last.usage?.iterations?.some(entry => entry.type === 'fallback_message')) {
-      console.warn(`Shop assistant answered via a fallback model: ${last.model}`)
     }
     if (last.stop_reason === 'max_tokens') {
       // A truncated answer about money is worse than no answer: the merchant cannot tell which

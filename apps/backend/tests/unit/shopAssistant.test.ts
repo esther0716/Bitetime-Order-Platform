@@ -38,7 +38,7 @@ const INPUT = {
 function claudeResponse(body: Record<string, unknown>) {
   return new Response(
     JSON.stringify({
-      id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-opus-5',
+      id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-sonnet-5',
       usage: { input_tokens: 10, output_tokens: 10 },
       ...body,
     }),
@@ -153,7 +153,12 @@ describe('askShopAssistant', () => {
     expect(resultText).toContain('are NOT limited to that window')
   })
 
-  it('asks the API to fall back when the model declines', async () => {
+  // Asserts the ABSENCE of a parameter, and earns it: Sonnet 5 does not ignore `fallbacks`, it
+  // rejects the request —
+  //   "'claude-sonnet-5' does not support the `fallbacks` parameter" (HTTP 400)
+  // — so reinstating it would not soften this feature's failure mode, it would take the feature
+  // down entirely. Every other test here stubs a success, so nothing else would catch it.
+  it('never sends the fallbacks parameter, which Sonnet 5 rejects outright', async () => {
     let sentBody = ''
     let betaHeader = ''
     // `HeadersInit` is a DOM lib type this workspace does not load; derive it from `Headers`.
@@ -168,36 +173,20 @@ describe('askShopAssistant', () => {
     await askShopAssistant('sk-ant-test', INPUT)
 
     const sent = JSON.parse(sentBody)
-    // 'default' rather than a pinned model: routed by refusal category, and nothing to migrate
-    // when a model we would have pinned is deprecated.
-    expect(sent.fallbacks).toBe('default')
-    // The parameter and its beta flag are a pair — the scalar form under the older
-    // `-2026-06-01` header is a 400, so the header is asserted alongside it.
-    expect(betaHeader).toContain('server-side-fallback-2026-07-01')
+    expect(sent.fallbacks).toBeUndefined()
+    expect(betaHeader).not.toContain('server-side-fallback')
+    // Sonnet 5, with thinking on and bounded by effort rather than switched off: choosing the
+    // window for a vague question is the judgement in this feature, and it happens before the
+    // tool call. The loop pays for output tokens twice, at 5x the price of input.
+    expect(sent.model).toBe('claude-sonnet-5')
+    expect(sent.thinking).toEqual({ type: 'adaptive' })
+    expect(sent.output_config.effort).toBe('medium')
   })
 
-  // With fallbacks on, a refusal reaching us means EVERY model in the chain declined.
-  it('returns null when the whole fallback chain refused', async () => {
+  // Nothing catches this now — a refusal reaches the merchant as a 502.
+  it('returns null when the model refused', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => claudeResponse({ stop_reason: 'refusal', content: [] })))
     expect(await askShopAssistant('sk-ant-test', INPUT)).toBeNull()
-  })
-
-  it('returns the answer when a fallback model served it', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => claudeResponse({
-      stop_reason: 'end_turn',
-      model: 'claude-opus-4-8',
-      content: [
-        { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } },
-        { type: 'text', text: 'Revenue rose 9%.' },
-      ],
-      usage: { input_tokens: 10, output_tokens: 10, iterations: [{ type: 'fallback_message' }] },
-    })))
-
-    const answer = await askShopAssistant('sk-ant-test', INPUT)
-
-    // A fallback answer is an ANSWER. The merchant must not be shown an error because the
-    // platform's first-choice model declined.
-    expect(answer?.text).toBe('Revenue rose 9%.')
   })
 
   it('returns null when the answer ran out of tokens', async () => {

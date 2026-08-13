@@ -68,3 +68,40 @@ export const menuImportMerchantWindow = createSlidingWindow({ limit: 20, windowM
 // Revisit it once there is a week of real usage; a figure picked from no evidence deserves no
 // more confidence than that.
 export const assistantMerchantWindow = createSlidingWindow({ limit: 50, windowMs: 24 * 60 * 60_000, now: () => Date.now() })
+
+// ── The monthly ceilings ────────────────────────────────────────────────────────────────────
+//
+// The two windows above are burst stops. They are the right shape for a day and the WRONG shape
+// for a month, for one reason: they live in memory and reset on redeploy. Over twenty-four hours
+// that is a rounding error; over a month it means the ceiling is however long it has been since
+// the last deploy, which is not a ceiling at all. So these are counts in Postgres
+// (`aiUsageDb.ts`), keyed by the shop's own calendar month, and they are what actually bounds the
+// Anthropic bill. They also survive a second backend instance, which nothing else in this file
+// does (#101).
+//
+// These figures are set against the PRICE OF THE PLAN, which is the constraint the daily windows
+// above never had to answer to. A shop pays RM39.90 a month — about USD 8.40 gross, less after
+// Stripe — so a ceiling is only a ceiling if the spend it permits is a fraction of that. On
+// Sonnet 5 a menu photograph costs roughly USD 0.06 and a question roughly USD 0.03, which puts
+// the numbers below at about USD 2.30 a month for a shop that exhausts everything, and pennies
+// for the shop that does not. An earlier draft of this file allowed 150 and 600; that was USD 16
+// a month against USD 8.40 of revenue, which is not a ceiling, it is a subsidy.
+//
+// Menu import is TWO buckets, because it is a setup feature and a flat monthly ceiling cannot
+// describe one. The lifetime grant covers photographing a menu for the first time — fifteen or
+// twenty pages, re-shot when a page comes out blurry — and never comes back. The monthly figure
+// is what a shop needs afterwards: a new page, a seasonal change. A single monthly number would
+// have to be either too small for that first week or, renewed twelve times a year, wildly more
+// than the job ever needs.
+//
+// The lifetime grant is also the answer to the exposure the monthly buckets cannot see: the trial
+// is seven days and cardless, the shop is `active` throughout, and menu import is exactly what a
+// merchant does on day one. Every import inside that window is spent before the platform has been
+// paid anything at all, and no monthly ceiling notices, because it all happens inside one month.
+//
+// All three are guesses, and `ai_usage` is the thing that will replace them: it records calls per
+// shop per feature per month, so after a month of real merchants these can be set from evidence
+// rather than from arithmetic about a workflow nobody has measured yet.
+export const MENU_IMPORT_LIFETIME_LIMIT = 30
+export const MENU_IMPORT_MONTHLY_LIMIT = 5
+export const ASSISTANT_MONTHLY_LIMIT = 60
