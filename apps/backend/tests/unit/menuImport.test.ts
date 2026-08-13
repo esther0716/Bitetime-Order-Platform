@@ -155,10 +155,49 @@ describe('extractMenu', () => {
     expect(result).toEqual({ items: [] })
   })
 
-  it('returns null when the response is a refusal', async () => {
+  it('asks the API to fall back when the model declines', async () => {
+    let sentBody = ''
+    let betaHeader = ''
+    // `HeadersInit` is a DOM lib type this workspace does not load; derive it from `Headers`.
+    type HeadersArg = ConstructorParameters<typeof Headers>[0]
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: { body: string; headers: HeadersArg }) => {
+      sentBody = init.body
+      betaHeader = new Headers(init.headers).get('anthropic-beta') ?? ''
+      return textResponse({ items: [] })
+    }))
+
+    await extractMenu('sk-ant-test', INPUT)
+
+    // 'default' rather than a pinned model: routed by refusal category, nothing to migrate when a
+    // named model is deprecated.
+    expect(JSON.parse(sentBody).fallbacks).toBe('default')
+    // Parameter and beta flag are a pair — the scalar form under the older `-2026-06-01` header
+    // is a 400, so the header is asserted alongside it.
+    expect(betaHeader).toContain('server-side-fallback-2026-07-01')
+  })
+
+  // With fallbacks on, a refusal reaching us means EVERY model in the chain declined.
+  it('returns null when the whole fallback chain refused', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => claudeResponse({ stop_reason: 'refusal', content: [] })))
     const result = await extractMenu('sk-ant-test', INPUT)
     expect(result).toBeNull()
+  })
+
+  it('returns the drafts when a fallback model read the menu', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => claudeResponse({
+      stop_reason: 'end_turn',
+      model: 'claude-opus-4-8',
+      content: [
+        { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } },
+        { type: 'text', text: JSON.stringify({ items: [{ name: 'Brownie', price_text: '6.00' }] }) },
+      ],
+    })))
+
+    const result = await extractMenu('sk-ant-test', INPUT)
+
+    // A fallback read is a read. The merchant must not be told their menu was unreadable because
+    // the platform's first-choice model declined.
+    expect(result!.items[0]).toMatchObject({ name: 'Brownie', price: 6 })
   })
 
   it('returns null when the response ran out of tokens', async () => {

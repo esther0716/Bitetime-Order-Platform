@@ -142,6 +142,7 @@ The AI reads. The merchant decides. That split is the whole design.
 - The `products` table has a `description` column. `types.ts` also carries a legacy `desc` field — write `description`.
 - `category_id` has no foreign key behind it (ADR 0013). An id the shop no longer holds and `null` are one state: uncategorized. This is exactly why the model returns a label instead.
 - Claude reads images natively as base64 content blocks. Do not send a URL — the image never leaves the backend's memory.
+- The call declares `fallbacks: 'default'` (beta `server-side-fallback-2026-07-01`), so a safety-classifier decline is re-run on another model inside the same request rather than reaching the merchant as "the menu could not be read". `'default'` routes by refusal category and owes no migration when a pinned model is deprecated. This is why the call uses `client.beta.messages.create`; nothing else about it is beta.
 - Model choice is `claude-opus-5`, not the `claude-haiku-4-5` used in `releases.ts`. That call rewrites text that already exists; this one reads prices off a photograph, and a misread price is money.
 
 ## Success Metrics

@@ -203,7 +203,9 @@ export const extractMenu: ExtractMenu = async (apiKey, input) => {
   }
   try {
     const client = new Anthropic({ apiKey })
-    const response = await client.messages.create({
+    // The BETA endpoint, purely so `fallbacks` below can be passed — everything else about this
+    // call is the ordinary Messages API.
+    const response = await client.beta.messages.create({
       // Opus, not the Haiku releases.ts uses. That call rewrites text that already exists and a
       // clumsy sentence costs nothing; this one reads PRICES off a photograph, and a misread
       // price is money. Adaptive thinking for the same reason — a crowded menu board is a
@@ -211,6 +213,18 @@ export const extractMenu: ExtractMenu = async (apiKey, input) => {
       model: 'claude-opus-5',
       max_tokens: 16000,
       thinking: { type: 'adaptive' },
+      // Claude Opus 5's safety classifiers can decline a request, and a photograph of a menu is
+      // an odd thing to be declined over — which is exactly why it should not end the import. On
+      // a decline the API re-runs the request on another model inside the same call, so the
+      // merchant gets their drafts rather than "the menu could not be read".
+      //
+      // `'default'` rather than a pinned model: it routes by refusal CATEGORY, and it owes no
+      // migration the day a model we had named is deprecated.
+      //
+      // A decline before any output is not billed. `stop_reason: 'refusal'` still reaching the
+      // check below now means the whole chain declined.
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
       output_config: {
         format: { type: 'json_schema', schema: MENU_SCHEMA },
       },
