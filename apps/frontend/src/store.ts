@@ -862,6 +862,46 @@ export async function lookupProducts(merchantId: string): Promise<Result<any[]>>
 // merchant_id and id are both threaded from `product` — ProductsManager's callers always set
 // both (merchant_id from `merchant!.id`, id from the row or a client-generated draftId) — so
 // the URL carries the same tenant/row identity the backend then forces server-side anyway.
+/**
+ * One item read off a menu photograph, before the merchant has corrected it.
+ *
+ * A deliberate twin of `MenuDraftItem` in apps/backend/src/menuImport.ts — the backend is not a
+ * dependency of this workspace, and this shape is a wire format, not a rule that has to hold
+ * identically on both sides, so it does not belong in @bitetime/shared (see CLAUDE.md).
+ */
+export interface MenuDraftItem {
+  name: string
+  name_zh?: string
+  description?: string
+  /** As printed on the menu. Shown to the merchant so they can check the parsed number. */
+  price_text: string
+  /** null when the printed price could not be read — an empty REQUIRED field, never a 0. */
+  price: number | null
+  unit?: string
+  unit_quantity?: number
+  /** The menu's own section heading, as words. Never a category id — see ADR 0013. */
+  category_label?: string
+}
+
+/**
+ * Reads a photograph of the shop's menu and returns DRAFT products (#menu-import).
+ *
+ * Writes nothing. The drafts become products only when the merchant saves them through
+ * `upsertProduct` below, which is the same path the add-product form uses.
+ */
+export async function importMenu(
+  merchantId: string,
+  imageBase64: string,
+  mediaType: 'image/jpeg' | 'image/png',
+): Promise<Result<{ items: MenuDraftItem[] }>> {
+  return apiSend<{ items: MenuDraftItem[] }>(
+    `/api/merchants/${merchantId}/menu-import`,
+    'POST',
+    { image: imageBase64, media_type: mediaType },
+    { auth: 'required' },
+  )
+}
+
 export async function upsertProduct(product: any): Promise<Result<any>> {
   return apiSend<any>(`/api/merchants/${product.merchant_id}/products/${product.id}`, 'PUT', product, { auth: true })
 }

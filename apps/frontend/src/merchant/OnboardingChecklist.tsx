@@ -95,8 +95,10 @@ export default function OnboardingChecklist({ section, onNavigate }: { section: 
   const tourCopy = [
     {
       title: t('Add your first product', '添加您的第一个产品'),
-      body: t('Tap here to add what you sell — customers order these from your storefront.',
-              '点击这里添加您售卖的商品 — 顾客将从您的店面下单。'),
+      // Names both paths. A shop with a printed menu should know it can photograph it rather than
+      // type forty items, and the import button sits beside the one this step spotlights.
+      body: t('Tap here to add what you sell — customers order these from your storefront. Have a printed menu? Use “Import from a photo” beside this button.',
+              '点击这里添加您售卖的商品 — 顾客将从您的店面下单。有纸质菜单？请使用旁边的“从照片导入”。'),
     },
     {
       title: t('Set pickup & delivery', '设置自取与送货'),
