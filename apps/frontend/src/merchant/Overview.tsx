@@ -11,6 +11,7 @@ import { granularityFor, REVENUE_RANGES, type Granularity, type MerchantStats, t
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { formatMoney } from '../currency'
 import ShareStorefront from './ShareStorefront'
+import ShopAssistant from './ShopAssistant'
 
 const STAT_ICON = { size: 15, strokeWidth: 1.75 }
 
@@ -211,6 +212,11 @@ export default function Overview() {
           <BreakdownList rows={stats.statusBreakdown.map(s => ({ label: statusLabel(s.status), value: String(s.count), pct: s.pct }))} />
         </ChartPanel>
       </div>
+
+      {/* Under the figures, not above them. The charts are the primary surface; this is a
+          shortcut through them for a merchant who would otherwise pick a range, read a bar, and
+          do the comparison in their head. */}
+      <ShopAssistant />
     </div>
   )
 }
