@@ -902,6 +902,27 @@ export async function importMenu(
   )
 }
 
+/** What the assistant answered, and the window it actually read to answer it. */
+export interface ShopAnswer {
+  answer: string
+  /** null when the assistant answered without reading any figures — then there is no window to cite. */
+  window: { days: number; granularity: 'day' | 'week' } | null
+}
+
+/**
+ * Asks the shop analytics assistant a question about this shop's own orders.
+ *
+ * The shop is the one in the URL, and the backend binds the model's only tool to it after
+ * checking ownership — there is no way to ask about another shop from here, by design.
+ */
+export async function askShop(
+  merchantId: string,
+  question: string,
+  lang: 'en' | 'zh',
+): Promise<Result<ShopAnswer>> {
+  return apiSend<ShopAnswer>(`/api/merchants/${merchantId}/ask`, 'POST', { question, lang }, { auth: 'required' })
+}
+
 export async function upsertProduct(product: any): Promise<Result<any>> {
   return apiSend<any>(`/api/merchants/${product.merchant_id}/products/${product.id}`, 'PUT', product, { auth: true })
 }

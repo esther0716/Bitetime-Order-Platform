@@ -38,7 +38,7 @@ import { statsOrders, distinctCustomerCount } from './ordersDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow } from './quotaWindows.js'
+import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow } from './quotaWindows.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
 import { detectCountry } from './region.js'
 import { fetchBasePricing, createPricingCache, type PricingPayload } from './pricing.js'
@@ -59,6 +59,7 @@ import {
 } from './github.js'
 import { humanizeRelease, type HumanizeRelease } from './releases.js'
 import { extractMenu, MAX_MENU_IMAGE_BYTES, type ExtractMenu } from './menuImport.js'
+import { askShopAssistant, type AskShopAssistant } from './shopAssistant.js'
 import {
   listReleaseTags, insertDraftRelease, listAllReleases, getReleaseById,
   updateReleaseStatus, updateReleaseHumanization,
@@ -379,14 +380,21 @@ app.get('/api/merchants/:id/orders', requireMerchantOwns, async (c) => {
  *
  * Free, like the Overview it draws. The export beside it is the Pro capability, not the chart.
  */
-app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
-  const days = Number(c.req.query('days') ?? 12)
-  // Refused rather than clamped, exactly as the export refuses — same list, same reason.
-  if (!isRevenueRange(days)) return c.json({ error: 'bad_range' }, 400)
-  const granularity = c.req.query('granularity') ?? granularityFor(days)
-  if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
-
-  const m = c.get('merchant')
+/**
+ * One shop's statistics, assembled once.
+ *
+ * Extracted so the Overview endpoint below and the analytics assistant read the SAME five
+ * arguments through the SAME function. Two assemblies of one set of inputs is exactly how the
+ * assistant and the chart beside it come to disagree — and a merchant given two different revenue
+ * figures for one window has no way to tell which is the wrong one.
+ *
+ * Takes the merchant ROW, not an id: the caller has already loaded and authorised it, and passing
+ * a bare id here would be a second place where a wrong one could arrive.
+ */
+async function shopStatsFor(
+  m: Record<string, any>,
+  window: { days: number; granularity: 'day' | 'week' },
+) {
   // Vouchers are per-shop promotions, a handful of rows — the row cap is not in play, and this
   // one stays on the REST client alongside the endpoint that serves the same rows to the
   // Vouchers tab.
@@ -400,9 +408,23 @@ app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
   // Resolved and validated once, like the export does: an unusable `merchants.timezone` would
   // otherwise bucket the chart in the server's zone while the merchant reads it in their own.
   const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
-  return c.json(computeMerchantStats(orders, customerCount, vouchers, new Date(), {
-    days, granularity, timeZone,
-  }))
+  return {
+    stats: computeMerchantStats(orders, customerCount, vouchers, new Date(), {
+      days: window.days, granularity: window.granularity, timeZone,
+    }),
+    timeZone,
+  }
+}
+
+app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
+  const days = Number(c.req.query('days') ?? 12)
+  // Refused rather than clamped, exactly as the export refuses — same list, same reason.
+  if (!isRevenueRange(days)) return c.json({ error: 'bad_range' }, 400)
+  const granularity = c.req.query('granularity') ?? granularityFor(days)
+  if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
+
+  const { stats } = await shopStatsFor(c.get('merchant'), { days, granularity })
+  return c.json(stats)
 })
 
 /**
@@ -856,6 +878,63 @@ app.post('/api/merchants/:id/menu-import', requireMerchantOwns, async (c) => {
   if (!draft) return c.json({ error: 'could_not_read_menu' }, 502)
 
   return c.json(draft)
+})
+
+export const assistantDeps: { ask: AskShopAssistant } = { ask: askShopAssistant }
+
+/** The longest question the assistant will read. Past this it is not a question. */
+const MAX_QUESTION_CHARS = 500
+
+/**
+ * The shop analytics assistant (tasks/prd-shop-analytics-assistant.md).
+ *
+ * The merchant is resolved and authorised by `requireMerchantOwns` BEFORE the tool handler below
+ * is built, and the handler closes over that row. Nothing the caller sends — and nothing the
+ * model says — can name a different shop, because there is no parameter in which to name one.
+ * That is the whole tenancy argument: on this path `db.ts` runs as the database owner and no RLS
+ * policy applies, so the invariant has to be structural rather than checked.
+ */
+app.post('/api/merchants/:id/ask', requireMerchantOwns, async (c) => {
+  const m = c.get('merchant')
+  if (m.status !== 'active') return c.json({ error: 'shop_not_active' }, 403)
+
+  const body = await c.req.json().catch(() => null) as { question?: unknown; lang?: unknown } | null
+  if (!body) return c.json({ error: 'bad_body' }, 400)
+
+  const question = typeof body.question === 'string' ? body.question.trim() : ''
+  if (!question) return c.json({ error: 'missing_question' }, 400)
+  if (question.length > MAX_QUESTION_CHARS) return c.json({ error: 'question_too_long' }, 400)
+  const lang = body.lang === 'zh' ? 'zh' : 'en'
+
+  // Ahead of the ceiling, so an unconfigured platform does not spend a merchant's daily
+  // allowance answering 503.
+  if (!env.anthropicApiKey) return c.json({ error: 'assistant_unavailable' }, 503)
+
+  if (!assistantMerchantWindow.allow(m.id)) {
+    return c.json({ error: 'daily_limit_reached', limit: 50 }, 429)
+  }
+
+  const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
+
+  const answer = await assistantDeps.ask(env.anthropicApiKey, {
+    question,
+    lang,
+    currency: m.currency ?? DEFAULT_CURRENCY,
+    timeZone,
+    today: todayInZone(timeZone, new Date()),
+    // The tool handler. The merchant row is captured here, out of the model's reach.
+    getStats: async ({ days, granularity }) => (await shopStatsFor(m, { days, granularity })).stats,
+  })
+
+  if (!answer) return c.json({ error: 'could_not_answer' }, 502)
+
+  // Built from the tool call, never written by the model — so it cannot describe a window the
+  // model did not actually read. Null when the model answered without reading the figures at all,
+  // which must not carry a disclaimer claiming it did.
+  return c.json({
+    answer: answer.text,
+    window: answer.queried,
+  })
 })
 
 app.get('/api/merchants/:id/vouchers/:code', async (c) => {

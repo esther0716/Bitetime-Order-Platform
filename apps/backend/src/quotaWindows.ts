@@ -58,3 +58,13 @@ export const placesGlobalWindow = createSlidingWindow({ limit: 20_000, windowMs:
 // Same in-memory weaknesses as every other limiter here, inherited knowingly: resets on redeploy,
 // stops working past one backend instance (#101, Out of Scope).
 export const menuImportMerchantWindow = createSlidingWindow({ limit: 20, windowMs: 24 * 60 * 60_000, now: () => Date.now() })
+
+// The shop analytics assistant (tasks/prd-shop-analytics-assistant.md). Same argument as the
+// import window above, and the same in-memory weaknesses: one shop, one Claude bill, a ceiling
+// that resets on redeploy and stops protecting anything past one backend instance (#101).
+//
+// 50 a day is a runaway stop rather than a ration, and the number is chosen from nothing — there
+// is no usage data yet. It sits where an honest merchant will never meet it and a loop will.
+// Revisit it once there is a week of real usage; a figure picked from no evidence deserves no
+// more confidence than that.
+export const assistantMerchantWindow = createSlidingWindow({ limit: 50, windowMs: 24 * 60 * 60_000, now: () => Date.now() })
