@@ -81,6 +81,10 @@ Multi-merchant ordering SaaS. React 19 + Vite + React Router (`react-router-dom`
 |------|--------|-------|
 | `/` | marketing landing (`marketing/Landing.tsx`) | — |
 | `/pricing` | the plan in full (`marketing/Pricing.tsx`) | — (prerendered; the landing page keeps a summary and links here, so the two are not one page's content at two URLs) |
+| `/features` | every feature in full (`marketing/FeaturesPage.tsx`) | — (prerendered). Renders all of `marketing/features.ts`; the landing shows `FEATURES.slice(0, 3)` as a hook, using each entry's short `teaser` — so **which three the landing sells is decided by array order**, and inserting an entry near the top silently changes the front page |
+| `/faq` | the questions asked before signing up (`marketing/FaqPage.tsx`) | — (prerendered, with its `FAQPage` JSON-LD baked via the prerender's `head` field — as `/for/:slug` also is, and no other route is) |
+| `/for/:slug` | one page per business type (`marketing/UseCasePage.tsx`, from `marketing/useCases.ts`) | — (prerendered, one file each under `dist/for/`, each with its own `FAQPage` `@id` so four pages read as four pages) |
+| `/releases/:tag` | a published release note (`marketing/ReleaseNotes.tsx`) | — (not prerendered and not in the sitemap: the rows are database-driven and a build must not read them) |
 | `/reset-password` | set a new password after a recovery link (`ResetPasswordPage.tsx`) | none — **deliberately top-level**: nested under `/s/:slug` the shell's status gate would swallow it, and a suspended shop must never lock a customer out of their own account. Role-blind; `?shop=<slug>` decides where they land afterwards |
 | `/s/:slug/*` | merchant storefront (`store/Storefront.tsx`) | `MerchantProvider` resolves shop by slug; gated on `status === 'active'` |
 | `/merchant/signup`, `/merchant/login` | shop signup / login | — |
@@ -147,6 +151,28 @@ Migrating the remaining SQL functions into this layer is #61. Order intake (`ord
 
 The **intake gate** (shop exists and is active; the order is born `status = 'new'`) is enforced in **`orders.ts`, inside the transaction** — not by RLS, which does not run on this connection. The `orders_insert_guest_or_customer` policy is kept as the backstop for a client path that no longer has the grant. Not to be confused with the **Checkout gate** (`CONTEXT.md`), which is the sign-in / guest step in the browser.
 
+### Claude API (`@anthropic-ai/sdk`)
+
+Three features call Claude, and they share one shape. Each lives in its own **pure adapter** whose API key is a **parameter, never read from `env.ts`**, and which imports nothing from `supabase.ts` or `db.ts` — that is what lets `pnpm --filter @bitetime/backend test` drive all three with no env and no Supabase. Each is reached through a mutable deps object on `app.ts` (`releaseDeps`, `menuImportDeps`, `assistantDeps`), the same seam `githubDeps` uses, so an API test drives the real route without a live call.
+
+| Adapter | Model | Does |
+|---|---|---|
+| `releases.ts` | `claude-haiku-4-5` | Rewrites a GitHub release body into merchant-facing copy. Haiku because it rewrites text that already exists |
+| `menuImport.ts` | `claude-opus-5` | Reads a menu photograph into **draft** products (vision + structured outputs) |
+| `shopAssistant.ts` | `claude-opus-5` | Answers a merchant's plain-language question about their own orders (tool runner) |
+
+`ANTHROPIC_API_KEY` is **optional**, same posture as `GOOGLE_MAPS_API_KEY` — but what an unset key *means* differs per feature, and that difference is the point. A release without a summary is cosmetic, so `releases.ts` stores a `humanize_error` and the pull still succeeds. The other two **refuse**: `503` for an unset key, `502` when the model could not answer. Neither may return an empty result, because "your menu has no items" and "we could not read your menu" look identical on screen and only one of them is true.
+
+Both merchant-facing features are bounded by a per-shop daily ceiling in `quotaWindows.ts` (`menuImportMerchantWindow`, `assistantMerchantWindow`) for the same reason the Google windows live there: one Claude bill for one shop. The key check runs **before** the ceiling, so an unconfigured platform never spends a merchant's allowance to answer 503.
+
+Both Opus 5 calls pass `fallbacks: 'default'` (beta `server-side-fallback-2026-07-01`), so a safety-classifier decline is re-run on another model inside the same request instead of reaching the merchant as an error. A `stop_reason: 'refusal'` still arriving therefore means the **whole chain** declined.
+
+**The assistant's tenancy rule is structural, and must stay that way.** Its single tool takes a window and a bucket size — no merchant id, shop id or slug — and the handler closes over the merchant row `requireMerchantOwns` already authorised. A question about another shop is not refused, it is *unsayable*. This matters because `db.ts` is RLS-exempt: on the backend's path tenancy is a TypeScript invariant, and a tool that accepted a merchant id would leave that invariant one prompt away from being wrong. There is no SQL tool, no table name and no free-form filter. `tests/unit/shopAssistant.test.ts` asserts no tool parameter matches `/merchant|shop|tenant|slug|id/i`; `tests/api/ask.test.ts` seeds a stranger's orders and proves the bound handler still returns zeroes.
+
+Menu import writes **nothing**. It returns drafts; the merchant saves them through the ordinary product upsert, under every rule that already applies there. Two fields it deliberately does not read: `descr_zh` (excluded from the product write allowlist, and the form has no input for it) and any `unit` outside the product form's own list.
+
+Adding a Claude call means adding an adapter, not a call site inside a route — and remember `@anthropic-ai/sdk` already carries its `--external:` flag in the esbuild command.
+
 ### Shipping / pricing
 
 All order totals come from one pure module, `packages/shared/src/pricing.ts` — `priceOrder()` (shipping region, promo, voucher, tax, rounding) and `voucherError()`. It lives in `@bitetime/shared` because it runs on **both** sides of the wire: the browser prices to quote, the backend prices to commit, and the backend refuses a quote it disagrees with (`price_changed`). The row → domain mappers (`shopRates`, `shopTax`, `productFromRow`, `voucherFromRow`) are shared for the same reason — mapping one side and not the other is a refused checkout, not a rounding gap. There is no order-level referral discount; it was removed in #70. Shipping rates are per-merchant: `WM` (West Malaysia) and `EM` (East Malaysia), with `EM_STATES` selecting the region; a storefront that collects no state passes `resolvedShipping` (flat fee). See `CONTEXT.md → Order pricing`.
@@ -177,7 +203,9 @@ Adding an indexed page therefore means adding it in **six** places: a `<Route>` 
 
 The prerender exists because most LLM crawlers do not execute JavaScript; Google does, so this is a GEO fix, not a ranking one. It runs offline — `renderToStaticMarkup` never fires effects, so no provider reaches Supabase or the billing backend — and it throws if `<div id="root"></div>` is missing from the built HTML rather than silently shipping a blank page.
 
-Head tags follow the same split. Anything true of **every** route is static in `index.html` (the og: tags, the Organization/WebSite identity JSON-LD). Anything true of **one** route is per-route — the canonical URL and `og:url` are baked in by the prerender and the canonical is then adopted at runtime by `src/canonical.ts`; the `<title>` and `<meta name="description">` come from `src/routeMeta.ts`, baked by the prerender and rewritten on client-side navigation by `src/documentMeta.ts`; the landing FAQ JSON-LD is `/`-only (`src/marketing/structuredData.ts`, which adopts the prerendered block rather than appending a second). `routeMeta.ts`'s `/` entry must stay character-identical to `index.html`'s own tags — that file is the fallback for every route without an entry, and `routeMeta.test.ts` is what pins them together.
+Head tags follow the same split. Anything true of **every** route is static in `index.html` (the og: tags, the Organization/WebSite/SoftwareApplication identity JSON-LD). Anything true of **one** route is per-route — the canonical URL and `og:url` are baked in by the prerender and the canonical is then adopted at runtime by `src/canonical.ts`; the `<title>` and `<meta name="description">` come from `src/routeMeta.ts`, baked by the prerender and rewritten on client-side navigation by `src/documentMeta.ts`. `routeMeta.ts`'s `/` entry must stay character-identical to `index.html`'s own tags — that file is the fallback for every route without an entry, and `routeMeta.test.ts` is what pins them together.
+
+The `FAQPage` JSON-LD lives on **`/faq` and each `/for/<slug>`**, never on `/` and never in `index.html` (`src/marketing/structuredData.ts`). A static block would claim that every storefront and every legal page is that FAQ. Each page bakes its own via the prerender's `head` field and then **adopts** the baked block at runtime rather than appending a second — `useFaqStructuredData` / `useUseCaseStructuredData` rewrite it in place, which is what lets a Chinese reader get Chinese markup instead of a page whose visible text and structured data disagree. Every `/for/<slug>` carries its own `@id`, so the four are four pages to a crawler and not one duplicated.
 
 `index.html`'s static title and description are therefore the site's ONE default. Multiple pages with their own titles is what makes Google's **sitelinks** possible at all (#169) — a sitelink's label is the target page's `<title>` and its snippet is that page's meta description. Sitelinks stay algorithmic: no markup requests them, `SiteNavigationElement` is not used by Google, and they also need the site to rank first for its brand query.
 
