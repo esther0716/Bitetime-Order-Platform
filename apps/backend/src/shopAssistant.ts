@@ -104,6 +104,7 @@ Rules:
 - Read the "window" note carefully: "all_time" figures cover the shop's whole history, "in_window" figures cover the chosen window only. Never present an all_time figure as the window's.
 - Revenue excludes cancelled orders.
 - Keep the answer short — two or three sentences, or a short list. The owner is reading this between orders.
+- Write plain sentences. Use NO markdown: no asterisks for bold, no backticks, no headings, no bullet characters. The answer is shown as plain text, so any markup appears literally on screen.
 - Write the answer in ${input.lang === 'zh' ? 'Chinese' : 'English'}.
 - You cannot see any other shop's figures, and you cannot change anything. If asked to, say so.`
 }
