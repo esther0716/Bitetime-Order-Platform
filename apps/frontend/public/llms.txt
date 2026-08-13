@@ -31,6 +31,15 @@ When a customer may ask for their order is the shop's setting: days of notice be
 date, how far ahead the page takes orders, and the weekdays the shop is closed. A new shop offers
 today through two weeks out, and no shop takes an order more than three months ahead.
 
+A shop can build its product list by photographing a menu it already has: TinyOrder reads the
+photo into DRAFT products — name, price, unit, section, and the Chinese name where the menu prints
+one — which the owner checks and corrects before anything is saved. A price it cannot read is left
+blank rather than guessed, and nothing is written until the owner confirms.
+
+The dashboard also answers plain-language questions about the shop's OWN orders, in English or
+Chinese ("which product made the least money", "how did the last 30 days compare"), from the same
+figures its charts draw, stating the period used. It reads one shop only and changes nothing.
+
 **One plan, and it holds everything**: instant Telegram alerts, discount vouchers, promotional
 prices on individual items, order dates picked one by one instead of a rolling window, the shop's
 own Meta and TikTok ad pixel, and priority support. Billing is monthly or yearly, with two months
