@@ -27,7 +27,10 @@ This feature adds a question box to the dashboard. The merchant types a question
 - [ ] The tool schema exposes exactly two parameters: `days` (one of `REVENUE_RANGES`) and `granularity` (`'day' | 'week'`, optional)
 - [ ] The schema contains **no** merchant id, shop id, slug or any other tenant selector
 - [ ] The tool handler is a closure created per request over the already-resolved merchant id — the id is not a function argument the model can supply
-- [ ] The handler fetches that shop's orders and vouchers, then returns `computeMerchantStats(orders, vouchers, { days, granularity, timeZone: merchant.timezone })`
+- [ ] The handler composes its inputs exactly as `GET /api/merchants/:id/stats` already does — `statsOrders(m.id)`, `distinctCustomerCount(m.id)` and the shop's vouchers — then returns:
+      `computeMerchantStats(orders, customerCount, vouchers, new Date(), { days, granularity, timeZone })`
+- [ ] `orders` must be the shop's **complete** history via `statsOrders`, never a page. `totalOrders`, `revenue` and both deltas are all-time, so a truncated read does not make a smaller chart — it makes a wrong revenue figure with nothing saying so (#144)
+- [ ] `timeZone` is `isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE`, the same validation the stats route and the XLSX export both apply
 - [ ] A unit test asserts the serialized tool schema has no property whose name matches `/merchant|shop|tenant|slug|id/i`
 - [ ] Typecheck and lint pass
 
@@ -135,6 +138,8 @@ This feature adds a question box to the dashboard. The merchant types a question
 
 - `@anthropic-ai/sdk` is already a backend dependency and **already has its `--external:` flag** in the esbuild command. No packaging change.
 - `computeMerchantStats` is pure and already runs on both sides of the wire — the browser draws the chart with it, the backend builds the XLSX with it. Adding the assistant as a third consumer keeps the one-implementation property that `report.ts` was written to preserve.
+- Its signature is `computeMerchantStats(orders, customerCount, vouchers, now, window)`. The clock is injected, so a test pins a date rather than waiting for one.
+- **`GET /api/merchants/:id/stats` already assembles every one of those arguments.** The tool handler should reuse that composition rather than build a second one; two assemblies of the same inputs is how the assistant and the chart start to disagree, which is the exact failure this design is shaped to prevent.
 - `MerchantStats` is small and fully serializable. The whole object fits comfortably in one tool result, so most questions need exactly one tool call.
 - `SeriesWindow.timeZone` must be set explicitly. Omitted, buckets fall in the runtime's zone — right for a browser standing in for its merchant, wrong for a UTC server.
 - `app.ts` must stay free of import-time I/O; the adapter is called inside the handler.
@@ -150,7 +155,7 @@ This feature adds a question box to the dashboard. The merchant types a question
 ## Open Questions
 
 - Should a question that the stats cannot answer suggest the nearest question they *can* answer, or just decline?
-- `MerchantStats` KPIs are all-time while `series`, `productRevenue` and `statusBreakdown` cover the selected window. Will the model reliably keep those apart, or does the tool result need explicit per-field window labels?
+- `MerchantStats` KPIs are all-time while `series`, `productRevenue` and `statusBreakdown` cover the selected window. That split is deliberate and documented in `merchantStats.ts` — on screen the range pills sit between the two groups and show which is which. **The model gets no pills.** Handed the bare object it will read `revenue` as the window's revenue and answer a range question with an all-time number. Assume the tool result needs explicit per-field window labels, and treat "the model works it out" as the thing to disprove, not assume.
 - Do we log questions? They are the best signal we will ever get about what merchants want from the dashboard — but they are merchant text, and storing them needs a stated retention position.
 - Is 50 questions per day per shop generous or tight? No usage data exists yet to set it from.
 - `merchants.plan` still permits `'basic'`. If a basic tier returns, does this stay ungated?
