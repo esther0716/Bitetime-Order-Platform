@@ -19,8 +19,14 @@ import Anthropic from '@anthropic-ai/sdk'
 export interface MenuDraftItem {
   name: string
   name_zh?: string
+  /**
+   * Maps to the `descr` column. There is deliberately NO Chinese twin: `descr_zh` exists in the
+   * table but is excluded from the product write allowlist (writes.ts), and the product form has
+   * no field for it either. Reading one off the menu would produce a value the merchant can
+   * neither see nor correct nor save — worse than not reading it. `name_zh` has none of these
+   * problems and is read.
+   */
   description?: string
-  description_zh?: string
   /** Exactly as printed on the menu. Kept even when it parses, so the merchant can check it. */
   price_text: string
   /** `price_text` as a number, or null when it could not be read. NEVER defaulted to 0. */
@@ -39,6 +45,19 @@ export interface MenuDraftItem {
 export interface MenuDraft {
   items: MenuDraftItem[]
 }
+
+/**
+ * The units the product form offers, duplicated from `UNITS` in ProductsManager.tsx.
+ *
+ * A deliberate twin rather than a move into @bitetime/shared, and the same trade notify.ts makes
+ * with its currency copy: only ONE side is authoritative here. The form's `Select` decides what a
+ * unit may be; this list exists so the reader emits values that survive it. A free-text unit —
+ * "bowl", "portion" — is not a smaller version of that, it is a draft whose unit silently
+ * vanishes when the merchant opens the row.
+ *
+ * Drift costs one unit falling back to the form's default. Add a unit to the form, add it here.
+ */
+const UNITS = ['pcs', 'box', 'set', 'pack', 'dozen', 'bottle', 'jar', 'tray', 'slice', 'kg', 'g'] as const
 
 export type MenuMediaType = 'image/jpeg' | 'image/png'
 
@@ -92,10 +111,9 @@ The shop prices in ${currency}. A bare number such as "12.50" is an amount in ${
 For each item on the menu:
 - "name": the item name in English, as printed. Required.
 - "name_zh": the item name in Chinese. Give this ONLY if the menu prints a Chinese name. Do not translate the English name yourself.
-- "description": the item's description in English, as printed. Omit it if the menu prints none.
-- "description_zh": the description in Chinese, ONLY if the menu prints one.
+- "description": the item's description, as printed. Omit it if the menu prints none.
 - "price_text": the price exactly as printed, including any currency symbol — "RM 12.50", "12.50", "Market price". Copy it; do not convert, round or reformat it. Required.
-- "unit": what one order of this item is, if the menu says — "piece", "box of 6", "slice", "bowl". Omit it if the menu does not say.
+- "unit": what one order of this item is, chosen from this exact list: pcs, box, set, pack, dozen, bottle, jar, tray, slice, kg, g. Pick the closest one — a menu saying "per slice" gives "slice", "box of 6" gives "box". Omit it when nothing in the list fits or the menu does not say.
 - "unit_quantity": the number in that unit when the menu states one, so "box of 6" gives 6. Omit it otherwise.
 - "category_label": the section heading this item sits under on the menu, as printed — "Cookies", "Hot Drinks". Omit it if the menu has no sections.
 
@@ -120,9 +138,8 @@ const MENU_SCHEMA = {
           name: { type: 'string' },
           name_zh: { type: 'string' },
           description: { type: 'string' },
-          description_zh: { type: 'string' },
           price_text: { type: 'string' },
-          unit: { type: 'string' },
+          unit: { type: 'string', enum: UNITS },
           unit_quantity: { type: 'integer' },
           category_label: { type: 'string' },
         },
@@ -140,7 +157,6 @@ interface RawItem {
   name?: unknown
   name_zh?: unknown
   description?: unknown
-  description_zh?: unknown
   price_text?: unknown
   unit?: unknown
   unit_quantity?: unknown
@@ -164,14 +180,17 @@ function toDraftItem(raw: RawItem): MenuDraftItem | null {
     ? raw.unit_quantity
     : undefined
 
+  const unit = str(raw.unit)
+
   return {
     name,
     name_zh: str(raw.name_zh),
     description: str(raw.description),
-    description_zh: str(raw.description_zh),
     price_text: priceText,
     price: parsePrice(priceText),
-    unit: str(raw.unit),
+    // Belt to the schema's enum: a unit outside the form's list would vanish from the Select
+    // without saying so, which is exactly the silent loss this module is built to avoid.
+    unit: unit && (UNITS as readonly string[]).includes(unit) ? unit : undefined,
     unit_quantity: quantity,
     category_label: str(raw.category_label),
   }

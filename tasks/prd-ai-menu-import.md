@@ -103,7 +103,9 @@ The AI reads. The merchant decides. That split is the whole design.
 
 - **FR-1:** The system must accept a single JPG or PNG image per import request, up to 5 MB.
 - **FR-2:** The system must send that image to the Claude API and request a JSON response matching a fixed schema.
-- **FR-3:** The schema must contain, per item: `name` (string, required), `name_zh` (string, optional), `description` (string, optional), `description_zh` (string, optional), `price_text` (string, required, **as printed on the menu**), `unit` (string, optional), `unit_quantity` (integer, optional), `category_label` (string, optional).
+- **FR-3:** The schema must contain, per item: `name` (string, required), `name_zh` (string, optional), `description` (string, optional), `price_text` (string, required, **as printed on the menu**), `unit` (optional, constrained to the product form's own unit list), `unit_quantity` (integer, optional), `category_label` (string, optional).
+- **FR-3a:** There must be **no** Chinese description field. `descr_zh` exists on the table but is excluded from the product write allowlist (`writes.ts`), and the product form has no input for it — a value read into it could be neither reviewed, corrected nor saved. `name_zh` carries none of those problems and is read.
+- **FR-3b:** `unit` must be one of the values the product form's unit `Select` offers. A unit outside that list must be dropped rather than passed through: it would disappear from the form without telling the merchant.
 - **FR-4:** The backend must parse `price_text` into a number. When it cannot, the draft row must carry the raw text and the review screen must show an empty, required price field.
 - **FR-5:** The system must not persist the uploaded image.
 - **FR-6:** The system must not create, update or delete any `products` row during an import request.

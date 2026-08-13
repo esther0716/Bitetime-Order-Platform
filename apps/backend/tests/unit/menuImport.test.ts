@@ -89,7 +89,7 @@ describe('extractMenu', () => {
           name_zh: '巧克力豆曲奇',
           description: 'Soft-baked, sea salt on top',
           price_text: 'RM 12.50',
-          unit: 'piece',
+          unit: 'pcs',
           category_label: 'Cookies',
         },
       ],
@@ -105,9 +105,22 @@ describe('extractMenu', () => {
       description: 'Soft-baked, sea salt on top',
       price_text: 'RM 12.50',
       price: 12.5,
-      unit: 'piece',
+      unit: 'pcs',
       category_label: 'Cookies',
     })
+  })
+
+  // The schema's enum asks for a unit from the product form's own list; this is the belt to it.
+  // A "bowl" that reached a draft would vanish from the form's Select without saying so.
+  it('drops a unit the product form does not offer', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => textResponse({
+      items: [{ name: 'Laksa', price_text: '9.00', unit: 'bowl' }],
+    })))
+
+    const result = await extractMenu('sk-ant-test', INPUT)
+
+    expect(result!.items[0].unit).toBeUndefined()
+    expect(result!.items[0].name).toBe('Laksa')
   })
 
   // The merchant fills the price in. A draft priced 0 is the failure this guards.
