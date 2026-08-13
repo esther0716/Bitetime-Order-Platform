@@ -176,6 +176,18 @@ export default function Overview() {
         <StatCard label={t('Avg order', '平均订单')} value={money(stats.avgOrder)} icon={<TrendingUp {...STAT_ICON} />} />
       </div>
 
+      {/* Between the KPI cards and the charts, deliberately.
+          It started below the charts, on the argument that they are the primary surface and this
+          is only a shortcut through them. That argument assumed a merchant knows the box is
+          there — and below three full-height panels, nobody does. An unused shortcut is worse
+          than one placed a little early.
+          Still AFTER the headline figures, because a shop owner opening this page came to see
+          today's orders, not a question box. And next to those figures rather than in a modal or
+          behind a floating button: an answer routinely reconciles itself against the KPI cards
+          ("your dashboard's own month-on-month figure reads down 15 percent…"), which the
+          merchant can only check if the cards are on screen with it. */}
+      <ShopAssistant />
+
       <ChartPanel
         title={t(`Revenue — last ${rangeDays} days`, `营收 — 近${rangeDays}天`)}
         legend={
@@ -212,11 +224,6 @@ export default function Overview() {
           <BreakdownList rows={stats.statusBreakdown.map(s => ({ label: statusLabel(s.status), value: String(s.count), pct: s.pct }))} />
         </ChartPanel>
       </div>
-
-      {/* Under the figures, not above them. The charts are the primary surface; this is a
-          shortcut through them for a merchant who would otherwise pick a range, read a bar, and
-          do the comparison in their head. */}
-      <ShopAssistant />
     </div>
   )
 }
