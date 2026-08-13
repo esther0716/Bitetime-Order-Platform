@@ -4,6 +4,7 @@ import { signUp, signIn, createMerchant } from '../store'
 import { pixelTrack } from '../pixels/track'
 // TinyOrder's OWN ids, deliberately — a shop signing up is our conversion, never a merchant's.
 import { platformPixelIds } from '../pixels/ids'
+import { trackEvent, toBilling } from '../analytics/events'
 import { toSlugBase } from '../slug'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
@@ -93,6 +94,14 @@ export default function SignupScreen() {
       // page the merchant lands on: /merchant is outside the marketing scope. The shop exists at
       // this line. A no-op unless the visitor accepted the pixels — see pixels/track.ts.
       pixelTrack(platformPixelIds(), 'CompleteRegistration')
+      // The same moment, reported to our own analytics — which, unlike the pixels above, reports
+      // whether or not the visitor accepted advertising cookies. See analytics/events.ts.
+      trackEvent('merchant_signup', { billing: toBilling(billing) })
+      // `trial` is the BACKEND's own answer, not a guess from the status: POST /api/merchants
+      // returns `{ …, trial: false }` when Stripe refused and the shop stayed `pending`, and
+      // `{ …, status: 'active', trial }` when it provisioned the cardless trial. A pending shop
+      // started no trial, and reporting one would make the funnel's own retry step invisible.
+      if (created.data?.trial === true) trackEvent('trial_started')
       await refreshMerchant()
       // Cardless trial, and there is no other door (#222). The backend provisioned the trial and
       // activated the shop during createMerchant, so this lands on the dashboard. If Stripe

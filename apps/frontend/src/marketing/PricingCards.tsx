@@ -121,7 +121,7 @@ export default function PricingCards() {
                     query string is what a link auditor and a human both score as an unfriendly
                     URL. It collapses to /merchant/signup in the canonical tag (canonical.ts), so
                     the form stays one indexed page. */}
-                <Link to={`/merchant/signup/${billing}`} className={cardCtaPrimary}>
+                <Link to={`/merchant/signup/${billing}`} className={cardCtaPrimary} data-cta="pricing-card">
                   {t(tier.cta.en, tier.cta.zh)}
                 </Link>
                 {/* Risk reversal sits at the click, not at the foot of the section. */}

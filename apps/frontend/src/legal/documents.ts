@@ -248,7 +248,7 @@ export const PRIVACY: LegalDocument = {
       heading: '5. Cookies and similar technologies',
       body: [
         'We use a small amount of storage in your browser to keep the service working — to keep you signed in, to remember the language you chose, and to remember a choice you made at a shop\'s checkout. These are necessary for the service to work and are not used for advertising.',
-        'We also measure how our pages are used. That measurement is done by our own systems and by our hosting provider, does not identify you, and does not follow you to other websites.',
+        'We also measure how our pages are used. That measurement is done by our own systems, does not identify you, and does not follow you to other websites.',
         'Advertising cookies are separate. Ours are only ever set on our own marketing pages, and never on a shop\'s storefront. We ask you before any of them are set, and we set none of them if you decline or if you do not answer. Your answer is remembered in your own browser, so a different browser or device asks you again.',
         // #220. This paragraph is the reason the sentence above had to be split: the claim "never
         // on a shop's storefront" is still true of OUR pixels and false of the sentence a reader
