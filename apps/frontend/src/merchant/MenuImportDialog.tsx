@@ -9,9 +9,10 @@
 // reader could not parse arrives as an empty required field rather than a 0 the merchant has to
 // notice among forty rows.
 import { useRef, useState } from 'react'
-import { Loader2, Upload } from 'lucide-react'
+import { Loader2, Upload, ZoomIn } from 'lucide-react'
 import { toast } from 'sonner'
-import { importMenu, upsertProduct, updateMerchantConfig, type MenuDraftItem } from '../store'
+import { importMenu, upsertProduct, updateMerchantConfig } from '../store'
+import { buildRows, newCategoryLabels, norm, type Row } from './menuImportRows'
 import { currencyDef } from '../currency'
 import { coerceQuantity } from '../productUnit'
 import { Button } from '../components/ui/button'
@@ -27,17 +28,14 @@ import type { MenuCategory } from '@bitetime/shared'
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const ACCEPTED = ['image/jpeg', 'image/png'] as const
 
-/** A draft the merchant is editing, plus the two decisions they make about it. */
-interface Row extends MenuDraftItem {
-  /** Local key. Not the product id — that is minted at save, like the add form's draftId. */
-  key: string
-  /** Unchecked rows are not saved. Checked by default: the common case is "keep them all". */
-  include: boolean
-  /** '' is uncategorized. Set from `category_label` when it matches a section the shop holds. */
-  category_id: string
-  /** Create `category_label` as a new section on save. Defaults OFF — see below. */
-  createCategory: boolean
-}
+/**
+ * Marks a Category dropdown choice as a section that does not exist yet.
+ *
+ * Safe against collision with a real choice: an existing category's value is its uuid and "no
+ * category" is ''.
+ */
+const NEW_PREFIX = 'new:'
+const newValue = (label: string) => `${NEW_PREFIX}${norm(label)}`
 
 /** Strips the `data:image/jpeg;base64,` prefix a FileReader produces. */
 function base64Of(dataUrl: string): string {
@@ -52,20 +50,6 @@ function readAsDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(new Error('read_failed'))
     reader.readAsDataURL(file)
   })
-}
-
-/**
- * Matches a printed section heading to one of the shop's own sections, case- and space-blind.
- *
- * Returns the category id, or '' for no match. A near-miss is deliberately NOT accepted: filing a
- * product into the wrong section silently is worse than leaving it uncategorized, which the
- * products table already shows plainly in its Category column.
- */
-function matchCategory(categories: MenuCategory[], label: string | undefined): string {
-  if (!label) return ''
-  const norm = (s: string) => s.trim().toLowerCase()
-  const hit = categories.find(c => norm(c.name) === norm(label) || (c.name_zh && norm(c.name_zh) === norm(label)))
-  return hit?.id ?? ''
 }
 
 export default function MenuImportDialog({
@@ -88,6 +72,11 @@ export default function MenuImportDialog({
   const [saving, setSaving] = useState(false)
   const [rows, setRows] = useState<Row[] | null>(null)
   const [msg, setMsg] = useState('')
+  const [zoom, setZoom] = useState(false)
+  // Fit to the screen first, actual size on the next click. A menu board shot from two metres away
+  // is unreadable at either one alone: fitted it is too small, and at full size the merchant has
+  // lost the page before they find the row they are checking.
+  const [actualSize, setActualSize] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const symbol = currencyDef(currency).symbol
 
@@ -98,13 +87,34 @@ export default function MenuImportDialog({
   // Computed plainly rather than memoised: `chosen` is rebuilt on every render, so a `useMemo`
   // keyed on it would recompute every render anyway while reading as though it did not. The list
   // is at most a few dozen rows.
-  const newCategoryLabels = [...new Set(
-    chosen.filter(r => r.createCategory && r.category_label).map(r => r.category_label!.trim()),
-  )]
-  const overCategoryCap = categories.length + newCategoryLabels.length > MAX_MENU_CATEGORIES
+  //
+  // `offered` is every heading the menu printed that the shop lacks — the panel above the rows.
+  // `creating` is the subset the merchant has left ticked, which is what save actually writes.
+  const offered = rows ? newCategoryLabels(rows, categories) : []
+  // Ticked in the panel, and therefore choosable in every row's Category dropdown. Blind to
+  // `include` on purpose: unticking the last product in a section must not make the section
+  // vanish from the panel, or the merchant cannot tick a product back into it.
+  const queued = offered.filter(l => rows?.some(r => norm(r.newCategory) === norm(l)))
+  // What save actually creates — the ticked sections that still hold a product to file.
+  const creating = [...new Set(chosen.filter(r => r.newCategory).map(r => r.newCategory))]
+  const overCategoryCap = categories.length + creating.length > MAX_MENU_CATEGORIES
+
+  const categoryItems = [
+    { value: '', label: t('No category', '不分类') },
+    ...categories.map(c => ({ value: c.id, label: c.name })),
+    ...queued.map(l => ({ value: newValue(l), label: t(`${l} (new)`, `${l}（新）`) })),
+  ]
+
+  /** A dropdown choice back into the row's two mutually exclusive category fields. */
+  function categoryPatch(v: string | null): Partial<Row> {
+    const value = v ?? ''
+    if (!value.startsWith(NEW_PREFIX)) return { category_id: value, newCategory: '' }
+    return { category_id: '', newCategory: queued.find(l => newValue(l) === value) ?? '' }
+  }
 
   function reset() {
     setFile(null); setPreview(''); setRows(null); setMsg(''); setReading(false); setSaving(false)
+    setZoom(false); setActualSize(false)
     if (inputRef.current) inputRef.current.value = ''
   }
 
@@ -117,7 +127,7 @@ export default function MenuImportDialog({
   async function pick(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = e.target.files?.[0]
     if (!picked) return
-    setMsg(''); setRows(null)
+    setMsg(''); setRows(null); setZoom(false); setActualSize(false)
     if (!(ACCEPTED as readonly string[]).includes(picked.type)) {
       setMsg(t('Choose a JPG or PNG photo.', '请选择 JPG 或 PNG 照片。'))
       return
@@ -155,17 +165,32 @@ export default function MenuImportDialog({
       setMsg(byCode[r.error.code ?? ''] ?? r.error.message)
       return
     }
-    setRows(r.data.items.map((item, i) => ({
-      ...item,
-      key: `${i}-${item.name}`,
-      include: true,
-      category_id: matchCategory(categories, item.category_label),
-      createCategory: false,
-    })))
+    setRows(buildRows(r.data.items, categories))
   }
 
   function edit(key: string, patch: Partial<Row>) {
     setRows(prev => prev?.map(r => (r.key === key ? { ...r, ...patch } : r)) ?? prev)
+  }
+
+  /**
+   * Ticks or unticks one new section for the whole import.
+   *
+   * Untick empties `newCategory` on every row pointing at it, including rows the merchant moved
+   * there by hand: the section will not exist, so there is nothing left for them to point at. They
+   * become uncategorized, which the row's own dropdown then says plainly.
+   */
+  function toggleNewCategory(label: string, on: boolean) {
+    const key = norm(label)
+    setRows(prev => prev?.map(r => {
+      if (on) {
+        // Back to the heading the menu printed for it. A row the merchant moved elsewhere keeps
+        // where they put it — this tick restores a section, it does not re-file their work.
+        return norm(r.category_label ?? '') === key && !r.category_id && !r.newCategory
+          ? { ...r, newCategory: label }
+          : r
+      }
+      return norm(r.newCategory) === key ? { ...r, newCategory: '' } : r
+    }) ?? prev)
   }
 
   async function save() {
@@ -176,11 +201,11 @@ export default function MenuImportDialog({
     // point at. `updateMerchantConfig` replaces the whole list, so it is built from the current
     // one rather than appended to blindly.
     const labelToId = new Map<string, string>()
-    if (newCategoryLabels.length > 0) {
-      const created: MenuCategory[] = newCategoryLabels.map(name => ({
+    if (creating.length > 0) {
+      const created: MenuCategory[] = creating.map(name => ({
         id: crypto.randomUUID(), name, active: true,
       }))
-      for (const c of created) labelToId.set(c.name.trim().toLowerCase(), c.id)
+      for (const c of created) labelToId.set(norm(c.name), c.id)
       const r = await updateMerchantConfig(merchantId, { product_categories: [...categories, ...created] })
       if (!r.ok) {
         setSaving(false)
@@ -193,8 +218,8 @@ export default function MenuImportDialog({
     let saved = 0
     const failed: string[] = []
     for (const row of rows.filter(r => r.include)) {
-      const categoryId = row.createCategory && row.category_label
-        ? labelToId.get(row.category_label.trim().toLowerCase()) ?? null
+      const categoryId = row.newCategory
+        ? labelToId.get(norm(row.newCategory)) ?? null
         : row.category_id || null
       const r = await upsertProduct({
         id: crypto.randomUUID(),
@@ -284,11 +309,24 @@ export default function MenuImportDialog({
                 is the merchant's whole job here, and making them scroll away to do it is how a
                 misread price gets saved. */}
             <div className="md:sticky md:top-0 md:self-start">
-              <img
-                src={preview}
-                alt={t('The menu photo you chose', '您选择的菜单照片')}
-                className="w-full rounded-xl border-[0.5px] border-border object-contain max-h-[60vh]"
-              />
+              {/* Clickable, because the photo beside the rows is capped at 60vh and a price
+                  printed small on a menu board does not survive that. */}
+              <button
+                type="button"
+                onClick={() => { setActualSize(false); setZoom(true) }}
+                aria-label={t('Enlarge the menu photo', '放大菜单照片')}
+                className="group relative block w-full cursor-zoom-in rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <img
+                  src={preview}
+                  alt={t('The menu photo you chose', '您选择的菜单照片')}
+                  className="w-full rounded-xl border-[0.5px] border-border object-contain max-h-[60vh]"
+                />
+                <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-card/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm group-hover:text-foreground">
+                  <ZoomIn className="size-3.5" />
+                  {t('Enlarge', '放大')}
+                </span>
+              </button>
             </div>
 
             <div>
@@ -307,8 +345,51 @@ export default function MenuImportDialog({
                 </p>
               ) : (
                 <div className="flex flex-col gap-3">
+                  {/* One panel, not one tick per row: the same heading over eight items is ONE
+                      decision, and repeating it eight times reads as eight sections. Every row
+                      then says which section it lands in through its own Category dropdown, which
+                      is where a merchant already looks for that. */}
+                  {offered.length > 0 && (
+                    <div className="rounded-xl border-[0.5px] border-border bg-muted/40 p-3">
+                      <p className="text-[12px] font-medium text-foreground">
+                        {t('New categories from this menu', '来自这张菜单的新分类')}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {t(
+                          'We create the ticked ones when you press Add, and file the products under them.',
+                          '按“添加”时，我们会创建已勾选的分类，并把产品归入其中。',
+                        )}
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2">
+                        {offered.map(label => {
+                          const on = queued.some(c => norm(c) === norm(label))
+                          // Counted off the PRINTED heading, not off where the rows currently sit:
+                          // this number says how big the section is on the menu, and it must not
+                          // fall to zero the moment the merchant unticks it.
+                          const count = rows.filter(r => norm(r.category_label ?? '') === norm(label)).length
+                          return (
+                            <label
+                              key={label}
+                              className="flex items-center gap-2 text-[12px] text-foreground cursor-pointer"
+                            >
+                              <Checkbox
+                                checked={on}
+                                onCheckedChange={v => toggleNewCategory(label, v === true)}
+                              />
+                              <span>
+                                {label}
+                                <span className="text-muted-foreground">
+                                  {' '}({t(`${count} products`, `${count} 个产品`)})
+                                </span>
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {rows.map(row => {
-                    const matched = !!row.category_id
                     const priceMissing = row.include && (row.price === null || Number.isNaN(row.price))
                     return (
                       <div
@@ -368,17 +449,25 @@ export default function MenuImportDialog({
                           </div>
                           <div>
                             <Label className="text-[11px] text-muted-foreground">{t('Category', '分类')}</Label>
+                            {/* The sections the panel above will create are ordinary choices here,
+                                marked "new". A row filed under one has to SAY so: a dropdown
+                                reading "No category" beside a panel that creates the section is
+                                two answers to one question. */}
                             <Select
-                              value={row.category_id}
-                              onValueChange={v => edit(row.key, { category_id: v ?? '', createCategory: false })}
-                              items={[{ value: '', label: t('No category', '不分类') },
-                                ...categories.map(c => ({ value: c.id, label: c.name }))]}
+                              value={row.newCategory ? newValue(row.newCategory) : row.category_id}
+                              onValueChange={v => edit(row.key, categoryPatch(v))}
+                              items={categoryItems}
                             >
                               <SelectTrigger className="h-8 text-[13px]"><SelectValue /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="">{t('No category', '不分类')}</SelectItem>
                                 {categories.map(c => (
                                   <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                ))}
+                                {queued.map(label => (
+                                  <SelectItem key={newValue(label)} value={newValue(label)}>
+                                    {t(`${label} (new)`, `${label}（新）`)}
+                                  </SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -399,21 +488,6 @@ export default function MenuImportDialog({
                           </p>
                         )}
 
-                        {/* Offered, never assumed. A section created on the merchant's behalf is a
-                            change to their storefront's shape that they did not ask for, so the
-                            toggle starts off and an unmatched label simply stays uncategorized. */}
-                        {!matched && row.category_label && (
-                          <label className="flex items-center gap-2 text-[11px] text-muted-foreground mt-2 pl-6">
-                            <Checkbox
-                              checked={row.createCategory}
-                              onCheckedChange={v => edit(row.key, { createCategory: v === true })}
-                            />
-                            {t(
-                              `Create the category “${row.category_label}”`,
-                              `创建分类“${row.category_label}”`,
-                            )}
-                          </label>
-                        )}
                       </div>
                     )
                   })}
@@ -460,6 +534,35 @@ export default function MenuImportDialog({
             </Button>
           </div>
         )}
+
+        {/* The photo on its own. A second dialog rather than a swap inside this one: the rows keep
+            their scroll position, so closing it puts the merchant back on the row they doubted. */}
+        <Dialog open={zoom} onOpenChange={setZoom}>
+          <DialogContent className="sm:max-w-[min(96vw,72rem)] max-h-[92vh] overflow-auto p-3">
+            <DialogTitle className="sr-only">{t('The menu photo you chose', '您选择的菜单照片')}</DialogTitle>
+            <button
+              type="button"
+              onClick={() => setActualSize(v => !v)}
+              aria-label={actualSize
+                ? t('Fit the photo to the screen', '缩放照片以适合屏幕')
+                : t('Show the photo at full size', '按原尺寸显示照片')}
+              className={`block ${actualSize ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
+            >
+              <img
+                src={preview}
+                alt={t('The menu photo you chose', '您选择的菜单照片')}
+                className={actualSize
+                  ? 'max-w-none rounded-lg'
+                  : 'w-full max-h-[82vh] object-contain rounded-lg'}
+              />
+            </button>
+            <p className="text-[11px] text-muted-foreground text-center">
+              {actualSize
+                ? t('Click the photo to fit it to the screen.', '点击照片以适合屏幕。')
+                : t('Click the photo to see it at full size.', '点击照片查看原尺寸。')}
+            </p>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   )
