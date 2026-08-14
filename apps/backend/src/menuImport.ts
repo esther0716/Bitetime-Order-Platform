@@ -34,7 +34,12 @@ export interface MenuDraftItem {
   unit?: string
   unit_quantity?: number
   /**
-   * The menu's own section heading, as words. Deliberately NOT a `category_id`: category ids are
+   * The menu's own section heading, as words — or, for a menu that prints no headings but sells
+   * one kind of thing its title names ("Coffee Menu"), that kind. A single-kind board is the
+   * common small-shop case, and reading its title is the difference between an import that keeps
+   * the menu's shape and one that files everything as uncategorized.
+   *
+   * Deliberately NOT a `category_id`: category ids are
    * per-shop entries in `merchants.product_categories` with no foreign key behind them (ADR 0013),
    * so an id this reader invented and `null` are one state — uncategorized — and the merchant
    * would never be told. A label can be matched against what the shop actually holds, or refused.
@@ -115,7 +120,7 @@ For each item on the menu:
 - "price_text": the price exactly as printed, including any currency symbol — "RM 12.50", "12.50", "Market price". Copy it; do not convert, round or reformat it. Required.
 - "unit": what one order of this item is, chosen from this exact list: pcs, box, set, pack, dozen, bottle, jar, tray, slice, kg, g. Pick the closest one — a menu saying "per slice" gives "slice", "box of 6" gives "box". Omit it when nothing in the list fits or the menu does not say.
 - "unit_quantity": the number in that unit when the menu states one, so "box of 6" gives 6. Omit it otherwise.
-- "category_label": the section heading this item sits under on the menu, as printed — "Cookies", "Hot Drinks". Omit it if the menu has no sections.
+- "category_label": the section heading this item sits under on the menu, as printed — "Cookies", "Hot Drinks". If the menu prints no section headings but its title names the kind of food or drink it sells — "Coffee Menu", "Cake Price List" — give that kind as the heading for every item, without the words "menu" or "price list": "Coffee Menu" gives "Coffee". Omit it when the menu has no sections and its title names only the business — "Linda's Menu", "Kopitiam 88".
 
 Rules:
 - Copy what is printed. Do not invent an item, a description, a price or a translation.
