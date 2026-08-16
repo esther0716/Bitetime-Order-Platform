@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSession } from '../SessionContext'
 import { startShopTrial } from '../store'
+import { trackEvent } from '../analytics/events'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Wordmark from '../components/Wordmark'
@@ -17,6 +18,11 @@ export default function PendingScreen() {
     setBusy(true); setErr('')
     const r = await startShopTrial(merchant!.id)
     if (r.ok) {
+      // The third door a trial can come through, after the two signup screens. Reported here for
+      // the same reason it is reported there: a trial the funnel cannot see is a trial that looks
+      // like a shop which never started one. `trial` is the backend's own answer — a retry that
+      // activates a shop which already used its one trial answers false, and starts nothing.
+      if (r.data.trial) trackEvent('trial_started')
       // The shop is active now; refreshing the session swaps this screen for the dashboard.
       await refreshMerchant()
       return

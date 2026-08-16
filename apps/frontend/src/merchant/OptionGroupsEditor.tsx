@@ -12,6 +12,7 @@ import {
   validateOptionGroups, MAX_GROUPS_PER_PRODUCT, MAX_OPTIONS_PER_GROUP,
 } from '@bitetime/shared'
 import type { OptionGroup, Option } from '@bitetime/shared'
+import { optionRuleSentence } from '../optionRule'
 
 /**
  * The merchant writing a product's questions.
@@ -209,6 +210,15 @@ export default function OptionGroupsEditor({
             </div>
             </div>
           </div>
+
+          {/* The three numbers, read back as the sentence the merchant started from. It is the
+              only thing on this form that answers "did I type what I meant" — the numbers state
+              the rule correctly and say nothing about whether it is the intended one, and the
+              storefront shows a running count rather than the rule, so there was nowhere to
+              check. Updates as they type. */}
+          <p className="text-[12px] text-muted-foreground pl-1 -mt-1">
+            {optionRuleSentence(group, t)}
+          </p>
 
           <div className="flex flex-col gap-1.5 pl-1 min-w-0">
             {group.options.map((option, oi) => (

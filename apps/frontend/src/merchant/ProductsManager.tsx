@@ -23,6 +23,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyCont
 import ImagePicker from './ProductImages'
 import OptionGroupsEditor from './OptionGroupsEditor'
 import MenuCategoriesDialog, { blankCategory, categoryProblem } from './MenuCategoriesDialog'
+import MenuImportDialog from './MenuImportDialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '../components/ui/tooltip'
 import { findCategory } from '../menuGroups'
 import {
@@ -214,6 +215,10 @@ export default function ProductsManager() {
   // what makes a save visible rather than a local copy that could drift from the row.
   const categories = menuCategoriesFromRow(merchant?.product_categories)
   const [categoriesOpen, setCategoriesOpen] = useState(false)
+  // Menu import (tasks/prd-ai-menu-import.md). Its own dialog, and deliberately not folded into
+  // the add/edit form: that form saves ONE product on submit, and this one proposes many and
+  // saves none until asked.
+  const [importOpen, setImportOpen] = useState(false)
   const [categoriesSaving, setCategoriesSaving] = useState(false)
   // The inline "+ New category…" draft in the product form. `null` is "not creating one" — an
   // empty string is a merchant who opened it and has not typed yet, and the two are different.
@@ -500,11 +505,30 @@ export default function ProductsManager() {
           >
             {t('Categories', '分类')}
           </Button>
+          <Button
+            type="button" variant="soft" size="none"
+            className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap"
+            onClick={() => setImportOpen(true)}
+          >
+            {t('Import from a photo', '从照片导入')}
+          </Button>
           <Button data-tour="add-product" type="button" size="none" className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
             {t('+ Add product', '+ 添加产品')}
           </Button>
         </div>
       </div>
+
+      <MenuImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        merchantId={merchant!.id}
+        currency={currency}
+        categories={categories}
+        unitItems={UNITS.map(u => ({ value: u.value, label: t(u.en, u.zh) }))}
+        t={t}
+        onSaved={load}
+        onCategoriesChanged={refreshMerchant}
+      />
 
       <MenuCategoriesDialog
         open={categoriesOpen}
@@ -528,9 +552,25 @@ export default function ProductsManager() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button type="button" size="none" className="rounded-lg py-[6px] px-[14px] text-[13px]" onClick={openAdd}>
-              {t('+ Add product', '+ 添加产品')}
-            </Button>
+            {/* Both offered, with the import first: this is the screen a shop with a printed menu
+                and no products is looking at, and typing forty items by hand is where trials
+                stall. Adding by hand stays one press away for a shop with three items. */}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button
+                type="button" size="none"
+                className="rounded-lg py-[6px] px-[14px] text-[13px]"
+                onClick={() => setImportOpen(true)}
+              >
+                {t('Import from a photo', '从照片导入')}
+              </Button>
+              <Button
+                type="button" variant="soft" size="none"
+                className="rounded-lg py-[6px] px-[14px] text-[13px]"
+                onClick={openAdd}
+              >
+                {t('+ Add product', '+ 添加产品')}
+              </Button>
+            </div>
           </EmptyContent>
         </Empty>
       ) : (

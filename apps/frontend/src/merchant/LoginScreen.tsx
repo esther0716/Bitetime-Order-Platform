@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { signIn, requestPasswordReset } from '../store'
 import { authErrorCode } from '../authError'
+import { trackEvent } from '../analytics/events'
 import { useSession } from '../SessionContext'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -58,7 +59,13 @@ export default function LoginScreen() {
     }
     // `replace`, not a push: a used login screen is not a place to go back to. Pushed, Back put
     // an already-signed-in merchant in front of the login form again.
-    try { await signIn(email, password); await refreshMerchant(); navigate('/merchant', { replace: true }) }
+    try {
+      await signIn(email, password)
+      // After the sign-in resolves, so a failed attempt reports nothing.
+      trackEvent('merchant_login')
+      await refreshMerchant()
+      navigate('/merchant', { replace: true })
+    }
     catch (err) { setMsg(signInErrorText(err)); setBusy(false) }
   }
 

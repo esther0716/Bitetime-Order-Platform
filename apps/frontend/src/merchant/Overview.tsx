@@ -11,6 +11,7 @@ import { granularityFor, REVENUE_RANGES, type Granularity, type MerchantStats, t
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { formatMoney } from '../currency'
 import ShareStorefront from './ShareStorefront'
+import ShopAssistant from './ShopAssistant'
 
 const STAT_ICON = { size: 15, strokeWidth: 1.75 }
 
@@ -174,6 +175,18 @@ export default function Overview() {
         <StatCard label={t('Customers', '顾客')} value={String(stats.customerCount)} icon={<Users {...STAT_ICON} />} />
         <StatCard label={t('Avg order', '平均订单')} value={money(stats.avgOrder)} icon={<TrendingUp {...STAT_ICON} />} />
       </div>
+
+      {/* Between the KPI cards and the charts, deliberately.
+          It started below the charts, on the argument that they are the primary surface and this
+          is only a shortcut through them. That argument assumed a merchant knows the box is
+          there — and below three full-height panels, nobody does. An unused shortcut is worse
+          than one placed a little early.
+          Still AFTER the headline figures, because a shop owner opening this page came to see
+          today's orders, not a question box. And next to those figures rather than in a modal or
+          behind a floating button: an answer routinely reconciles itself against the KPI cards
+          ("your dashboard's own month-on-month figure reads down 15 percent…"), which the
+          merchant can only check if the cards are on screen with it. */}
+      <ShopAssistant />
 
       <ChartPanel
         title={t(`Revenue — last ${rangeDays} days`, `营收 — 近${rangeDays}天`)}

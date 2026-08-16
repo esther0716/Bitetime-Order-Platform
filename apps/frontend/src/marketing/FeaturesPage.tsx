@@ -61,7 +61,7 @@ export default function FeaturesPage() {
           <h2 className={sectionTitle}>
             {t('Every one of these is included, free for seven days', '以上功能全包含，免费试用七天')}
           </h2>
-          <Link to="/merchant/signup" className={ctaPrimary}>
+          <Link to="/merchant/signup" className={ctaPrimary} data-cta="features">
             {t('Start your shop', '开始建店')}
           </Link>
           {/* Back up the tree: a page whose only outbound links point deeper is a dead end to a

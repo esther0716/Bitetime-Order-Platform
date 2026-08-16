@@ -38,7 +38,9 @@ import { statsOrders, distinctCustomerCount } from './ordersDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow } from './quotaWindows.js'
+import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT } from './quotaWindows.js'
+import { usagePeriod, nextResetDate, LIFETIME_PERIOD, type AiFeature } from './aiUsage.js'
+import { consumeAiCall } from './aiUsageDb.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
 import { detectCountry } from './region.js'
 import { fetchBasePricing, createPricingCache, type PricingPayload } from './pricing.js'
@@ -58,6 +60,8 @@ import {
   type CreateGithubIssue, type GithubIssueAction, type ListGithubReleases,
 } from './github.js'
 import { humanizeRelease, type HumanizeRelease } from './releases.js'
+import { extractMenu, MAX_MENU_IMAGE_BYTES, type ExtractMenu } from './menuImport.js'
+import { askShopAssistant, type AskShopAssistant } from './shopAssistant.js'
 import {
   listReleaseTags, insertDraftRelease, listAllReleases, getReleaseById,
   updateReleaseStatus, updateReleaseHumanization,
@@ -378,14 +382,21 @@ app.get('/api/merchants/:id/orders', requireMerchantOwns, async (c) => {
  *
  * Free, like the Overview it draws. The export beside it is the Pro capability, not the chart.
  */
-app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
-  const days = Number(c.req.query('days') ?? 12)
-  // Refused rather than clamped, exactly as the export refuses — same list, same reason.
-  if (!isRevenueRange(days)) return c.json({ error: 'bad_range' }, 400)
-  const granularity = c.req.query('granularity') ?? granularityFor(days)
-  if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
-
-  const m = c.get('merchant')
+/**
+ * One shop's statistics, assembled once.
+ *
+ * Extracted so the Overview endpoint below and the analytics assistant read the SAME five
+ * arguments through the SAME function. Two assemblies of one set of inputs is exactly how the
+ * assistant and the chart beside it come to disagree — and a merchant given two different revenue
+ * figures for one window has no way to tell which is the wrong one.
+ *
+ * Takes the merchant ROW, not an id: the caller has already loaded and authorised it, and passing
+ * a bare id here would be a second place where a wrong one could arrive.
+ */
+async function shopStatsFor(
+  m: Record<string, any>,
+  window: { days: number; granularity: 'day' | 'week' },
+) {
   // Vouchers are per-shop promotions, a handful of rows — the row cap is not in play, and this
   // one stays on the REST client alongside the endpoint that serves the same rows to the
   // Vouchers tab.
@@ -399,9 +410,23 @@ app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
   // Resolved and validated once, like the export does: an unusable `merchants.timezone` would
   // otherwise bucket the chart in the server's zone while the merchant reads it in their own.
   const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
-  return c.json(computeMerchantStats(orders, customerCount, vouchers, new Date(), {
-    days, granularity, timeZone,
-  }))
+  return {
+    stats: computeMerchantStats(orders, customerCount, vouchers, new Date(), {
+      days: window.days, granularity: window.granularity, timeZone,
+    }),
+    timeZone,
+  }
+}
+
+app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
+  const days = Number(c.req.query('days') ?? 12)
+  // Refused rather than clamped, exactly as the export refuses — same list, same reason.
+  if (!isRevenueRange(days)) return c.json({ error: 'bad_range' }, 400)
+  const granularity = c.req.query('granularity') ?? granularityFor(days)
+  if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
+
+  const { stats } = await shopStatsFor(c.get('merchant'), { days, granularity })
+  return c.json(stats)
 })
 
 /**
@@ -795,6 +820,178 @@ app.delete('/api/merchants/:id/products/:productId', requireMerchantOwns, requir
   const { error } = await admin.from('products').delete().eq('id', productId)
   if (error) return c.json({ error: 'Delete failed' }, 500)
   return c.json({ ok: true })
+})
+
+/**
+ * Spend one call against a shop's Claude allowance. Returns null when the call may proceed, or
+ * the refusal body when the allowance is gone.
+ *
+ * Both AI routes are bounded twice over, and the two bounds guard different things — the same
+ * argument the Google quote endpoint makes in `quotaWindows.ts`:
+ *
+ *   * the DAILY in-memory window is the burst stop: free, and reset by a redeploy, which over a
+ *     day does not matter;
+ *   * this PERSISTED counter is the bill stop: it is in Postgres precisely because a redeploy
+ *     must not clear it, and it is what catches the loop that sits just under the daily figure.
+ *
+ * The daily window is checked FIRST, so a call the burst stop already refused never eats a
+ * month's allowance — it spent no money. This runs last of all the checks, immediately before the
+ * model call, for the same reason the key check runs before both: nothing that was going to be
+ * refused anyway may cost a merchant a unit.
+ *
+ * `lifetimeLimit` is the once-ever grant, spent BEFORE the month's — which is the whole point of
+ * having one. A merchant photographing their menu for the first time draws on the grant and
+ * leaves the month untouched; only once the grant is exhausted does the ordinary monthly figure
+ * start counting. Pass null for a feature that has no grant.
+ *
+ * The refusal always quotes the MONTHLY limit and its reset date, never the grant's: a merchant
+ * who has used their setup allowance cannot be told to wait for it to come back, because it never
+ * does. What returns on the 1st is the monthly figure, and that is the only true thing to say.
+ */
+async function spendAiAllowance(
+  m: Record<string, any>,
+  feature: AiFeature,
+  lifetimeLimit: number | null,
+  monthlyLimit: number,
+): Promise<{ error: string; limit: number; resets: string } | null> {
+  const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
+  const period = usagePeriod(timeZone, new Date())
+
+  if (
+    lifetimeLimit !== null
+    && await consumeAiCall({ merchantId: m.id, feature, period: LIFETIME_PERIOD, limit: lifetimeLimit })
+  ) {
+    return null
+  }
+  if (await consumeAiCall({ merchantId: m.id, feature, period, limit: monthlyLimit })) return null
+
+  return { error: 'monthly_limit_reached', limit: monthlyLimit, resets: nextResetDate(period) }
+}
+
+// Same pattern as githubDeps and releaseDeps: held mutable so an API test can drive the real
+// route without a live Claude call.
+export const menuImportDeps: { extract: ExtractMenu } = { extract: extractMenu }
+
+/**
+ * AI menu import (tasks/prd-ai-menu-import.md).
+ *
+ * Reads a photograph of the shop's menu and returns DRAFT products. It is the one route in this
+ * file whose contract is that it changes nothing: no `products` row is created here, and none is
+ * updated. The merchant corrects the drafts in the editor and saves them through the ordinary
+ * product upsert above, under every rule that already applies there.
+ *
+ * That split is not tidiness. A reader that both guesses a price and commits it puts a wrong
+ * number in front of a customer with nobody in between; a reader that only proposes cannot.
+ *
+ * Refusals, not degradations. A missing API key answers 503 and an unreadable response answers
+ * 502 — never an empty draft list, which on screen is indistinguishable from "your menu has no
+ * items on it" and is the failure this endpoint exists to avoid.
+ */
+app.post('/api/merchants/:id/menu-import', requireMerchantOwns, async (c) => {
+  const m = c.get('merchant')
+  // A suspended or pending shop cannot sell, so it has no business spending the platform's
+  // Claude budget. Checked here rather than left to the storefront gate, which does not run on
+  // dashboard routes.
+  if (m.status !== 'active') return c.json({ error: 'shop_not_active' }, 403)
+
+  const body = await c.req.json().catch(() => null) as { image?: unknown; media_type?: unknown } | null
+  if (!body) return c.json({ error: 'bad_body' }, 400)
+
+  const mediaType = body.media_type
+  if (mediaType !== 'image/jpeg' && mediaType !== 'image/png') {
+    return c.json({ error: 'bad_media_type' }, 400)
+  }
+  const image = typeof body.image === 'string' ? body.image : ''
+  if (!image) return c.json({ error: 'missing_image' }, 400)
+
+  // Base64 carries 3 bytes per 4 characters. Checked on the ENCODED length so the cap is applied
+  // before anything decodes a payload an attacker chose the size of.
+  if (Math.floor((image.length * 3) / 4) > MAX_MENU_IMAGE_BYTES) {
+    return c.json({ error: 'image_too_large' }, 413)
+  }
+
+  // Ahead of the quota deliberately: an unconfigured platform must not burn a shop's daily
+  // allowance answering 503.
+  if (!env.anthropicApiKey) return c.json({ error: 'menu_import_unavailable' }, 503)
+
+  if (!menuImportMerchantWindow.allow(m.id)) {
+    return c.json({ error: 'daily_limit_reached', limit: 20 }, 429)
+  }
+
+  const importRefusal = await spendAiAllowance(
+    m, 'menu_import', MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT,
+  )
+  if (importRefusal) return c.json(importRefusal, 429)
+
+  const draft = await menuImportDeps.extract(env.anthropicApiKey, {
+    imageBase64: image,
+    mediaType,
+    currency: m.currency ?? 'MYR',
+  })
+  if (!draft) return c.json({ error: 'could_not_read_menu' }, 502)
+
+  return c.json(draft)
+})
+
+export const assistantDeps: { ask: AskShopAssistant } = { ask: askShopAssistant }
+
+/** The longest question the assistant will read. Past this it is not a question. */
+const MAX_QUESTION_CHARS = 500
+
+/**
+ * The shop analytics assistant (tasks/prd-shop-analytics-assistant.md).
+ *
+ * The merchant is resolved and authorised by `requireMerchantOwns` BEFORE the tool handler below
+ * is built, and the handler closes over that row. Nothing the caller sends — and nothing the
+ * model says — can name a different shop, because there is no parameter in which to name one.
+ * That is the whole tenancy argument: on this path `db.ts` runs as the database owner and no RLS
+ * policy applies, so the invariant has to be structural rather than checked.
+ */
+app.post('/api/merchants/:id/ask', requireMerchantOwns, async (c) => {
+  const m = c.get('merchant')
+  if (m.status !== 'active') return c.json({ error: 'shop_not_active' }, 403)
+
+  const body = await c.req.json().catch(() => null) as { question?: unknown; lang?: unknown } | null
+  if (!body) return c.json({ error: 'bad_body' }, 400)
+
+  const question = typeof body.question === 'string' ? body.question.trim() : ''
+  if (!question) return c.json({ error: 'missing_question' }, 400)
+  if (question.length > MAX_QUESTION_CHARS) return c.json({ error: 'question_too_long' }, 400)
+  const lang = body.lang === 'zh' ? 'zh' : 'en'
+
+  // Ahead of the ceiling, so an unconfigured platform does not spend a merchant's daily
+  // allowance answering 503.
+  if (!env.anthropicApiKey) return c.json({ error: 'assistant_unavailable' }, 503)
+
+  if (!assistantMerchantWindow.allow(m.id)) {
+    return c.json({ error: 'daily_limit_reached', limit: 50 }, 429)
+  }
+
+  // No lifetime grant: asking questions is the ongoing use of the feature, not a setup burst.
+  const askRefusal = await spendAiAllowance(m, 'assistant', null, ASSISTANT_MONTHLY_LIMIT)
+  if (askRefusal) return c.json(askRefusal, 429)
+
+  const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
+
+  const answer = await assistantDeps.ask(env.anthropicApiKey, {
+    question,
+    lang,
+    currency: m.currency ?? DEFAULT_CURRENCY,
+    timeZone,
+    today: todayInZone(timeZone, new Date()),
+    // The tool handler. The merchant row is captured here, out of the model's reach.
+    getStats: async ({ days, granularity }) => (await shopStatsFor(m, { days, granularity })).stats,
+  })
+
+  if (!answer) return c.json({ error: 'could_not_answer' }, 502)
+
+  // Built from the tool call, never written by the model — so it cannot describe a window the
+  // model did not actually read. Null when the model answered without reading the figures at all,
+  // which must not carry a disclaimer claiming it did.
+  return c.json({
+    answer: answer.text,
+    window: answer.queried,
+  })
 })
 
 app.get('/api/merchants/:id/vouchers/:code', async (c) => {

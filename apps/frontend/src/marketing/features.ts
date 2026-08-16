@@ -85,6 +85,32 @@ export const FEATURES: FeatureEntry[] = [
     },
   },
   {
+    // Appended rather than placed near `menu`, which it belongs with by subject: the landing page
+    // renders FEATURES.slice(0, 3) as its hook, so a new entry higher up would silently drop
+    // "Orders arrive numbered and complete" from the front page. Moving the hook is a decision
+    // about what the landing sells, not a side effect of documenting a feature.
+    id: 'menuimport',
+    title: {
+      en: 'Photograph your menu, get your product list',
+      zh: '拍下菜单，直接生成产品列表',
+    },
+    body: {
+      en: 'Take a photo of the menu you already have — printed, or the board on your wall — and TinyOrder reads it into draft products: the name, the price, the unit and the section it sits under, with the Chinese name too where your menu prints one. You check every line and fix anything it misread, and nothing is saved until you press add. A price it could not read is left blank for you to fill in, never guessed. One page at a time.',
+      zh: '拍下你现有的菜单——印刷版，或墙上的菜单板——TinyOrder 会读成产品草稿：名称、价格、单位，以及所属分类；菜单上有中文名称时也会一并读取。每一行都由你核对、更正，按下新增之前不会保存任何内容。读不出的价格会留空让你自己填写，绝不猜测。每次处理一页。',
+    },
+  },
+  {
+    id: 'assistant',
+    title: {
+      en: 'Ask your dashboard a question',
+      zh: '直接向仪表板提问',
+    },
+    body: {
+      en: 'Type a question about your own orders in plain English or Chinese — which product made the least money, how the last 30 days compared with the 30 before — and get a short answer worked out from your own figures, with the period it used written underneath it. It reads your shop and only your shop, it never changes anything, and cancelled orders stay out of the revenue exactly as they do on your charts.',
+      zh: '用日常中文或英文询问你自己的订单——哪个产品营收最低、最近 30 天与之前 30 天相比如何——即可获得依你自己的数据算出的简短回答，下方并注明所采用的时间范围。它只读取你的店铺，不会读取别人的，也不会更改任何内容；营收同样不计入已取消的订单，与图表一致。',
+    },
+  },
+  {
     id: 'money',
     title: {
       en: 'The money is yours',

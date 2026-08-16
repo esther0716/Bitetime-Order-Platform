@@ -77,7 +77,7 @@ export default function FaqPage() {
           <h2 className="font-heading italic text-[18px] text-foreground mb-6 max-w-[520px] mx-auto">
             {t('Seven days, no card, and your own shop at the end of it.', '七天免费，无需信用卡，结束时你已经有了自己的店。')}
           </h2>
-          <Link to="/merchant/signup" className={ctaPrimary}>
+          <Link to="/merchant/signup" className={ctaPrimary} data-cta="faq">
             {t('Start your shop', '开始建店')}
           </Link>
           {/* Back up the tree: a page whose only outbound links point deeper is a dead end to a
