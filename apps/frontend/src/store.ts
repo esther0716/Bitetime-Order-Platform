@@ -1060,6 +1060,20 @@ export async function updateMerchantConfig(id: string, patch: any): Promise<Resu
   return apiSend<any>(`/api/merchants/${id}`, 'PATCH', patch, { auth: true })
 }
 
+/**
+ * Write a shop's whole arrangement: where every product sits, and in which section.
+ *
+ * The WHOLE list every time, never a diff — see `menuArrangement.ts`. The endpoint answers with
+ * how many rows it moved; a caller that cares can compare that against what it sent, which is how
+ * a body naming a stranger's product reports itself (it moves nothing).
+ */
+export async function saveProductOrder(
+  merchantId: string,
+  items: { id: string; sort: number; category_id: string | null }[],
+): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/merchants/${merchantId}/product-order`, 'PUT', { items }, { auth: true }))
+}
+
 export async function fetchMerchantSecret(merchantId: string): Promise<Result<{ tg_token: string | null; tg_chat_id: string | null } | null>> {
   if (!merchantId) return { ok: true, data: null }
   return apiGet<{ tg_token: string | null; tg_chat_id: string | null } | null>(`/api/merchants/${merchantId}/secret`, { auth: true })

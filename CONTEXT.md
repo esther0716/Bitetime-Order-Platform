@@ -135,6 +135,18 @@ A section of a shop's own menu, authored by the merchant and named in their own 
 
 **The order never carries it.** An order snapshots names and prices precisely so a merchant tidying their menu cannot rewrite last month's receipts; how the menu was *arranged* the day it was ordered from is not a fact about the order. Receipts, Telegram tickets and the xlsx report are unchanged by this.
 
+## Menu arrangement
+
+How a shop's menu is ordered, and the fact that the merchant — not the creation date — decides it. Two stored things: the order of `merchants.product_categories`, and `products.sort` with `products.category_id`. The merchant sets both by dragging, on the dashboard's **Storefront** section, whose drag surface renders the storefront's own rows (`components/MenuRow.tsx`) at phone width — so the surface *is* the preview, and cannot drift from what a customer sees. See the spec, `docs/superpowers/specs/2026-08-17-storefront-arrangement-design.md`.
+
+**`sort` is dense and global per shop**, numbered `0..n-1` across the sections in render order rather than restarting inside each one. A per-section counter would need the section to break the tie; one global number means the storefront's single flat product read already returns them in render order and grouping is all that is left. It is written by `PUT /api/merchants/:id/product-order` and by nothing else — a product upsert must never move a product.
+
+**The whole list is sent on every save, never a diff.** Two browsers arranging one shop is last-writer-wins, the deal every other merchant write already offers; a diff would interleave one save's numbering with the other's.
+
+**Two functions, because there are two questions.** `menuGroups.ts` answers the storefront's — *what does a customer see* — so it drops hidden categories, drops empty sections and reads a dangling id as uncategorized. `merchant/menuArrangement.ts` answers the merchant's — *where is everything filed* — and keeps all three, because a merchant must be able to drop a product into a section a customer cannot see. The arrangement screen therefore shows hidden products and hidden categories, tagged: it is faithful about **order and layout**, and deliberately not about **visibility**.
+
+**Dragging an item out of a deleted section is what clears the dangling id.** The saved patch takes each product's section from the block it now sits in, not from the id stored on the row.
+
 ## Order intake
 
 The flow that collects a cart and customer details and commits an order: `collect → priceOrder → placeOrder → notifyOrder`. The multi-tenant **Storefront** (`store/Storefront.tsx`) is the only intake path; the legacy single-tenant order form has been deleted. `notifyOrder` is a single post-commit call that fans out to three recipients — see *Order notifications*. Every way this flow can say no is named — see *Refusal* below.
