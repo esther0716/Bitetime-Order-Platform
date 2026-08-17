@@ -116,7 +116,7 @@ export default function SignupScreen() {
   }
 
   return (
-    <div className="w-[420px] max-w-[calc(100vw-2rem)] pt-6">
+    <div className="w-[420px] max-w-full pt-6">
       <div className="text-center mb-6">
         <h1><Wordmark className="h-8 mx-auto" /></h1>
         <p className="font-heading text-[13px] italic text-muted-foreground mt-[5px]">{t('Merchant Portal', '商家入口')}</p>

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Textarea } from '../components/ui/textarea'
 import { Button } from '../components/ui/button'
+import SupportLinks from './SupportLinks'
 import { cn } from '@/lib/utils'
 
 // Bilingual labels for the four categories the backend accepts. Keyed off the shared
@@ -336,6 +337,13 @@ export default function FeedbackFab() {
               </Button>
             </div>
           )}
+
+          {/* Outside the sent/form branch on purpose: it belongs on BOTH screens. This dialog
+              never replies — a merchant who has just reported a broken checkout is exactly the
+              one who still needs a human, and the thank-you is the last thing they read. */}
+          <div className="mt-4 pt-3 border-t border-border">
+            <SupportLinks compact />
+          </div>
         </DialogContent>
       </Dialog>
     </>
