@@ -15,6 +15,7 @@ import ShopSettings from './ShopSettings'
 import OrdersView from './OrdersView'
 import CustomersView from './CustomersView'
 import FeedbackFab from './FeedbackFab'
+import SupportLinks from './SupportLinks'
 import { NavGuardProvider, useNavGuard } from './NavGuard'
 import { UpgradeNavProvider } from './UpgradeNav'
 import { useDashboardSection } from '../useDashboardSection'
@@ -95,6 +96,7 @@ function DashboardInner() {
       active={section}
       onSelect={selectSection}
       backTo={role === 'superadmin' ? { href: '/admin/merchants', label: t('Back to admin', '返回管理') } : undefined}
+      footerExtra={<SupportLinks />}
     >
       <BillingBanner />
       {/* Same guarded move the Pro locks use, so a warning cannot discard a half-typed form. */}

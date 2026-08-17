@@ -20,6 +20,11 @@ interface DashboardShellProps {
   active: string
   onSelect: (key: string) => void
   backTo?: { href: string; label: string }
+  // Extra content for the sidebar footer, above Log out. The merchant dashboard puts its
+  // support links here; /admin passes nothing, since a superadmin needs no link to themselves.
+  // A prop rather than a nav item because a nav key selects a SECTION, and contacting support
+  // is not one.
+  footerExtra?: ReactNode
   children: ReactNode
 }
 
@@ -29,7 +34,7 @@ interface DashboardShellProps {
 // hamburger in a slim top bar, so the full column width is free for content.
 // data-layout-flush triggers body:has([data-layout-flush]) in index.css
 // (removes body padding + stretches body flex to full viewport height).
-export default function DashboardShell({ title, role, nav, active, onSelect, backTo, children }: DashboardShellProps) {
+export default function DashboardShell({ title, role, nav, active, onSelect, backTo, footerExtra, children }: DashboardShellProps) {
   const { t } = useSession()
   const [open, setOpen] = useState(false)
 
@@ -190,8 +195,9 @@ export default function DashboardShell({ title, role, nav, active, onSelect, bac
           ))}
         </nav>
 
-        {/* Footer — language selector, sign-out */}
+        {/* Footer — support links, language selector, sign-out */}
         <div className="px-5 pt-4 pb-6 border-t border-border">
+          {footerExtra && <div className="mb-3">{footerExtra}</div>}
           {/* Language select + what's-new bell */}
           <div className="mb-2 flex items-center gap-2">
             <LanguageSelect className="flex-1" />
