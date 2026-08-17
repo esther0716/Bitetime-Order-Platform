@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { BUSINESS_NATURES } from '@bitetime/shared'
-import { pickMerchantConfig } from '../../src/writes.js'
+import { pickMerchantConfig, pickProductFields } from '../../src/writes.js'
 
 // The shop being written. Only `payment_qr` is judged against it (a Storage path belongs to one
 // merchant's folder); every other field in this file is tenant-agnostic, so these cases pass the
@@ -251,5 +251,22 @@ describe('pickMerchantConfig — pixel ids', () => {
 
   it('refuses a non-string rather than coercing it', () => {
     expect(pick({ meta_pixel_id: 123456789012345 }).ok).toBe(false)
+  })
+})
+
+describe('pickProductFields — the arrangement columns', () => {
+  // `sort` is written by PUT /api/merchants/:id/product-order and by nothing else. ProductsManager
+  // spreads a whole row on edit, so accepting it here would let a stale dashboard drag a product
+  // back to where it used to be, behind an ordinary rename.
+  it('drops sort, so a product upsert can never move a product', () => {
+    expect(pickProductFields({ name: 'Cookie', price: 5, sort: 99 }))
+      .toEqual({ name: 'Cookie', price: 5 })
+  })
+
+  // The other half of the same pair: which SECTION a product sits in is an ordinary product field,
+  // set by the product form as well as by a drag.
+  it('keeps category_id', () => {
+    expect(pickProductFields({ name: 'Cookie', price: 5, category_id: 'c1' }))
+      .toEqual({ name: 'Cookie', price: 5, category_id: 'c1' })
   })
 })

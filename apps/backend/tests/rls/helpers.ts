@@ -162,6 +162,8 @@ export async function seedProduct(fields: {
   option_groups?: unknown
   /** Display order within a shop (products.sort). Omitted leaves the column default (0). */
   sort?: number
+  /** Which section the product sits in (products.category_id). Omitted leaves it NULL. */
+  category_id?: string
 }) {
   const { data, error } = await serviceClient()
     .from('products')
@@ -175,6 +177,7 @@ export async function seedProduct(fields: {
       ...(fields.promo_end !== undefined ? { promo_end: fields.promo_end } : {}),
       ...(fields.option_groups !== undefined ? { option_groups: fields.option_groups } : {}),
       ...(fields.sort !== undefined ? { sort: fields.sort } : {}),
+      ...(fields.category_id !== undefined ? { category_id: fields.category_id } : {}),
     })
     .select('id')
     .single()
