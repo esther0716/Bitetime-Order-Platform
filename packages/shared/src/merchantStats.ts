@@ -81,6 +81,17 @@ export interface SeriesWindow {
   granularity?: Granularity
   timeZone?: string
   /**
+   * The window's LAST civil day in the shop's zone, `YYYY-MM-DD`. Omit it for the pills' own
+   * meaning — "the last `days` days, ending today". A merchant who names their own two dates
+   * (#234) is asking for a window that ends in the past, and every bucket rule below then counts
+   * back from this day instead of from today.
+   *
+   * An unusable value falls back to today, the same posture `timeZone` takes: callers validate
+   * with `parseCustomRange`, which is what the API refuses on and what greys out the browser's
+   * own Apply button.
+   */
+  endDate?: string
+  /**
    * How many products the breakdown keeps before folding the rest into "Other". Six by default,
    * which is as many wedges as the donut can label; the XLSX export passes `Infinity`, because a
    * spreadsheet row saying "Other" is a question, not an answer.
@@ -101,6 +112,20 @@ export type RevenueRange = (typeof REVENUE_RANGES)[number]
 
 export const isRevenueRange = (n: unknown): n is RevenueRange =>
   typeof n === 'number' && (REVENUE_RANGES as readonly number[]).includes(n)
+
+/**
+ * The widest custom range the merchant may name, in days, counted inclusively.
+ *
+ * 366 covers the two ranges an accountant actually asks for — a tax year, and this year against
+ * last — while bounding the bucket count: a five-year daily request is 1800 bars nobody can read
+ * and 1800 rows per sheet. Past this the range is REFUSED, never narrowed.
+ */
+export const MAX_CUSTOM_SPAN_DAYS = 366
+
+export type CustomRangeError = 'bad_date' | 'reversed' | 'future' | 'too_long'
+export type CustomRangeResult =
+  | { ok: true; days: number; from: string; to: string }
+  | { ok: false; reason: CustomRangeError }
 
 // Past a month, one bar per day is unreadable: the bars go to slivers and the axis
 // drops most of its labels. Bucket by week instead — 90 days is 13 bars, not 90.
@@ -168,6 +193,44 @@ const monthOf = (dayIndex: number) => {
 }
 
 /**
+ * `YYYY-MM-DD` → a day index, or null if that is not a civil date that exists.
+ *
+ * The round-trip through `isoDay` is the whole point: `Date.UTC(2026, 1, 30)` rolls February 30th
+ * forward to March 2nd without complaint, so a merchant asking for a day that never happened
+ * would silently get a window one or two days off the one they typed.
+ */
+function dayIndexOfIso(iso: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
+  const [y, m, d] = iso.split('-').map(Number)
+  const index = Date.UTC(y, m - 1, d) / MS_PER_DAY
+  return isoDay(index) === iso ? index : null
+}
+
+/**
+ * The merchant's own two civil dates, checked once for both sides of the wire (#234).
+ *
+ * `today` is the shop's own civil day (`todayInZone`), not the caller's: a merchant reading their
+ * dashboard abroad must not be able to ask for a tomorrow their shop has not had yet.
+ *
+ * Returns the inclusive span as `days`, which is exactly what `SeriesWindow` wants beside
+ * `endDate` — so a custom range reuses every bucket rule the pills already run through.
+ *
+ * The dates are checked BEFORE the span: a malformed year reported as "too long" tells the
+ * merchant to shorten a range whose real problem is that it is not a date.
+ */
+export function parseCustomRange(from: string, to: string, today: string): CustomRangeResult {
+  const start = dayIndexOfIso(from)
+  const end = dayIndexOfIso(to)
+  const todayIndex = dayIndexOfIso(today)
+  if (start === null || end === null || todayIndex === null) return { ok: false, reason: 'bad_date' }
+  if (start > end) return { ok: false, reason: 'reversed' }
+  if (end > todayIndex) return { ok: false, reason: 'future' }
+  const days = end - start + 1
+  if (days > MAX_CUSTOM_SPAN_DAYS) return { ok: false, reason: 'too_long' }
+  return { ok: true, days, from, to }
+}
+
+/**
  * The orders inside the last `days` days ending on `now`, in the shop's zone.
  *
  * An order whose `created_at` is missing or unparseable cannot be placed in the window, so it is
@@ -176,35 +239,45 @@ const monthOf = (dayIndex: number) => {
  *
  * Exported because the XLSX export needs the window's own totals, and `MerchantStats`'s KPI
  * block is deliberately all-time (it sits above the range pills on the dashboard).
+ *
+ * Takes the same window object `computeMerchantStats` reads rather than loose positional
+ * arguments: the two must agree on which days they cover, and `days`, `endDate` and `timeZone`
+ * arriving as three positions is how a caller ends up passing two of the three.
  */
 export function ordersInWindow(
-  orders: StatsOrder[], now: Date, days: number, timeZone?: string,
+  orders: StatsOrder[], now: Date, window: Pick<SeriesWindow, 'days' | 'endDate' | 'timeZone'>,
 ): StatsOrder[] {
-  const dayOf = zoneClock(timeZone)
-  return filterByWindow(orders, dayOf(now), days, dayOf)
+  const dayOf = zoneClock(window.timeZone)
+  return filterByWindow(orders, endDayOf(window.endDate, dayOf(now)), window.days, dayOf)
+}
+
+/** The window's last day: the one the merchant named, or the shop's today. */
+function endDayOf(endDate: string | undefined, today: number): number {
+  if (!endDate) return today
+  return dayIndexOfIso(endDate) ?? today
 }
 
 // The same rule against a clock the caller already built, so `computeMerchantStats` does not
 // construct a second `Intl.DateTimeFormat` just to reuse the public helper above.
 function filterByWindow(
-  orders: StatsOrder[], today: number, days: number, dayOf: (d: Date) => number,
+  orders: StatsOrder[], endDay: number, days: number, dayOf: (d: Date) => number,
 ): StatsOrder[] {
   return orders.filter(o => {
     if (!o.created_at) return false
     const d = new Date(o.created_at)
     if (Number.isNaN(d.getTime())) return false
-    const ago = today - dayOf(d)
+    const ago = endDay - dayOf(d)
     return ago >= 0 && ago < days
   })
 }
 
-// Buckets covering the last `days` days ending on `now` (inclusive), oldest first.
-// Weekly buckets are trailing 7-day windows anchored on today — not calendar weeks, so the
+// Buckets covering the `days` days ending on `endDay` (inclusive), oldest first.
+// Weekly buckets are trailing 7-day windows anchored on `endDay` — not calendar weeks, so the
 // newest bar is always a full week rather than a part-week that reads as a collapse in sales.
 // The oldest bucket is the short one instead (90 days is 12 whole weeks plus 6 days).
 function revenueSeries(
   orders: StatsOrder[],
-  today: number,
+  endDay: number,
   days: number,
   granularity: Granularity,
   dayOf: (d: Date) => number,
@@ -213,10 +286,11 @@ function revenueSeries(
   const bucketCount = Math.ceil(days / span)
   const points: SeriesPoint[] = []
 
-  // Bucket b counts back from today: it holds orders `b * span` … `b * span + span - 1` days ago.
+  // Bucket b counts back from `endDay`: it holds orders `b * span` … `b * span + span - 1` days
+  // before it.
   for (let b = bucketCount - 1; b >= 0; b--) {
-    const newest = today - b * span
-    const oldest = today - Math.min(b * span + span - 1, days - 1)
+    const newest = endDay - b * span
+    const oldest = endDay - Math.min(b * span + span - 1, days - 1)
     points.push({
       key: String(b),
       label: dayLabel(oldest),
@@ -232,7 +306,7 @@ function revenueSeries(
     if (!o.created_at) continue
     const d = new Date(o.created_at)
     if (Number.isNaN(d.getTime())) continue
-    const ago = today - dayOf(d)
+    const ago = endDay - dayOf(d)
     if (ago < 0 || ago >= days) continue
     const p = points[bucketCount - 1 - Math.floor(ago / span)]
     if (!p) continue
@@ -324,14 +398,18 @@ export function computeMerchantStats(
   now: Date = new Date(),
   window: SeriesWindow = { days: 12 },
 ): MerchantStats {
-  const { days, granularity = granularityFor(days), timeZone, productTop = 6 } = window
+  const { days, granularity = granularityFor(days), timeZone, endDate, productTop = 6 } = window
   const dayOf = zoneClock(timeZone)
   const today = dayOf(now)
+  // The ranged panels end on the day the merchant named; the KPI cards and both month-over-month
+  // deltas below still read the real today, because "this month against last" is not a question
+  // about the selected window.
+  const endDay = endDayOf(endDate, today)
   // Everything the merchant sees under the range pills reads the same window: the bar chart,
   // the product donut and the status breakdown. They used to disagree — only the chart was
   // ranged, so a shop with older history read all-time figures beside a "last 12 days" chart
   // with nothing on screen saying so. The KPI cards above the pills stay all-time on purpose.
-  const windowed = filterByWindow(orders, today, days, dayOf)
+  const windowed = filterByWindow(orders, endDay, days, dayOf)
   const booked = orders.filter(isBooked)
   const revenue = orders.reduce((s, o) => s + orderTotal(o), 0)
   const thisKey = monthOf(today)
@@ -354,7 +432,7 @@ export function computeMerchantStats(
     vouchersRedeemed: vouchers.reduce((s, v) => s + (v.usedBy?.length ?? 0), 0),
     ordersDelta: delta(ordersThis, ordersLast),
     revenueDelta: delta(revThis, revLast),
-    series: revenueSeries(windowed, today, days, granularity, dayOf),
+    series: revenueSeries(windowed, endDay, days, granularity, dayOf),
     granularity,
     productRevenue: productRevenue(windowed, productTop),
     statusBreakdown: statusBreakdown(windowed),

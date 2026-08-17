@@ -1,12 +1,16 @@
 import { useMemo } from 'react'
-import { DayPicker } from 'react-day-picker'
 import { enGB, zhCN } from 'react-day-picker/locale'
-// Imported HERE, not from `index.css`, and that is a size decision rather than a style one:
-// this is 11KB of library CSS in a 108KB render-blocking bundle, for a control only merchants
-// ever see. `MerchantHome` is `lazy()`, so importing it from inside this component puts it in
-// the dashboard's own chunk and off the storefront's critical path entirely. The theming that
-// makes it look like the rest of the app stays in `index.css`, beside the tokens it reads.
-import 'react-day-picker/style.css'
+// `ui/calendar`, not `DayPicker` directly, and NOT `react-day-picker/style.css`.
+//
+// This used to import that stylesheet — 11KB of library CSS, themed by 40 lines of `.rdp-*`
+// overrides in `index.css` to look like the rest of the app. A CSS import is global whatever
+// component asks for it, so the moment a SECOND day picker appeared (the revenue range, #234) it
+// inherited the library's own blue accent and bold selected days, and no amount of scoping on
+// this side could stop it: the leak came from the stylesheet, not from the wrapper.
+//
+// So both pickers now go through the one shadcn component, which styles itself with the app's
+// own tokens and needs no library CSS at all. The 11KB and the overrides are gone with it.
+import { Calendar } from '@/components/ui/calendar'
 // The `YYYY-MM-DD` ↔ local-midnight `Date` bridge, extracted so it can be tested as a pair of
 // exact inverses — see calendarDate.ts for why local and not UTC.
 import { toDate, toIso } from './calendarDate'
@@ -33,10 +37,11 @@ export default function CustomDatesCalendar({ value, onChange, first, last, t, l
     { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 
   return (
-    <div className="custom-dates-calendar flex gap-6 items-start max-md:flex-col max-md:gap-4">
+    <div className="flex gap-6 items-start max-md:flex-col max-md:gap-4">
       <div className="shrink-0">
-        <DayPicker
+        <Calendar
           mode="multiple"
+          className="p-0"
           locale={lang === 'zh' ? zhCN : enGB}
           selected={selected}
           onSelect={days => onChange((days ?? []).map(toIso).sort())}

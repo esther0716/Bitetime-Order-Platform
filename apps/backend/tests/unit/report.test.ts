@@ -15,7 +15,14 @@ const SHOP: ReportShop = {
 }
 
 const WINDOW: ReportWindow = {
-  days: 30, granularity: 'day', from: '2026-05-29', to: '2026-06-27',
+  kind: 'last-n', days: 30, granularity: 'day', from: '2026-05-29', to: '2026-06-27',
+  generatedAt: '2026-06-27, 12:00',
+}
+
+// The merchant named their own two dates (#234): the same file, over a window that ended months
+// ago. "Last 90 days" would be a false statement about it.
+const CUSTOM_WINDOW: ReportWindow = {
+  kind: 'custom', days: 90, granularity: 'week', from: '2026-01-01', to: '2026-03-31',
   generatedAt: '2026-06-27, 12:00',
 }
 
@@ -100,6 +107,13 @@ describe('buildRevenueWorkbook', () => {
     expect(ws.getCell('B9').numFmt).toBe('#,##0.00')
   })
 
+  it('states a custom range by its two dates and its span, never as "last N days"', async () => {
+    const wb = await readBack(await buildRevenueWorkbook(REPORT, SHOP, CUSTOM_WINDOW))
+    const ws = wb.getWorksheet('Summary')!
+    expect(ws.getCell('B3').value).toBe('2026-01-01 – 2026-03-31 (90 days)')
+    expect(ws.getCell('B4').value).toBe('Weekly')
+  })
+
   // A merchant who opened last month and picked "last 12 days" gets an empty range, and must
   // still get a file — an error here would read as a broken feature rather than a quiet month.
   it('produces a valid workbook with headers when nothing sold in the range', async () => {
@@ -114,6 +128,12 @@ describe('buildRevenueWorkbook', () => {
 
 describe('reportFilename', () => {
   it('names the file by shop, date and range', () => {
-    expect(reportFilename('sweet-bakes', '2026-06-27', 30)).toBe('sweet-bakes-revenue-2026-06-27-30d.xlsx')
+    expect(reportFilename('sweet-bakes', '2026-06-27', WINDOW)).toBe('sweet-bakes-revenue-2026-06-27-30d.xlsx')
+  })
+
+  // The day it was downloaded is no use for telling two custom exports apart; the range is.
+  it('names a custom range by its own two dates, not by the day it was built', () => {
+    expect(reportFilename('sweet-bakes', '2026-06-27', CUSTOM_WINDOW))
+      .toBe('sweet-bakes-revenue-2026-01-01_2026-03-31.xlsx')
   })
 })

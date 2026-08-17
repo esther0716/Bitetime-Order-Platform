@@ -27,6 +27,14 @@ export interface ReportShop {
 }
 
 export interface ReportWindow {
+  /**
+   * Which question the range answers. `last-n` is one of the dashboard's pills — the last `days`
+   * days, ending today. `custom` is the merchant's own two dates (#234), which usually end in the
+   * past: calling that "Last 90 days" in the Summary sheet would be a false statement about a
+   * file bound for an accountant.
+   */
+  kind: 'last-n' | 'custom'
+  /** The window's width in days, counted inclusively. */
   days: number
   granularity: 'day' | 'week'
   /** The window's first and last civil day in the shop's zone, `YYYY-MM-DD`. */
@@ -51,8 +59,22 @@ function dateCell(iso: string): Date {
   return new Date(Date.UTC(y, m - 1, d))
 }
 
-export function reportFilename(slug: string, today: string, days: number): string {
-  return `${slug}-revenue-${today}-${days}d.xlsx`
+/**
+ * The name the download saves itself as.
+ *
+ * A custom range is named by its own two dates and not by `today`: two exports of two different
+ * quarters pulled on one afternoon would otherwise land in the merchant's Downloads folder under
+ * one name, and the second would be the one with `(1)` after it.
+ */
+export function reportFilename(slug: string, today: string, window: ReportWindow): string {
+  if (window.kind === 'custom') return `${slug}-revenue-${window.from}_${window.to}.xlsx`
+  return `${slug}-revenue-${today}-${window.days}d.xlsx`
+}
+
+/** How the Summary sheet states the range, in the only two shapes a range comes in. */
+function rangeRow(window: ReportWindow): string {
+  if (window.kind === 'custom') return `${window.from} – ${window.to} (${window.days} days)`
+  return `Last ${window.days} days (${window.from} – ${window.to})`
 }
 
 export async function buildRevenueWorkbook(
@@ -73,7 +95,7 @@ export async function buildRevenueWorkbook(
   summary.addRows([
     ['Shop', shop.name],
     ['Slug', shop.slug],
-    ['Range', `Last ${window.days} days (${window.from} – ${window.to})`],
+    ['Range', rangeRow(window)],
     ['Granularity', window.granularity === 'week' ? 'Weekly' : 'Daily'],
     ['Time zone', shop.timeZone],
     ['Generated at', window.generatedAt],
