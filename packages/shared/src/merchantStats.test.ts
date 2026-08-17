@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { computeMerchantStats, ordersInWindow, windowTotals, isBooked, isRevenueRange, REVENUE_RANGES } from './merchantStats.js'
+import {
+  computeMerchantStats, ordersInWindow, windowTotals, isBooked, isRevenueRange, REVENUE_RANGES,
+  parseCustomRange, MAX_CUSTOM_SPAN_DAYS,
+} from './merchantStats.js'
 import type { StatsOrder } from './merchantStats.js'
 
 const NOW = new Date('2026-06-15T12:00:00')
@@ -297,8 +300,20 @@ describe('windowTotals', () => {
   it('agrees with the all-time KPI block when the window holds everything', () => {
     const orders = [order({ total: 30 }), order({ total: 20 })]
     const s = computeMerchantStats(orders, 0, [], NOW, { days: 90 })
-    const w = windowTotals(ordersInWindow(orders, NOW, 90))
+    const w = windowTotals(ordersInWindow(orders, NOW, { days: 90 }))
     expect(w).toEqual({ totalOrders: s.totalOrders, revenue: s.revenue, avgOrder: s.avgOrder })
+  })
+
+  it('totals a custom window that ends before today', () => {
+    const at = (iso: string, total: number) => order({ total, created_at: new Date(iso).toISOString() })
+    const orders = [
+      at('2026-06-15T09:00:00Z', 99), // today — after the window's last day
+      at('2026-06-10T09:00:00Z', 30), // the window's last day
+      at('2026-06-06T09:00:00Z', 20), // the window's first day
+      at('2026-06-05T09:00:00Z', 99), // one day too early
+    ]
+    const w = windowTotals(ordersInWindow(orders, NOW, { days: 5, endDate: '2026-06-10', timeZone: 'UTC' }))
+    expect(w).toEqual({ totalOrders: 2, revenue: 50, avgOrder: 25 })
   })
 })
 
@@ -331,5 +346,130 @@ describe('isRevenueRange', () => {
     for (const bad of [7, 0, -12, 91, 12.5, NaN, '12', null, undefined]) {
       expect(isRevenueRange(bad)).toBe(false)
     }
+  })
+})
+
+// ── Custom range ─────────────────────────────────────────────────────────────
+// The merchant can name their own two civil dates instead of pressing a pill (#234). The rule
+// lives here, once, because the browser greys out Apply with it and the API refuses with it — two
+// copies would mean a range the merchant can submit that the download then 400s.
+describe('parseCustomRange', () => {
+  const TODAY = '2026-06-15'
+
+  it('accepts two civil dates and counts the span inclusively', () => {
+    expect(parseCustomRange('2026-01-01', '2026-01-31', TODAY))
+      .toEqual({ ok: true, days: 31, from: '2026-01-01', to: '2026-01-31' })
+  })
+
+  it('accepts a single day, from equal to to', () => {
+    const r = parseCustomRange('2026-06-01', '2026-06-01', TODAY)
+    expect(r).toEqual({ ok: true, days: 1, from: '2026-06-01', to: '2026-06-01' })
+  })
+
+  it('accepts a range ending today', () => {
+    expect(parseCustomRange('2026-06-01', TODAY, TODAY)).toMatchObject({ ok: true, days: 15 })
+  })
+
+  it('refuses a reversed range rather than swapping it', () => {
+    expect(parseCustomRange('2026-06-10', '2026-06-01', TODAY))
+      .toEqual({ ok: false, reason: 'reversed' })
+  })
+
+  it('refuses a range reaching past today — there is no revenue there yet', () => {
+    expect(parseCustomRange('2026-06-01', '2026-06-16', TODAY))
+      .toEqual({ ok: false, reason: 'future' })
+  })
+
+  it('accepts a span of exactly the cap and refuses one day more', () => {
+    expect(MAX_CUSTOM_SPAN_DAYS).toBe(366)
+    expect(parseCustomRange('2025-06-15', '2026-06-15', TODAY)).toMatchObject({ ok: true, days: 366 })
+    expect(parseCustomRange('2025-06-14', '2026-06-15', TODAY))
+      .toEqual({ ok: false, reason: 'too_long' })
+  })
+
+  it('refuses anything that is not a YYYY-MM-DD civil date', () => {
+    for (const bad of ['', '2026-1-1', '2026/06/01', 'yesterday', '2026-06-01T00:00:00Z', '20260601']) {
+      expect(parseCustomRange(bad, '2026-06-10', TODAY)).toEqual({ ok: false, reason: 'bad_date' })
+      expect(parseCustomRange('2026-06-01', bad, TODAY)).toEqual({ ok: false, reason: 'bad_date' })
+    }
+  })
+
+  it('refuses a date that looks well-formed but does not exist', () => {
+    // Date.UTC rolls 2026-02-30 forward to March 2 — accepting it would answer a different
+    // question than the merchant asked.
+    for (const bad of ['2026-02-30', '2026-13-01', '2026-00-10', '2026-06-31', '2026-06-00']) {
+      expect(parseCustomRange(bad, '2026-06-10', TODAY)).toEqual({ ok: false, reason: 'bad_date' })
+    }
+  })
+
+  it('accepts a real leap day and refuses the one that is not', () => {
+    expect(parseCustomRange('2024-02-29', '2024-03-01', '2026-06-15')).toMatchObject({ ok: true, days: 2 })
+    expect(parseCustomRange('2026-02-29', '2026-03-01', TODAY)).toEqual({ ok: false, reason: 'bad_date' })
+  })
+
+  it('checks the dates before the span, so a malformed year is not reported as too long', () => {
+    expect(parseCustomRange('nonsense', '2026-06-15', TODAY)).toEqual({ ok: false, reason: 'bad_date' })
+  })
+})
+
+// The window's last day, when the merchant named one. Every bucket rule is unchanged — they
+// count back from this day instead of from today.
+describe('computeMerchantStats endDate', () => {
+  const NOW_UTC = new Date('2026-06-15T04:00:00Z')
+  const at = (iso: string, total: number) => order({ total, created_at: new Date(iso).toISOString() })
+
+  it('anchors the daily series on the named day, not on today', () => {
+    const s = computeMerchantStats([], 0, [], NOW_UTC,
+      { days: 5, endDate: '2026-06-10', granularity: 'day', timeZone: 'UTC' })
+    expect(s.series.map(p => p.start)).toEqual([
+      '2026-06-06', '2026-06-07', '2026-06-08', '2026-06-09', '2026-06-10',
+    ])
+  })
+
+  it('anchors a weekly bucket on the named day, newest one whole', () => {
+    const s = computeMerchantStats([], 0, [], NOW_UTC,
+      { days: 14, endDate: '2026-06-10', granularity: 'week', timeZone: 'UTC' })
+    const last = s.series[s.series.length - 1]
+    expect(last.start).toBe('2026-06-04')
+    expect(last.end).toBe('2026-06-10')
+  })
+
+  it('drops orders after the named day from every ranged panel', () => {
+    const orders = [
+      order({ status: 'new', total: 99, created_at: '2026-06-15T09:00:00Z', items: [{ id: 'p1', name: 'Tea', qty: 1, price: 99 }] }),
+      order({ status: 'completed', total: 30, created_at: '2026-06-10T09:00:00Z', items: [{ id: 'p2', name: 'Cake', qty: 1, price: 30 }] }),
+    ]
+    const s = computeMerchantStats(orders, 0, [], NOW_UTC,
+      { days: 5, endDate: '2026-06-10', granularity: 'day', timeZone: 'UTC' })
+    expect(s.series.reduce((sum, p) => sum + p.revenue, 0)).toBe(30)
+    expect(s.productRevenue).toEqual([{ name: 'Cake', value: 30, units: 1 }])
+    expect(s.statusBreakdown).toEqual([{ status: 'completed', count: 1, pct: 100 }])
+  })
+
+  it('leaves the KPI cards all-time, as the pills already do', () => {
+    const s = computeMerchantStats([at('2026-06-15T09:00:00Z', 99), at('2026-06-10T09:00:00Z', 30)],
+      0, [], NOW_UTC, { days: 5, endDate: '2026-06-10', timeZone: 'UTC' })
+    expect(s.totalOrders).toBe(2)
+    expect(s.revenue).toBe(129)
+  })
+
+  it('reads the named day in the shop’s zone, like every other bucket', () => {
+    // 17:30Z on the 10th is already the 11th in Kuala Lumpur, so the KL shop's window ends
+    // before it and the UTC shop's window ends on it.
+    const late = at('2026-06-10T17:30:00Z', 40)
+    const kl = computeMerchantStats([late], 0, [], NOW_UTC,
+      { days: 5, endDate: '2026-06-10', granularity: 'day', timeZone: 'Asia/Kuala_Lumpur' })
+    expect(kl.series.reduce((sum, p) => sum + p.revenue, 0)).toBe(0)
+
+    const utc = computeMerchantStats([late], 0, [], NOW_UTC,
+      { days: 5, endDate: '2026-06-10', granularity: 'day', timeZone: 'UTC' })
+    expect(utc.series[utc.series.length - 1].revenue).toBe(40)
+  })
+
+  it('an absent endDate still means today', () => {
+    const withOut = computeMerchantStats([], 0, [], NOW_UTC, { days: 3, granularity: 'day', timeZone: 'UTC' })
+    const withToday = computeMerchantStats([], 0, [], NOW_UTC,
+      { days: 3, endDate: '2026-06-15', granularity: 'day', timeZone: 'UTC' })
+    expect(withOut.series).toEqual(withToday.series)
   })
 })

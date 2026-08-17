@@ -1,6 +1,7 @@
 import type { User } from '@supabase/auth-js';
 import { voucherFromRow, QUOTE_REFUSALS, validateFeedbackImages } from '@bitetime/shared';
-import type { FeedbackDraft, FeedbackStatus, MerchantStats, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
+import type { FeedbackDraft, FeedbackStatus, Granularity, MerchantStats, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
+import { revenueQuery, type RevenueSelection } from './merchant/revenueRange';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
@@ -733,10 +734,11 @@ export async function fetchMerchantOrders(
  */
 export async function fetchMerchantStats(
   merchantId: string,
-  window: { days: number; granularity: 'day' | 'week' },
+  selection: RevenueSelection,
+  granularity: Granularity,
 ): Promise<Result<MerchantStats>> {
   return apiGet<MerchantStats>(
-    `/api/merchants/${merchantId}/stats?days=${window.days}&granularity=${window.granularity}`,
+    `/api/merchants/${merchantId}/stats?${revenueQuery(selection, granularity)}`,
     { auth: true },
   )
 }
@@ -767,10 +769,11 @@ export async function fetchOrderCount(
  */
 export async function downloadRevenueReport(
   merchantId: string,
-  window: { days: number; granularity: 'day' | 'week' },
+  selection: RevenueSelection,
+  granularity: Granularity,
 ): Promise<Result<{ blob: Blob; filename: string | null }>> {
   return apiGetFile(
-    `/api/merchants/${merchantId}/report.xlsx?days=${window.days}&granularity=${window.granularity}`,
+    `/api/merchants/${merchantId}/report.xlsx?${revenueQuery(selection, granularity)}`,
     { auth: 'required' },
   )
 }

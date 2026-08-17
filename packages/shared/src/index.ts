@@ -48,11 +48,12 @@ export { REFUSAL_STATUS, ORDER_REFUSALS, QUOTE_REFUSAL_STATUS, QUOTE_REFUSALS } 
 export type { OrderRefusal, QuoteRefusal } from './refusal.js'
 export {
   computeMerchantStats, granularityFor, ordersInWindow, windowTotals, isBooked,
-  REVENUE_RANGES, isRevenueRange,
+  REVENUE_RANGES, isRevenueRange, parseCustomRange, MAX_CUSTOM_SPAN_DAYS,
 } from './merchantStats.js'
 export type {
   MerchantStats, SeriesPoint, SeriesWindow, Slice, StatusSlice, Delta, Granularity,
   StatsOrder, StatsOrderItem, StatsVoucher, WindowTotals, RevenueRange,
+  CustomRangeError, CustomRangeResult,
 } from './merchantStats.js'
 export {
   canonicalJson, cartLineKey, validateSelections, validateOptionGroups,

@@ -67,9 +67,10 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, isRevenueRange, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
-import type { CartLine } from '@bitetime/shared'
-import { buildRevenueWorkbook, reportFilename } from './report.js'
+import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
+import type { CartLine, Granularity } from '@bitetime/shared'
+import { buildRevenueWorkbook, reportFilename, type ReportWindow } from './report.js'
+import { resolveRevenueRange, type ResolvedRevenueRange } from './revenueWindow.js'
 import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
 import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
@@ -395,7 +396,7 @@ app.get('/api/merchants/:id/orders', requireMerchantOwns, async (c) => {
  */
 async function shopStatsFor(
   m: Record<string, any>,
-  window: { days: number; granularity: 'day' | 'week' },
+  window: { days: number; granularity: 'day' | 'week'; endDate?: string },
 ) {
   // Vouchers are per-shop promotions, a handful of rows — the row cap is not in play, and this
   // one stays on the REST client alongside the endpoint that serves the same rows to the
@@ -407,25 +408,70 @@ async function shopStatsFor(
       .then(r => (r.data ?? []).map(v => ({ usedBy: (v.used_by as unknown[]) ?? [] }))),
   ])
 
-  // Resolved and validated once, like the export does: an unusable `merchants.timezone` would
-  // otherwise bucket the chart in the server's zone while the merchant reads it in their own.
-  const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
+  const timeZone = shopTimeZone(m)
   return {
     stats: computeMerchantStats(orders, customerCount, vouchers, new Date(), {
-      days: window.days, granularity: window.granularity, timeZone,
+      days: window.days, granularity: window.granularity, endDate: window.endDate, timeZone,
     }),
     timeZone,
   }
 }
 
-app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
-  const days = Number(c.req.query('days') ?? 12)
-  // Refused rather than clamped, exactly as the export refuses — same list, same reason.
-  if (!isRevenueRange(days)) return c.json({ error: 'bad_range' }, 400)
-  const granularity = c.req.query('granularity') ?? granularityFor(days)
-  if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
+/**
+ * The shop's zone, resolved and validated once per request.
+ *
+ * An unusable `merchants.timezone` would otherwise bucket the chart in the server's zone while
+ * the merchant reads it in their own — and, on the export, date the filename in one zone while
+ * bucketing the sheets in another: the file disagreeing with itself.
+ */
+function shopTimeZone(m: Record<string, any>): string {
+  return isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
+}
 
-  const { stats } = await shopStatsFor(c.get('merchant'), { days, granularity })
+/**
+ * The window a revenue request asks for, or a 400.
+ *
+ * `resolveRevenueRange` owns the rule (see `revenueWindow.ts`); this only reads the query and
+ * turns a refusal into the response. `defaultDays` is what the endpoint assumes when the request
+ * names no window at all — the chart has one, the export deliberately does not.
+ *
+ * A custom range travels onward as `days` plus `endDate`, which is all `computeMerchantStats`
+ * needs to point the same bucket rules at a window that ends in the past.
+ */
+function revenueWindow(
+  c: Context,
+  timeZone: string,
+  defaultDays: number | null,
+):
+  | { ok: true; range: ResolvedRevenueRange & { ok: true }; granularity: Granularity; endDate?: string }
+  | { ok: false; res: Response } {
+  const range = resolveRevenueRange(
+    c.req.query('days'), c.req.query('from'), c.req.query('to'),
+    todayInZone(timeZone, new Date()),
+    defaultDays,
+  )
+  if (!range.ok) return { ok: false, res: c.json({ error: 'bad_range' }, 400) }
+
+  const granularity = c.req.query('granularity') ?? granularityFor(range.days)
+  if (granularity !== 'day' && granularity !== 'week') {
+    return { ok: false, res: c.json({ error: 'bad_granularity' }, 400) }
+  }
+  return {
+    ok: true,
+    range,
+    granularity,
+    endDate: range.kind === 'custom' ? range.to : undefined,
+  }
+}
+
+app.get('/api/merchants/:id/stats', requireMerchantOwns, async (c) => {
+  const m = c.get('merchant')
+  const w = revenueWindow(c, shopTimeZone(m), 12)
+  if (!w.ok) return w.res
+
+  const { stats } = await shopStatsFor(m, {
+    days: w.range.days, granularity: w.granularity, endDate: w.endDate,
+  })
   return c.json(stats)
 })
 
@@ -549,35 +595,40 @@ function stampInZone(timeZone: string, at: Date): string {
 }
 
 app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, async (c) => {
-  const days = Number(c.req.query('days'))
-  const granularity = c.req.query('granularity')
-  // Refused, not clamped: a clamped request hands back a file that quietly answers a different
-  // question than the one asked, over a merchant's own accounting. The list of ranges is
-  // @bitetime/shared's, the same one the dashboard's pills are built from.
-  if (!isRevenueRange(days)) return c.json({ error: 'bad_range' }, 400)
-  if (granularity !== 'day' && granularity !== 'week') return c.json({ error: 'bad_granularity' }, 400)
-
   const m = c.get('merchant')
+  // Resolved before the query is read: the range is checked against the SHOP's today, and the
+  // sheets, the Summary's stamp and the filename all have to read off one clock.
+  const timeZone = shopTimeZone(m)
+  // No default range — the export refuses a request that names none. A workbook gets filed, and a
+  // filed workbook whose range nobody stated is worse than a refusal.
+  const w = revenueWindow(c, timeZone, null)
+  if (!w.ok) return w.res
+  const { days } = w.range
+  const granularity = w.granularity
+
   // Through the driver, uncapped: a spreadsheet of a shop's accounting that quietly stopped at
   // its 1000th order would be worse than the chart doing it, because it gets filed (#144).
   const orders = await statsOrders(m.id)
 
   const now = new Date()
-  // Resolved ONCE, here, and validated — not left to each helper's own fallback. `zoneClock`
-  // falls back to the runtime's zone and `todayInZone` falls back to DEFAULT_TIMEZONE, so an
-  // unusable `merchants.timezone` would otherwise bucket the sheets in UTC while dating the
-  // filename in Kuala Lumpur: the file disagreeing with itself, which is the failure this
-  // feature's time-zone work exists to prevent.
-  const timeZone = isTimezone(m.timezone) ? m.timezone : DEFAULT_TIMEZONE
-  const windowed = ordersInWindow(orders, now, days, timeZone)
+  const windowed = ordersInWindow(orders, now, { days, endDate: w.endDate, timeZone })
   const totals = windowTotals(windowed)
   // `productTop: Infinity` — a spreadsheet lists every product, unlike the six-wedge donut.
   // The customer count is 0 because no sheet shows it; the export's KPI block is `windowTotals`.
   const stats = computeMerchantStats(windowed, 0, [], now, {
-    days, granularity, timeZone, productTop: Infinity,
+    days, granularity, endDate: w.endDate, timeZone, productTop: Infinity,
   })
 
   const today = todayInZone(timeZone, now)
+  const reportWindow: ReportWindow = {
+    kind: w.range.kind,
+    days,
+    granularity,
+    from: stats.series[0]?.start ?? (w.range.kind === 'custom' ? w.range.from : today),
+    to: stats.series[stats.series.length - 1]?.end ?? (w.range.kind === 'custom' ? w.range.to : today),
+    // Stamped in the SHOP's zone, like every other date in the file.
+    generatedAt: stampInZone(timeZone, now),
+  }
   const buffer = await buildRevenueWorkbook(
     {
       totalOrders: totals.totalOrders,
@@ -591,14 +642,7 @@ app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, async (c) => {
     // there is nothing to fall back to — and a fallback here would silently relabel some other
     // shop's money as MYR rather than showing that something is wrong.
     { name: m.name, slug: m.slug, currency: m.currency, timeZone },
-    {
-      days,
-      granularity,
-      from: stats.series[0]?.start ?? today,
-      to: stats.series[stats.series.length - 1]?.end ?? today,
-      // Stamped in the SHOP's zone, like every other date in the file.
-      generatedAt: stampInZone(timeZone, now),
-    },
+    reportWindow,
   )
 
   // A raw Response, not `c.body`: Hono's body type is string | ArrayBuffer | ReadableStream and
@@ -607,7 +651,7 @@ app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, async (c) => {
     status: 200,
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${reportFilename(m.slug, today, days)}"`,
+      'Content-Disposition': `attachment; filename="${reportFilename(m.slug, today, reportWindow)}"`,
     },
   })
 })
