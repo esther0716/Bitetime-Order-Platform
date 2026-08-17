@@ -22,6 +22,7 @@ import { formatMoney, DEFAULT_CURRENCY } from '../currency'
 import { useShopPixelTrack } from '../pixels/ShopPixels'
 import { formatTaxRate } from '../receipt'
 import { formatUnit } from '../productUnit'
+import { productName as label, productDescr as descr } from '../productLabel'
 import { menuSections } from '../menuGroups'
 import { useServerClock } from '../serverClock'
 import { lookupPostcode } from '../postcodes'
@@ -315,10 +316,11 @@ export default function Storefront() {
     }
   }
 
-  const productName = (p: Product) =>
-    (lang === 'zh' && p.name_zh) ? p.name_zh : p.name
-  const productDescr = (p: Product) =>
-    (lang === 'zh' && p.descr_zh) ? p.descr_zh : (p.descr || '')
+  // The RULE lives in `productLabel.ts`, shared with the merchant's Storefront tab: that screen
+  // claims to preview this one, and a second copy of "which name, which description" is how the
+  // preview drifts. These two close over `lang` so the call sites below stay `productName(p)`.
+  const productName = (p: Product) => label(p, lang)
+  const productDescr = (p: Product) => descr(p, lang)
 
   /**
    * Take a freshly loaded menu — and DROP the cart entries it no longer sells, saying which.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter, useDroppable, useSensor, useSensors,
   type DragEndEvent, type DragOverEvent,
@@ -13,8 +13,10 @@ import { useSession } from '../SessionContext'
 import { lookupProducts, saveProductOrder, updateMerchantConfig } from '../store'
 import { formatMoney } from '../currency'
 import { formatUnit } from '../productUnit'
+import { productName, productDescr, categoryName } from '../productLabel'
 import { menuCategoriesFromRow } from '@bitetime/shared'
 import type { MenuCategory } from '@bitetime/shared'
+import type { Lang, Product } from '../types'
 import { Button } from '../components/ui/button'
 import { SkeletonText } from '../components/Loaders'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '../components/ui/empty'
@@ -24,7 +26,7 @@ import { useNavGuard } from './NavGuard'
 import {
   arrangeMenu, reseedCategories, moveProduct, moveCategory, findProduct, resolveDropTarget,
   categoriesOf, productOrderPatch, arrangementKeys, categoryDragId, blockDropId,
-  type ArrangedBlock,
+  TRAILING_SORTABLE_ID, type ArrangedBlock,
 } from './menuArrangement'
 import { cn } from '@/lib/utils'
 
@@ -43,25 +45,11 @@ import { cn } from '@/lib/utils'
  * Every rule lives in `menuArrangement.ts`. This file holds state, dnd-kit wiring and markup.
  */
 
-/** The product shape this screen reads. The rows arrive from the API as `any`, as everywhere else. */
-interface Row {
-  id: string
-  category_id?: string | null
-  name: string
-  name_zh?: string | null
-  descr?: string | null
-  price: number
-  unit?: string | null
-  unit_quantity?: number | null
-  active: boolean
-  image_urls?: string[] | null
-}
-
 export default function StorefrontArranger() {
   const { t, lang, merchant, refreshMerchant } = useSession()
   const { registerBlocker } = useNavGuard()
 
-  const [blocks, setBlocks] = useState<ArrangedBlock<Row>[] | null>(null)
+  const [blocks, setBlocks] = useState<ArrangedBlock<Product>[] | null>(null)
   const [saved, setSaved] = useState({ categories: '', products: '' })
   const [saving, setSaving] = useState(false)
   const [categoriesOpen, setCategoriesOpen] = useState(false)
@@ -78,7 +66,7 @@ export default function StorefrontArranger() {
     let live = true
     lookupProducts(merchantId).then(r => {
       if (!live) return
-      const rows = (r.ok ? r.data : []) as Row[]
+      const rows = (r.ok ? r.data : []) as Product[]
       const next = arrangeMenu(rows, menuCategoriesFromRow(storedCategories))
       setBlocks(next)
       setSaved(arrangementKeys(next))
@@ -109,6 +97,23 @@ export default function StorefrontArranger() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
+  // The draft as it stood when the current drag began.
+  //
+  // `onDragOver` COMMITS a cross-section move into state while the pointer is still down — that is
+  // what makes the row appear under the new heading as you drag it there. So an abandoned drag
+  // (Escape, or the pointer lost) would otherwise leave the product in a section the merchant
+  // explicitly backed out of. This is what `onDragCancel` puts back.
+  const beforeDrag = useRef<ArrangedBlock<Product>[] | null>(null)
+
+  const onDragStart = useCallback(() => {
+    setBlocks(bs => { beforeDrag.current = bs; return bs })
+  }, [])
+
+  const onDragCancel = useCallback(() => {
+    setBlocks(bs => beforeDrag.current ?? bs)
+    beforeDrag.current = null
+  }, [])
+
   const onDragOver = useCallback((e: DragOverEvent) => {
     const { active, over } = e
     if (!over || active.data.current?.type !== 'product') return
@@ -125,6 +130,7 @@ export default function StorefrontArranger() {
 
   const onDragEnd = useCallback((e: DragEndEvent) => {
     const { active, over } = e
+    beforeDrag.current = null
     if (!over) return
     setBlocks(bs => {
       if (!bs) return bs
@@ -185,8 +191,12 @@ export default function StorefrontArranger() {
       return false
     }
     await refreshMerchant()
-    setBlocks(bs => (bs ? reseedCategories(bs, next) : bs))
-    setSaved(s => ({ ...s, categories: JSON.stringify(next) }))
+    // Re-seeded from the row the write ANSWERED with, not from the list we sent. The two agree
+    // today — the endpoint validates categories without normalising them — but a normalisation
+    // added there later would silently leave this screen showing something the shop does not have.
+    const stored = menuCategoriesFromRow(r.data?.product_categories)
+    setBlocks(bs => (bs ? reseedCategories(bs, stored) : bs))
+    setSaved(s => ({ ...s, categories: JSON.stringify(stored) }))
     toast.success(t('Categories saved', '分类已保存'))
     return true
   }
@@ -248,14 +258,18 @@ export default function StorefrontArranger() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
+          onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDragEnd={onDragEnd}
+          onDragCancel={onDragCancel}
         >
           {/* The trailing block's id rides in this list even though the block cannot be dragged
               (its `useSortable` is disabled): dnd-kit warns about a sortable whose id its context
-              does not hold. A section dropped ON it resolves to no index and is left alone. */}
+              does not hold. It carries its OWN id rather than a `cat:` one, so no sentinel ever
+              sits in the category-id namespace; a section dropped on it matches no category and is
+              left where it was. */}
           <SortableContext
-            items={[...categoriesOf(blocks).map(c => categoryDragId(c.id)), categoryDragId('trailing')]}
+            items={[...categoriesOf(blocks).map(c => categoryDragId(c.id)), TRAILING_SORTABLE_ID]}
             strategy={verticalListSortingStrategy}
           >
             <div className="flex flex-col gap-4 max-w-[560px]">
@@ -291,9 +305,9 @@ export default function StorefrontArranger() {
 function Block({
   block, index, lang, currency, t,
 }: {
-  block: ArrangedBlock<Row>
+  block: ArrangedBlock<Product>
   index: number
-  lang: string
+  lang: Lang
   currency?: string
   t: (en: string, zh: string) => string
 }) {
@@ -304,7 +318,7 @@ function Block({
   const {
     attributes, listeners, setNodeRef, transform, transition, isDragging,
   } = useSortable({
-    id: categoryDragId(category?.id ?? 'trailing'),
+    id: category ? categoryDragId(category.id) : TRAILING_SORTABLE_ID,
     data: { type: 'category' },
     disabled: !category,
   })
@@ -333,7 +347,7 @@ function Block({
             <GripVertical className="size-4" />
           </button>
           <span className="text-[13px] font-semibold text-foreground">
-            {(lang === 'zh' && category.name_zh) || category.name}
+            {categoryName(category, lang)}
           </span>
           {!category.active && (
             <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -368,8 +382,8 @@ function Block({
 function ProductRow({
   product, lang, currency, t,
 }: {
-  product: Row
-  lang: string
+  product: Product
+  lang: Lang
   currency?: string
   t: (en: string, zh: string) => string
 }) {
@@ -378,7 +392,6 @@ function ProductRow({
     data: { type: 'product' },
   })
   const unit = formatUnit(product.unit_quantity, product.unit || t('unit', '个'))
-  const name = (lang === 'zh' && product.name_zh) || product.name
 
   return (
     <div
@@ -390,7 +403,7 @@ function ProductRow({
         imagePaths={product.image_urls ?? []}
         title={
           <span className="flex items-center gap-2">
-            {name}
+            {productName(product, lang)}
             {!product.active && (
               <span className="inline-flex items-center gap-1 text-[11px] font-normal text-muted-foreground">
                 <EyeOff className="size-3" />
@@ -399,7 +412,7 @@ function ProductRow({
             )}
           </span>
         }
-        subtitle={product.descr || undefined}
+        subtitle={productDescr(product, lang) || undefined}
         meta={
           <div className="text-[13px] font-medium text-primary mt-[5px]">
             {formatMoney(product.price, currency)} / {unit}

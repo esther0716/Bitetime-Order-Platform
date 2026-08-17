@@ -40,6 +40,16 @@ const BLOCK_PREFIX = 'drop:'
 /** The drag id of a section's heading. */
 export const categoryDragId = (categoryId: string): string => `${CATEGORY_PREFIX}${categoryId}`
 
+/**
+ * The trailing block's sortable id.
+ *
+ * It carries its own id rather than `categoryDragId('trailing')` so that no sentinel ever sits in
+ * the category-id namespace, where a shop could in principle hold a category with that id. It is
+ * in the sortable context only because dnd-kit warns about a sortable whose id its context does
+ * not hold; the block itself is never draggable, and this id resolves to no section.
+ */
+export const TRAILING_SORTABLE_ID = 'block:trailing'
+
 /** The droppable id of a block's list, which is what an EMPTY block offers as a target. */
 export const blockDropId = (index: number): string => `${BLOCK_PREFIX}${index}`
 

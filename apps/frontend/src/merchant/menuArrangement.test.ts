@@ -70,6 +70,25 @@ describe('moveProduct', () => {
     expect(next[1]!.products.map(p => p.id)).toEqual(['p3', 'p1'])
   })
 
+  // The trailing block is a real target: this is how a merchant takes a product out of every
+  // section, and the save is what then clears its stored category id.
+  it('moves an item into the trailing block, where it belongs to no category', () => {
+    const next = moveProduct(blocks, { block: 0, index: 0 }, { block: 1, index: 0 })
+    expect(next[1]!.products.map(p => p.id)).toEqual(['p1', 'p3'])
+    expect(productOrderPatch(next).find(p => p.id === 'p1')!.category_id).toBeNull()
+  })
+
+  // Filing into a switched-off section is ALLOWED — that is what a seasonal section is for. The
+  // storefront still shows the product, in the trailing block, because `menuSections` reads
+  // `active`; this module's job is only to let the merchant put it there.
+  it('moves an item into a hidden section', () => {
+    const withHidden = arrangeMenu([prod('p1', 'cakes'), prod('p2')], [CAKES, HIDDEN])
+    const next = moveProduct(withHidden, { block: 0, index: 0 }, { block: 1, index: 0 })
+    expect(next[1]!.category!.active).toBe(false)
+    expect(next[1]!.products.map(p => p.id)).toEqual(['p1'])
+    expect(productOrderPatch(next).find(p => p.id === 'p1')!.category_id).toBe('hidden')
+  })
+
   it('returns the same list for a slot that names nothing', () => {
     expect(moveProduct(blocks, { block: 9, index: 0 }, { block: 0, index: 0 })).toBe(blocks)
     expect(moveProduct(blocks, { block: 0, index: 9 }, { block: 0, index: 0 })).toBe(blocks)

@@ -1063,9 +1063,12 @@ export async function updateMerchantConfig(id: string, patch: any): Promise<Resu
 /**
  * Write a shop's whole arrangement: where every product sits, and in which section.
  *
- * The WHOLE list every time, never a diff — see `menuArrangement.ts`. The endpoint answers with
- * how many rows it moved; a caller that cares can compare that against what it sent, which is how
- * a body naming a stranger's product reports itself (it moves nothing).
+ * The WHOLE list every time, never a diff — see `menuArrangement.ts`.
+ *
+ * The endpoint answers `{ ok, updated }`, and this DISCARDS the count on purpose. `updated` is
+ * there for the API suite, which uses it to prove that a body naming a stranger's product moves
+ * nothing; the dashboard only ever sends products it just read from this shop, so a short count
+ * would mean a product was deleted from another tab — not something to interrupt a save over.
  */
 export async function saveProductOrder(
   merchantId: string,
