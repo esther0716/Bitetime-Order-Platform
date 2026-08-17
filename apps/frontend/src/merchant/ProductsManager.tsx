@@ -59,6 +59,7 @@ const UNITS: { value: string; en: string; zh: string }[] = [
   { value: 'pack', en: 'pack', zh: '包' },
   { value: 'dozen', en: 'dozen', zh: '打' },
   { value: 'bottle', en: 'bottle', zh: '瓶' },
+  { value: 'cup', en: 'cup', zh: '杯' },
   { value: 'jar', en: 'jar', zh: '罐' },
   { value: 'tray', en: 'tray', zh: '盘' },
   { value: 'slice', en: 'slice', zh: '片' },
