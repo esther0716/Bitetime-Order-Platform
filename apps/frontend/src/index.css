@@ -314,7 +314,45 @@ body { font-family: 'Poppins', 'Poppins Fallback', 'Noto Sans SC', system-ui, sa
 @layer base {
   input::placeholder, textarea::placeholder { color: var(--color-text-muted); opacity: 1; }
 }
-.form-wrap { max-width: 600px; width: calc(100vw - 2rem); }
+/* #root fills the body's content box, and that one declaration is what stops the whole app
+   from being sized by its own contents.
+
+   `body` is a centred flex column, so #root is a flex item with `align-self: center` — and a
+   flex item that is not stretched is SHRINK-TO-FIT. Its width therefore came from the intrinsic
+   width of whatever was mounted inside it, which is a page width that any transient subtree can
+   collapse:
+
+     - while a lazy route chunk is in flight the only child is the spinner, whose `w-full` is a
+       percentage of the very box it is being measured for — a circle that resolves to the
+       spinner's own intrinsic width. Measured in a Lighthouse trace as #root going 1350×940 →
+       86×470 and back, two shifts of 0.468 each (see AppRouter.tsx).
+     - `.form-wrap` used to anchor the page with `width: calc(100vw - 2rem)`, so a browser that
+       resolves `100vw` as 0 — an in-app browser laying the page out off screen before it is
+       shown — gave the wrap a width of 0, #root a width of 0, and `align-items: center` then
+       parked that zero-width column at the exact horizontal centre of the screen with every
+       card overflowing to the right of it. That is issue #233: measured at viewport 412px, a
+       broken #root sits at x=206 w=0 against a healthy x=16 w=380.
+
+   So the page width now comes from the viewport through a real ancestor, never from content and
+   never from a viewport unit. #root repeats the body's own centring for its children, which is
+   what keeps every screen laid out exactly as before — including the ones that are a fixed
+   `w-[420px]` card with no wrapper of their own.
+
+   `.route-view` is PageTransition's wrapper (motion.tsx) and gets the identical treatment for
+   the identical reason: it is the div between #root and every screen, so anchoring only #root
+   would move the shrink-wrap down one level rather than remove it. A `w-[420px] max-w-full`
+   login card measured 420px inside a 380px #root until this rule existed — the cap was a
+   percentage of the shrink-wrapped wrapper, which had already sized itself to the card. */
+#root, .route-view { width: 100%; display: flex; flex-direction: column; align-items: center; }
+/* The two layouts that opt out of centring have to opt out at every level now: the body rules
+   below no longer decide these widths, so on their own they would leave a full-bleed page
+   shrink-wrapped to its content inside a full-width #root. */
+body:has(.mm-land) :is(#root, .route-view),
+body:has([data-layout-flush]) :is(#root, .route-view) { align-items: stretch; }
+
+/* `width: 100%` of #root, not of the viewport — the body's own padding is already subtracted,
+   which is also what finally makes the `--wide` padding rule below do something. */
+.form-wrap { max-width: 600px; width: 100%; }
 .form-wrap--wide { max-width: 900px; }
 body:has(.form-wrap--wide) { padding-left: 0.5rem; padding-right: 0.5rem; }
 

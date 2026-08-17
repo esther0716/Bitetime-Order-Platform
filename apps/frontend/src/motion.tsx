@@ -94,6 +94,12 @@ export function useListItemVariants(): Variants {
 }
 
 // Wraps a route element so it fades/slides in on mount. Give it the route path as its `key`.
+//
+// `route-view` is not decoration: this div sits between #root and every screen, so it is the
+// flex item #root actually lays out, and without a width of its own it shrink-wraps to whatever
+// the screen's intrinsic width happens to be — which is the collapse #root's own rule exists to
+// stop, one level lower. The class is defined next to that rule in index.css.
 export function PageTransition({ children }: { children: ReactNode }) {
-  return <div {...useEnterTransition()}>{children}</div>
+  const enter = useEnterTransition()
+  return <div className={enter.className ? `route-view ${enter.className}` : 'route-view'}>{children}</div>
 }
