@@ -62,7 +62,7 @@ export interface MenuDraft {
  *
  * Drift costs one unit falling back to the form's default. Add a unit to the form, add it here.
  */
-const UNITS = ['pcs', 'box', 'set', 'pack', 'dozen', 'bottle', 'jar', 'tray', 'slice', 'kg', 'g'] as const
+const UNITS = ['pcs', 'box', 'set', 'pack', 'dozen', 'bottle', 'cup', 'jar', 'tray', 'slice', 'kg', 'g'] as const
 
 export type MenuMediaType = 'image/jpeg' | 'image/png'
 
