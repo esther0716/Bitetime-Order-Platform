@@ -85,10 +85,14 @@ The write is **one SQL statement** through `db.ts`:
 ```sql
 update products p
    set sort = v.sort, category_id = v.category_id
-  from (values …) as v(id, sort, category_id)
- where p.id = v.id::uuid
-   and p.merchant_id = ${id}
+  from unnest(${ids}::uuid[], ${sorts}::int[], ${categoryIds}::text[])
+       as v(id, sort, category_id)
+ where p.id = v.id
+   and p.merchant_id = ${merchantId}
 ```
+
+Three parallel arrays through `unnest`, not a built `values` list. The statement is then a fixed
+string with three parameters, whatever the shop's size — no SQL is assembled from the body.
 
 One statement is atomic, so no `withTransaction()` wrapper is needed. A merchant never sees half an
 arrangement.
@@ -186,6 +190,12 @@ header as well as from `ProductsManager`.
 
 The dialog's comment that explains its buttons is rewritten, not deleted: it records why array
 order is display order, which is still true.
+
+The arrangement screen hosts its own instance of the dialog, and **seeds it from the draft**, not
+from the merchant row. The dialog saves the list it was given, so a rename made after a drag keeps
+the dragged order. Seeding from the row instead would write the stored order back over the
+merchant's unsaved drags, behind a success toast. After that save the screen re-seeds its category
+draft from the refreshed row; a dirty product order stays dirty.
 
 ### Keyboard and touch
 
