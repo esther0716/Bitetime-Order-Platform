@@ -4,8 +4,8 @@ import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
-import { Images, Expand, X } from 'lucide-react'
-import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, productImageUrl, paymentQrUrl, saveCustomerDetails } from '../store'
+import { X } from 'lucide-react'
+import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, paymentQrUrl, saveCustomerDetails } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { noticeText, type Notice } from './notice'
 import { useDeliveryQuote } from './useDeliveryQuote'
@@ -29,6 +29,7 @@ import { MY_STATES } from '../states-my'
 import type { Product, Voucher, AddressParts } from '../types'
 import LanguageSelect from '../components/LanguageSelect'
 import ImageLightbox from '../components/ImageLightbox'
+import MenuRow from '../components/MenuRow'
 import SignInDialog from './SignInDialog'
 import { OptionPicker } from './OptionPicker'
 import { ItemSelections } from '../ItemSelections'
@@ -1059,44 +1060,18 @@ export default function Storefront() {
                       </div>
                     )}
                 {section.products.map(p => (
-                  <div
+                  // The row's SHELL — thumbnail, name, description — is `MenuRow`, shared with the
+                  // merchant's Storefront tab so the arrangement screen previews the real thing
+                  // (spec 2026-08-17). Everything that reads the cart stays here, in the slots.
+                  <MenuRow
                     key={p.id}
-                    className={cn(
-                      "flex items-center gap-[14px] px-4 py-[14px] bg-card border-[0.5px] border-border rounded-xl transition-colors",
-                      cart.some(l => l.productId === p.id) && "border-primary bg-brand-100"
-                    )}
-                  >
-                    {p.image_urls?.length ? (
-                      <button
-                        type="button"
-                        onClick={() => setGallery(p)}
-                        aria-label={t('View photos', '查看图片')}
-                        className="group size-14 shrink-0 rounded-lg overflow-hidden border-[0.5px] border-border cursor-pointer relative transition-transform active:scale-[0.97]"
-                      >
-                        <img
-                          src={productImageUrl(p.image_urls[0])}
-                          alt=""
-                          className="size-full object-cover transition-transform duration-200 group-hover:scale-110"
-                        />
-                        {/* Desktop cue: a veil + expand glyph on hover says "this opens". */}
-                        <span className="absolute inset-0 flex items-center justify-center bg-primary/0 transition-colors group-hover:bg-primary/30">
-                          <Expand className="size-4 text-white opacity-0 transition-opacity group-hover:opacity-100" strokeWidth={2} />
-                        </span>
-                        {/* Touch cue (no hover on a phone): a persistent photo pill, with a count
-                            when there's more than one. The bare number badge read as decoration —
-                            nothing said "tap me". */}
-                        <span className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded-pill bg-primary/90 px-1.5 py-[3px] text-white text-[10px] font-medium leading-none">
-                          <Images className="size-[11px]" strokeWidth={2} />
-                          {p.image_urls.length > 1 && p.image_urls.length}
-                        </span>
-                      </button>
-                    ) : null}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[14px] font-medium text-foreground">{productName(p)}</div>
-                      {productDescr(p) && (
-                        <div className="text-[12px] text-muted-foreground mt-0.5 leading-[1.4]">{productDescr(p)}</div>
-                      )}
-                      {(() => {
+                    imagePaths={p.image_urls ?? []}
+                    onImageClick={() => setGallery(p)}
+                    imageLabel={t('View photos', '查看图片')}
+                    className={cn(cart.some(l => l.productId === p.id) && "border-primary bg-brand-100")}
+                    title={productName(p)}
+                    subtitle={productDescr(p) || undefined}
+                    meta={(() => {
                         const promo = promoById.get(p.id)
                         const unit = formatUnit(p.unit_quantity, p.unit || t('unit', '个'))
                         // `promo.remaining` is the page-load snapshot — it never moves as the
@@ -1149,8 +1124,7 @@ export default function Storefront() {
                           </div>
                         )
                       })()}
-                    </div>
-                    {optionGroupsFromRow(p.option_groups).some(g => g.active) ? (
+                    trailing={optionGroupsFromRow(p.option_groups).some(g => g.active) ? (
                       /* A product that asks questions has no plain line to step: there is no
                          answer to which selection a bare + would raise. It gets Add, and the
                          quantity is adjusted in the cart or by adding again. */
@@ -1182,7 +1156,7 @@ export default function Storefront() {
                       >+</Button>
                     </div>
                     )}
-                  </div>
+                  />
                 ))}
                   </Fragment>
                 ))}
