@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSession } from '../SessionContext'
 import { fetchOrderCount } from '../store'
 import { useEnterTransition } from '../motion'
-import { LayoutDashboard, ReceiptText, Cake, Ticket, Users, Settings } from 'lucide-react'
+import { LayoutDashboard, ReceiptText, Cake, LayoutList, Ticket, Users, Settings } from 'lucide-react'
 import DashboardShell, { type NavItem } from '../components/DashboardShell'
 import BillingBanner from './BillingBanner'
 import FulfilmentDatesBanner from './FulfilmentDatesBanner'
@@ -10,6 +10,7 @@ import TrialFeedbackPrompt from './TrialFeedbackPrompt'
 import Overview from './Overview'
 import OnboardingChecklist from './OnboardingChecklist'
 import ProductsManager from './ProductsManager'
+import StorefrontArranger from './StorefrontArranger'
 import VouchersManager from './VouchersManager'
 import ShopSettings from './ShopSettings'
 import OrdersView from './OrdersView'
@@ -26,6 +27,9 @@ const SECTIONS = [
   { key: 'overview',  en: 'Overview',  zh: '概览',  icon: <LayoutDashboard {...ICON} /> },
   { key: 'orders',    en: 'Orders',    zh: '订单',  icon: <ReceiptText {...ICON} /> },
   { key: 'products',  en: 'Products',  zh: '产品',  icon: <Cake {...ICON} /> },
+  // Arranging the menu is its own screen, next to the one that fills it: the products table
+  // answers "find this product", and this answers "what does a customer see first".
+  { key: 'storefront', en: 'Storefront', zh: '店面', icon: <LayoutList {...ICON} /> },
   { key: 'vouchers',  en: 'Vouchers',  zh: '优惠券', icon: <Ticket {...ICON} /> },
   { key: 'customers', en: 'Customers', zh: '顾客',  icon: <Users {...ICON} /> },
   { key: 'settings',  en: 'Settings',  zh: '设置',  icon: <Settings {...ICON} /> },
@@ -107,6 +111,7 @@ function DashboardInner() {
         {section === 'overview'  && <Overview />}
         {section === 'orders'    && <OrdersView onOrdersChanged={refreshNewOrders} />}
         {section === 'products'  && <ProductsManager />}
+        {section === 'storefront' && <StorefrontArranger />}
         {section === 'vouchers'  && <VouchersManager />}
         {section === 'customers' && <CustomersView />}
         {section === 'settings'  && <ShopSettings />}

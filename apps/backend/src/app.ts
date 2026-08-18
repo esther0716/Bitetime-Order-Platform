@@ -35,6 +35,8 @@ import {
 } from './shopCustomers.js'
 import { shopCustomerGroups, shopCustomerRecords, upsertShopCustomer } from './shopCustomersDb.js'
 import { statsOrders, distinctCustomerCount } from './ordersDb.js'
+import { parseProductOrder } from './productOrder.js'
+import { writeProductOrder } from './productOrderDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
@@ -864,6 +866,31 @@ app.delete('/api/merchants/:id/products/:productId', requireMerchantOwns, requir
   const { error } = await admin.from('products').delete().eq('id', productId)
   if (error) return c.json({ error: 'Delete failed' }, 500)
   return c.json({ ok: true })
+})
+
+/**
+ * The merchant's arrangement of their own menu: which section each product sits in, and in what
+ * order (docs/superpowers/specs/2026-08-17-storefront-arrangement-design.md).
+ *
+ * A separate endpoint rather than a field on the product upsert, because a rearrangement is one
+ * decision about the whole menu — N upserts would leave a shop half-arranged when the fourth one
+ * failed, and would need `sort` in `PRODUCT_FIELDS`, where a stale dashboard could drag a product
+ * back to where it used to be behind an ordinary rename.
+ *
+ * `requireMerchantOwns` proves the caller owns :id. It says nothing about the product ids in the
+ * body — the statement's own `merchant_id` predicate is what handles those, by matching none of
+ * them. Hence `updated`, which a caller can compare against what it sent.
+ */
+app.put('/api/merchants/:id/product-order', requireMerchantOwns, async (c) => {
+  const id = c.req.param('id')
+  const parsed = parseProductOrder(await c.req.json().catch(() => null))
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  try {
+    const updated = await writeProductOrder(id, parsed.items)
+    return c.json({ ok: true, updated })
+  } catch {
+    return c.json({ error: 'Update failed' }, 500)
+  }
 })
 
 /**

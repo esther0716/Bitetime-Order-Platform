@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Trash2, Eye, EyeOff, Plus, ArrowUp, ArrowDown } from 'lucide-react'
+import { Trash2, Eye, EyeOff, Plus } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -17,9 +17,13 @@ import type { MenuCategory, CategoryConfigError } from '@bitetime/shared'
  * merchant row: categories are menu *design*, and the merchant is already looking at the menu.
  * ADR 0008 rejected a separate options screen and a top-level Options tab on the same reasoning.
  *
- * ARRAY ORDER IS DISPLAY ORDER, so reordering here is moving an array element — there is no
- * `sort` column and no tie-break to get wrong. Up/down buttons rather than drag: no dnd library
- * in the repo, and a keyboard-accessible fallback for one would be these buttons anyway.
+ * ARRAY ORDER IS DISPLAY ORDER, so the ORDER of this list is a real decision — but it is not made
+ * here. The merchant drags it on the Storefront tab, where they can see the menu they are
+ * arranging (spec 2026-08-17). This dialog names, hides and deletes; the Storefront tab orders.
+ * Two surfaces writing the same array would be two places to check when the order looks wrong.
+ *
+ * The Storefront tab hosts its own instance and seeds it from its DRAFT, so a rename made after a
+ * drag saves the dragged order rather than writing the stored order back over it.
  *
  * The validation shown is `validateMenuCategories`, the SAME function the write endpoint refuses
  * on. ADR 0013 traded away every check constraint for a write path that already existed, so that
@@ -29,14 +33,6 @@ import type { MenuCategory, CategoryConfigError } from '@bitetime/shared'
  * The whole draft is saved by ONE `PATCH /api/merchants/:id`. There is no per-row save, so a
  * cancel really is a cancel and a merchant never leaves half a rearrangement behind.
  */
-
-const move = <T,>(xs: T[], from: number, to: number): T[] => {
-  if (to < 0 || to >= xs.length) return xs
-  const next = [...xs]
-  const [x] = next.splice(from, 1)
-  next.splice(to, 0, x!)
-  return next
-}
 
 /** Ids are opaque and never rendered — a rename must not move a product, so it must not move. */
 export const blankCategory = (): MenuCategory =>
@@ -128,8 +124,8 @@ export default function MenuCategoriesDialog({
         </DialogHeader>
 
         <p className="text-[12px] text-muted-foreground leading-[1.6]">
-          {t('Customers see these as headings on your storefront, in this order. Products you have not put in a category are listed last, without a heading.',
-             '顾客会按此顺序在店面看到这些标题。未归入分类的产品会排在最后，且不带标题。')}
+          {t('Customers see these as headings on your storefront. Drag them into order on the Storefront tab. Products you have not put in a category are listed last, without a heading.',
+             '顾客会在店面看到这些标题。请在“店面”页拖动排序。未归入分类的产品会排在最后，且不带标题。')}
         </p>
 
         <div className="flex flex-col gap-2 mt-3 max-h-[46vh] overflow-y-auto">
@@ -163,22 +159,6 @@ export default function MenuCategoriesDialog({
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <div className="flex gap-1">
-                  <Button
-                    type="button" variant="ghost" size="none"
-                    className="size-8 rounded-lg cursor-pointer disabled:opacity-40"
-                    disabled={i === 0}
-                    onClick={() => setDraft(move(draft, i, i - 1))}
-                    aria-label={t('Move up', '上移')}
-                  ><ArrowUp className="size-4" /></Button>
-                  <Button
-                    type="button" variant="ghost" size="none"
-                    className="size-8 rounded-lg cursor-pointer disabled:opacity-40"
-                    disabled={i === draft.length - 1}
-                    onClick={() => setDraft(move(draft, i, i + 1))}
-                    aria-label={t('Move down', '下移')}
-                  ><ArrowDown className="size-4" /></Button>
-                </div>
                 <div className="flex gap-1">
                   {/* Hiding a category hides its HEADING. Its products keep selling, listed with
                       the uncategorized ones — a merchant tidying their menu must never take

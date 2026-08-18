@@ -161,8 +161,8 @@ export const USE_CASES: UseCase[] = [
           zh: '同一个页面可以按尺寸卖蛋糕、按打卖饼干吗？',
         },
         a: {
-          en: 'Yes. Every product carries its own unit and quantity — per piece, box, set, pack, dozen, bottle, jar, tray, slice, kg or g — so a page can mix them freely.',
-          zh: '可以。每件产品都有自己的单位和数量——件、盒、套、包、打、瓶、罐、盘、片、公斤或克——同一个页面可以自由混用。',
+          en: 'Yes. Every product carries its own unit and quantity — per piece, box, set, pack, dozen, bottle, cup, jar, tray, slice, kg or g — so a page can mix them freely.',
+          zh: '可以。每件产品都有自己的单位和数量——件、盒、套、包、打、瓶、杯、罐、盘、片、公斤或克——同一个页面可以自由混用。',
         },
       },
       {
