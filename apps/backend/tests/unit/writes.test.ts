@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { BUSINESS_NATURES } from '@bitetime/shared'
+import { BUSINESS_NATURES, SHOP_DESCRIPTION_MAX } from '@bitetime/shared'
 import { pickMerchantConfig, pickProductFields } from '../../src/writes.js'
 
 // The shop being written. Only `payment_qr` is judged against it (a Storage path belongs to one
@@ -209,6 +209,55 @@ describe('pickMerchantConfig — menu categories (ADR 0013)', () => {
       product_categories: [{ id: 'c1', name: 'Cakes', active: true }, { id: 'c2', name: 'CAKES', active: true }],
     }, SHOP)
     expect(r).toEqual({ ok: false, error: expect.stringContaining('duplicate_category_name') })
+  })
+})
+
+// The line a customer reads under a shop's name. Both languages are ordinary free text with one
+// cap, so what this block pins is the two edges the pixel and QR fields have too: a blank field
+// means TAKE IT DOWN and must land as null, and an over-long one is refused rather than truncated
+// — a blurb cut off mid-sentence is a merchant's own words put wrong on their own storefront.
+describe('pickMerchantConfig — shop description', () => {
+  it('accepts both languages, trimmed', () => {
+    expect(pickMerchantConfig({
+      description: '  Home-style kuih, order a day ahead. ',
+      description_zh: ' 家庭式面包，请提前一天下单。 ',
+    }, SHOP)).toEqual({
+      ok: true,
+      patch: {
+        description: 'Home-style kuih, order a day ahead.',
+        description_zh: '家庭式面包，请提前一天下单。',
+      },
+    })
+  })
+
+  it('accepts English alone — the Chinese line is optional and falls back', () => {
+    expect(pickMerchantConfig({ description: 'Fresh bread daily' }, SHOP))
+      .toEqual({ ok: true, patch: { description: 'Fresh bread daily' } })
+  })
+
+  it('reads a cleared field as null, the only way back to no description', () => {
+    expect(pickMerchantConfig({ description: '' }, SHOP))
+      .toEqual({ ok: true, patch: { description: null } })
+    expect(pickMerchantConfig({ description: '   ' }, SHOP))
+      .toEqual({ ok: true, patch: { description: null } })
+    expect(pickMerchantConfig({ description_zh: null }, SHOP))
+      .toEqual({ ok: true, patch: { description_zh: null } })
+  })
+
+  it('refuses an over-long blurb rather than truncating it', () => {
+    const r = pickMerchantConfig({ description: 'a'.repeat(SHOP_DESCRIPTION_MAX + 1) }, SHOP)
+    expect(r).toEqual({ ok: false, error: expect.stringContaining('description_too_long') })
+    expect(pickMerchantConfig({ description_zh: '字'.repeat(SHOP_DESCRIPTION_MAX + 1) }, SHOP).ok).toBe(false)
+  })
+
+  it('refuses a non-string', () => {
+    expect(pickMerchantConfig({ description: 42 }, SHOP).ok).toBe(false)
+    expect(pickMerchantConfig({ description_zh: { zh: 'hi' } }, SHOP).ok).toBe(false)
+  })
+
+  it('leaves the columns alone when the request does not mention them', () => {
+    expect(pickMerchantConfig({ timezone: 'Asia/Kuala_Lumpur' }, SHOP))
+      .toEqual({ ok: true, patch: { timezone: 'Asia/Kuala_Lumpur' } })
   })
 })
 

@@ -70,3 +70,5 @@ export {
   MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
 } from './menuCategories.js'
 export type { MenuCategory, CategoryConfigError } from './menuCategories.js'
+export { validateShopDescription, SHOP_DESCRIPTION_MAX } from './shopDescription.js'
+export type { ShopDescriptionError } from './shopDescription.js'

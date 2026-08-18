@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { productName, productDescr, categoryName } from './productLabel'
-import type { Product } from './types'
+import { productName, productDescr, categoryName, shopDescr } from './productLabel'
+import type { Merchant, Product } from './types'
 
 const p = (over: Partial<Product> = {}): Product =>
   ({ id: 'p1', name: 'Cookie', price: 5, ...over })
@@ -39,5 +39,29 @@ describe('categoryName', () => {
     expect(categoryName({ id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: true }, 'zh')).toBe('蛋糕')
     expect(categoryName({ id: 'c1', name: 'Cakes', active: true }, 'zh')).toBe('Cakes')
     expect(categoryName({ id: 'c1', name: 'Cakes', name_zh: '蛋糕', active: true }, 'en')).toBe('Cakes')
+  })
+})
+
+describe('shopDescr', () => {
+  const shop = (over: Partial<Merchant> = {}): Merchant =>
+    ({ id: 'm1', name: 'Aunty May', slug: 'aunty-may', status: 'active', ...over })
+
+  it('picks the blurb the reader can read', () => {
+    const row = shop({ description: 'Home-style kuih', description_zh: '家庭式糕点' })
+    expect(shopDescr(row, 'en')).toBe('Home-style kuih')
+    expect(shopDescr(row, 'zh')).toBe('家庭式糕点')
+  })
+
+  it('falls back to the English blurb when there is no Chinese one', () => {
+    expect(shopDescr(shop({ description: 'Home-style kuih' }), 'zh')).toBe('Home-style kuih')
+    expect(shopDescr(shop({ description: 'Home-style kuih', description_zh: null }), 'zh'))
+      .toBe('Home-style kuih')
+  })
+
+  // A shop that wrote no blurb draws NO line, so both the absent column and the cleared one
+  // must reduce to the same empty string the callers test against.
+  it('gives an empty string for a shop with no description', () => {
+    expect(shopDescr(shop(), 'en')).toBe('')
+    expect(shopDescr(shop({ description: null, description_zh: null }), 'zh')).toBe('')
   })
 })

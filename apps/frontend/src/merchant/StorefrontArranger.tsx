@@ -22,6 +22,7 @@ import { SkeletonText } from '../components/Loaders'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '../components/ui/empty'
 import MenuRow from '../components/MenuRow'
 import MenuCategoriesDialog from './MenuCategoriesDialog'
+import ShopDescriptionCard from './ShopDescriptionCard'
 import { useNavGuard } from './NavGuard'
 import {
   arrangeMenu, reseedCategories, moveProduct, moveCategory, findProduct, resolveDropTarget,
@@ -54,6 +55,9 @@ export default function StorefrontArranger() {
   const [saving, setSaving] = useState(false)
   const [categoriesOpen, setCategoriesOpen] = useState(false)
   const [categoriesSaving, setCategoriesSaving] = useState(false)
+  // The description card's own unsaved state, held HERE because the NavGuard has one blocker slot
+  // and this screen shows two cards that can each be dirty. See ShopDescriptionCard's note.
+  const [descriptionDirty, setDescriptionDirty] = useState(false)
 
   const merchantId = merchant!.id
   const currency = merchant?.currency
@@ -76,7 +80,9 @@ export default function StorefrontArranger() {
   }, [merchantId])
 
   const keys = blocks ? arrangementKeys(blocks) : saved
-  const dirty = keys.categories !== saved.categories || keys.products !== saved.products
+  const arrangementDirty = keys.categories !== saved.categories || keys.products !== saved.products
+  // Either card holding unsaved work blocks a navigation, and both are on this one screen.
+  const dirty = arrangementDirty || descriptionDirty
 
   // The same guard ShopSettings registers, so the sidebar cannot silently discard a rearrangement.
   useEffect(() => {
@@ -201,10 +207,16 @@ export default function StorefrontArranger() {
     return true
   }
 
+  // The description card is drawn even while the menu is still loading: it reads the merchant row
+  // the session already holds, so making it wait on a products read would be a blank card for no
+  // reason.
   if (!blocks) return (
-    <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
-      <SkeletonText lines={4} />
-    </div>
+    <>
+      <ShopDescriptionCard onDirtyChange={setDescriptionDirty} />
+      <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
+        <SkeletonText lines={4} />
+      </div>
+    </>
   )
 
   const total = blocks.reduce((n, b) => n + b.products.length, 0)
@@ -213,8 +225,11 @@ export default function StorefrontArranger() {
   )
 
   return (
-    // The same card the other dashboard sections are drawn in. The MENU inside it is capped at
-    // phone width, because that is the width the merchant is previewing.
+    <>
+      <ShopDescriptionCard onDirtyChange={setDescriptionDirty} />
+
+    {/* The same card the other dashboard sections are drawn in. The MENU inside it is capped at
+        phone width, because that is the width the merchant is previewing. */}
     <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
       <div className="flex items-center justify-between gap-3 mb-2">
         <h3 className="font-heading text-[15px] font-medium text-primary flex items-center gap-2">
@@ -233,7 +248,7 @@ export default function StorefrontArranger() {
             type="button" size="none"
             className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap"
             onClick={save}
-            disabled={!dirty || saving}
+            disabled={!arrangementDirty || saving}
           >
             {saving ? t('Saving…', '保存中…') : t('Save', '保存')}
           </Button>
@@ -298,6 +313,7 @@ export default function StorefrontArranger() {
         t={t}
       />
     </div>
+    </>
   )
 }
 

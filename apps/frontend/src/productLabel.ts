@@ -10,7 +10,7 @@
 // per row, not interface copy with a translation. `t` picks between two things we wrote; this
 // picks between two things they wrote, and falls back when the second is absent.
 
-import type { Lang, Product } from './types'
+import type { Lang, Merchant, Product } from './types'
 import type { MenuCategory } from '@bitetime/shared'
 
 export const productName = (p: Product, lang: Lang): string =>
@@ -22,3 +22,11 @@ export const productDescr = (p: Product, lang: Lang): string =>
 
 export const categoryName = (c: MenuCategory, lang: Lang): string =>
   (lang === 'zh' && c.name_zh) ? c.name_zh : c.name
+
+/**
+ * The shop's own blurb, in the language in front of us. `''` when it has none — the storefront
+ * renders it conditionally, because a shop that wrote no description must draw no line at all
+ * rather than an empty one holding space under its name.
+ */
+export const shopDescr = (m: Merchant, lang: Lang): string =>
+  (lang === 'zh' && m.description_zh) ? m.description_zh : (m.description || '')

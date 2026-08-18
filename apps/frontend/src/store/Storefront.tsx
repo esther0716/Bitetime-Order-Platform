@@ -22,7 +22,7 @@ import { formatMoney, DEFAULT_CURRENCY } from '../currency'
 import { useShopPixelTrack } from '../pixels/ShopPixels'
 import { formatTaxRate } from '../receipt'
 import { formatUnit } from '../productUnit'
-import { productName as label, productDescr as descr } from '../productLabel'
+import { productName as label, productDescr as descr, shopDescr } from '../productLabel'
 import { menuSections } from '../menuGroups'
 import { useServerClock } from '../serverClock'
 import { lookupPostcode } from '../postcodes'
@@ -982,6 +982,15 @@ export default function Storefront() {
           <div className="flex items-start justify-between gap-4 mb-8 max-[480px]:flex-col max-[480px]:gap-2">
             <div>
               <h1 className="font-heading text-[26px] font-medium text-primary tracking-[0.3px]">{merchant.name}</h1>
+              {/* The shop's own line, in the reader's language and only when the shop wrote one —
+                  an empty <p> here would hold the platform credit a line further down for every
+                  shop that never filled it in. Not on the success view above: an order is placed,
+                  and nobody reads a shop blurb after paying. */}
+              {shopDescr(merchant, lang) && (
+                <p className="text-[13px] text-muted-foreground mt-[6px] max-w-[420px] leading-[1.5]">
+                  {shopDescr(merchant, lang)}
+                </p>
+              )}
               <p className="font-heading text-[13px] italic text-muted-foreground mt-[5px]">
                 {t('Powered by TinyOrder', 'TinyOrder 提供技术支持')}
                 {' · '}
