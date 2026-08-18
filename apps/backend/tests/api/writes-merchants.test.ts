@@ -6,6 +6,7 @@
 // under someone else's owner_id. See CLAUDE.md → Backend, Global Constraint 1.
 import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/app.js'
+import { SHOP_DESCRIPTION_MAX } from '@bitetime/shared'
 import { makeUser, seedMerchant, serviceClient, resetMerchant } from '../rls/helpers.js'
 
 async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
@@ -835,5 +836,59 @@ describe('PATCH /api/merchants/:id — the shop’s own ad pixel', () => {
     expect(res.status).toBe(200)
     const row = (await res.json()) as any
     expect(row.meta_pixel_id).toBe('123456789012345')
+  })
+})
+
+describe('PATCH /api/merchants/:id — the shop’s own description', () => {
+  let merchantId: string
+  let ownerToken: string
+
+  beforeEach(async () => {
+    await resetMerchant('cfg-descr-shop')
+    const client = await makeUser('cfg-descr@example.com', 'password123')
+    const { token, userId } = await tokenOf(client)
+    merchantId = await seedMerchant({ slug: 'cfg-descr-shop', owner_id: userId })
+    ownerToken = token
+  })
+
+  const save = (body: Record<string, unknown>) =>
+    patch(`/api/merchants/${merchantId}`, body, ownerToken)
+
+  it('stores both languages, trimmed', async () => {
+    const res = await save({
+      description: '  Home-style kuih, order a day ahead. ',
+      description_zh: ' 家庭式面包，请提前一天下单。 ',
+    })
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as any
+    expect(row.description).toBe('Home-style kuih, order a day ahead.')
+    expect(row.description_zh).toBe('家庭式面包，请提前一天下单。')
+  })
+
+  // Clearing the blurb is the only way back to a storefront with no line under its name, so it
+  // must always be possible — and it must land as NULL, not as a blank string the storefront
+  // would then render as an empty paragraph.
+  it('lets a shop REMOVE its description', async () => {
+    await save({ description: 'Home-style kuih' })
+    const res = await save({ description: '' })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as any).description).toBeNull()
+  })
+
+  it('refuses an over-long blurb rather than truncating it', async () => {
+    const res = await save({ description: 'a'.repeat(SHOP_DESCRIPTION_MAX + 1) })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as any).error).toContain('description')
+  })
+
+  // The public storefront read is where the blurb actually gets used: an anonymous visitor is
+  // the whole audience for it.
+  it('ships the description on the public storefront lookup', async () => {
+    await save({ description: 'Home-style kuih', description_zh: '家庭式糕点' })
+    const res = await app.request('/api/merchants/cfg-descr-shop')
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as any
+    expect(row.description).toBe('Home-style kuih')
+    expect(row.description_zh).toBe('家庭式糕点')
   })
 })

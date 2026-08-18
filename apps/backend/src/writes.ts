@@ -1,4 +1,4 @@
-import { isTimezone, validateMenuCategories } from '@bitetime/shared'
+import { isTimezone, validateMenuCategories, validateShopDescription } from '@bitetime/shared'
 
 // Column allowlists for write endpoints. The service-role `admin` client bypasses RLS and the
 // guard_merchant_status / guard_profile_privileges triggers, so these picks are the ONLY thing
@@ -41,6 +41,9 @@ const MERCHANT_CONFIG_FIELDS = [
   // The shop's OWN advertising pixel ids (#220). Public values — they ship in the storefront's
   // page — so they are ordinary config, not a secret.
   'meta_pixel_id', 'tiktok_pixel_id',
+  // The line a customer reads under the shop's name. `description_zh` is optional and falls back
+  // to the English one, matching every other pair of merchant-authored strings.
+  'description', 'description_zh',
 ] as const
 
 // A Storage object path the given merchant owns: `{merchantId}/{filename}`, one segment deep,
@@ -184,6 +187,21 @@ export function pickMerchantConfig(body: any, merchantId: string): PickResult {
   if (out.product_categories !== undefined) {
     const bad = validateMenuCategories(out.product_categories)
     if (bad) return { ok: false, error: `product_categories is invalid: ${bad}` }
+  }
+
+  // The shop's own blurb. Refused rather than truncated: a cap is a rule the merchant can see
+  // while they type (the card counts against the same SHOP_DESCRIPTION_MAX), so a request that
+  // breaks it did not come from the card, and silently cutting a sentence in half would put a
+  // merchant's own words wrong on their own storefront.
+  for (const key of ['description', 'description_zh'] as const) {
+    if (out[key] === undefined) continue
+    const bad = validateShopDescription(out[key])
+    if (bad) return { ok: false, error: `${key} is invalid: ${bad}` }
+    // '' is what the card sends when the merchant clears the field; null is what a non-UI caller
+    // would send. Both mean "take it down", and both must land as null so the column never holds
+    // two spellings of "no description".
+    const trimmed = (out[key] as string | null)?.trim() ?? ''
+    out[key] = trimmed === '' ? null : trimmed
   }
 
   // The shop's own advertising pixel ids (#220). Refused, never coerced, for the reason every

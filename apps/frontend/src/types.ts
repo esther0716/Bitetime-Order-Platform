@@ -31,6 +31,12 @@ export interface Merchant {
   created_at?: string
   /** Landing-page sample-shops carousel flag (#107). Toggled only from /admin/merchants. */
   is_sample?: boolean
+  /** The one line a customer reads under the shop's name on its storefront. `description_zh`
+   *  is optional and falls back to the English one — render the pair through `shopDescr`,
+   *  never either column directly. Capped at `SHOP_DESCRIPTION_MAX`; null for a shop that has
+   *  not written one, which draws no line at all rather than an empty one. */
+  description?: string | null
+  description_zh?: string | null
   /** The shop's menu sections, in display order (ADR 0013). Read through
    *  `menuCategoriesFromRow`, never directly — the drivers disagree about whether jsonb arrives
    *  parsed, and anything unreadable must fall back to "no categories", not throw. */
