@@ -20,6 +20,7 @@ import { ORDER_STATUSES, STATUS_LABELS, StatusBadge } from '../orderStatus'
 import { fulfilmentLabel } from '../fulfilmentLabel'
 import WaLink from './WaLink'
 import InvoiceButton from '../components/InvoiceButton'
+import SendInvoiceOnWa from './SendInvoiceOnWa'
 import { ItemSelections } from '../ItemSelections'
 
 // 11px semibold uppercase rose-muted label.
@@ -192,6 +193,17 @@ export default function OrderDetailSheet({
                 fetcher={() => fetchOrderInvoice(merchant!.id, order.id)}
                 className="text-[13px] w-fit"
               />
+              {/* The other way the same paper reaches the same customer: a WhatsApp message the
+                  merchant presses send on. It carries the LINK to that customer's own invoice
+                  door, never the file — see `invoiceShare.ts`. Merchant-side only. */}
+              {!readOnly && (
+                <SendInvoiceOnWa
+                  status={order.status}
+                  orderNumber={order.order_number}
+                  customerWa={order.customer_wa}
+                  customerName={order.customer_name}
+                />
+              )}
             </SheetHeader>
 
             <div className="flex flex-col px-4 pb-4">
