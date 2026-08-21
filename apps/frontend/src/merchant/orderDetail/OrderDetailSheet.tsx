@@ -12,11 +12,11 @@ import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { COURIERS, trackingUrl, courierName } from '../../couriers'
-import { ORDER_STATUSES, STATUS_LABELS } from '../../orderStatus'
 import { fulfilmentLabel } from '../../fulfilmentLabel'
 import WaLink from '../WaLink'
 import { ItemSelections } from '../../ItemSelections'
 import OrderHeader from './OrderHeader'
+import StatusFooter from './StatusFooter'
 import DrawerCard, { LBL } from './DrawerCard'
 
 // A labelled key/value line in the detail sheet — label in a fixed left column,
@@ -79,10 +79,6 @@ export default function OrderDetailSheet({
 
   const proofUrl = proof && proof.orderId === order?.id ? proof.url : null
 
-  const statusItems = ORDER_STATUSES.map(s => ({
-    value: s,
-    label: t(STATUS_LABELS[s].en, STATUS_LABELS[s].zh),
-  }))
   const courierItems = COURIERS.map(c => ({ value: c.code, label: c.name }))
 
   // Re-seed the drafts when a different order opens (adjust-state-during-render:
@@ -340,28 +336,14 @@ export default function OrderDetailSheet({
                 </DrawerCard>
               )}
 
-              {/* Status control */}
-              {!readOnly && (
-                <DrawerCard title={t('Status', '状态')}>
-                  <Select
-                    value={order.status || 'new'}
-                    // `if (v)` rather than `?? ` — this handler writes to the database, so a
-                    // null must be dropped, never coerced into a status.
-                    onValueChange={v => { if (v) handleStatusChange(order, v) }}
-                    items={statusItems}
-                  >
-                    <SelectTrigger id={`status-${order.id}`} className="w-full min-w-[140px] bg-background text-[13px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {statusItems.map(i => (
-                        <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </DrawerCard>
-              )}
             </div>
+
+            {!readOnly && (
+              <StatusFooter
+                status={order.status || 'new'}
+                onChange={s => handleStatusChange(order, s)}
+              />
+            )}
           </>
         )}
       </SheetContent>
