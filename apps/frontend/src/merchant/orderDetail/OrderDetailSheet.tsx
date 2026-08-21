@@ -2,8 +2,6 @@ import { useState } from 'react'
 import { useSession } from '../../SessionContext'
 import { setOrderStatus, setOrderNote, setOrderTracking } from '../../store'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import OrderHeader from './OrderHeader'
 import StatusFooter from './StatusFooter'
@@ -11,7 +9,7 @@ import ItemsCard from './ItemsCard'
 import PaymentCard from './PaymentCard'
 import CustomerCard from './CustomerCard'
 import TrackingCard from './TrackingCard'
-import DrawerCard, { LBL } from './DrawerCard'
+import NoteCard from './NoteCard'
 
 // The order-detail drawer, shared by OrdersView and CustomersView. Open when
 // `order` is non-null; owns its own note/courier/awb drafts and bubbles every
@@ -101,11 +99,9 @@ export default function OrderDetailSheet({
             <OrderHeader order={order} readOnly={readOnly} merchantId={merchant!.id} />
 
             <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col gap-3 p-3 sm:p-4">
-              <CustomerCard order={order} />
-
               <ItemsCard items={order.items ?? []} currency={orderCurrency} />
               <PaymentCard order={order} currency={orderCurrency} merchantId={merchant!.id} />
-
+              <CustomerCard order={order} />
 
               <TrackingCard
                 order={order}
@@ -119,36 +115,15 @@ export default function OrderDetailSheet({
                 readOnly={readOnly}
               />
 
-              {/* Note — editable for the live merchant view, read-only when suspended */}
-              {readOnly ? (
-                order.note && (
-                  <DrawerCard title={t('Note', '备注')}>
-                    <p className="rounded-md bg-background border border-border px-3 py-2 text-[13px] text-foreground break-words">
-                      {order.note}
-                    </p>
-                  </DrawerCard>
-                )
-              ) : (
-                <DrawerCard title={t('Note', '备注')}>
-                  <Textarea
-                    value={noteDraft}
-                    onChange={e => setNoteDraft(e.target.value)}
-                    rows={3}
-                    placeholder={t('Add a note for this order…', '为此订单添加备注…')}
-                    className="text-[13px] bg-background border-border resize-none"
-                  />
-                  <Button
-                    type="button"
-                    size="none"
-                    className="self-end rounded-lg py-[6px] px-[14px] text-[13px]"
-                    disabled={!noteDirty || savingNote}
-                    onClick={handleNoteSave}
-                  >
-                    {savingNote ? t('Saving…', '保存中…') : t('Save note', '保存备注')}
-                  </Button>
-                </DrawerCard>
-              )}
-
+              <NoteCard
+                note={noteDraft}
+                saved={order.note ?? null}
+                onChange={setNoteDraft}
+                onSave={handleNoteSave}
+                saving={savingNote}
+                dirty={noteDirty}
+                readOnly={readOnly}
+              />
             </div>
 
             {!readOnly && (
