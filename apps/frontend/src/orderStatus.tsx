@@ -14,19 +14,21 @@ export const STATUS_LABELS: Record<string, { en: string; zh: string }> = {
 type BadgeConfig = { className: string }
 
 /* An unrecognised status is not a colour decision — it is a status this file has not been
-   taught. It renders neutral, which is also `completed`'s treatment. */
+   taught. It renders neutral — the one status treatment no real status uses. */
 const NEUTRAL = 'bg-neutral-100 text-neutral-fg border-transparent'
 
-/* Four tone families, six statuses. `new` and `preparing` share the info hue and are
-   separated by FILL WEIGHT — solid vs subtle — rather than by a fifth colour. A merchant
-   scanning a busy table still sees two different things; the palette still has four
-   entries. Every pair here is asserted AA by tokens.test.ts. */
+/* Four tone families, six statuses. Two pairs share a hue and are separated by FILL
+   WEIGHT — solid vs subtle — rather than by a fifth colour: `new`/`preparing` on info,
+   and `ready`/`completed` on success. Solid is the one that still wants the merchant's
+   hands; subtle is the one that is settled. A merchant scanning a busy table still sees
+   two different things; the palette still has four entries. Every pair here is asserted
+   AA by tokens.test.ts. */
 export const STATUS_BADGE: Record<string, BadgeConfig> = {
   pending_payment: { className: 'bg-warning-100 text-warning-fg border-transparent' },
   new:             { className: 'bg-info-fg text-white border-transparent' },
   preparing:       { className: 'bg-info-100 text-info-fg border-transparent' },
-  ready:           { className: 'bg-success-100 text-success-fg border-transparent' },
-  completed:       { className: NEUTRAL },
+  ready:           { className: 'bg-success-fg text-white border-transparent' },
+  completed:       { className: 'bg-success-100 text-success-fg border-transparent' },
   cancelled:       { className: 'bg-danger-100 text-danger-fg border-transparent' },
 }
 
