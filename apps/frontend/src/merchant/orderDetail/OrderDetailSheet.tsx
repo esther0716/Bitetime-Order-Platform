@@ -1,33 +1,19 @@
 import { useState } from 'react'
 import { useSession } from '../../SessionContext'
 import { setOrderStatus, setOrderNote, setOrderTracking } from '../../store'
-import { formatAddress } from '../../address'
-import { formatCalendarDate } from '../../orderDate'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { COURIERS, trackingUrl, courierName } from '../../couriers'
-import { fulfilmentLabel } from '../../fulfilmentLabel'
-import WaLink from '../WaLink'
+import { COURIERS, trackingUrl } from '../../couriers'
 import OrderHeader from './OrderHeader'
 import StatusFooter from './StatusFooter'
 import ItemsCard from './ItemsCard'
 import PaymentCard from './PaymentCard'
+import CustomerCard from './CustomerCard'
 import DrawerCard, { LBL } from './DrawerCard'
-
-// A labelled key/value line in the detail sheet — label in a fixed left column,
-// value aligned in the right column so rows scan like a receipt.
-function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[84px_1fr] gap-x-3 items-baseline text-[13px]">
-      <span className={LBL}>{label}</span>
-      <span className="min-w-0 break-words text-foreground">{children}</span>
-    </div>
-  )
-}
 
 // The order-detail drawer, shared by OrdersView and CustomersView. Open when
 // `order` is non-null; owns its own note/courier/awb drafts and bubbles every
@@ -44,7 +30,7 @@ export default function OrderDetailSheet({
   onOrderUpdated: (o: any) => void
   readOnly?: boolean
 }) {
-  const { t, lang, merchant } = useSession()
+  const { t, merchant } = useSession()
   const [noteDraft, setNoteDraft] = useState('')
   const [drawerFor, setDrawerFor] = useState<string | undefined>(undefined)
   const [savingNote, setSavingNote] = useState(false)
@@ -118,36 +104,11 @@ export default function OrderDetailSheet({
             <OrderHeader order={order} readOnly={readOnly} merchantId={merchant!.id} />
 
             <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col gap-3 p-3 sm:p-4">
-              {/* Customer */}
-              <DrawerCard title={t('Customer', '顾客')}>
-                <span className="text-[14px] font-medium text-foreground">{order.customer_name || '—'}</span>
-                {order.customer_wa && (
-                  <span className="text-[13px] w-fit"><WaLink wa={order.customer_wa} /></span>
-                )}
-              </DrawerCard>
+              <CustomerCard order={order} />
 
               <ItemsCard items={order.items ?? []} currency={orderCurrency} />
               <PaymentCard order={order} currency={orderCurrency} merchantId={merchant!.id} />
 
-              {/* Fulfilment */}
-              <DrawerCard title={t('Fulfilment', '配送')}>
-                <DetailRow label={t('Mode', '方式')}>{fulfilmentLabel(order.mode, t)}</DetailRow>
-                {order.region && <DetailRow label={t('Region', '地区')}>{order.region}</DetailRow>}
-                {order.address && <DetailRow label={t('Address', '地址')}>{formatAddress(order.address)}</DetailRow>}
-                {/* The date the CUSTOMER asked for — what the merchant is scheduling around —
-                    not `created_at` above, which is when the order was placed. Shown as `—`
-                    rather than omitted for a legacy order: a missing row here would read as
-                    "this order has no fulfilment info" rather than "placed before #91". */}
-                <DetailRow label={t('Date', '日期')}>
-                  {order.fulfil_date ? formatCalendarDate(order.fulfil_date, lang) : '—'}
-                </DetailRow>
-                {!(order.mode === 'delivery' && !readOnly) && order.courier && (
-                  <DetailRow label={t('Courier', '快递公司')}>{courierName(order.courier) || order.courier}</DetailRow>
-                )}
-                {!(order.mode === 'delivery' && !readOnly) && order.awb && (
-                  <DetailRow label={t('AWB', '运单号')}>{order.awb}</DetailRow>
-                )}
-              </DrawerCard>
 
               {/* Delivery tracking — merchant enters courier + AWB (delivery orders only) */}
               {order.mode === 'delivery' && !readOnly && (
