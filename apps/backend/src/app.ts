@@ -1200,7 +1200,8 @@ function invoicePdfResponse(pdf: Uint8Array, orderNumber: string): Response {
 /** Render, or answer the one refusal this endpoint family has. */
 async function invoiceFor(c: Context, order: Record<string, any> | null, merchant: Record<string, any> | null) {
   if (!order || !merchant || !canIssueInvoice(order.status)) return c.json({ error: 'not_found' }, 404)
-  return invoicePdfResponse(await renderInvoicePdf(order, merchant, invoiceFont()), order.order_number)
+  const pdf = await renderInvoicePdf(order, merchant, { font: invoiceFont(), frontendUrl: env.frontendUrl })
+  return invoicePdfResponse(pdf, order.order_number)
 }
 
 // The merchant's own copy — the one they forward on WhatsApp when a customer asks them directly.

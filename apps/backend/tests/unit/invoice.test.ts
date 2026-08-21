@@ -5,6 +5,7 @@ import { canIssueInvoice } from '@bitetime/shared'
 import {
   invoiceSubtotal,
   invoiceFileName,
+  invoiceQrUrl,
   buildInvoice,
   renderInvoicePdf,
 } from '../../src/invoice.js'
@@ -193,6 +194,33 @@ describe('buildInvoice', () => {
   })
 })
 
+describe('invoiceQrUrl', () => {
+  it('points at this order’s own lookup, with the number filled in', () => {
+    expect(invoiceQrUrl(ORDER, { ...MERCHANT, slug: 'kedai-kek' }, 'https://tinyorder.test'))
+      .toBe('https://tinyorder.test/invoice?shop=kedai-kek&order=KE-260820-0051')
+  })
+
+  // The paper is forwarded, photographed and left on counters. A link that fetched the document
+  // by itself would make the paper the credential — the phone stays out of it (ADR 0018).
+  it('carries no phone and nothing else that would open the door', () => {
+    const url = invoiceQrUrl(
+      { ...ORDER, customer_wa: '0123456789', customer_phone_key: '23456789' },
+      { ...MERCHANT, slug: 'kedai-kek' },
+      'https://tinyorder.test',
+    )
+    expect(url).not.toContain('0123456789')
+    expect(url).not.toContain('23456789')
+    expect(url).not.toContain('phone')
+  })
+
+  it('tolerates a trailing slash on the frontend url, and escapes what it interpolates', () => {
+    expect(invoiceQrUrl(ORDER, { ...MERCHANT, slug: 'kedai-kek' }, 'https://tinyorder.test/'))
+      .toBe('https://tinyorder.test/invoice?shop=kedai-kek&order=KE-260820-0051')
+    expect(invoiceQrUrl({ ...ORDER, order_number: 'A B&C' }, { ...MERCHANT, slug: 'a b' }, 'https://x.test'))
+      .toBe('https://x.test/invoice?shop=a%20b&order=A%20B%26C')
+  })
+})
+
 describe('invoiceFileName', () => {
   it('names the file after the order', () => {
     expect(invoiceFileName('KE-260820-0051')).toBe('Invoice-KE-260820-0051.pdf')
@@ -237,9 +265,11 @@ function embeddedFont(pdfBytes: Uint8Array) {
 
 describe('renderInvoicePdf', () => {
   const font = invoiceFont()
+  // A stand-in for `env.frontendUrl`, which this module never reads — see `renderInvoicePdf`.
+  const opts = { font, frontendUrl: 'https://tinyorder.test' }
 
   it('emits a PDF', async () => {
-    const bytes = await renderInvoicePdf(ORDER, MERCHANT, font)
+    const bytes = await renderInvoicePdf(ORDER, MERCHANT, opts)
     expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe('%PDF-')
     expect(bytes.length).toBeGreaterThan(1000)
   })
@@ -250,7 +280,7 @@ describe('renderInvoicePdf', () => {
     const bytes = await renderInvoicePdf(
       { ...ORDER, items: [{ id: 'p1', name: '拿铁咖啡', qty: 1, price: 15 }] },
       { ...MERCHANT, name: '小食堂 Kopitiam' },
-      font,
+      opts,
     )
     expect(bytes.length).toBeGreaterThan(1000)
   })
@@ -259,24 +289,11 @@ describe('renderInvoicePdf', () => {
   // meet it as a broken feature with no way to know why.
   it('survives a character the font has no glyph for', async () => {
     await expect(
-      renderInvoicePdf({ ...ORDER, customer_name: 'Siti 🍰' }, { ...MERCHANT, name: '🍰 Cakes' }, font),
+      renderInvoicePdf({ ...ORDER, customer_name: 'Siti 🍰' }, { ...MERCHANT, name: '🍰 Cakes' }, opts),
     ).resolves.toBeInstanceOf(Uint8Array)
   })
 
-  // A long order must flow onto page two rather than run off the bottom of page one.
-  it('paginates a long order', async () => {
-    const items = Array.from({ length: 60 }, (_, i) => ({
-      id: `p${i}`, name: `Item number ${i}`, qty: 1, price: 3,
-    }))
-    const bytes = await renderInvoicePdf(
-      { ...ORDER, items, total: 180 + 8 - 5 + 3.24 },
-      MERCHANT,
-      font,
-    )
-    expect((await PDFDocument.load(bytes)).getPageCount()).toBeGreaterThan(1)
-  })
-
-  // THE regression test for the subsetting bug described above.
+  // THE regression test for the subsetting bug in `pdfFontkit.ts`.
   //
   // Every distinct character the document prints must arrive as a glyph WITH AN OUTLINE. Counting
   // is what makes this precise: the source face is asked how many of those characters it draws,
@@ -290,7 +307,8 @@ describe('renderInvoicePdf', () => {
       ...doc.lines.flatMap(l => [l.name, l.options, String(l.qty), l.unitText, l.amountText]),
       ...doc.money.flatMap(m => [m.label, m.text]),
       ...doc.payment,
-      'INVOICE ITEM QTY UNIT AMOUNT ORDER NO. PLACED METHOD DATE BILLED TO ADDRESS PAYMENT',
+      'INVOICE FROM ORDER NO. AMOUNT DATE & TIME FOR METHOD BILLED TO ADDRESS PAYMENT TOTAL',
+      'Scan to get this invoice again',
     ].join('')
 
     const source = (fontkit as unknown as { create: (b: Uint8Array) => any }).create(font)
@@ -300,7 +318,7 @@ describe('renderInvoicePdf', () => {
     }
     expect(drawnGlyphs.size).toBeGreaterThan(30)
 
-    const embedded = await embeddedFont(await renderInvoicePdf(ORDER, MERCHANT, font))
+    const embedded = await embeddedFont(await renderInvoicePdf(ORDER, MERCHANT, opts))
     let outlined = 0
     for (let gid = 0; gid < embedded.numGlyphs; gid += 1) {
       if (embedded.getGlyph(gid).path.commands.length > 0) outlined += 1
@@ -313,7 +331,7 @@ describe('renderInvoicePdf', () => {
     const bytes = await renderInvoicePdf(
       { ...ORDER, items: [{ id: 'p1', name: '拿铁咖啡', qty: 1, price: 15 }] },
       { ...MERCHANT, name: '小食堂' },
-      font,
+      opts,
     )
     const embedded = await embeddedFont(bytes)
     const outlined = Array.from({ length: embedded.numGlyphs }, (_, i) => embedded.getGlyph(i))
@@ -322,10 +340,28 @@ describe('renderInvoicePdf', () => {
     expect(outlined.length).toBeGreaterThanOrEqual(7)
   })
 
+  // The ticket is ONE page that grows, the way a till roll does — never a second sheet. A long
+  // order must therefore make a taller page, and the total must still be on it.
+  it('grows the page instead of paginating', async () => {
+    const short = await PDFDocument.load(await renderInvoicePdf(ORDER, MERCHANT, opts))
+    const items = Array.from({ length: 40 }, (_, i) => ({
+      id: `p${i}`, name: `Item number ${i}`, qty: 1, price: 3,
+    }))
+    const long = await PDFDocument.load(
+      await renderInvoicePdf({ ...ORDER, items, total: 129.24 }, MERCHANT, opts),
+    )
+
+    expect(short.getPageCount()).toBe(1)
+    expect(long.getPageCount()).toBe(1)
+    expect(long.getPage(0).getHeight()).toBeGreaterThan(short.getPage(0).getHeight() + 400)
+    // The till-roll width never changes, whatever the order holds.
+    expect(long.getPage(0).getWidth()).toBe(short.getPage(0).getWidth())
+  })
+
   // The order's payment note is free text a merchant types, newlines and all.
   it('accepts a multi-line payment note', async () => {
     await expect(
-      renderInvoicePdf(ORDER, { ...MERCHANT, payment_note: 'Line one\nLine two\n\nLine four' }, font),
+      renderInvoicePdf(ORDER, { ...MERCHANT, payment_note: 'Line one\nLine two\n\nLine four' }, opts),
     ).resolves.toBeInstanceOf(Uint8Array)
   })
 })

@@ -37,6 +37,19 @@ merchant's order sheet — requests the same endpoint and receives the same byte
 `store/ReceiptDialog.tsx` is deleted, and with it the `@media print` block in `index.css`: that whole
 `body:has([data-receipt])` `!important` sequence exists to serve that one dialog.
 
+**The page IS a ticket**: 226pt wide — 80mm, a till roll — and as tall as the order needs, with a
+perforation rule and notched edges. The shape is chosen for where the document is actually read: a
+phone, in a chat, where an A4 sheet arrives as a postage stamp to pinch open. It prints scaled-to-fit
+on A4 and feeds a thermal printer natively. The cost is that there is no pagination — a forty-line
+order makes a very long page rather than a second one, exactly as a till roll does.
+
+A **QR code** stands where a shop receipt puts its barcode, carrying
+`/invoice?shop=<slug>&order=<number>` — this order's own lookup, with the number filled in. It stops
+at the number deliberately: a ticket is forwarded, photographed and left on counters, and a link
+that fetched the document by itself would make the paper the credential. Scanning gets the reader to
+the right form; proving the order is still theirs (ADR 0018). It is drawn as vector rectangles, one
+per module, so it stays sharp at any zoom and costs a few hundred bytes rather than a raster.
+
 The generator is `pdf-lib` with **Noto Sans SC**, one weight, embedded unconditionally — the font
 is not conditional on language, because `merchants.name` and `products.name` routinely hold Chinese
 characters whatever language the reader chose, and a latin-only face renders tofu for exactly the

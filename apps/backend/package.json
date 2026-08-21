@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node --import jiti/register --watch --env-file=.env src/index.ts",
     "start": "node dist/server.js",
-    "build": "esbuild src/index.ts --bundle --external:@anthropic-ai/sdk --external:@hono/node-server --external:hono --external:@supabase/supabase-js --external:stripe --external:postgres --external:exceljs --external:pinyin-pro --external:pdf-lib --external:fontkit --platform=node --format=esm --target=node20 --outfile=dist/server.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\" && mkdir -p dist/assets && cp src/assets/NotoSansSC.ttf dist/assets/NotoSansSC.ttf",
+    "build": "esbuild src/index.ts --bundle --external:@anthropic-ai/sdk --external:@hono/node-server --external:hono --external:@supabase/supabase-js --external:stripe --external:postgres --external:exceljs --external:pinyin-pro --external:pdf-lib --external:fontkit --external:qrcode --platform=node --format=esm --target=node20 --outfile=dist/server.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\" && mkdir -p dist/assets && cp src/assets/NotoSansSC.ttf dist/assets/NotoSansSC.ttf",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests/unit",
@@ -28,12 +28,14 @@
     "pdf-lib": "^1.17.1",
     "pinyin-pro": "^3.28.1",
     "postgres": "^3.4.9",
+    "qrcode": "^1.5.4",
     "stripe": "^17.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/fontkit": "^2.0.9",
     "@types/node": "^26.0.1",
+    "@types/qrcode": "^1.5.6",
     "esbuild": "^0.25.0",
     "eslint": "^10.3.0",
     "globals": "^17.6.0",

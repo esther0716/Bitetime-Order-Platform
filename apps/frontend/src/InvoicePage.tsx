@@ -30,7 +30,10 @@ export default function InvoicePage() {
   const [params] = useSearchParams()
   const { t } = useSession()
   const shop = params.get('shop') ?? ''
-  const [orderNumber, setOrderNumber] = useState('')
+  // The QR code on a printed invoice lands here with `?order=` already set, so the reader who
+  // scanned their own paper types only the phone. The number alone opens nothing — the door still
+  // asks for the phone (ADR 0018), which is exactly why it is safe to put in a link.
+  const [orderNumber, setOrderNumber] = useState(params.get('order') ?? '')
   const [phone, setPhone] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)

@@ -15,9 +15,16 @@
 // misinformed by us.
 //
 // English labels, always. See `invoiceFont.ts` for why the CJK face is embedded anyway.
+//
+// The QR code's orientation is the one property here no assertion covers: a mirrored matrix draws
+// a plausible-looking code that scans to nothing. It was checked by rasterising a rendered page and
+// decoding it with jsQR, which returned the exact lookup URL. Redo that if the drawing loop is ever
+// touched — `invoiceQrUrl` is unit-tested, the pixels are not.
+//
 // Decisions: docs/adr/0017-the-invoice-is-a-pdf-and-the-only-invoice.md.
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { pdfFontkit } from './pdfFontkit.js'
+import QRCode from 'qrcode'
 import { isDistancePriced, type FulfilmentMethod, DEFAULT_TIMEZONE, isTimezone } from '@bitetime/shared'
 
 // The status gate is NOT here: it lives in `@bitetime/shared`, because the BROWSER reads it too —
@@ -236,18 +243,22 @@ export function buildInvoice(order: any, merchant: any): InvoiceDoc {
   }
 }
 
-// ── Drawing ───────────────────────────────────────────────────────────────────
+// ── The ticket ────────────────────────────────────────────────────────────────
+//
+// The page IS the ticket: 226pt wide (80mm, the width of a till roll) and as tall as the order
+// needs. That shape is chosen for where this document is actually read — a phone, in a chat —
+// where an A4 sheet arrives as a postage stamp the reader has to pinch open. It also prints
+// scaled-to-fit on A4 and feeds a thermal printer natively.
+//
+// One consequence, accepted: there is no pagination. A forty-line order makes a very long page
+// rather than a second one, exactly as a till roll does.
 
-const PAGE = { width: 595.28, height: 841.89 }
-const MARGIN = 48
-const BOTTOM = 64
+const W = 226
+const PAD = 16
 const INK = rgb(0.09, 0.09, 0.11)
 const MUTED = rgb(0.45, 0.45, 0.48)
 const RULE = rgb(0.82, 0.82, 0.85)
-
-// Where the four columns land. Qty, unit and amount are RIGHT-aligned on these x values so the
-// money forms a column a reader can add up by eye.
-const COL = { item: MARGIN, qty: 396, unit: 470, amount: PAGE.width - MARGIN }
+const WELL = rgb(0.96, 0.96, 0.97)
 
 /**
  * Text as the font can draw it.
@@ -290,158 +301,291 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
   return out
 }
 
-interface Cursor { page: PDFPage; y: number }
-
-function draw(
-  cur: Cursor,
-  text: string,
-  opts: { x: number; size: number; font: PDFFont; color?: typeof INK; align?: 'left' | 'right' },
-) {
-  const body = clean(text)
-  if (!body) return
-  const x = opts.align === 'right' ? opts.x - opts.font.widthOfTextAtSize(body, opts.size) : opts.x
-  cur.page.drawText(body, { x, y: cur.y, size: opts.size, font: opts.font, color: opts.color ?? INK })
+/**
+ * The address the QR code carries: this order's own lookup, with the number already filled in.
+ *
+ * It stops at the number ON PURPOSE. The phone is not in the link and must not be: a ticket is
+ * forwarded, photographed and left on counters, and a link that fetched the document by itself
+ * would make the paper the credential. Scanning gets the reader to the right form; proving the
+ * order is still theirs to do (ADR 0018).
+ */
+export function invoiceQrUrl(order: any, merchant: any, frontendUrl: string): string {
+  const base = String(frontendUrl ?? '').replace(/\/+$/, '')
+  const shop = encodeURIComponent(String(merchant?.slug ?? ''))
+  const number = encodeURIComponent(String(order?.order_number ?? ''))
+  return `${base}/invoice?shop=${shop}&order=${number}`
 }
 
 /**
- * One order, as a document the customer can keep.
+ * A layout op: draw something at `dy` points below the block's own top.
  *
- * Pagination is real, not decorative: a shop selling boxed sets can write a forty-line order, and
- * a document that ran off the bottom of page one would drop the total — the one number the
- * customer came for.
+ * The ticket's height is not known until its contents are measured, and a page cannot be resized
+ * once drawn into. So each block reports its height and defers its drawing — the page is created
+ * at the summed height, and every op then runs against a known top. Measuring and drawing in one
+ * pass, with the numbers written twice, is how the two come to disagree.
  */
-export async function renderInvoicePdf(order: any, merchant: any, fontBytes: Uint8Array): Promise<Uint8Array> {
+interface Block { height: number; draw: (page: PDFPage, top: number) => void }
+
+interface Ctx { font: PDFFont }
+
+const text = (
+  page: PDFPage, body: string, x: number, y: number,
+  opts: { size: number; font: PDFFont; color?: ReturnType<typeof rgb>; align?: 'left' | 'center' | 'right' },
+) => {
+  const value = clean(body)
+  if (!value) return
+  const w = opts.font.widthOfTextAtSize(value, opts.size)
+  const left = opts.align === 'right' ? x - w : opts.align === 'center' ? x - w / 2 : x
+  page.drawText(value, { x: left, y, size: opts.size, font: opts.font, color: opts.color ?? INK })
+}
+
+/** A label above its value — the mock's "TICKET ID / 0120077…" pair, ours in two columns. */
+function pairRow(ctx: Ctx, left: [string, string], right?: [string, string]): Block {
+  return {
+    height: 30,
+    draw(page, top) {
+      text(page, left[0].toUpperCase(), PAD, top - 8, { size: 6.5, font: ctx.font, color: MUTED })
+      text(page, left[1], PAD, top - 22, { size: 10, font: ctx.font })
+      if (!right) return
+      text(page, right[0].toUpperCase(), W - PAD, top - 8, { size: 6.5, font: ctx.font, color: MUTED, align: 'right' })
+      text(page, right[1], W - PAD, top - 22, { size: 10, font: ctx.font, align: 'right' })
+    },
+  }
+}
+
+/** A label and a wrapped value stacked, for the long ones: the address, the shop's own address. */
+function stackRow(ctx: Ctx, label: string, value: string): Block | null {
+  const lines = wrap(value, ctx.font, 9, W - PAD * 2)
+  if (lines.length === 0) return null
+  return {
+    height: 12 + lines.length * 11 + 6,
+    draw(page, top) {
+      text(page, label.toUpperCase(), PAD, top - 8, { size: 6.5, font: ctx.font, color: MUTED })
+      lines.forEach((line, i) => text(page, line, PAD, top - 20 - i * 11, { size: 9, font: ctx.font }))
+    },
+  }
+}
+
+/**
+ * The perforation: a dashed rule with a notch bitten out of each edge.
+ *
+ * The notches are what make a rectangle read as a TICKET rather than a table, and they are drawn
+ * as filled circles in the viewer's own white rather than as arcs — the page is the ticket, so
+ * "outside the edge" is not somewhere anything else is drawn.
+ */
+function perforation(): Block {
+  return {
+    height: 18,
+    draw(page, top) {
+      const y = top - 9
+      page.drawLine({
+        start: { x: PAD + 6, y }, end: { x: W - PAD - 6, y },
+        thickness: 0.7, color: RULE, dashArray: [3, 3],
+      })
+      for (const cx of [0, W]) {
+        page.drawCircle({ x: cx, y, size: 6, color: rgb(1, 1, 1), borderColor: RULE, borderWidth: 0.7 })
+      }
+    },
+  }
+}
+
+const gap = (height: number): Block => ({ height, draw: () => {} })
+
+/** The shop's name and what this piece of paper is. */
+function header(ctx: Ctx, doc: InvoiceDoc): Block {
+  const nameLines = wrap(doc.shopName, ctx.font, 15, W - PAD * 2)
+  return {
+    height: 26 + nameLines.length * 19 + 16,
+    draw(page, top) {
+      // The word first, small and muted: a reader who is holding six of these needs to know what
+      // it is before they need to know whose it is.
+      text(page, 'INVOICE', W / 2, top - 20, { size: 7.5, font: ctx.font, color: MUTED, align: 'center' })
+      nameLines.forEach((line, i) => (
+        text(page, line, W / 2, top - 40 - i * 19, { size: 15, font: ctx.font, align: 'center' })
+      ))
+    },
+  }
+}
+
+/** One ordered line: the name and its amount, then what was chosen, then the unit maths. */
+function itemRow(ctx: Ctx, line: InvoiceLine): Block {
+  const NAME = 12, OPTION = 9.5, UNIT = 11, TAIL = 7
+  const nameLines = wrap(line.name, ctx.font, 9.5, W - PAD * 2 - 54)
+  const optionLines = line.options ? wrap(line.options, ctx.font, 7.5, W - PAD * 2 - 12) : []
+
+  return {
+    height: nameLines.length * NAME + optionLines.length * OPTION + UNIT + TAIL,
+    draw(page, top) {
+      // ONE cursor, moving down and never back up. The earlier version positioned the unit line
+      // relative to the name block and the options relative to the unit line, and the two
+      // arithmetics disagreed the moment a name wrapped — printing the maths through the name.
+      let y = top - 9
+      nameLines.forEach((l, i) => text(page, l, PAD, y - i * NAME, { size: 9.5, font: ctx.font }))
+      // The amount sits on the FIRST line of a wrapped name, where the eye looks for it.
+      text(page, line.amountText, W - PAD, y, { size: 9.5, font: ctx.font, align: 'right' })
+      y -= nameLines.length * NAME
+
+      optionLines.forEach((l, i) => (
+        text(page, l, PAD + 8, y - i * OPTION, { size: 7.5, font: ctx.font, color: MUTED })
+      ))
+      y -= optionLines.length * OPTION
+
+      text(page, `${line.qty} × ${line.unitText}`, PAD, y, { size: 7.5, font: ctx.font, color: MUTED })
+    },
+  }
+}
+
+/** Subtotal, fee, voucher and tax in quiet type; the total in the size the reader came for. */
+function moneyRows(ctx: Ctx, doc: InvoiceDoc): Block {
+  const minor = doc.money.filter(r => !r.strong)
+  const total = doc.money.find(r => r.strong)
+  return {
+    height: minor.length * 13 + 30,
+    draw(page, top) {
+      minor.forEach((row, i) => {
+        const y = top - 9 - i * 13
+        text(page, row.label, PAD, y, { size: 8.5, font: ctx.font, color: MUTED })
+        text(page, row.text, W - PAD, y, { size: 8.5, font: ctx.font, color: MUTED, align: 'right' })
+      })
+      if (!total) return
+      const y = top - 9 - minor.length * 13 - 12
+      text(page, 'TOTAL', PAD, y, { size: 9, font: ctx.font })
+      text(page, total.text, W - PAD, y - 2, { size: 15, font: ctx.font, align: 'right' })
+    },
+  }
+}
+
+/** The shop's payment instructions, in the well the mock gives the card chip. */
+function paymentWell(ctx: Ctx, doc: InvoiceDoc): Block | null {
+  if (doc.payment.length === 0) return null
+  const lines = doc.payment.flatMap(p => wrap(p, ctx.font, 8, W - PAD * 2 - 20))
+  return {
+    height: lines.length * 11 + 34,
+    draw(page, top) {
+      const boxHeight = lines.length * 11 + 22
+      page.drawRectangle({
+        x: PAD, y: top - boxHeight, width: W - PAD * 2, height: boxHeight,
+        color: WELL, borderColor: RULE, borderWidth: 0.5,
+      })
+      text(page, 'PAYMENT', PAD + 10, top - 13, { size: 6.5, font: ctx.font, color: MUTED })
+      lines.forEach((line, i) => text(page, line, PAD + 10, top - 25 - i * 11, { size: 8, font: ctx.font }))
+    },
+  }
+}
+
+/**
+ * The QR block, drawn as VECTOR squares rather than an embedded image.
+ *
+ * One module is one filled rectangle, so the code stays sharp at any zoom and on any printer, and
+ * the whole block costs a few hundred bytes instead of a raster. It carries a quiet zone of four
+ * modules, which is what makes a scanner find it against the page.
+ */
+function qrBlock(ctx: Ctx, url: string, orderNumber: string): Block {
+  const matrix = QRCode.create(url, { errorCorrectionLevel: 'M' })
+  const size = matrix.modules.size
+  const data = matrix.modules.data
+  const box = 108
+  const quiet = 4
+  const module = box / (size + quiet * 2)
+
+  return {
+    height: box + 34,
+    draw(page, top) {
+      const originX = (W - box) / 2 + quiet * module
+      const originY = top - box + quiet * module
+      for (let row = 0; row < size; row += 1) {
+        for (let col = 0; col < size; col += 1) {
+          if (!data[row * size + col]) continue
+          page.drawRectangle({
+            x: originX + col * module,
+            // The matrix reads top-down and the page counts up from its foot, so the row index is
+            // mirrored. Getting this wrong yields a code that scans to nothing.
+            y: originY + (size - 1 - row) * module,
+            width: module, height: module, color: INK,
+          })
+        }
+      }
+      // The order number under the code, the way the mock prints digits under its barcode: it is
+      // what a reader types when a camera will not focus, and a wrapped URL is only noise.
+      text(page, 'Scan to get this invoice again', W / 2, top - box - 10, {
+        size: 7, font: ctx.font, color: MUTED, align: 'center',
+      })
+      text(page, orderNumber, W / 2, top - box - 22, { size: 8, font: ctx.font, align: 'center' })
+    },
+  }
+}
+
+/** The scalloped foot: the ticket's torn edge, as in the mock. */
+function scallops(): Block {
+  return {
+    height: 14,
+    draw(page, top) {
+      const radius = 7
+      for (let x = radius; x < W; x += radius * 2.4) {
+        page.drawCircle({ x, y: top - 12, size: radius, color: rgb(1, 1, 1), borderColor: RULE, borderWidth: 0.6 })
+      }
+      page.drawRectangle({ x: 0, y: top - 20, width: W, height: 8, color: rgb(1, 1, 1) })
+    },
+  }
+}
+
+/**
+ * One order, as a ticket the customer can keep.
+ *
+ * The font arrives as a parameter for the same reason the Claude adapters take their API key as
+ * one: it keeps this module free of `env.ts` and lets a unit test render a real PDF with no
+ * environment at all. `frontendUrl` rides along because the QR code has to name a real host, and
+ * this module must not be the thing that knows which.
+ */
+export async function renderInvoicePdf(
+  order: any,
+  merchant: any,
+  opts: { font: Uint8Array; frontendUrl: string },
+): Promise<Uint8Array> {
   const doc = buildInvoice(order, merchant)
   const pdf = await PDFDocument.create()
   pdf.registerFontkit(pdfFontkit)
-  // Subset on embed: the face is ~17MB and the emitted document is tens of KB, because only the
-  // glyphs this order actually uses travel with it. `pdfFontkit`, not `@pdf-lib/fontkit` — the
-  // latter subsets this font to empty glyphs, silently. See that module.
-  const font = await pdf.embedFont(fontBytes, { subset: true })
+  // Subset on embed: the face is 7MB and the emitted document is ~10KB, because only the glyphs
+  // this order actually uses travel with it. `pdfFontkit`, not `@pdf-lib/fontkit` — the latter
+  // subsets this font to empty glyphs, silently. See that module.
+  const font = await pdf.embedFont(opts.font, { subset: true })
 
   pdf.setTitle(`Invoice ${doc.orderNumber}`)
   pdf.setProducer('TinyOrder')
   pdf.setCreator('TinyOrder')
 
-  let cur: Cursor = { page: pdf.addPage([PAGE.width, PAGE.height]), y: PAGE.height - MARGIN }
+  const ctx: Ctx = { font }
 
-  const rule = () => {
-    cur.page.drawLine({
-      start: { x: MARGIN, y: cur.y },
-      end: { x: PAGE.width - MARGIN, y: cur.y },
-      thickness: 0.5,
-      color: RULE,
-    })
-  }
+  const blocks: (Block | null)[] = [
+    header(ctx, doc),
+    stackRow(ctx, 'From', doc.shopAddress),
+    perforation(),
+    pairRow(ctx, ['Order no.', doc.orderNumber], [
+      'Amount', doc.money.find(r => r.strong)?.text ?? '',
+    ]),
+    pairRow(ctx, ['Date & time', doc.placed], doc.fulfilDate ? ['For', doc.fulfilDate] : undefined),
+    pairRow(ctx, ['Method', doc.method], undefined),
+    stackRow(ctx, 'Billed to', doc.customerName),
+    stackRow(ctx, 'Address', doc.address),
+    perforation(),
+    ...doc.lines.map(line => itemRow(ctx, line)),
+    gap(4),
+    moneyRows(ctx, doc),
+    gap(6),
+    paymentWell(ctx, doc),
+    perforation(),
+    qrBlock(ctx, invoiceQrUrl(order, merchant, opts.frontendUrl), doc.orderNumber),
+    scallops(),
+  ]
 
-  const columnHeader = () => {
-    draw(cur, 'ITEM', { x: COL.item, size: 8, font, color: MUTED })
-    draw(cur, 'QTY', { x: COL.qty, size: 8, font, color: MUTED, align: 'right' })
-    draw(cur, 'UNIT', { x: COL.unit, size: 8, font, color: MUTED, align: 'right' })
-    draw(cur, 'AMOUNT', { x: COL.amount, size: 8, font, color: MUTED, align: 'right' })
-    cur.y -= 6
-    rule()
-    cur.y -= 14
-  }
+  const live = blocks.filter((b): b is Block => b !== null)
+  const height = live.reduce((sum, b) => sum + b.height, 0) + PAD
+  const page = pdf.addPage([W, height])
 
-  /** Start a new page when `needed` points of content would not fit, repeating the column
-   *  header so page two is still readable as a table. */
-  const ensure = (needed: number, repeatHeader = false) => {
-    if (cur.y - needed >= BOTTOM) return
-    cur = { page: pdf.addPage([PAGE.width, PAGE.height]), y: PAGE.height - MARGIN }
-    if (repeatHeader) columnHeader()
-  }
-
-  // ── Header ──
-  draw(cur, doc.shopName, { x: MARGIN, size: 16, font })
-  draw(cur, 'INVOICE', { x: COL.amount, size: 16, font, color: MUTED, align: 'right' })
-  cur.y -= 15
-  for (const line of wrap(doc.shopAddress, font, 9, 300)) {
-    draw(cur, line, { x: MARGIN, size: 9, font, color: MUTED })
-    cur.y -= 12
-  }
-  cur.y -= 10
-  rule()
-  cur.y -= 18
-
-  // ── The order, and who it is for ──
-  const detail = (label: string, value: string) => {
-    if (!value) return
-    ensure(28)
-    draw(cur, label.toUpperCase(), { x: MARGIN, size: 8, font, color: MUTED })
-    const lines = wrap(value, font, 10, PAGE.width - MARGIN - 150)
-    for (const line of lines) {
-      draw(cur, line, { x: MARGIN + 96, size: 10, font })
-      cur.y -= 13
-    }
-    // A value that wrapped to nothing still consumed its label's row.
-    if (lines.length === 0) cur.y -= 13
-  }
-
-  detail('Order no.', doc.orderNumber)
-  detail('Placed', doc.placed)
-  detail('Method', doc.method)
-  detail('Date', doc.fulfilDate)
-  detail('Billed to', doc.customerName)
-  detail('Address', doc.address)
-
-  cur.y -= 8
-  columnHeader()
-
-  // ── Lines ──
-  for (const line of doc.lines) {
-    const nameLines = wrap(line.name, font, 10, COL.qty - COL.item - 24)
-    const optionLines = line.options ? wrap(line.options, font, 8.5, COL.qty - COL.item - 36) : []
-    ensure(nameLines.length * 13 + optionLines.length * 11 + 8, true)
-
-    const top = cur.y
-    nameLines.forEach((l, i) => {
-      draw(cur, l, { x: COL.item, size: 10, font })
-      if (i < nameLines.length - 1) cur.y -= 13
-    })
-    // Qty, unit and amount sit on the FIRST line of a wrapped name, where the eye expects them.
-    const back = cur.y
-    cur.y = top
-    draw(cur, String(line.qty), { x: COL.qty, size: 10, font, align: 'right' })
-    draw(cur, line.unitText, { x: COL.unit, size: 10, font, align: 'right' })
-    draw(cur, line.amountText, { x: COL.amount, size: 10, font, align: 'right' })
-    cur.y = back - 13
-
-    for (const l of optionLines) {
-      draw(cur, l, { x: COL.item + 12, size: 8.5, font, color: MUTED })
-      cur.y -= 11
-    }
-    cur.y -= 3
-  }
-
-  // ── Money ──
-  ensure(doc.money.length * 16 + 24, true)
-  cur.y -= 4
-  rule()
-  cur.y -= 16
-  for (const row of doc.money) {
-    const size = row.strong ? 12 : 10
-    if (row.strong) {
-      cur.y -= 4
-      rule()
-      cur.y -= 16
-    }
-    draw(cur, row.label, { x: COL.unit, size, font, color: row.strong ? INK : MUTED, align: 'right' })
-    draw(cur, row.text, { x: COL.amount, size, font, align: 'right' })
-    cur.y -= 16
-  }
-
-  // ── Payment instructions ──
-  if (doc.payment.length > 0) {
-    const block = doc.payment.flatMap((p) => wrap(p, font, 9, PAGE.width - MARGIN * 2))
-    ensure(block.length * 12 + 30)
-    cur.y -= 12
-    draw(cur, 'PAYMENT', { x: MARGIN, size: 8, font, color: MUTED })
-    cur.y -= 14
-    for (const line of block) {
-      draw(cur, line, { x: MARGIN, size: 9, font, color: MUTED })
-      cur.y -= 12
-    }
+  let top = height
+  for (const block of live) {
+    block.draw(page, top)
+    top -= block.height
   }
 
   return pdf.save()

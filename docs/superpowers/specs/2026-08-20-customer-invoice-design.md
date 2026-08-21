@@ -40,6 +40,12 @@ anything — and the merchant can send one anyway when asked.
 
 Title **Invoice**, filename `Invoice-<order_number>.pdf`, PDF document title `Invoice <order_number>`.
 
+The page is a **ticket, 226pt wide** (80mm) and as tall as the order needs — one page, never
+paginated. Blocks run: header (INVOICE over the shop name), the shop's address, a perforation, the
+order pairs (number/amount, placed/for, method), billed-to and delivery address, a perforation, the
+item lines, the money block with the total in 15pt, the payment well, a perforation, and the QR
+block over a scalloped foot.
+
 | Block | Content |
 |---|---|
 | Header | shop name, shop address (`pickup_address ?? origin_address`, omitted when neither), `Invoice`, order number, placed date-time |
@@ -126,7 +132,7 @@ The font ships as `src/assets/NotoSansSC.ttf` and the build script copies it to 
 `invoiceFont.ts` reads it relative to `import.meta.url`, so dev, Vitest and the bundle all take one
 path. `tests/unit/invoiceFont.test.ts` pins the copy step.
 
-Backend build gains two `--external:` flags (`pdf-lib`, `fontkit`) — CLAUDE.md's rule: a new backend
+Backend build gains three `--external:` flags (`pdf-lib`, `fontkit`, `qrcode`) — CLAUDE.md's rule: a new backend
 runtime dependency without its flag gets bundled.
 
 The face is a static weight-400 instance, trimmed to Latin + punctuation + currency + the CJK
