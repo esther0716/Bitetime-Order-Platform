@@ -23,9 +23,7 @@ import WaLink from '../WaLink'
 import InvoiceButton from '../../components/InvoiceButton'
 import SendInvoiceOnWa from '../SendInvoiceOnWa'
 import { ItemSelections } from '../../ItemSelections'
-
-// 11px semibold uppercase rose-muted label.
-const LBL = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground shrink-0'
+import DrawerCard, { LBL } from './DrawerCard'
 
 // A labelled key/value line in the detail sheet — label in a fixed left column,
 // value aligned in the right column so rows scan like a receipt.
@@ -35,17 +33,6 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
       <span className={LBL}>{label}</span>
       <span className="min-w-0 break-words text-foreground">{children}</span>
     </div>
-  )
-}
-
-// A visually separated group in the detail sheet. Sections after the first get a
-// top divider + spacing; an optional caption heads the group.
-function Section({ title, children }: { title?: string; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col gap-2 pt-4 mt-4 border-t border-muted first:pt-0 first:mt-0 first:border-t-0">
-      {title && <span className={LBL}>{title}</span>}
-      {children}
-    </section>
   )
 }
 
@@ -163,10 +150,19 @@ export default function OrderDetailSheet({
 
   return (
     <Sheet open={order !== null} onOpenChange={open => { if (!open) { onClose(); setDrawerFor(undefined) } }}>
-      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+      {/* `data-[side=right]:sm:max-w-[680px]`, not a bare `sm:max-w-[680px]`: the base
+          SheetContent already carries `data-[side=right]:sm:max-w-sm`, and a plain utility
+          has one variant against its two, so Tailwind orders it FIRST and the base wins.
+          Matching the variant lets tailwind-merge drop the base one instead.
+          `gap-0` and `overflow-hidden` undo the base popup's `gap-4` and let the body be the
+          only thing that scrolls. */}
+      <SheetContent
+        side="right"
+        className="w-full data-[side=right]:sm:max-w-[680px] gap-0 overflow-hidden"
+      >
         {order && (
           <>
-            <SheetHeader className="border-b border-muted">
+            <SheetHeader className="shrink-0 border-b border-border pr-9">
               <div className="flex items-center gap-[10px] flex-wrap">
                 <SheetTitle className="text-[15px]">{order.order_number || '—'}</SheetTitle>
                 {/* The number is what a merchant reads back to a customer on the phone or pastes
@@ -215,18 +211,18 @@ export default function OrderDetailSheet({
               )}
             </SheetHeader>
 
-            <div className="flex flex-col px-4 pb-4">
+            <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col gap-3 p-3 sm:p-4">
               {/* Customer */}
-              <Section title={t('Customer', '顾客')}>
+              <DrawerCard title={t('Customer', '顾客')}>
                 <span className="text-[14px] font-medium text-foreground">{order.customer_name || '—'}</span>
                 {order.customer_wa && (
                   <span className="text-[13px] w-fit"><WaLink wa={order.customer_wa} /></span>
                 )}
-              </Section>
+              </DrawerCard>
 
               {/* Payment proof — the customer's own screenshot, if they uploaded one */}
               {order.payment_proof && (
-                <Section title={t('Payment proof', '付款凭证')}>
+                <DrawerCard title={t('Payment proof', '付款凭证')}>
                   {proofUrl ? (
                     <a href={proofUrl} target="_blank" rel="noopener noreferrer" className="block w-full max-w-[200px]">
                       <img
@@ -238,11 +234,11 @@ export default function OrderDetailSheet({
                   ) : (
                     <span className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</span>
                   )}
-                </Section>
+                </DrawerCard>
               )}
 
               {/* Items + totals */}
-              <Section title={t('Items', '商品')}>
+              <DrawerCard title={t('Items', '商品')}>
                 <ul className="flex flex-col gap-1.5">
                   {(order.items ?? []).map((it: any, i: number) => (
                     // Index key, deliberately not id: a split promo puts two lines with the
@@ -300,10 +296,10 @@ export default function OrderDetailSheet({
                     <span className="tabular-nums text-primary">{formatMoney(order.total, orderCurrency)}</span>
                   </div>
                 </div>
-              </Section>
+              </DrawerCard>
 
               {/* Fulfilment */}
-              <Section title={t('Fulfilment', '配送')}>
+              <DrawerCard title={t('Fulfilment', '配送')}>
                 <DetailRow label={t('Mode', '方式')}>{fulfilmentLabel(order.mode, t)}</DetailRow>
                 {order.region && <DetailRow label={t('Region', '地区')}>{order.region}</DetailRow>}
                 {order.address && <DetailRow label={t('Address', '地址')}>{formatAddress(order.address)}</DetailRow>}
@@ -320,11 +316,11 @@ export default function OrderDetailSheet({
                 {!(order.mode === 'delivery' && !readOnly) && order.awb && (
                   <DetailRow label={t('AWB', '运单号')}>{order.awb}</DetailRow>
                 )}
-              </Section>
+              </DrawerCard>
 
               {/* Delivery tracking — merchant enters courier + AWB (delivery orders only) */}
               {order.mode === 'delivery' && !readOnly && (
-                <Section title={t('Delivery tracking', '物流追踪')}>
+                <DrawerCard title={t('Delivery tracking', '物流追踪')}>
                   <div className="flex flex-col gap-1">
                     <label className={LBL} htmlFor={`courier-${order.id}`}>{t('Courier', '快递公司')}</label>
                     <Select
@@ -373,20 +369,20 @@ export default function OrderDetailSheet({
                   >
                     {savingTrack ? t('Saving…', '保存中…') : t('Save tracking', '保存物流')}
                   </Button>
-                </Section>
+                </DrawerCard>
               )}
 
               {/* Note — editable for the live merchant view, read-only when suspended */}
               {readOnly ? (
                 order.note && (
-                  <Section title={t('Note', '备注')}>
+                  <DrawerCard title={t('Note', '备注')}>
                     <p className="rounded-md bg-background border border-border px-3 py-2 text-[13px] text-foreground break-words">
                       {order.note}
                     </p>
-                  </Section>
+                  </DrawerCard>
                 )
               ) : (
-                <Section title={t('Note', '备注')}>
+                <DrawerCard title={t('Note', '备注')}>
                   <Textarea
                     value={noteDraft}
                     onChange={e => setNoteDraft(e.target.value)}
@@ -403,12 +399,12 @@ export default function OrderDetailSheet({
                   >
                     {savingNote ? t('Saving…', '保存中…') : t('Save note', '保存备注')}
                   </Button>
-                </Section>
+                </DrawerCard>
               )}
 
               {/* Status control */}
               {!readOnly && (
-                <Section title={t('Status', '状态')}>
+                <DrawerCard title={t('Status', '状态')}>
                   <Select
                     value={order.status || 'new'}
                     // `if (v)` rather than `?? ` — this handler writes to the database, so a
@@ -425,7 +421,7 @@ export default function OrderDetailSheet({
                       ))}
                     </SelectContent>
                   </Select>
-                </Section>
+                </DrawerCard>
               )}
             </div>
           </>
