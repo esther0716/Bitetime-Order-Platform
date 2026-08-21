@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { COURIERS, trackingUrl, courierName } from '../couriers'
 import { ORDER_STATUSES, STATUS_LABELS, StatusBadge } from '../orderStatus'
 import { fulfilmentLabel } from '../fulfilmentLabel'
+import { canIssueInvoice } from '@bitetime/shared'
 import WaLink from './WaLink'
 import InvoiceButton from '../components/InvoiceButton'
 import SendInvoiceOnWa from './SendInvoiceOnWa'
@@ -184,25 +185,33 @@ export default function OrderDetailSheet({
                 <StatusBadge status={order.status || 'new'} t={t} />
               </div>
               <span className="text-[12px] text-muted-foreground">{fmtDateTime(order.created_at)}</span>
-              {/* The merchant's own copy, for the customer who asks them directly rather than
-                  using the invoice link. The SAME bytes that customer would have fetched — a
-                  shop and its customer must never hold two different papers for one order. */}
-              <InvoiceButton
-                status={order.status}
-                orderNumber={order.order_number}
-                fetcher={() => fetchOrderInvoice(merchant!.id, order.id)}
-                className="text-[13px] w-fit"
-              />
-              {/* The other way the same paper reaches the same customer: a WhatsApp message the
-                  merchant presses send on. It carries the LINK to that customer's own invoice
-                  door, never the file — see `invoiceShare.ts`. Merchant-side only. */}
-              {!readOnly && (
-                <SendInvoiceOnWa
-                  status={order.status}
-                  orderNumber={order.order_number}
-                  customerWa={order.customer_wa}
-                  customerName={order.customer_name}
-                />
+              {/* ONE row for the two ways one paper reaches one customer: the merchant downloads
+                  it themselves, or sends the customer the link to fetch their own. The word
+                  "invoice" is said ONCE, by the label — spelled out in both buttons it filled two
+                  lines of a header that is mostly an order number. `canIssueInvoice` gates the
+                  whole row, label included: the same shared rule each button applies on its own,
+                  hoisted so an un-invoiceable order shows no orphaned caption. */}
+              {canIssueInvoice(order.status) && (
+                <div className="flex items-center gap-4 flex-wrap">
+                  <span className={LBL}>{t('Invoice', '账单')}</span>
+                  <InvoiceButton
+                    status={order.status}
+                    orderNumber={order.order_number}
+                    fetcher={() => fetchOrderInvoice(merchant!.id, order.id)}
+                    className="text-[13px]"
+                    label={t('Download', '下载')}
+                  />
+                  {/* A WhatsApp message the merchant presses send on. It carries the LINK to that
+                      customer's own invoice door, never the file — see `invoiceShare.ts`. */}
+                  {!readOnly && (
+                    <SendInvoiceOnWa
+                      status={order.status}
+                      orderNumber={order.order_number}
+                      customerWa={order.customer_wa}
+                      customerName={order.customer_name}
+                    />
+                  )}
+                </div>
               )}
             </SheetHeader>
 

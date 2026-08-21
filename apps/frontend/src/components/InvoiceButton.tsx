@@ -26,12 +26,20 @@ export default function InvoiceButton({
   fetcher,
   variant = 'link',
   className,
+  label,
 }: {
   status: string | null | undefined
   orderNumber: string | null | undefined
   fetcher: () => Promise<Result<{ blob: Blob; filename: string | null }>>
   variant?: 'link' | 'soft'
   className?: string
+  /**
+   * Overrides the label ONLY. The default says the whole thing, because a customer meeting this
+   * in their own order history has nothing else on screen naming what downloads. The merchant's
+   * sheet passes a short one — its row is already headed INVOICE, and saying the word twice on
+   * one line is what made that header read as a wall of text.
+   */
+  label?: string
 }) {
   const { t } = useSession()
   const [busy, setBusy] = useState(false)
@@ -64,7 +72,7 @@ export default function InvoiceButton({
       {busy
         ? <Loader2 size={14} strokeWidth={1.5} className="animate-spin" aria-hidden />
         : <Download size={14} strokeWidth={1.5} aria-hidden />}
-      {t('Download invoice', '下载账单')}
+      {label ?? t('Download invoice', '下载账单')}
     </Button>
   )
 }

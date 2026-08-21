@@ -1,8 +1,8 @@
-import { MessageCircle } from 'lucide-react'
 import { canIssueInvoice } from '@bitetime/shared'
 import { useSession } from '../SessionContext'
 import { invoiceLookupUrl, invoiceWaMessage, invoiceWaShareHref } from '../invoiceShare'
 import { Button } from '../components/ui/button'
+import WhatsAppGlyph from '../components/WhatsAppGlyph'
 
 /**
  * "Send invoice on WhatsApp", on the merchant's order sheet.
@@ -49,10 +49,19 @@ export default function SendInvoiceOnWa({
       // Same one-line row as `InvoiceButton` beside it: `size="none"` clears the shared button's
       // own flex, so an inline icon + label has to be stated here or the icon stacks above.
       className="inline-flex items-center gap-1.5 text-[13px] w-fit"
-      render={<a href={href} target="_blank" rel="noopener noreferrer" />}
+      render={(
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t('Send the invoice on WhatsApp', '通过 WhatsApp 发送账单')}
+        />
+      )}
     >
-      <MessageCircle size={14} strokeWidth={1.5} aria-hidden />
-      {t('Send invoice on WhatsApp', '通过 WhatsApp 发送账单')}
+      <WhatsAppGlyph />
+      {/* One word, because the INVOICE label above already names the subject and the icon names
+          the app. `aria-label` carries the whole sentence for a reader that meets the link alone. */}
+      {t('WhatsApp', 'WhatsApp')}
     </Button>
   )
 }
