@@ -130,6 +130,7 @@ The repository already nests `analytics/`, `pixels/` and `store/` this way.
 | File | Owns |
 |------|------|
 | `OrderDetailSheet.tsx` | The `Sheet`, the note/courier/AWB drafts, the three save handlers, and the header/body/footer frame. |
+| `DrawerCard.tsx` | The white card itself — a title row, a body, and an optional footer for the card's own save button. |
 | `OrderHeader.tsx` | Number, copy, chips, dates, invoice actions and the `⋯` menu. |
 | `ItemsCard.tsx` | The line items. |
 | `PaymentCard.tsx` | The totals and the payment proof, including the proof fetch effect. |
