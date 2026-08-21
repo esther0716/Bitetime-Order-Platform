@@ -70,7 +70,9 @@ describe('voucherErrorText', () => {
   it('says which refusal it was', () => {
     expect(voucherErrorText('invalid', en)).toContain('Invalid')
     expect(voucherErrorText('fully_used', en)).toContain('fully redeemed')
-    expect(voucherErrorText('already_used', en)).toContain('already used')
+    expect(voucherErrorText('customer_limit_reached', en)).toContain('as many times as allowed')
+    expect(voucherErrorText('expired', en)).toContain('expired')
+    expect(voucherErrorText('min_order', en)).toContain('minimum')
   })
 
   it('says nothing for a code it does not know', () => {

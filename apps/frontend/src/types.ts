@@ -244,17 +244,27 @@ export interface Voucher {
   /**
    * The redeemer keys — account email addresses. The API no longer sends this on ANY route, so in
    * the browser it is always absent; the field survives for the legacy single-tenant shape only.
-   * Read `usedCount` / `fullyUsed` / `alreadyUsed` instead.
+   * Read `usedCount` / `fullyUsed` / `customerLimitReached` instead.
    */
   usedBy?: string[]
   /** How many redemptions the code has taken. Server-derived. */
   usedCount?: number
   /** The shop's total cap is spent. Server-derived. */
   fullyUsed?: boolean
-  /** This caller has already redeemed it. Server-derived from their own verified email; absent
-   *  when they presented none. */
-  alreadyUsed?: boolean
+  /** This caller has spent their own allowance. Server-derived from their own verified email;
+   *  absent when they presented none. */
+  customerLimitReached?: boolean
   maxUses?: number | string | null
+  /** How many times ONE customer may redeem it. null = unlimited; the column defaults to 1. */
+  perCustomerLimit?: number | null
+  /** An ISO instant — the last millisecond of the merchant's chosen day, on the shop's clock. */
+  expiresAt?: string | null
+  /** The shop-local DATE that instant ends. What the dashboard form shows back. */
+  expiresOn?: string | null
+  /** The smallest SUBTOTAL, pre-discount, this voucher applies to. `voucherFromRow` coerces it to
+   *  a number; the string half of the type is what `PricedVoucher` declares, because postgres.js
+   *  hands a `numeric` column back as a string. */
+  minOrder?: number | string | null
   [key: string]: any
 }
 

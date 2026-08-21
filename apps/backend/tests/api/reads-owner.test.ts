@@ -3,6 +3,7 @@
 // perfectly valid token, gets 403 on merchant B's orders/vouchers/billing/secret. admin is
 // RLS-exempt, so requireMerchantOwns is the only thing enforcing this.
 import { describe, it, expect, beforeAll } from 'vitest'
+import { sql } from '../../src/db.js'
 import { app } from '../../src/app.js'
 import { makeUser, seedMerchant, serviceClient } from '../rls/helpers.js'
 
@@ -27,11 +28,16 @@ describe('owner reads', () => {
     aToken = await tokenOf(a)
     bToken = await tokenOf(b)
     // Give shop A one voucher so its list is non-empty — with redeemers, because what the owner
-    // may see of them is itself under test below.
-    await serviceClient().from('vouchers').insert({
+    // may see of them is itself under test below. Seeded in BOTH places: `voucher_redemptions` is
+    // where a redemption lives now (ADR 0019), and `used_by` is the dead column awaiting its drop.
+    const { data: v } = await serviceClient().from('vouchers').insert({
       merchant_id: aId, code: 'OWNERTEST', kind: 'flat', amount: 5, max_uses: 5,
       used_by: ['alice@example.com', 'bob@example.com'],
-    })
+    }).select('id').single()
+    await sql`
+      insert into voucher_redemptions (voucher_id, customer_key)
+      values (${v!.id}, 'alice@example.com'), (${v!.id}, 'bob@example.com')
+    `
   })
 
   it('lets the owner read their orders, count, vouchers, billing, secret', async () => {

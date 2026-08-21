@@ -7,6 +7,7 @@ const ROW = {
   kind: 'percent',
   amount: 20,
   max_uses: 3,
+  per_customer_limit: 1,
   used_by: ['alice@example.com', 'bob@example.com'],
 }
 
@@ -32,16 +33,36 @@ describe('voucherPublicView', () => {
     expect(v.max_uses).toBe(3)
   })
 
-  it('answers already_used from the caller own verified email, case-insensitively', () => {
-    expect(voucherPublicView(ROW, 'ALICE@example.com').already_used).toBe(true)
-    expect(voucherPublicView(ROW, 'carol@example.com').already_used).toBe(false)
+  it('answers customer_limit_reached from the caller own verified email, case-insensitively', () => {
+    expect(voucherPublicView(ROW, 'ALICE@example.com').customer_limit_reached).toBe(true)
+    expect(voucherPublicView(ROW, 'carol@example.com').customer_limit_reached).toBe(false)
   })
 
-  it('omits already_used entirely for a caller with no identity', () => {
+  it('counts against the per-customer limit rather than testing membership', () => {
+    // The rule #241 asked for. Under a limit of 3, a customer holding 2 redemptions is NOT done —
+    // which is exactly what the old membership test got wrong.
+    const reusable = { ...ROW, per_customer_limit: 3, max_uses: null }
+    expect(voucherPublicView(reusable, 'alice@example.com', 2).customer_limit_reached).toBe(false)
+    expect(voucherPublicView(reusable, 'alice@example.com', 3).customer_limit_reached).toBe(true)
+  })
+
+  it('reads a null per_customer_limit as unlimited, never as reached', () => {
+    const unlimited = { ...ROW, per_customer_limit: null, max_uses: 100 }
+    expect(voucherPublicView(unlimited, 'alice@example.com', 99).customer_limit_reached).toBe(false)
+  })
+
+  it('omits customer_limit_reached entirely for a caller with no identity', () => {
     // Absent, not false. A signed-out caller has not been told "no" — they have not been asked,
     // and they cannot redeem at all until they sign in.
-    expect('already_used' in voucherPublicView(ROW, null)).toBe(false)
-    expect('already_used' in voucherPublicView(ROW, '   ')).toBe(false)
+    expect('customer_limit_reached' in voucherPublicView(ROW, null)).toBe(false)
+    expect('customer_limit_reached' in voucherPublicView(ROW, '   ')).toBe(false)
+  })
+
+  it('carries the restrictions the storefront prices and refuses on', () => {
+    const v = voucherPublicView({ ...ROW, expires_at: '2026-08-31T15:59:59.999Z', min_order: '50' }, null)
+    expect(v.expires_at).toBe('2026-08-31T15:59:59.999Z')
+    expect(v.min_order).toBe('50')
+    expect(v.per_customer_limit).toBe(1)
   })
 
   it('reads a null max_uses as unlimited, and 0 as redeemable by nobody', () => {
@@ -73,9 +94,20 @@ describe('voucherMerchantView', () => {
     expect(leaks(v)).toBe(false)
   })
 
-  it('does not leak a redeemer through already_used either', () => {
+  it('does not leak a redeemer through customer_limit_reached either', () => {
     // The merchant view has no caller identity and must not grow one: "has alice redeemed this?"
     // is a question about a person, and the shop boundary says a shop cannot ask it.
-    expect('already_used' in voucherMerchantView(ROW)).toBe(false)
+    expect('customer_limit_reached' in voucherMerchantView(ROW)).toBe(false)
+  })
+
+  it('shows the expiry back as the shop-local date the merchant typed', () => {
+    // Not a slice of the ISO string: east of UTC the instant sits on the previous calendar day.
+    const v = voucherMerchantView({ ...ROW, expires_at: '2026-08-31T15:59:59.999Z' }, 'Asia/Kuala_Lumpur')
+    expect(v.expires_on).toBe('2026-08-31')
+    expect(voucherMerchantView(ROW, 'Asia/Kuala_Lumpur').expires_on).toBeNull()
+  })
+
+  it('prefers a counted redemption total over the used_by length', () => {
+    expect(voucherMerchantView(ROW, 'UTC', 7).used_count).toBe(7)
   })
 })

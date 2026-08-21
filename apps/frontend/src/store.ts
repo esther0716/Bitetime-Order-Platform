@@ -488,12 +488,24 @@ export async function lookupMerchantVoucher(merchantId: string, code: string): P
 // by vouchers_write_own).
 export async function createMerchantVoucher(input: {
   merchantId: string; code: string; kind: string; amount: number; maxUses?: number | null;
+  /** null = unlimited per customer. OMITTED means one each — the safe reading, since unlimited
+   *  is the value that costs the merchant money and must therefore be said out loud. */
+  perCustomerLimit?: number | null;
+  /** A shop-local DATE ('YYYY-MM-DD'). The server resolves it to the instant that day ends. */
+  expiresOn?: string | null;
+  minOrder?: number | null;
 }): Promise<Result<Voucher>> {
   const r = await apiSend<any>(`/api/merchants/${input.merchantId}/vouchers`, 'POST', {
     code: input.code,
     kind: input.kind,
     amount: input.amount,
     maxUses: input.maxUses ?? null,
+    perCustomerLimit: input.perCustomerLimit === undefined ? 1 : input.perCustomerLimit,
+    // A DATE, deliberately, not an instant. Which instant a merchant's chosen day ENDS depends on
+    // the shop's timezone, and the browser must not be the one to decide that — see
+    // apps/backend/src/voucherExpiry.ts.
+    expiresOn: input.expiresOn ?? null,
+    minOrder: input.minOrder ?? null,
   }, { auth: true })
   return mapOk(r, voucherFromRow)
 }

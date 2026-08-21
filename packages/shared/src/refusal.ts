@@ -27,8 +27,23 @@ export type OrderRefusal =
   /** The shop exists but is not `active` — pending approval, or suspended. */
   | 'merchant_inactive'
   | 'voucher_not_found'
-  | 'voucher_already_used'
+  /**
+   * The caller has spent their own allowance (`per_customer_limit`, default 1).
+   *
+   * Was `voucher_already_used`. That name stopped being true when a merchant could set a limit
+   * above 1: it fires on the fourth attempt at a three-use code, and states something false about
+   * the other three. Same rule that renamed `orderCount` to `bookedOrders`.
+   */
+  | 'voucher_customer_limit_reached'
+  /** The SHOP's total cap (`max_uses`) is spent. Nobody can redeem it. */
   | 'voucher_fully_used'
+  /** The voucher's expiry has passed. Checked under the row lock, not only at pre-flight. */
+  | 'voucher_expired'
+  /**
+   * The basket's subtotal is under the voucher's minimum. Refused rather than priced at a zero
+   * discount, so the customer never burns a redemption for nothing.
+   */
+  | 'voucher_below_minimum'
   /**
    * A voucher's one-per-customer key is the verified JWT's email and nothing else. A guest has
    * no verified identity, so their claim is refused rather than keyed on something they can
@@ -124,8 +139,10 @@ export const REFUSAL_STATUS: Record<OrderRefusal, 400 | 404 | 409 | 500> = {
   merchant_not_found: 404,
   merchant_inactive: 409,
   voucher_not_found: 409,
-  voucher_already_used: 409,
+  voucher_customer_limit_reached: 409,
   voucher_fully_used: 409,
+  voucher_expired: 409,
+  voucher_below_minimum: 409,
   voucher_requires_account: 409,
   price_changed: 409,
   product_unavailable: 409,

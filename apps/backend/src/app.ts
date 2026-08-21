@@ -17,6 +17,8 @@ import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
 import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, bearer, type AppEnv } from './mw.js'
 import { voucherPublicView, voucherMerchantView } from './voucherView.js'
+import { expiryInstant } from './voucherExpiry.js'
+import { redemptionCounts, myRedemptionCount } from './voucherRedemptionsDb.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
@@ -669,10 +671,15 @@ app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, async (c) => {
 app.get('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
   const { data, error } = await admin
-    .from('vouchers').select('id, merchant_id, code, kind, amount, max_uses, used_by, active, created_at')
-    .eq('merchant_id', m.id)
+    .from('vouchers')
+    .select('id, merchant_id, code, kind, amount, max_uses, per_customer_limit, expires_at, min_order, used_by, active, created_at')
+    .eq('merchant_id', m.id).eq('active', true)
   if (error) return c.json({ error: 'Lookup failed' }, 500)
-  return c.json((data ?? []).map(voucherMerchantView))
+  const rows = data ?? []
+  // One grouped count for the whole list, not one query per voucher. `used_by` is still selected
+  // only as `voucherMerchantView`'s fallback until the column is dropped.
+  const counts = await redemptionCounts(rows.map(r => r.id as string))
+  return c.json(rows.map(r => voucherMerchantView(r, m.timezone, counts[r.id as string] ?? 0)))
 })
 
 app.get('/api/merchants/:id/billing', requireMerchantOwns, async (c) => {
@@ -1082,8 +1089,11 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
   // that has stepped down to Basic is told it is not a code rather than being quoted a discount
   // the order transaction will then refuse. Same answer, one screen earlier.
   const { data, error } = await admin
-    .from('vouchers').select('id, code, kind, amount, max_uses, used_by')
+    .from('vouchers')
+    .select('id, code, kind, amount, max_uses, per_customer_limit, expires_at, min_order, used_by')
     .eq('merchant_id', id).eq('code', code)
+    // Also what disambiguates the PARTIAL unique index: a retired row and a live row may share a
+    // code, so a lookup on the string alone would be ambiguous. `maybeSingle` would 500 on it.
     .eq('active', true).maybeSingle()
   // Same contract: 5xx = could-not-ask; 200 null = shop has no such voucher.
   if (error) return c.json({ error: 'Lookup failed' }, 500)
@@ -1094,8 +1104,36 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
   // OWN verified email and only when they present one — auth-optional, because a signed-out
   // customer still needs to see the discount before being asked to sign in.
   const user = await getUserFromToken(bearer(c))
-  return c.json(voucherPublicView(data, user?.email ?? null))
+  const email = (user?.email ?? '').trim().toLowerCase()
+  // Their OWN count, and only theirs — the query is keyed on the email off their verified JWT, so
+  // there is no shape of this request that asks about a stranger.
+  const mine = email ? await myRedemptionCount(data.id as string, email) : undefined
+  return c.json(voucherPublicView(data, user?.email ?? null, mine))
 })
+
+/**
+ * A refused value, distinct from `null` (which means "unbounded" for both of these).
+ *
+ * A sentinel rather than a thrown error because the two callers want to answer 400, and rather
+ * than `undefined` because `undefined` is what an absent field already is.
+ */
+const BAD = Symbol('invalid')
+
+/** An optional whole-number limit: absent/blank/null is unbounded, anything below 1 is refused. */
+function optionalCount(v: unknown): number | null | typeof BAD {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  if (!Number.isInteger(n) || n < 1) return BAD
+  return n
+}
+
+/** An optional money threshold: absent/blank/null is no threshold, negative is refused. */
+function optionalMoney(v: unknown): number | null | typeof BAD {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  if (!Number.isFinite(n) || n < 0) return BAD
+  return n
+}
 
 // Voucher create. The insert goes through `admin` (service_role), so forcing merchant_id
 // from :id (never read from the body) is what stops a crafted body from creating a voucher
@@ -1105,29 +1143,74 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
 // old client-side `input.code.trim().toUpperCase()`.
 app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
+  const m = c.get('merchant')
   const b = await c.req.json().catch(() => ({} as any))
   const code = String(b?.code ?? '').trim().toUpperCase()
   if (!code) return c.json({ error: 'Missing code' }, 400)
+
+  const maxUses = optionalCount(b?.maxUses)
+  // ABSENT is one each; an explicit `null` is unlimited. The two are deliberately not the same
+  // answer: unlimited is the value that costs the merchant money, so it has to be said out loud
+  // rather than arrived at by leaving a field off. `undefined` also has to survive `optionalCount`,
+  // which folds absent onto null for every other limit.
+  const perCustomerLimit = b?.perCustomerLimit === undefined ? 1 : optionalCount(b.perCustomerLimit)
+  if (maxUses === BAD || perCustomerLimit === BAD) return c.json({ error: 'Invalid limit' }, 400)
+
+  // Both unbounded is an unlimited discount for one person — #72 reached through the dashboard
+  // rather than the request body. `vouchers_bounded` refuses it too; this answers with a message
+  // that names the rule instead of a bare 500 out of PostgREST.
+  if (maxUses === null && perCustomerLimit === null) {
+    return c.json({ error: 'unbounded_voucher' }, 400)
+  }
+
+  // The merchant picks a DATE; the column holds an INSTANT — 23:59:59.999 on the SHOP's clock, so
+  // the code covers the whole of the day they chose. The conversion happens HERE and nowhere else,
+  // which is what keeps `@bitetime/shared` ignorant of timezones. A present-but-unparseable date
+  // is refused rather than dropped: a voucher silently created with no expiry is a discount the
+  // merchant believes will stop and does not.
+  const expiresAt = b?.expiresOn == null || b.expiresOn === ''
+    ? null
+    : expiryInstant(b.expiresOn, m.timezone)
+  if (b?.expiresOn && !expiresAt) return c.json({ error: 'Invalid expiry date' }, 400)
+
+  const minOrder = optionalMoney(b?.minOrder)
+  if (minOrder === BAD) return c.json({ error: 'Invalid minimum order' }, 400)
+
   const { data, error } = await admin.from('vouchers').insert({
     merchant_id: id,
     code,
     kind: b?.kind,
     amount: b?.amount,
-    max_uses: b?.maxUses ?? null,
+    max_uses: maxUses,
+    per_customer_limit: perCustomerLimit,
+    expires_at: expiresAt,
+    min_order: minOrder,
   }).select().single()
+  // A duplicate code is the merchant's own mistake and gets its own answer. The index is PARTIAL
+  // (`where active`), so this can only collide with a LIVE voucher — a retired code's string is
+  // free to use again.
+  if (error?.code === '23505') return c.json({ error: 'duplicate_code' }, 409)
   if (error) return c.json({ error: 'Create failed' }, 500)
   // Through the same view as the list, so the dashboard reads ONE voucher shape. A fresh row's
   // `used_by` is empty and leaks nothing today; the point is that it can never start to.
-  return c.json(voucherMerchantView(data))
+  return c.json(voucherMerchantView(data, m.timezone, 0))
 })
 
 // Voucher delete. requireMerchantOwns only proves the caller owns :id — it says nothing
 // about voucherId, so an owner of shop A could otherwise delete shop B's voucher by nesting
 // it under :id = A. Loading the voucher and checking merchant_id === :id before deleting is
 // what closes that hole (Global Constraint 2), mirroring the product DELETE handler above.
+// DEACTIVATE, not delete. A hard delete would take the redemption history with it, and
+// delete-and-recreate was also how a merchant silently reset `used_by`. Every read filters
+// `active`, so the code disappears from the dashboard and stops redeeming — the customer-facing
+// behaviour is identical to what a delete did.
+//
+// The unique index is PARTIAL (`(merchant_id, code) where active`), so retiring a code frees its
+// string: recreating it makes a NEW row with a new id, and the old campaign's redemptions stay
+// attached to the old campaign and count against nobody.
 app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
   const voucherId = c.req.param('voucherId')
-  const { error } = await admin.from('vouchers').delete().eq('id', voucherId)
+  const { error } = await admin.from('vouchers').update({ active: false }).eq('id', voucherId)
   if (error) return c.json({ error: 'Delete failed' }, 500)
   return c.json({ ok: true })
 })

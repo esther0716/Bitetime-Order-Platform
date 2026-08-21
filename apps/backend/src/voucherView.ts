@@ -17,6 +17,8 @@
 // name a person. The customer's own "have I used this?" is answered from the CALLER'S OWN
 // verified email, which they already know, and only when they present one.
 
+import { expiryDate } from './voucherExpiry.js'
+
 /** The columns either view reads. `used_by` is read here and leaves in no response. */
 export interface VoucherRow {
   id?: string
@@ -24,6 +26,9 @@ export interface VoucherRow {
   kind?: string | null
   amount?: number | string | null
   max_uses?: number | null
+  per_customer_limit?: number | null
+  expires_at?: string | null
+  min_order?: number | string | null
   used_by?: unknown
 }
 
@@ -34,22 +39,36 @@ interface VoucherBase {
   kind?: string | null
   amount?: number | string | null
   max_uses?: number | null
+  /** null = unlimited per customer. The column defaults to 1. */
+  per_customer_limit?: number | null
+  /** An ISO instant — the last millisecond of the merchant's chosen day, on the shop's clock. */
+  expires_at?: string | null
+  min_order?: number | string | null
   /** Derived. TRUE when the shop's total cap is spent and nobody can redeem it. */
   fully_used: boolean
 }
 
 export interface VoucherPublicView extends VoucherBase {
   /**
-   * Whether THIS caller has already redeemed it. Absent when the caller presented no verified
-   * identity — a voucher requires an account anyway (`voucher_requires_account`), so a signed-out
-   * customer has nothing to ask about yet.
+   * Whether THIS caller has spent their own allowance. Absent when the caller presented no
+   * verified identity — a voucher requires an account anyway (`voucher_requires_account`), so a
+   * signed-out customer has nothing to ask about yet.
+   *
+   * A COUNT against `per_customer_limit`, not a membership test: since #241 one customer may hold
+   * several redemptions, so "is your key in the list" is the wrong question.
    */
-  already_used?: boolean
+  customer_limit_reached?: boolean
 }
 
 export type VoucherMerchantView = VoucherBase & {
   /** How many redemptions the code has taken. A COUNT, never the keys behind it. */
   used_count: number
+  /**
+   * The shop-local DATE `expires_at` ends, for the form to show back. Derived here because the
+   * merchant must see the date they typed: east of UTC the stored instant sits on the PREVIOUS
+   * calendar day, so a browser slicing the ISO string shows an expiry a day early.
+   */
+  expires_on?: string | null
   /**
    * The owning shop. Not a disclosure — the caller named it in the route and `requireMerchantOwns`
    * proved they own it. It is here because the create response is where the tenancy invariant is
@@ -75,7 +94,19 @@ function keys(row: VoucherRow): string[] {
  */
 function fullyUsed(row: VoucherRow): boolean {
   if (row.max_uses == null) return false
-  return keys(row).length >= row.max_uses
+  return redemptionCount(row) >= row.max_uses
+}
+
+/**
+ * How many redemptions the code has taken.
+ *
+ * `redemptions` — a count read from `voucher_redemptions` — is the authority when the caller has
+ * one. The `used_by` length is the fallback for a caller that has not been given one yet, and it
+ * is why the column is still selected: the two agree, because the migration backfilled the array
+ * verbatim. When `used_by` finally goes, so does the fallback.
+ */
+function redemptionCount(row: VoucherRow, redemptions?: number): number {
+  return redemptions ?? keys(row).length
 }
 
 /**
@@ -84,23 +115,44 @@ function fullyUsed(row: VoucherRow): boolean {
  * follows (#72): a key the client can name is not a key, and here it would also be a way to ask
  * "has alice@example.com used this?" about a stranger.
  */
-export function voucherPublicView(row: VoucherRow, callerEmail: string | null): VoucherPublicView {
+export function voucherPublicView(
+  row: VoucherRow,
+  callerEmail: string | null,
+  /**
+   * This caller's own redemption count, when the caller looked it up. Absent falls back to the
+   * one-per-customer reading of `used_by`, which is the only rule a caller without the count
+   * could have meant.
+   */
+  mine?: number,
+): VoucherPublicView {
   const view: VoucherPublicView = {
     id: row.id,
     code: row.code,
     kind: row.kind,
     amount: row.amount,
     max_uses: row.max_uses,
+    per_customer_limit: row.per_customer_limit,
+    expires_at: row.expires_at,
+    min_order: row.min_order,
     fully_used: fullyUsed(row),
   }
   const email = (callerEmail ?? '').trim().toLowerCase()
-  if (email) view.already_used = keys(row).includes(email)
+  if (email) {
+    const taken = mine ?? (keys(row).includes(email) ? 1 : 0)
+    // A null limit is unlimited, so it is never reached — the same reading `max_uses` gets, and
+    // the reason this tests for `== null` rather than truthiness.
+    view.customer_limit_reached = row.per_customer_limit == null ? false : taken >= row.per_customer_limit
+  }
   return view
 }
 
 /** The merchant's own list. A count of redemptions, and never who made them. */
 export function voucherMerchantView(
   row: VoucherRow & { merchant_id?: string; active?: boolean; created_at?: string },
+  /** The shop's timezone, to render `expires_on`. */
+  tz?: string,
+  /** This code's redemption count, when the caller looked it up. */
+  redemptions?: number,
 ): VoucherMerchantView {
   return {
     id: row.id,
@@ -109,8 +161,12 @@ export function voucherMerchantView(
     kind: row.kind,
     amount: row.amount,
     max_uses: row.max_uses,
+    per_customer_limit: row.per_customer_limit,
+    expires_at: row.expires_at,
+    expires_on: expiryDate(row.expires_at, tz),
+    min_order: row.min_order,
     fully_used: fullyUsed(row),
-    used_count: keys(row).length,
+    used_count: redemptionCount(row, redemptions),
     active: row.active,
     created_at: row.created_at,
   }

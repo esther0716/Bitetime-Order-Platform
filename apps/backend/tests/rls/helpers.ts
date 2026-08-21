@@ -108,6 +108,9 @@ export async function seedMerchant(fields: {
   delivery_rate_per_km?: number
   delivery_max_km?: number | null
   origin_place_id?: string
+  /** The shop's clock. Omitted leaves the column default. Set it when a test asserts on a value
+   *  DERIVED from it — a voucher expiry resolves the merchant's date against this zone (#241). */
+  timezone?: string
   /** Landing-page sample-shops carousel flag (#107). Omitted leaves the column default (false). */
   is_sample?: boolean
   /** Manual-payment display fields (#156). Omitted leaves the column defaults (null) — used to

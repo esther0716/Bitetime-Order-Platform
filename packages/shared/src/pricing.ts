@@ -54,10 +54,34 @@ export interface PricedVoucher {
   usedBy?: string[]
   /** Derived server-side. The shop's total cap is spent and nobody can redeem it. */
   fullyUsed?: boolean
-  /** Derived server-side from the CALLER'S OWN verified email. Absent when they presented none. */
-  alreadyUsed?: boolean
+  /**
+   * Derived server-side from the CALLER'S OWN verified email: they have spent their allowance.
+   * Absent when they presented no identity — which is "not asked", not "no".
+   */
+  customerLimitReached?: boolean
   /** Derived server-side. How many redemptions the code has taken — a count, never the keys. */
   usedCount?: number
+  /**
+   * How many times ONE customer may redeem it. null/absent = unlimited; the column defaults to 1,
+   * which is the rule every voucher was created under before #241.
+   *
+   * Not read by `priceOrder` — a per-customer cap is a CLAIM-time question, and the claim is the
+   * only place that holds the row lock. It is here because `voucherError` reports it.
+   */
+  perCustomerLimit?: number | null
+  /**
+   * An ISO INSTANT, never a local date string — `promoEnd`'s rule. The merchant picks a DATE and
+   * the backend resolves it to the last millisecond of that day in the SHOP's timezone.
+   */
+  expiresAt?: string | null
+  /** The shop-local DATE `expiresAt` ends. Derived server-side; the merchant's own form value. */
+  expiresOn?: string | null
+  /**
+   * The smallest SUBTOTAL, pre-discount, this voucher applies to. NOT subtotal + shipping, which
+   * is what the discount is computed against: with shipping in the base the threshold would vary
+   * by delivery address, and on a distance-priced shop by street.
+   */
+  minOrder?: number | string | null
   [key: string]: unknown
 }
 
@@ -486,7 +510,12 @@ export function priceOrder(input: PriceInput): PriceBreakdown {
   )
 
   const beforeDiscount = subtotal + shipping
-  const discount = voucherDiscount(input.voucher, beforeDiscount)
+  // Gated, not merely computed: see `voucherApplies`. A voucher whose expiry has passed or whose
+  // minimum the basket no longer meets discounts NOTHING, on both sides of the wire, so the
+  // backend cannot be talked into honouring a quote the customer edited out from under.
+  const discount = voucherApplies(input.voucher, subtotal, input.now)
+    ? voucherDiscount(input.voucher, beforeDiscount)
+    : 0
 
   // Tax is the LAST step, and its base is `subtotal − discount` — NOT `beforeDiscount`.
   // Shipping is not taxed (the shop sells food, the courier sells delivery), and the customer
@@ -508,35 +537,111 @@ export function priceOrder(input: PriceInput): PriceBreakdown {
 
 export type VoucherErrorCode =
   | 'invalid'
+  /** The SHOP's total cap (`max_uses`) is spent. Nobody can redeem it. */
   | 'fully_used'
-  | 'already_used'
+  /**
+   * THIS customer's allowance (`per_customer_limit`) is spent.
+   *
+   * Was `already_used`, which stopped being true the moment a limit above 1 could be set: it
+   * fires on a customer's fourth attempt at a three-use code, and a name that asserts something
+   * false is the fault #71 was filed about. Same rule that renamed `orderCount` to `bookedOrders`.
+   */
+  | 'customer_limit_reached'
+  | 'expired'
+  | 'min_order'
 
 export interface VoucherCtx {
   userEmail: string
   fullyUsed?: boolean // caller precomputes via store.voucherFullyUsed
   /**
-   * Whether THIS caller has already redeemed it. Server-derived, because the browser is no longer
-   * shown the redeemer list to scan — that list is account email addresses, and the lookup route
-   * is public. Absent (undefined) means "not asked", which happens when the customer is signed
-   * out; that is not "no", but a signed-out customer cannot redeem at all
+   * Whether THIS caller has spent their allowance. Server-derived, because the browser is no
+   * longer shown the redeemer list to count — that list is account email addresses, and the
+   * lookup route is public. Absent (undefined) means "not asked", which happens when the customer
+   * is signed out; that is not "no", but a signed-out customer cannot redeem at all
    * (`voucher_requires_account`), so nothing is granted on the strength of it.
    */
-  alreadyUsed?: boolean
+  customerLimitReached?: boolean
+  /** The cart's subtotal, for `minOrder`. Absent skips the check — the caller has no cart yet. */
+  subtotal?: number
+  /** For `expiresAt`. Absent skips the check. */
+  now?: Date
+}
+
+/**
+ * Has this voucher's expiry passed?
+ *
+ * An unparseable instant FAILS CLOSED (expired), the opposite of `promoState`'s reading of a bad
+ * `promoEnd` — and for the same underlying reason. Every comparison against a NaN date is false,
+ * so the naive form would treat a corrupt value as "runs for ever". Here the safe direction is to
+ * refuse a discount, not to grant one indefinitely.
+ *
+ * Inclusive at the boundary: the voucher is still live at exactly `expiresAt`, matching
+ * `promoState`. The instant is the last millisecond of the merchant's chosen day anyway.
+ */
+export function voucherExpired(voucher: PricedVoucher | null | undefined, now: Date | undefined): boolean {
+  const raw = voucher?.expiresAt
+  if (raw == null || now == null) return false
+  const end = new Date(raw as string)
+  if (isNaN(end.getTime())) return true
+  return now > end
+}
+
+/** Is the basket under this voucher's minimum? Compared against the SUBTOTAL, pre-discount. */
+export function voucherBelowMinimum(
+  voucher: PricedVoucher | null | undefined,
+  subtotal: number | undefined,
+): boolean {
+  const min = num(voucher?.minOrder)
+  // `num` coerces the STRING postgres.js returns for a numeric column; PostgREST sends a number.
+  // Mapping one driver and not the other is a refused checkout, not a rounding gap — the trap
+  // `productFromRow` documents.
+  if (min === null || subtotal == null) return false
+  return round2(subtotal) < min
+}
+
+/**
+ * May this voucher discount this basket, right now?
+ *
+ * `priceOrder` asks before applying the discount, and that is not belt-and-braces — it is the only
+ * place the rule can hold. The storefront keeps an applied voucher across cart edits, so a rule
+ * living only in `voucherError` (the apply-time pre-flight) is bypassed by adding the code at
+ * RM60 and then removing an item. And because the BACKEND prices from this same module, a rule
+ * absent here means the backend agrees with the browser and commits the unearned discount — a
+ * crafted request would not even need the storefront.
+ *
+ * The per-customer and total caps are deliberately NOT here. Both are claim-time questions
+ * answered under the voucher's row lock; pricing has no lock and no count.
+ */
+export function voucherApplies(
+  voucher: PricedVoucher | null | undefined,
+  subtotal: number,
+  now: Date | undefined,
+): boolean {
+  if (!voucher) return false
+  return !voucherExpired(voucher, now) && !voucherBelowMinimum(voucher, subtotal)
 }
 
 // Pure voucher rules. Loading the codes stays I/O in the caller; the rules are
 // testable without a network. Returns the first applicable error code, or null.
+//
+// ORDER IS THE MESSAGE. The two terminal refusals come first — a spent voucher is spent whatever
+// else is true of it. `expired` precedes `min_order` for the same reason: adding an item cannot
+// revive a dead code, so telling a customer to spend more would be advice that costs them money
+// and fails anyway.
 export function voucherError(voucher: PricedVoucher | null | undefined, ctx: VoucherCtx): VoucherErrorCode | null {
   if (!voucher) return 'invalid'
   const email = (ctx.userEmail ?? '').toLowerCase()
   const v = voucher as any
   if (ctx.fullyUsed) return 'fully_used'
-  // `ctx.alreadyUsed` is the authority. The `usedBy` scan remains ONLY as the backend's own path
-  // (it prices from a locked row that really does carry the keys) and as the fallback for a
-  // caller that has not migrated — it can no longer fire from the browser, whose voucher never
-  // carries `usedBy` any more.
-  if (ctx.alreadyUsed) return 'already_used'
-  if (email && (v.usedBy || []).includes(email)) return 'already_used'
+  // `ctx.customerLimitReached` is the authority. The `usedBy` scan remains ONLY as the backend's
+  // own path (it prices from a locked row that really does carry the keys) and as the fallback for
+  // a caller that has not migrated — it can no longer fire from the browser, whose voucher never
+  // carries `usedBy` any more. That fallback reads the ONE-per-customer rule, which is the only
+  // one an un-migrated caller could have meant.
+  if (ctx.customerLimitReached) return 'customer_limit_reached'
+  if (email && (v.usedBy || []).includes(email)) return 'customer_limit_reached'
+  if (voucherExpired(voucher, ctx.now)) return 'expired'
+  if (voucherBelowMinimum(voucher, ctx.subtotal)) return 'min_order'
   return null
 }
 
@@ -679,8 +784,18 @@ export function voucherFromRow(row: Record<string, unknown>): PricedVoucher {
     // Server-derived, and present only on the API views (`voucherView.ts`). A row read straight
     // from Postgres carries none of them, which is correct: the backend has `used_by` itself.
     fullyUsed: row.fully_used as boolean | undefined,
-    alreadyUsed: row.already_used as boolean | undefined,
+    customerLimitReached: row.customer_limit_reached as boolean | undefined,
     usedCount: row.used_count as number | undefined,
+    perCustomerLimit: (row.per_customer_limit ?? null) as number | null,
+    expiresAt: (row.expires_at ?? null) as string | null,
+    // The SHOP-LOCAL date that instant ends, derived server-side and mapped through here so the
+    // dashboard never has to slice `expires_at` itself. East of UTC the instant sits on the
+    // previous calendar day, so a slice shows the merchant an expiry a day earlier than they set.
+    expiresOn: (row.expires_on ?? null) as string | null,
+    // Coerced, like `amount` above and for the same reason: postgres.js returns a `numeric` column
+    // as a STRING and PostgREST returns a number. `'50' < 40` is false in JavaScript, so an
+    // uncoerced minimum would silently stop refusing.
+    minOrder: row.min_order == null ? null : Number(row.min_order),
     // Deactivated in bulk when a shop steps down from Pro. Defaults TRUE on a missing column so
     // a row read from anywhere that does not select it is never mistaken for a dead voucher —
     // the redemption path filters `active` in SQL, and this field exists to be DISPLAYED.

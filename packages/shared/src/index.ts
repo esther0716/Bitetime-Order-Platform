@@ -23,7 +23,8 @@ export {
 } from './trialFeedback.js'
 export type { TrialFeedbackDraft, TrialFeedbackValidation } from './trialFeedback.js'
 export {
-  priceOrder, voucherError, shippingFee, voucherFromRow, shopRates, shopTax,
+  priceOrder, voucherError, voucherExpired, voucherBelowMinimum, voucherApplies,
+  shippingFee, voucherFromRow, shopRates, shopTax,
   promoState, promoClaims, productFromRow, optionGroupsFromRow,
   shopDistance, routedKm, distanceFee, exceedsMaxKm,
   shopMethods, offersMethod, firstOfferedMethod, FULFILMENT_METHODS, isDistancePriced,

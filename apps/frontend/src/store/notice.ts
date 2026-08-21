@@ -34,6 +34,13 @@ export type Notice =
   | { readonly kind: 'voucher_signed_out'; readonly voucherCode: string }
   /** A recovery re-read the voucher and it no longer exists. */
   | { readonly kind: 'voucher_gone' }
+  /**
+   * The basket is under an applied voucher's minimum. NOT a refusal — the voucher stays on and
+   * the message states the gap, because prompting the customer to spend a little more is the
+   * whole purpose of a minimum-order voucher. `priceOrder` has already dropped the discount to
+   * zero, so nothing on screen claims money the order will not get.
+   */
+  | { readonly kind: 'voucher_shortfall'; readonly shortfall: number; readonly voucherCode: string }
   /** The order was refused. The copy is `orderRefusal.ts`'s decision; this only remembers which. */
   | { readonly kind: 'order_refusal'; readonly code: OrderRefusalCode | undefined }
 
@@ -52,7 +59,14 @@ export function voucherErrorText(code: VoucherErrorCode | 'invalid', t: Translat
   switch (code) {
     case 'invalid': return t('❌ Invalid voucher code.', '❌ 无效的优惠码。')
     case 'fully_used': return t('❌ This voucher has been fully redeemed.', '❌ 此优惠券已用完。')
-    case 'already_used': return t('❌ You have already used this voucher.', '❌ 您已使用过此优惠券。')
+    // Not "you have already used this": a merchant may allow several redemptions each, so the
+    // customer being turned away here may be on their fourth of three.
+    case 'customer_limit_reached': return t('❌ You have used this voucher as many times as allowed.', '❌ 您使用此优惠券的次数已达上限。')
+    case 'expired': return t('❌ This voucher has expired.', '❌ 此优惠券已过期。')
+    // The FALLBACK wording only. A basket under the minimum keeps the voucher applied and gets
+    // `voucher_shortfall` instead, which can name the amount still needed; this is what a caller
+    // with no figure to hand says.
+    case 'min_order': return t('❌ Your order is below this voucher\u2019s minimum.', '❌ 您的订单未达到此优惠券的最低消费。')
     default: return ''
   }
 }
@@ -95,6 +109,14 @@ export function noticeText(notice: Notice, ctx: NoticeCtx): string {
 
     case 'voucher_gone':
       return t('❌ That voucher is no longer available.', '❌ 此优惠券已失效。')
+
+    case 'voucher_shortfall': {
+      const gap = formatMoney(notice.shortfall, ctx.currency)
+      return t(
+        `Add ${gap} more to use ${notice.voucherCode}.`,
+        `再消费 ${gap} 即可使用 ${notice.voucherCode}。`,
+      )
+    }
 
     case 'order_refusal':
       // The one place that decides what a refusal says, and it is not this one.
