@@ -5,14 +5,14 @@ import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
 import { X } from 'lucide-react'
-import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, paymentQrUrl, saveCustomerDetails } from '../store'
+import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, paymentQrUrl, saveCustomerDetails, fetchGuestInvoice, fetchMyInvoice } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { noticeText, type Notice } from './notice'
 import { useDeliveryQuote } from './useDeliveryQuote'
 import { submitGate } from './submitGate'
 import { pruneCart, pruneMessage, nextCart, repairCart, plainQty, cartRefusalMessage } from './cartRules'
 import type { CartTarget } from './cartRules'
-import { priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, optionGroupsFromRow, menuCategoriesFromRow, cartLineKey, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import { canIssueInvoice, priceOrder, voucherError, shopRates, shopTax, shopDistance, shopMethods, firstOfferedMethod, FULFILMENT_METHODS, productFromRow, optionGroupsFromRow, menuCategoriesFromRow, cartLineKey, promoState, selectableDates, fulfilmentConfig, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { FulfilmentMethod, CartLine, PickSnapshot } from '@bitetime/shared'
 import { prefillFromProfile, savedDetailsFromOrder, carriesAddress } from '../savedDetails'
 import { fulfilmentLabel, feeLineLabel } from '../fulfilmentLabel'
@@ -20,7 +20,7 @@ import { formatMoney, DEFAULT_CURRENCY } from '../currency'
 // The SHOP's pixel, never TinyOrder's (#220). A no-op unless this shop set an id, is on Pro, and
 // its customer accepted — so nothing here has to ask any of those three questions.
 import { useShopPixelTrack } from '../pixels/ShopPixels'
-import { formatTaxRate } from '../receipt'
+import { formatTaxRate } from '../taxRate'
 import { formatUnit } from '../productUnit'
 import { productName as label, productDescr as descr, shopDescr } from '../productLabel'
 import { menuSections } from '../menuGroups'
@@ -30,6 +30,7 @@ import { MY_STATES } from '../states-my'
 import type { Product, Voucher, AddressParts } from '../types'
 import LanguageSelect from '../components/LanguageSelect'
 import ImageLightbox from '../components/ImageLightbox'
+import InvoiceButton from '../components/InvoiceButton'
 import MenuRow from '../components/MenuRow'
 import SignInDialog from './SignInDialog'
 import { OptionPicker } from './OptionPicker'
@@ -97,6 +98,15 @@ interface SuccessState {
    * dateless order be submitted, so a placed order always has one.
    */
   fulfilDate: string | null
+  /**
+   * The status intake assigned, READ BACK rather than re-derived here.
+   *
+   * It decides whether this screen can offer the invoice at all: an order at a shop taking manual
+   * payment is born `pending_payment`, and that order has no invoice yet. The rule for which
+   * shops those are ("has bank, note or QR") is stated in the INSERT that writes the status, and
+   * a second copy on this screen would be a rule that can disagree with the row it describes.
+   */
+  status: string
 }
 
 export default function Storefront() {
@@ -784,6 +794,7 @@ export default function Storefront() {
         // only be present or this was never a distance order at all.
         feeKm: quote ? quote.km : null,
         fulfilDate: chosenDate,
+        status: result.data.status,
       })
       toast.success(t('Order placed!', '订单已提交！'))
       // The sale, on the shop's own pixel (#220).
@@ -964,6 +975,33 @@ export default function Storefront() {
             )}
 
             <div className="flex flex-col items-center gap-2 mt-5">
+              {/* The invoice, at the moment of highest intent — this is what stops most of the
+                  asking later. A shop taking manual payment has no invoice to give yet: its order
+                  is born `pending_payment`, so the customer gets the SENTENCE instead of a button
+                  that would 404. `canIssueInvoice` is shared with the backend, so the two agree. */}
+              {canIssueInvoice(success.status) ? (
+                <InvoiceButton
+                  status={success.status}
+                  orderNumber={success.orderNumber}
+                  // A signed-in customer goes through their OWN door — the order carries their
+                  // `user_id`, so proving the session is both cheaper and more honest than
+                  // re-proving the phone, and it leaves the public door's rate limit to guests.
+                  // The guest proves the pair with the SAME number this order was placed with
+                  // (`wa` above), never a profile field: a guest has no profile, and the phone
+                  // the door matches on is the one the order stored.
+                  fetcher={() => (account
+                    ? fetchMyInvoice(success.orderId)
+                    : fetchGuestInvoice(merchant.slug, success.orderNumber, wa))}
+                  className="text-[13px] font-medium"
+                />
+              ) : (
+                <p className="text-[12px] text-muted-foreground max-w-[320px] leading-[1.5]">
+                  {t(
+                    'Your invoice will be available once the shop confirms your payment. Come back to this shop and open “Get an invoice”.',
+                    '店家确认付款后即可获取账单。请返回本店并点击“获取账单”。',
+                  )}
+                </p>
+              )}
               <Button type="button" variant="link" size="none" className="text-[13px] font-medium inline-block" onClick={handleReset}>
                 {t('Back to shop', '返回商店')}
               </Button>
@@ -1008,10 +1046,10 @@ export default function Storefront() {
               </p>
               <div className="flex items-center gap-3 mt-1">
                 {account ? (
-                  // History carries the courier and AWB inline, so it is already everything /track
-                  // would say and more. Offering both here asked the customer to tell apart two
-                  // links that do the same job, and pointed one of them at a form demanding an
-                  // order number they can already see.
+                  // History carries the courier and AWB inline, so it was already everything the
+                  // old /track screen said and more — which is why that screen is gone. A signed-in
+                  // customer is sent to their orders, never to a form demanding an order number
+                  // they can already see.
                   <Link to={`/s/${merchant.slug}/orders`} className="text-[12px] text-primary underline inline-block">
                     {t('Your orders', '你的订单')}
                   </Link>
@@ -1026,6 +1064,13 @@ export default function Storefront() {
                     {t('Sign in', '登录')}
                   </Button>
                 )}
+                {/* The guest's way back to their own paperwork, and the only one there is: a guest
+                    order is orphaned for ever, so nothing else on this platform can reach that
+                    customer once the tab closes. Top-level URL, outside this shell's status gate,
+                    carrying the shop because an order number is unique per shop only. */}
+                <Link to={`/invoice?shop=${merchant.slug}`} className="text-[12px] text-muted-foreground underline inline-block">
+                  {t('Get an invoice', '获取账单')}
+                </Link>
               </div>
             </div>
             <div className="flex justify-end flex-shrink-0 max-[480px]:justify-start">

@@ -4,13 +4,13 @@ import { Truck, ExternalLink, ChevronDown } from 'lucide-react'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { Button } from '../components/ui/button'
-import { fetchMyOrdersAtShop, fetchMyPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
+import { fetchMyInvoice, fetchMyOrdersAtShop, fetchMyPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
 import { StatusBadge } from '../orderStatus'
 import { ItemSelections } from '../ItemSelections'
 import { courierName, trackingUrl } from '../couriers'
 import { formatMoney } from '../currency'
 import { formatOrderDate, formatCalendarDate } from '../orderDate'
-import { formatTaxRate } from '../receipt'
+import { formatTaxRate } from '../taxRate'
 import { fulfilmentLabel, feeLineLabel } from '../fulfilmentLabel'
 import { cn } from '@/lib/utils'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
@@ -18,6 +18,7 @@ import AuthPanel from './AuthPanel'
 import MoneyLine from './MoneyLine'
 import OrderTimeline from './OrderTimeline'
 import LanguageSelect from '../components/LanguageSelect'
+import InvoiceButton from '../components/InvoiceButton'
 import type { Order, OrderItem, Product, Translate } from '../types'
 
 type Loaded =
@@ -31,10 +32,13 @@ type Loaded =
  * the auth panel, which is a modal precisely because it must not unmount the cart.
  *
  * History ABSORBS tracking: the expanded row carries the courier and AWB and links straight to
- * the courier's own page. It deliberately does not hand off to /track — sending a customer who is
- * already looking at the order to a screen where they would re-type its number is absurd. That
- * leaves /track as the GUEST path, which is exactly what the guest warning promises: the two
- * screens now have one job each.
+ * the courier's own page. There is no `/track` screen to hand off to any more — it was removed
+ * once this row carried everything it said and more, and a customer already looking at their own
+ * order should never be sent somewhere to re-type its number.
+ *
+ * The GUEST has no equivalent of this page and never will: their order carries `user_id = null`
+ * for ever. What they get instead is `/invoice`, which asks for the order number and the phone
+ * they typed — the same document this page offers, through the only door they can prove.
  */
 export default function OrderHistory() {
   const { merchant } = useMerchant()
@@ -251,6 +255,14 @@ export default function OrderHistory() {
                       <OrderTimeline status={o.status ?? 'new'} mode={o.mode} t={t} />
                       <PaymentProofImage order={o} t={t} />
                       <Tracking order={o} t={t} />
+                      {/* The document, for the customer who came here to get one. The same bytes
+                          the merchant and a guest are handed — one order has one invoice. */}
+                      <InvoiceButton
+                        status={o.status}
+                        orderNumber={o.order_number}
+                        fetcher={() => fetchMyInvoice(o.id!)}
+                        className="text-[13px] mt-3"
+                      />
                   </AccordionContent>
                 </AccordionItem>
               )

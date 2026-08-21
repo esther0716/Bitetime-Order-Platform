@@ -29,6 +29,8 @@ import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
 import { signUpCustomer, isDuplicateEmailError } from './customerSignup.js'
 import { createSlidingWindow } from './rateLimit.js'
 import { clientIp } from './clientIp.js'
+import { invoiceFileName, renderInvoicePdf } from './invoice.js'
+import { invoiceFont } from './invoiceFont.js'
 import { phoneKey } from './phone.js'
 import {
   shopCustomers, isShopCustomerSort, pickShopCustomerFields, DEFAULT_SHOP_CUSTOMER_SORT,
@@ -40,7 +42,7 @@ import { writeProductOrder } from './productOrderDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT } from './quotaWindows.js'
+import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT } from './quotaWindows.js'
 import { usagePeriod, nextResetDate, LIFETIME_PERIOD, type AiFeature } from './aiUsage.js'
 import { consumeAiCall } from './aiUsageDb.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
@@ -69,7 +71,7 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
+import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
 import type { CartLine, Granularity } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename, type ReportWindow } from './report.js'
 import { resolveRevenueRange, type ResolvedRevenueRange } from './revenueWindow.js'
@@ -1165,6 +1167,105 @@ app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
   if (!path) return c.json({ error: 'not_found' }, 404)
 
   return streamPrivateObject('payment-proof', path)
+})
+
+// ── Invoice ───────────────────────────────────────────────────────────────────
+//
+// One document, three doors, and the SAME bytes through all three — a guest today is an account
+// holder next month, and they must not be handed two different papers for two orders from one
+// shop. See docs/adr/0017 and CONTEXT.md → Invoice.
+//
+// Every refusal here is the same 404. A status that cannot be issued, an order that does not
+// exist, a stranger's order and a wrong phone are one answer, because any distinction between
+// them tells a caller which order numbers are real.
+
+/** The generated PDF, as a download. */
+function invoicePdfResponse(pdf: Uint8Array, orderNumber: string): Response {
+  // Copied into a plain ArrayBuffer: pdf-lib hands back a Uint8Array over a pooled buffer, which
+  // is not the `BodyInit` the fetch types accept, and slicing is also what guarantees the body is
+  // exactly this document's bytes.
+  const body = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) as ArrayBuffer
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${invoiceFileName(orderNumber)}"`,
+      // A shop can edit its payment note or its address, and the document reads both live. Never
+      // cached, so a re-download is never yesterday's paper.
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+
+/** Render, or answer the one refusal this endpoint family has. */
+async function invoiceFor(c: Context, order: Record<string, any> | null, merchant: Record<string, any> | null) {
+  if (!order || !merchant || !canIssueInvoice(order.status)) return c.json({ error: 'not_found' }, 404)
+  return invoicePdfResponse(await renderInvoicePdf(order, merchant, invoiceFont()), order.order_number)
+}
+
+// The merchant's own copy — the one they forward on WhatsApp when a customer asks them directly.
+app.get(
+  '/api/merchants/:id/orders/:orderId/invoice.pdf',
+  requireMerchantOwns,
+  requireOwnsChild('orders', 'orderId'),
+  async (c) => invoiceFor(c, c.get('child'), c.get('merchant')),
+)
+
+// The signed-in customer's copy, scoped by the order's `user_id` — the same shape as the
+// payment-proof twin above, and inline for the same reason: `requireOwnsChild` proves MERCHANT
+// ownership, which is the wrong question for a customer.
+app.get('/api/orders/:orderId/invoice.pdf', requireUser, async (c) => {
+  const user = c.get('user')
+  const { data: order, error } = await admin
+    .from('orders').select('*').eq('id', c.req.param('orderId')).maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+  if (!order || order.user_id !== user.id) return c.json({ error: 'not_found' }, 404)
+  const { data: merchant } = await admin
+    .from('merchants').select('*').eq('id', order.merchant_id).maybeSingle()
+  return invoiceFor(c, order, merchant)
+})
+
+/**
+ * The guest's door.
+ *
+ * A guest order carries `user_id = null` for ever and there is no `/track` any more, so this is
+ * the only way that customer reaches their own document. What they can prove is the order number
+ * and the phone they typed, matched on `phoneKey()` — the last-eight-digits rule that already
+ * keys a shop customer (ADR 0007), reused rather than re-derived.
+ *
+ * The shop is REQUIRED, and is not decoration: an order number is unique per shop only — the
+ * prefix is the first two alphanumerics of the slug — so without it `BI-260820-0051` can name
+ * two orders at two shops.
+ *
+ * The pair is guessable, and ADR 0018 accepts that knowingly. The limit below is what bounds it;
+ * it is in memory, so a second backend instance doubles it (#101).
+ */
+app.post('/api/orders/invoice', async (c) => {
+  if (!invoiceLookupIpWindow.allow(ipOf(c))) return c.json({ error: 'rate_limited' }, 429)
+
+  const body = await c.req.json().catch(() => ({}))
+  const slug = typeof body.shop === 'string' ? body.shop.trim().toLowerCase() : ''
+  const orderNumber = typeof body.orderNumber === 'string' ? body.orderNumber.trim().toUpperCase() : ''
+  // Null for a phone with no digits, which must never become a key: '' is what BOTH an absent
+  // phone and a phone-less order reduce to, and matching those would hand back the enumeration
+  // the phone requirement exists to remove.
+  const key = phoneKey(typeof body.phone === 'string' ? body.phone : '')
+  if (!slug || !orderNumber || !key) return c.json({ error: 'not_found' }, 404)
+
+  const { data: merchant, error: mErr } = await admin
+    .from('merchants').select('*').eq('slug', slug).maybeSingle()
+  if (mErr) return c.json({ error: 'lookup_failed' }, 500)
+  if (!merchant) return c.json({ error: 'not_found' }, 404)
+
+  const { data: order, error } = await admin
+    .from('orders').select('*')
+    .eq('merchant_id', merchant.id)
+    .eq('order_number', orderNumber)
+    .eq('customer_phone_key', key)
+    .maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+
+  return invoiceFor(c, order, merchant)
 })
 
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────

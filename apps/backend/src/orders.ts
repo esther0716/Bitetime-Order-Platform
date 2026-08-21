@@ -120,7 +120,7 @@ export async function placeOrder(
   input: PlaceOrderInput,
   now = new Date(),
   distanceDeps: DistanceDeps = liveDistanceDeps,
-): Promise<{ orderNumber: string; id: string }> {
+): Promise<{ orderNumber: string; id: string; status: string }> {
   // THE ROUTING CALL HAPPENS HERE, OUTSIDE THE TRANSACTION, and that placement is the whole
   // reason this function is no longer a bare `withTransaction(...)`. Inside, the transaction
   // holds this shop's single `order_counters` row lock, which serialises every checkout at that
@@ -284,7 +284,7 @@ export async function placeOrder(
     const distanceBase = distanceKm === null ? null : merchant.distance.base
     const distanceRate = distanceKm === null ? null : merchant.distance.ratePerKm
 
-    const [{ id }] = await tx<{ id: string }[]>`
+    const [{ id, status }] = await tx<{ id: string; status: string }[]>`
       insert into orders (
         merchant_id, user_id, customer_name, customer_wa, customer_phone_key, mode, address,
         shipping_fee, items, total, currency, discount, tax, tax_rate, voucher_code, fulfil_date, order_number, status,
@@ -324,10 +324,14 @@ export async function placeOrder(
         ${distanceBase},
         ${distanceRate}
       )
-      returning id
+      returning id, status
     `
 
-    return { orderNumber, id }
+    // The status is returned, not re-derived by the caller. It decides whether the order-placed
+    // screen can offer the invoice at all (a `pending_payment` order cannot be issued one), and
+    // the shape of the rule — "born pending_payment when the shop takes manual payment" — is
+    // stated once, here, in the statement that actually writes it.
+    return { orderNumber, id, status }
   })
 }
 

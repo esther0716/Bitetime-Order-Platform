@@ -10,7 +10,7 @@ import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { pendingShopMetadata } from './merchant/pendingShop';
 import type { PendingShop } from './merchant/pendingShop';
-import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForm, mapOk, toVoid } from './api'
+import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForFile, apiSendForm, mapOk, toVoid } from './api'
 import type { Result } from './api'
 import type { CartLine } from '@bitetime/shared'
 
@@ -579,7 +579,7 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
   voucherCode?: string | null
   /** `YYYY-MM-DD` on the shop's clock. The backend re-checks it against the shop's window. */
   fulfilDate: string | null
-}): Promise<Result<{ orderNumber: string; id: string }, OrderError>> {
+}): Promise<Result<{ orderNumber: string; id: string; status: string }, OrderError>> {
   // Optional: a guest has no session, and guest checkout is a first-class path.
   const { data: { session } } = await auth.getSession()
   const token = session?.access_token
@@ -606,7 +606,7 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
     const payload = await res.json().catch(() => ({}))
     return { ok: false, error: new OrderError(payload?.error ?? 'order_failed', typeof payload?.now === 'string' ? payload.now : undefined) }
   }
-  return { ok: true, data: (await res.json()) as { orderNumber: string; id: string } }
+  return { ok: true, data: (await res.json()) as { orderNumber: string; id: string; status: string } }
 }
 
 /**
@@ -1052,6 +1052,43 @@ export async function fetchPaymentProof(merchantId: string, orderId: string): Pr
 export async function fetchMyPaymentProof(orderId: string): Promise<Result<Blob>> {
   const r = await apiGetFile(`/api/orders/${orderId}/payment-proof`, { auth: 'required' })
   return mapOk(r, d => d.blob)
+}
+
+// ── Invoice ───────────────────────────────────────────────────────────────────
+//
+// One document, three doors, the same bytes: a guest today is an account holder next month and
+// must not be handed two different papers. Which door a caller uses is decided by what they can
+// PROVE — a session, ownership of the shop, or the order number with the phone that placed it.
+// See CONTEXT.md → Invoice.
+
+/** The signed-in customer's own order. Scoped server-side by the order's `user_id`. */
+export async function fetchMyInvoice(orderId: string): Promise<Result<{ blob: Blob; filename: string | null }>> {
+  return apiGetFile(`/api/orders/${orderId}/invoice.pdf`, { auth: 'required' })
+}
+
+/** The merchant's copy of an order in their own shop — the one they forward when asked directly. */
+export async function fetchOrderInvoice(
+  merchantId: string,
+  orderId: string,
+): Promise<Result<{ blob: Blob; filename: string | null }>> {
+  return apiGetFile(`/api/merchants/${merchantId}/orders/${orderId}/invoice.pdf`, { auth: 'required' })
+}
+
+/**
+ * The guest door: an order number and the phone that placed it, scoped to one shop.
+ *
+ * Sends NO token even when one exists (`auth: false`): the caller is by definition someone with
+ * no account, the door proves the pair and nothing else, and a signed-in customer reaching this
+ * page still gets the same answer as everyone else. The shop is required because an order number
+ * is unique per shop only; the backend answers every failure with the same 404, so this Result
+ * carries nothing to branch on and the page says one sentence.
+ */
+export async function fetchGuestInvoice(
+  shop: string,
+  orderNumber: string,
+  phone: string,
+): Promise<Result<{ blob: Blob; filename: string | null }>> {
+  return apiSendForFile('/api/orders/invoice', { shop, orderNumber, phone }, { auth: false })
 }
 
 // ── Merchant config & secrets ─────────────────────────────────────────────────

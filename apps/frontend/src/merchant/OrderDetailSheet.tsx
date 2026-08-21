@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useSession } from '../SessionContext'
-import { setOrderStatus, setOrderNote, setOrderTracking, fetchPaymentProof } from '../store'
+import { setOrderStatus, setOrderNote, setOrderTracking, fetchPaymentProof, fetchOrderInvoice } from '../store'
 import { formatMoney } from '../currency'
 import { formatAddress } from '../address'
 import { formatCalendarDate } from '../orderDate'
 import { fmtDateTime } from '../merchantDate'
-import { formatTaxRate } from '../receipt'
+import { formatTaxRate } from '../taxRate'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,6 +18,7 @@ import { COURIERS, trackingUrl, courierName } from '../couriers'
 import { ORDER_STATUSES, STATUS_LABELS, StatusBadge } from '../orderStatus'
 import { fulfilmentLabel } from '../fulfilmentLabel'
 import WaLink from './WaLink'
+import InvoiceButton from '../components/InvoiceButton'
 import { ItemSelections } from '../ItemSelections'
 
 // 11px semibold uppercase rose-muted label.
@@ -159,6 +160,15 @@ export default function OrderDetailSheet({
                 <StatusBadge status={order.status || 'new'} t={t} />
               </div>
               <span className="text-[12px] text-muted-foreground">{fmtDateTime(order.created_at)}</span>
+              {/* The merchant's own copy, for the customer who asks them directly rather than
+                  using the invoice link. The SAME bytes that customer would have fetched — a
+                  shop and its customer must never hold two different papers for one order. */}
+              <InvoiceButton
+                status={order.status}
+                orderNumber={order.order_number}
+                fetcher={() => fetchOrderInvoice(merchant!.id, order.id)}
+                className="text-[13px] w-fit"
+              />
             </SheetHeader>
 
             <div className="flex flex-col px-4 pb-4">

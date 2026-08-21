@@ -120,6 +120,32 @@ export async function apiGetFile(
 }
 
 /**
+ * A POST whose body is JSON and whose ANSWER is a file — the mirror of `apiGetFile`.
+ *
+ * It exists for the guest invoice door, which cannot be a GET: the order number and the phone are
+ * the customer's own identifiers, and a GET would write both into the URL, where they land in
+ * browser history, in a referrer and in any proxy log between here and the backend.
+ *
+ * A refusal is still JSON, so failures go through the same `errorFromResponse` as everything else.
+ */
+export async function apiSendForFile(
+  path: string,
+  body: unknown,
+  opts?: Opts,
+): Promise<Result<{ blob: Blob; filename: string | null }>> {
+  const h = await resolveHeaders({ 'Content-Type': 'application/json' }, opts?.auth)
+  if ('fail' in h) return { ok: false, error: h.fail }
+  try {
+    const res = await fetch(`${API_URL}${path}`, { method: 'POST', headers: h.headers, body: JSON.stringify(body) })
+    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    const match = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
+    return { ok: true, data: { blob: await res.blob(), filename: match?.[1] ?? null } }
+  } catch {
+    return { ok: false, error: NETWORK_ERROR }
+  }
+}
+
+/**
  * A POST whose body is a FILE, not JSON — the upload-side twin of `apiGetFile`. No multipart:
  * the body IS the file, and `Content-Type` names what it is (never `application/json`, unlike
  * `apiSend`). Same Result convention and the same guest-tolerant `auth` option as every other
