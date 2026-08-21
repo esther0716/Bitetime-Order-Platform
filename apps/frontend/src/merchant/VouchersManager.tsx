@@ -10,18 +10,8 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Checkbox } from '../components/ui/checkbox'
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-// `ui/calendar`, never a native `<input type="date">`. The native control paints Chrome's own
-// picker — its blue accent, its type, its `dd/mm/yyyy` placeholder — beside two other pickers in
-// this dashboard that render through the app's tokens. See the note at the top of
-// CustomDatesCalendar.tsx for why both of those go through this one component.
-import { Calendar } from '@/components/ui/calendar'
-import { enGB, zhCN } from 'react-day-picker/locale'
-// The `YYYY-MM-DD` <-> local-midnight bridge, tested as a pair of exact inverses. The only place
-// in the app allowed to build a `Date` for a calendar date.
-import { toDate, toIso } from './calendarDate'
-import { todayInZone, DEFAULT_TIMEZONE } from '@bitetime/shared'
-import { cn } from '@/lib/utils'
+// Never a native `<input type="date">` — see the note at the top of DateField.
+import DateField from './DateField'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '../components/ui/empty'
@@ -85,68 +75,6 @@ function Disclosure({ id, checked, onCheckedChange, label, children }: {
       </div>
       {checked && <div className="ml-6 flex flex-col gap-[6px]">{children}</div>}
     </div>
-  )
-}
-
-/**
- * The expiry date, as a themed calendar rather than the browser's own.
- *
- * The value stays a `YYYY-MM-DD` string all the way to the API, deliberately: which INSTANT the
- * merchant's chosen day ends depends on the shop's timezone, and the browser must not be the one
- * to decide that. The backend resolves it (`voucherExpiry.ts`).
- *
- * Days before the shop's today are DISABLED rather than hidden — the choice
- * `CustomDatesCalendar` and `FulfilDatePicker` both make: a merchant who cannot find a day
- * assumes the calendar is broken. And an expiry in the past would create a voucher born dead.
- */
-function ExpiryPicker({ value, onChange, tz, t, lang }: {
-  value: string
-  onChange: (iso: string) => void
-  tz: string | undefined
-  t: (en: string, zh: string) => string
-  lang: 'en' | 'zh'
-}) {
-  const [open, setOpen] = useState(false)
-  // The SHOP's today, not the browser's. A merchant abroad must see the same floor their shop
-  // would — the reading `todayInZone` already gives every other date this dashboard shows.
-  const today = toDate(todayInZone(tz ?? DEFAULT_TIMEZONE, new Date()))
-  const selected = value ? toDate(value) : undefined
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <button
-            type="button"
-            className={cn(
-              'w-full rounded-sm border-[0.5px] border-border bg-background px-3 py-2 text-left text-[13px] transition-colors hover:border-primary',
-              !value && 'text-muted-foreground',
-            )}
-          />
-        }
-      >
-        {selected
-          ? selected.toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-          : t('Pick a date', '选择日期')}
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-2">
-        <Calendar
-          mode="single"
-          className="p-0"
-          locale={lang === 'zh' ? zhCN : enGB}
-          selected={selected}
-          onSelect={d => { if (d) { onChange(toIso(d)); setOpen(false) } }}
-          defaultMonth={selected ?? today}
-          disabled={{ before: today }}
-          // A month dropdown, not twelve presses of the arrow: a campaign ending next year is
-          // months away, and three years is past any voucher anyone would set.
-          captionLayout="dropdown"
-          startMonth={today}
-          endMonth={new Date(today.getFullYear() + 3, 11, 31)}
-          aria-label={t('Expiry date', '到期日期')}
-        />
-      </PopoverContent>
-    </Popover>
   )
 }
 
@@ -431,7 +359,10 @@ export default function VouchersManager() {
               onCheckedChange={v => setForm({ ...form, limitExpiry: v })}
               label={t('Add an expiry date', '设置到期日期')}
             >
-              <ExpiryPicker
+              {/* Not `clearable`: the enclosing checkbox already clears this field, and a second
+                  way to reach the same state is a second thing to explain. */}
+              <DateField
+                id="vm-expires"
                 value={form.expiresOn}
                 onChange={iso => setForm({ ...form, expiresOn: iso })}
                 tz={merchant?.timezone as string | undefined}

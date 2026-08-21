@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+// Never a native `<input type="date">` — see the note at the top of DateField.
+import DateField from './DateField'
 import type { ColumnDef } from '@tanstack/react-table'
 import { MoreHorizontal, Package, Lock } from 'lucide-react'
 import { useSession } from '../SessionContext'
@@ -759,12 +761,18 @@ export default function ProductsManager() {
                 </div>
                 <div className="flex flex-col gap-[6px]">
                   <Label htmlFor="pm-promo-end">{t('Promo ends', '优惠结束日期')}</Label>
-                  <Input
+                  {/* `clearable`, unlike the voucher expiry: there is no enclosing checkbox here,
+                      so this is the ONLY way back to "no end date" — and the native input this
+                      replaced had the browser's own clear control. */}
+                  <DateField
                     id="pm-promo-end"
-                    variant="compact"
-                    type="date"
                     value={form.promo_end}
-                    onChange={e => setForm({ ...form, promo_end: e.target.value })}
+                    onChange={iso => setForm({ ...form, promo_end: iso })}
+                    tz={merchant?.timezone as string | undefined}
+                    t={t}
+                    lang={lang}
+                    clearable
+                    placeholder={t('No end date', '无结束日期')}
                   />
                   <span className="text-[12px] text-muted-foreground">
                     {t('The promo runs to the end of this day. Leave empty for no end date.', '优惠持续到当天结束。留空表示无结束日期。')}
