@@ -4,15 +4,13 @@ import { setOrderStatus, setOrderNote, setOrderTracking } from '../../store'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { COURIERS, trackingUrl } from '../../couriers'
 import OrderHeader from './OrderHeader'
 import StatusFooter from './StatusFooter'
 import ItemsCard from './ItemsCard'
 import PaymentCard from './PaymentCard'
 import CustomerCard from './CustomerCard'
+import TrackingCard from './TrackingCard'
 import DrawerCard, { LBL } from './DrawerCard'
 
 // The order-detail drawer, shared by OrdersView and CustomersView. Open when
@@ -37,7 +35,6 @@ export default function OrderDetailSheet({
   const [courierDraft, setCourierDraft] = useState('')
   const [awbDraft, setAwbDraft] = useState('')
   const [savingTrack, setSavingTrack] = useState(false)
-  const courierItems = COURIERS.map(c => ({ value: c.code, label: c.name }))
 
   // Re-seed the drafts when a different order opens (adjust-state-during-render:
   // keyed on id so a status/note/tracking patch that replaces `order` mid-view
@@ -110,59 +107,17 @@ export default function OrderDetailSheet({
               <PaymentCard order={order} currency={orderCurrency} merchantId={merchant!.id} />
 
 
-              {/* Delivery tracking — merchant enters courier + AWB (delivery orders only) */}
-              {order.mode === 'delivery' && !readOnly && (
-                <DrawerCard title={t('Delivery tracking', '物流追踪')}>
-                  <div className="flex flex-col gap-1">
-                    <label className={LBL} htmlFor={`courier-${order.id}`}>{t('Courier', '快递公司')}</label>
-                    <Select
-                      // `courierDraft` stays a string; Base UI spells "nothing selected"
-                      // as null, so the two meet here rather than anywhere downstream.
-                      value={courierDraft || null}
-                      onValueChange={v => setCourierDraft(v ?? '')}
-                      items={courierItems}
-                    >
-                      <SelectTrigger id={`courier-${order.id}`} className="w-full min-w-[140px] bg-background text-[13px]">
-                        <SelectValue placeholder={t('Select courier…', '选择快递…')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {courierItems.map(c => (
-                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className={LBL} htmlFor={`awb-${order.id}`}>{t('AWB / Tracking no.', '运单号')}</label>
-                    <Input
-                      id={`awb-${order.id}`}
-                      value={awbDraft}
-                      onChange={e => setAwbDraft(e.target.value)}
-                      placeholder={t('e.g. 630123456789', '例如 630123456789')}
-                      className="text-[13px] bg-background border-border"
-                    />
-                  </div>
-                  {trackingUrl(courierDraft, awbDraft) && (
-                    <a
-                      href={trackingUrl(courierDraft, awbDraft)!}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[13px] text-primary font-medium hover:underline w-fit"
-                    >
-                      {t('Preview track link →', '预览追踪链接 →')}
-                    </a>
-                  )}
-                  <Button
-                    type="button"
-                    size="none"
-                    className="self-end rounded-lg py-[6px] px-[14px] text-[13px]"
-                    disabled={!trackDirty || savingTrack}
-                    onClick={handleTrackingSave}
-                  >
-                    {savingTrack ? t('Saving…', '保存中…') : t('Save tracking', '保存物流')}
-                  </Button>
-                </DrawerCard>
-              )}
+              <TrackingCard
+                order={order}
+                courier={courierDraft}
+                awb={awbDraft}
+                onCourier={setCourierDraft}
+                onAwb={setAwbDraft}
+                onSave={handleTrackingSave}
+                saving={savingTrack}
+                dirty={trackDirty}
+                readOnly={readOnly}
+              />
 
               {/* Note — editable for the live merchant view, read-only when suspended */}
               {readOnly ? (
