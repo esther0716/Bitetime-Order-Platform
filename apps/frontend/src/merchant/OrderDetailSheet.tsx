@@ -7,6 +7,7 @@ import { formatCalendarDate } from '../orderDate'
 import { fmtDateTime } from '../merchantDate'
 import { formatTaxRate } from '../taxRate'
 import { toast } from 'sonner'
+import { Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
@@ -144,6 +145,15 @@ export default function OrderDetailSheet({
     }).finally(() => setSavingTrack(false))
   }
 
+  const copyOrderNumber = async (n: string) => {
+    try {
+      await navigator.clipboard.writeText(n)
+      toast.success(t('Order number copied', '订单号已复制'))
+    } catch {
+      toast.error(t('Could not copy — copy it manually', '无法复制 — 请手动复制'))
+    }
+  }
+
   const orderCurrency = order?.currency ?? merchant?.currency
   const noteDirty = order != null && noteDraft.trim() !== (order.note ?? '')
   const trackDirty = order != null &&
@@ -157,6 +167,19 @@ export default function OrderDetailSheet({
             <SheetHeader className="border-b border-muted">
               <div className="flex items-center gap-[10px] flex-wrap">
                 <SheetTitle className="text-[15px]">{order.order_number || '—'}</SheetTitle>
+                {/* The number is what a merchant reads back to a customer on the phone or pastes
+                    into their own books. Selecting six characters of a sheet title on a phone is
+                    the fiddly part, so it gets a button. Absent when there is no number to copy. */}
+                {order.order_number && (
+                  <Button
+                    variant="ghost"
+                    size="iconRound"
+                    aria-label={t('Copy order number', '复制订单号')}
+                    onClick={() => copyOrderNumber(order.order_number!)}
+                  >
+                    <Copy className="size-3.5" />
+                  </Button>
+                )}
                 <StatusBadge status={order.status || 'new'} t={t} />
               </div>
               <span className="text-[12px] text-muted-foreground">{fmtDateTime(order.created_at)}</span>
