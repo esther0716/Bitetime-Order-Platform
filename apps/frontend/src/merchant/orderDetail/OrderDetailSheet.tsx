@@ -87,12 +87,15 @@ export default function OrderDetailSheet({
       {/* `data-[side=right]:sm:max-w-[680px]`, not a bare `sm:max-w-[680px]`: the base
           SheetContent already carries `data-[side=right]:sm:max-w-sm`, and a plain utility
           has one variant against its two, so Tailwind orders it FIRST and the base wins.
-          Matching the variant lets tailwind-merge drop the base one instead.
+          Matching the variant lets tailwind-merge drop the base one instead. `w-full` has the
+          same problem against the base's `data-[side=right]:w-3/4`, and loses it the same way —
+          which left a phone drawer three quarters of the screen wide with a dead strip beside
+          it — so the width is spelled with the variant too.
           `gap-0` and `overflow-hidden` undo the base popup's `gap-4` and let the body be the
           only thing that scrolls. */}
       <SheetContent
         side="right"
-        className="w-full data-[side=right]:sm:max-w-[680px] gap-0 overflow-hidden"
+        className="data-[side=right]:w-full data-[side=right]:sm:max-w-[680px] gap-0 overflow-hidden"
       >
         {order && (
           <>

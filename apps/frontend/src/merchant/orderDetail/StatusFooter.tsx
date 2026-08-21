@@ -52,7 +52,15 @@ export default function StatusFooter({
           {next ? (
             <>
               <span className="sm:hidden">{t('Set another status', '设置其他状态')}</span>
-              <SelectValue className="hidden sm:flex" />
+              {/* Wrapped, and that is load-bearing. The base `SelectTrigger` carries
+                  `*:data-[slot=select-value]:flex` — a child selector, which outranks a plain
+                  `hidden` sitting on the value itself, so the value rendered on a phone
+                  BESIDE the "Set another status" label. `*:` matches direct children only, so
+                  one span between the two puts the value out of that rule's reach and lets
+                  this `hidden` decide. */}
+              <span className="hidden sm:flex sm:min-w-0 sm:flex-1 sm:items-center">
+                <SelectValue />
+              </span>
             </>
           ) : (
             <SelectValue />
