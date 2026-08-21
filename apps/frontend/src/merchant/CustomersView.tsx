@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import OrderDetailSheet from './OrderDetailSheet'
+import OrderDetailSheet from './orderDetail/OrderDetailSheet'
 import { filterChips, mergeShopTags, TAG_CHIP_CAP, tagSuggestions } from './tagSuggestions'
 import WaLink from './WaLink'
 

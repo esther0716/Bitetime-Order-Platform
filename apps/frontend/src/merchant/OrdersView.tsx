@@ -11,7 +11,7 @@ import { DataTable, SortableHeader } from '@/components/ui/data-table'
 import { StatusBadge } from '../orderStatus'
 import { fulfilmentLabel } from '../fulfilmentLabel'
 import { usePoll } from '../usePoll'
-import OrderDetailSheet from './OrderDetailSheet'
+import OrderDetailSheet from './orderDetail/OrderDetailSheet'
 
 // Handlers + language + currency ride on table.options.meta so the column defs
 // stay stable (defined once) and never reset sorting when the data refetches.
