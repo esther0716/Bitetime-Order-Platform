@@ -1,7 +1,7 @@
 # Order detail drawer — redesign
 
 **Date:** 2026-08-21
-**Status:** approved, not implemented
+**Status:** implemented
 **Scope:** frontend only. No `store.ts` change, no new endpoint, no migration.
 
 ## The problem
@@ -46,8 +46,16 @@ The invoice actions leave the header body. On a desktop the drawer shows
 `⋯` menu. On a phone the `⋯` menu holds the download, the WhatsApp send and the
 copy-number action.
 
-`canIssueInvoice(order.status)` gates these items exactly as it does today. If
-the menu holds no item, the drawer does not draw the `⋯` button.
+`canIssueInvoice(order.status)` gates the two invoice items exactly as it does
+today. It does **not** gate the menu, because on a phone the menu also holds the
+copy-number action, and an order that cannot be invoiced still has a number a
+merchant reads back over the phone.
+
+If the menu holds no item, the drawer does not draw the `⋯` button. On a desktop
+the only item is the WhatsApp send, so the button is drawn there only when that
+send exists — which the header decides by asking `waDigits` the same question
+`SendInvoiceOnWa` asks itself. A guest order with no dialable number therefore
+draws no `⋯` rather than one that opens an empty panel.
 
 ### Body
 
@@ -60,8 +68,8 @@ The cards, in order:
 
 | Card | Holds |
 |------|-------|
-| Items | The line items, their option selections, the promo chip, and the line totals. |
-| Payment | Subtotal, shipping, discount, tax and the emphasised total. The payment proof thumbnail sits beside the totals on a desktop, and below the total on a phone. |
+| Items | The line items, their option selections, the promo chip, and the line totals. The card's title row states the line count, so a long order says how long it is before the merchant scrolls it. |
+| Payment | Subtotal, shipping, discount, tax and the emphasised total. The subtotal is summed from the line items, because `orders` stores no subtotal column — without it the card lists three adjustments under a total they cannot be checked against. The payment proof thumbnail sits beside the totals on a desktop, and below the total on a phone, and the card's title row carries a **Proof uploaded** chip when there is one. |
 | Customer & delivery | Customer name, WhatsApp link, fulfilment mode and date, region, and the address. Two columns at `sm` and above, one column below. |
 | Tracking | Courier and AWB. Delivery orders only. |
 | Note | The note textarea, or the note as text when the drawer is read-only. |
@@ -77,7 +85,7 @@ stops wrapping to three lines. The address label carries a copy button.
 
 The `Tracking` card is one component. It renders editable inputs, or the same
 two facts as text when the order is not a delivery order or the drawer is read
-only. This removes the duplicate rendering that fault 4 describes.
+only. This removes the duplicate rendering that fault 4 describes. The card renders **nothing at all** when the order is neither editable nor carries a courier or an AWB: a card headed TRACKING with two em dashes under it tells a merchant less than no card.
 
 ### Footer
 
@@ -140,6 +148,7 @@ The repository already nests `analytics/`, `pixels/` and `store/` this way.
 | `StatusFooter.tsx` | The footer, in both its desktop and its phone shape. |
 | `nextStatus.ts` | The advance rule. Pure. |
 | `nextStatus.test.ts` | Its tests. |
+| `copyText.ts` | Copy one string and toast the result. Shared by the header's copy-number and the address's copy button, which differ only in the success line. |
 
 `OrderDetailSheet` keeps its current props — `order`, `onClose`,
 `onOrderUpdated` and `readOnly`. `OrdersView`, `CustomersView` and

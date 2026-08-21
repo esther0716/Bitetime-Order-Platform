@@ -1,9 +1,8 @@
 import { useSession } from '../../SessionContext'
 import { COURIERS, trackingUrl, courierName } from '../../couriers'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import DrawerCard, { LBL } from './DrawerCard'
+import DrawerCard, { LBL, Field, FIELD_GRID, CardSaveButton } from './DrawerCard'
 
 /**
  * The courier and the air waybill, said ONCE.
@@ -45,18 +44,16 @@ export default function TrackingCard({
   if (!editable) {
     return (
       <DrawerCard title={t('Tracking', '物流')}>
-        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-6">
+        <div className={FIELD_GRID}>
           {order.courier && (
-            <div className="flex flex-col gap-0.5 min-w-0">
-              <span className={LBL}>{t('Courier', '快递公司')}</span>
-              <span className="text-[13px] break-words">{courierName(order.courier) || order.courier}</span>
-            </div>
+            <Field label={t('Courier', '快递公司')}>
+              {courierName(order.courier) || order.courier}
+            </Field>
           )}
           {order.awb && (
-            <div className="flex flex-col gap-0.5 min-w-0">
-              <span className={LBL}>{t('AWB / Tracking no.', '运单号')}</span>
-              <span className="text-[13px] break-words tabular-nums">{order.awb}</span>
-            </div>
+            <Field label={t('AWB / Tracking no.', '运单号')}>
+              <span className="tabular-nums">{order.awb}</span>
+            </Field>
           )}
         </div>
       </DrawerCard>
@@ -69,18 +66,16 @@ export default function TrackingCard({
     <DrawerCard
       title={t('Tracking', '物流')}
       footer={
-        <Button
-          type="button"
-          size="none"
-          className="rounded-lg py-[6px] px-[14px] text-[13px]"
-          disabled={!dirty || saving}
-          onClick={onSave}
-        >
-          {saving ? t('Saving…', '保存中…') : t('Save tracking', '保存物流')}
-        </Button>
+        <CardSaveButton
+          label={t('Save tracking', '保存物流')}
+          savingLabel={t('Saving…', '保存中…')}
+          saving={saving}
+          dirty={dirty}
+          onSave={onSave}
+        />
       }
     >
-      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-6">
+      <div className={FIELD_GRID}>
         <div className="flex flex-col gap-1 min-w-0">
           <label className={LBL} htmlFor={`courier-${order.id}`}>{t('Courier', '快递公司')}</label>
           <Select

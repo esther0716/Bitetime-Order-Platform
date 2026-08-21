@@ -50,6 +50,11 @@ export default function PaymentCard({
 
   const proofUrl = proof && proof.orderId === order?.id ? proof.url : null
 
+  const subtotal = (order.items ?? []).reduce(
+    (sum: number, it: any) => sum + (it.price ?? 0) * (it.qty ?? 0),
+    0,
+  )
+
   return (
     <DrawerCard
       title={t('Payment', '付款')}
@@ -65,6 +70,14 @@ export default function PaymentCard({
           while the phone stack keeps the summary first, above the proof. */}
       <div className="flex flex-col gap-3 sm:flex-row-reverse sm:items-start sm:gap-4">
         <div className="flex-1 min-w-0 text-[13px]">
+          {/* Summed from the lines above, because `orders` stores no subtotal column. Without
+              it the card lists three adjustments under a total they cannot be checked against:
+              a merchant querying a discount has nothing to subtract it FROM. The sum is the
+              same arithmetic the Items card already prints line by line. */}
+          <div className="flex justify-between py-0.5">
+            <span className="text-muted-foreground">{t('Subtotal', '小计')}</span>
+            <span className="tabular-nums text-foreground">{formatMoney(subtotal, currency)}</span>
+          </div>
           {order.shipping_fee != null && (
             <div className="flex justify-between py-0.5">
               {/* The dashboard keeps its own word for this ("Shipping"), which is the

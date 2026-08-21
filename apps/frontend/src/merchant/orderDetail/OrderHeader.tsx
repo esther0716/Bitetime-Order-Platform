@@ -1,4 +1,3 @@
-import { toast } from 'sonner'
 import { Copy, MoreHorizontal } from 'lucide-react'
 import { useSession } from '../../SessionContext'
 import { fetchOrderInvoice } from '../../store'
@@ -7,8 +6,10 @@ import { formatCalendarDate } from '../../orderDate'
 import { StatusBadge } from '../../orderStatus'
 import { fulfilmentLabel } from '../../fulfilmentLabel'
 import { canIssueInvoice } from '@bitetime/shared'
+import { waDigits } from '../../waNumber'
 import InvoiceButton from '../../components/InvoiceButton'
 import SendInvoiceOnWa from '../SendInvoiceOnWa'
+import { copyText } from './copyText'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -39,22 +40,19 @@ export default function OrderHeader({
 }) {
   const { t, lang } = useSession()
   const invoiceable = canIssueInvoice(order.status)
-  // Below `sm` the panel always has something to hold — copy and download live there. At `sm`
-  // and above those two are visible in the row instead, so the only entry left is the WhatsApp
-  // send, which a suspended shop does not get. Without this the desktop `⋯` would open an
-  // empty panel.
-  const menuOnDesktop = !readOnly
 
-  // The number is what a merchant reads back to a customer on the phone or pastes into their
-  // own books. Selecting six characters of a sheet title on a phone is the fiddly part.
-  const copyOrderNumber = async (n: string) => {
-    try {
-      await navigator.clipboard.writeText(n)
-      toast.success(t('Order number copied', '订单号已复制'))
-    } catch {
-      toast.error(t('Could not copy — copy it manually', '无法复制 — 请手动复制'))
-    }
-  }
+  // What the panel will actually hold, worked out here rather than assumed. `SendInvoiceOnWa`
+  // renders NOTHING unless all four of these hold — it is the same `waDigits` that decides
+  // whether a number is dialable — so asking it the question first is what stops a `⋯` from
+  // opening an empty box.
+  const canSendWa = !readOnly && invoiceable && !!order.order_number
+    && !!order.customer_wa && waDigits(order.customer_wa) !== null
+
+  // Below `sm` the panel also holds the copy and the download, so it is worth drawing whenever
+  // there is a number to copy. At `sm` and above those two sit in the row instead, and the
+  // WhatsApp send is the only entry left — so above that breakpoint the button exists only if
+  // that entry does.
+  const hasPhoneEntries = !!order.order_number || invoiceable
 
   return (
     <SheetHeader className="shrink-0 border-b border-border pr-9">
@@ -65,7 +63,7 @@ export default function OrderHeader({
             variant="ghost"
             size="iconRound"
             aria-label={t('Copy order number', '复制订单号')}
-            onClick={() => copyOrderNumber(order.order_number!)}
+            onClick={() => copyText(order.order_number!, { en: 'Order number copied', zh: '订单号已复制' }, t)}
             className="hidden sm:inline-flex"
           >
             <Copy className="size-3.5" />
@@ -73,70 +71,76 @@ export default function OrderHeader({
         )}
 
         {invoiceable && (
-          <>
-            {/* Visible on a desktop, where there is room for a word. On a phone the same
-                action lives in the panel below. Two instances, but they are breakpoint
-                exclusive — only one is ever on screen. */}
-            <span className="ml-auto hidden sm:inline-flex">
-              <InvoiceButton
-                status={order.status}
-                orderNumber={order.order_number}
-                fetcher={() => fetchOrderInvoice(merchantId, order.id)}
-                className="text-[13px]"
-                label={t('Download invoice', '下载账单')}
-              />
-            </span>
+          /* Visible on a desktop, where there is room for a word. On a phone the same action
+             lives in the panel below. Two instances, but they are breakpoint exclusive — only
+             one is ever on screen. */
+          <span className="ml-auto hidden sm:inline-flex">
+            <InvoiceButton
+              status={order.status}
+              orderNumber={order.order_number}
+              fetcher={() => fetchOrderInvoice(merchantId, order.id)}
+              className="text-[13px]"
+              label={t('Download invoice', '下载账单')}
+            />
+          </span>
+        )}
 
-            <Popover>
-              <PopoverTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="iconRound"
-                    aria-label={t('More actions', '更多操作')}
-                    className={cn('ml-auto sm:ml-0', !menuOnDesktop && 'sm:hidden')}
-                  />
-                }
-              >
-                <MoreHorizontal className="size-4" />
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-auto min-w-[190px] flex flex-col items-start gap-2.5 p-3">
-                {order.order_number && (
-                  <Button
-                    variant="link"
-                    size="none"
-                    className="sm:hidden inline-flex items-center gap-1.5 text-[13px] text-foreground"
-                    onClick={() => copyOrderNumber(order.order_number!)}
-                  >
-                    <Copy className="size-3.5" />
-                    {t('Copy order number', '复制订单号')}
-                  </Button>
-                )}
-                <span className="sm:hidden">
-                  <InvoiceButton
-                    status={order.status}
-                    orderNumber={order.order_number}
-                    fetcher={() => fetchOrderInvoice(merchantId, order.id)}
-                    className="text-[13px]"
-                    label={t('Download invoice', '下载账单')}
-                  />
-                </span>
-                {/* A WhatsApp message the merchant presses send on. It carries the LINK to
-                    that customer's own invoice door, never the file — see `invoiceShare.ts`.
-                    It renders null with no WhatsApp number, which is why the panel sizes to
-                    its content rather than to a fixed row count. */}
-                {!readOnly && (
-                  <SendInvoiceOnWa
-                    status={order.status}
-                    orderNumber={order.order_number}
-                    customerWa={order.customer_wa}
-                    customerName={order.customer_name}
-                  />
-                )}
-              </PopoverContent>
-            </Popover>
-          </>
+        {(hasPhoneEntries || canSendWa) && (
+          <Popover>
+            <PopoverTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="iconRound"
+                  aria-label={t('More actions', '更多操作')}
+                  className={cn(
+                    'ml-auto',
+                    invoiceable && 'sm:ml-0',
+                    !canSendWa && 'sm:hidden',
+                  )}
+                />
+              }
+            >
+              <MoreHorizontal className="size-4" />
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-auto min-w-[190px] flex flex-col items-start gap-2.5 p-3">
+              {order.order_number && (
+                <Button
+                  variant="link"
+                  size="none"
+                  className="sm:hidden inline-flex items-center gap-1.5 text-[13px] text-foreground"
+                  onClick={() => copyText(order.order_number!, { en: 'Order number copied', zh: '订单号已复制' }, t)}
+                >
+                  <Copy className="size-3.5" />
+                  {t('Copy order number', '复制订单号')}
+                </Button>
+              )}
+              {invoiceable && (
+              <span className="sm:hidden">
+                <InvoiceButton
+                  status={order.status}
+                  orderNumber={order.order_number}
+                  fetcher={() => fetchOrderInvoice(merchantId, order.id)}
+                  className="text-[13px]"
+                  label={t('Download invoice', '下载账单')}
+                />
+              </span>
+              )}
+              {/* A WhatsApp message the merchant presses send on. It carries the LINK to
+                  that customer's own invoice door, never the file — see `invoiceShare.ts`.
+                  It renders null with no WhatsApp number, which is why the panel sizes to
+                  its content rather than to a fixed row count. */}
+              {canSendWa && (
+                <SendInvoiceOnWa
+                  status={order.status}
+                  orderNumber={order.order_number}
+                  customerWa={order.customer_wa}
+                  customerName={order.customer_name}
+                />
+              )}
+            </PopoverContent>
+          </Popover>
         )}
       </div>
 

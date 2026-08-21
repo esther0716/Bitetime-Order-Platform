@@ -1,7 +1,6 @@
 import { useSession } from '../../SessionContext'
-import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import DrawerCard from './DrawerCard'
+import DrawerCard, { CardSaveButton } from './DrawerCard'
 
 /** The merchant's own note on the order. Read-only for a suspended shop. */
 export default function NoteCard({
@@ -37,15 +36,13 @@ export default function NoteCard({
     <DrawerCard
       title={t('Note', '备注')}
       footer={
-        <Button
-          type="button"
-          size="none"
-          className="rounded-lg py-[6px] px-[14px] text-[13px]"
-          disabled={!dirty || saving}
-          onClick={onSave}
-        >
-          {saving ? t('Saving…', '保存中…') : t('Save note', '保存备注')}
-        </Button>
+        <CardSaveButton
+          label={t('Save note', '保存备注')}
+          savingLabel={t('Saving…', '保存中…')}
+          saving={saving}
+          dirty={dirty}
+          onSave={onSave}
+        />
       }
     >
       <Textarea

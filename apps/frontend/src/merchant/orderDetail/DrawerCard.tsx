@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button'
+
 /** 11px semibold uppercase muted label — the drawer's one small-caption style. */
 export const LBL = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground shrink-0'
 
@@ -40,5 +42,65 @@ export default function DrawerCard({
         <div className="flex justify-end gap-2 px-4 py-2.5 border-t border-border">{footer}</div>
       )}
     </section>
+  )
+}
+
+/**
+ * The two-column field grid, one column below `sm`. Three cards lay their facts out this way
+ * and the string was copied into each.
+ */
+export const FIELD_GRID = 'grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-x-6'
+
+/**
+ * One labelled fact: the label ABOVE its value, not beside it.
+ *
+ * The drawer used to draw these through a fixed 84px label column, which left a real Malaysian
+ * address about 300px to wrap in. `action` is an optional control that belongs to the label —
+ * today only the address's copy button.
+ */
+export function Field({
+  label,
+  action,
+  children,
+}: {
+  label: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span className={`${LBL} flex items-center gap-1`}>{label}{action}</span>
+      <span className="text-[13px] text-foreground break-words">{children}</span>
+    </div>
+  )
+}
+
+/**
+ * The button in a card's footer that writes that card's fields. Both editing cards had it
+ * character-for-character, down to the padding.
+ */
+export function CardSaveButton({
+  label,
+  savingLabel,
+  saving,
+  dirty,
+  onSave,
+}: {
+  label: string
+  savingLabel: string
+  saving: boolean
+  dirty: boolean
+  onSave: () => void
+}) {
+  return (
+    <Button
+      type="button"
+      size="none"
+      className="rounded-lg py-[6px] px-[14px] text-[13px]"
+      disabled={!dirty || saving}
+      onClick={onSave}
+    >
+      {saving ? savingLabel : label}
+    </Button>
   )
 }
