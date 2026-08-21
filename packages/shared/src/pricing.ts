@@ -46,7 +46,18 @@ export interface PricedVoucher {
   type?: string
   value?: number
   maxUses?: number | string | null
+  /**
+   * The redeemer keys. Present on a row the BACKEND read (`claimVoucher` prices from the row it
+   * locked); ABSENT on anything the browser was served, because the API views strip it — it is a
+   * list of account email addresses. Never reintroduce it into a response: see `voucherView.ts`.
+   */
   usedBy?: string[]
+  /** Derived server-side. The shop's total cap is spent and nobody can redeem it. */
+  fullyUsed?: boolean
+  /** Derived server-side from the CALLER'S OWN verified email. Absent when they presented none. */
+  alreadyUsed?: boolean
+  /** Derived server-side. How many redemptions the code has taken — a count, never the keys. */
+  usedCount?: number
   [key: string]: unknown
 }
 
@@ -503,6 +514,14 @@ export type VoucherErrorCode =
 export interface VoucherCtx {
   userEmail: string
   fullyUsed?: boolean // caller precomputes via store.voucherFullyUsed
+  /**
+   * Whether THIS caller has already redeemed it. Server-derived, because the browser is no longer
+   * shown the redeemer list to scan — that list is account email addresses, and the lookup route
+   * is public. Absent (undefined) means "not asked", which happens when the customer is signed
+   * out; that is not "no", but a signed-out customer cannot redeem at all
+   * (`voucher_requires_account`), so nothing is granted on the strength of it.
+   */
+  alreadyUsed?: boolean
 }
 
 // Pure voucher rules. Loading the codes stays I/O in the caller; the rules are
@@ -512,7 +531,12 @@ export function voucherError(voucher: PricedVoucher | null | undefined, ctx: Vou
   const email = (ctx.userEmail ?? '').toLowerCase()
   const v = voucher as any
   if (ctx.fullyUsed) return 'fully_used'
-  if ((v.usedBy || []).includes(email)) return 'already_used'
+  // `ctx.alreadyUsed` is the authority. The `usedBy` scan remains ONLY as the backend's own path
+  // (it prices from a locked row that really does carry the keys) and as the fallback for a
+  // caller that has not migrated — it can no longer fire from the browser, whose voucher never
+  // carries `usedBy` any more.
+  if (ctx.alreadyUsed) return 'already_used'
+  if (email && (v.usedBy || []).includes(email)) return 'already_used'
   return null
 }
 
@@ -652,6 +676,11 @@ export function voucherFromRow(row: Record<string, unknown>): PricedVoucher {
     value: Number(row.amount),
     maxUses: (row.max_uses ?? null) as number | null,
     usedBy: Array.isArray(row.used_by) ? (row.used_by as string[]) : [],
+    // Server-derived, and present only on the API views (`voucherView.ts`). A row read straight
+    // from Postgres carries none of them, which is correct: the backend has `used_by` itself.
+    fullyUsed: row.fully_used as boolean | undefined,
+    alreadyUsed: row.already_used as boolean | undefined,
+    usedCount: row.used_count as number | undefined,
     // Deactivated in bulk when a shop steps down from Pro. Defaults TRUE on a missing column so
     // a row read from anywhere that does not select it is never mistaken for a dead voucher —
     // the redemption path filters `active` in SQL, and this field exists to be DISPLAYED.

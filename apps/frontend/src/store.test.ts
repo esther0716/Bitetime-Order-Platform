@@ -119,6 +119,7 @@ import {
   setOrderTracking,
   fetchShopCustomers,
   voucherFromRow,
+  voucherFullyUsed,
   fetchMerchantVouchers,
   createMerchantVoucher,
   deleteMerchantVoucher,
@@ -1380,8 +1381,12 @@ describe('lookupMerchantVoucher', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('GETs /api/merchants/:id/vouchers/:code with no auth header and maps a found row', async () => {
-    const row = { id: 'v1', code: 'A', kind: 'fixed', amount: 5, used_by: [] }
+  // The route is auth-OPTIONAL, and both halves matter. Signed in, it needs the token to answer
+  // `already_used` from the caller's own verified email; signed out, it must still answer at all,
+  // because a customer has to see what a code is worth before being asked to sign in for it.
+  it('attaches a bearer token when there is a session, and maps a found row', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const row = { id: 'v1', code: 'A', kind: 'fixed', amount: 5, fully_used: false, already_used: true, used_count: 1 }
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => row })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -1389,16 +1394,49 @@ describe('lookupMerchantVoucher', () => {
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/vouchers\/A$/)
-    expect(init.headers).toEqual({})
-    expect(result).toEqual({ ok: true, data: { id: 'v1', code: 'A', type: 'fixed', value: 5, maxUses: null, usedBy: [], active: true } })
+    expect(init.headers.Authorization).toBe('Bearer tok')
+    expect(result).toEqual({ ok: true, data: {
+      id: 'v1', code: 'A', type: 'fixed', value: 5, maxUses: null, usedBy: [], active: true,
+      fullyUsed: false, alreadyUsed: true, usedCount: 1,
+    } })
+  })
+
+  it('still asks, unauthenticated, when there is no session', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
+    const row = { id: 'v1', code: 'A', kind: 'fixed', amount: 5, fully_used: false }
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => row })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await lookupMerchantVoucher('m1', 'A')
+
+    expect(fetchMock.mock.calls[0][1].headers).toEqual({})
+    // `alreadyUsed` is ABSENT, not false: the server was not asked, and the customer has not
+    // been told "no".
+    expect(result.ok && result.data?.alreadyUsed).toBeUndefined()
+  })
+
+  // The redeemer list is a list of ACCOUNT EMAIL ADDRESSES and the route is public — a voucher
+  // code is printed on flyers. The server strips it (apps/backend/src/voucherView.ts); this pins
+  // that the browser reads the derived flags and does not depend on getting the keys back.
+  it('does not need used_by to know the voucher is spent', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
+    const row = { id: 'v1', code: 'A', kind: 'fixed', amount: 5, max_uses: 2, fully_used: true, used_count: 2 }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => row }))
+
+    const result = await lookupMerchantVoucher('m1', 'A')
+
+    expect(result.ok && result.data?.usedBy).toEqual([])
+    expect(result.ok && voucherFullyUsed(result.data!)).toBe(true)
   })
 
   it('returns { ok:true, data:null } on a 200 with a null body (the real answer: no such voucher)', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => null }))
     expect(await lookupMerchantVoucher('m1', 'MISSING')).toEqual({ ok: true, data: null })
   })
 
   it('returns { ok:false } on a failed request — could not ask', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) }))
     expect((await lookupMerchantVoucher('m1', 'A')).ok).toBe(false)
   })

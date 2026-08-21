@@ -15,7 +15,8 @@ import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
-import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, type AppEnv } from './mw.js'
+import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, bearer, type AppEnv } from './mw.js'
+import { voucherPublicView, voucherMerchantView } from './voucherView.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
@@ -660,11 +661,18 @@ app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, async (c) => {
   })
 })
 
+// Owner-scoped, and STILL not a verbatim row. `used_by` holds the platform account emails of the
+// shop's redeemers, and CONTEXT.md -> Shop customer draws that boundary explicitly: a shop sees
+// shop-scoped facts plus the has-an-account flag, and no account email. A WhatsApp number was
+// volunteered to this shop; an email was volunteered to the platform. The merchant gets the count
+// they actually use — how many redemptions the code has taken — and never the keys behind it.
 app.get('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
-  const { data, error } = await admin.from('vouchers').select('*').eq('merchant_id', m.id)
+  const { data, error } = await admin
+    .from('vouchers').select('id, merchant_id, code, kind, amount, max_uses, used_by, active, created_at')
+    .eq('merchant_id', m.id)
   if (error) return c.json({ error: 'Lookup failed' }, 500)
-  return c.json(data ?? [])
+  return c.json((data ?? []).map(voucherMerchantView))
 })
 
 app.get('/api/merchants/:id/billing', requireMerchantOwns, async (c) => {
@@ -1074,11 +1082,19 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
   // that has stepped down to Basic is told it is not a code rather than being quoted a discount
   // the order transaction will then refuse. Same answer, one screen earlier.
   const { data, error } = await admin
-    .from('vouchers').select('*').eq('merchant_id', id).eq('code', code)
+    .from('vouchers').select('id, code, kind, amount, max_uses, used_by')
+    .eq('merchant_id', id).eq('code', code)
     .eq('active', true).maybeSingle()
   // Same contract: 5xx = could-not-ask; 200 null = shop has no such voucher.
   if (error) return c.json({ error: 'Lookup failed' }, 500)
-  return c.json(data ?? null)
+  if (!data) return c.json(null)
+  // This route is PUBLIC and a voucher code is printed on flyers, so the row must never leave
+  // verbatim: `used_by` holds the account email of every redeemer. `voucherPublicView` derives
+  // `fully_used` and drops the keys. The caller's own "have I used this?" is answered from THEIR
+  // OWN verified email and only when they present one — auth-optional, because a signed-out
+  // customer still needs to see the discount before being asked to sign in.
+  const user = await getUserFromToken(bearer(c))
+  return c.json(voucherPublicView(data, user?.email ?? null))
 })
 
 // Voucher create. The insert goes through `admin` (service_role), so forcing merchant_id
@@ -1100,7 +1116,9 @@ app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
     max_uses: b?.maxUses ?? null,
   }).select().single()
   if (error) return c.json({ error: 'Create failed' }, 500)
-  return c.json(data)
+  // Through the same view as the list, so the dashboard reads ONE voucher shape. A fresh row's
+  // `used_by` is empty and leaks nothing today; the point is that it can never start to.
+  return c.json(voucherMerchantView(data))
 })
 
 // Voucher delete. requireMerchantOwns only proves the caller owns :id — it says nothing

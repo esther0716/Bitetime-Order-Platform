@@ -90,7 +90,9 @@ export default function VouchersManager() {
     return (v as any).type === 'percent' ? `${value}% off` : `${formatMoney(value, currency)} off`
   }
   function usesLabel(v: Voucher) {
-    const used = Array.isArray(v.usedBy) ? v.usedBy.length : 0
+    // The API's count. It never sends the redeemer list any more, to the merchant either — a
+    // shop sees shop-scoped facts and no account email (CONTEXT.md -> Shop customer).
+    const used = v.usedCount ?? 0
     const cap = v.maxUses == null ? '∞' : v.maxUses
     return t(`${used} / ${cap} used`, `已用 ${used} / ${cap}`)
   }

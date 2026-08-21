@@ -417,14 +417,22 @@ export function onAuthChange(callback: (user: User | null, event?: string) => vo
 // ── Vouchers ──────────────────────────────────────────────────────────────────
 
 // Uses left on a voucher. Infinity = no total cap (still capped to 1 per customer).
+//
+// `usedCount` is the API's own count. It replaced a `usedBy.length` read here: `used_by` is the
+// list of redeemers' ACCOUNT EMAIL ADDRESSES and no longer leaves the backend, on either the
+// public route or the merchant's own (see apps/backend/src/voucherView.ts). The array fallback
+// survives for a legacy shape only and counts nothing that is not already in `usedCount`.
 export function voucherUsesLeft(v: Voucher) {
-  const count = Array.isArray(v.usedBy) ? v.usedBy.length : 0;
+  const count = v.usedCount ?? (Array.isArray(v.usedBy) ? v.usedBy.length : 0);
   if (v.maxUses == null || v.maxUses === '') return Infinity;
   return Math.max(0, Number(v.maxUses) - count);
 }
 
 // True when the voucher can no longer be redeemed by anyone.
 export function voucherFullyUsed(v: Voucher) {
+  // The server's own answer, when it gave one. It is derived from `max_uses` against a count the
+  // browser is deliberately not shown, so it is the only reading that can be right here.
+  if (typeof v.fullyUsed === 'boolean') return v.fullyUsed;
   // Legacy single-use vouchers: `used:true` with no usedBy list.
   if (v.used && !Array.isArray(v.usedBy)) return true;
   return voucherUsesLeft(v) <= 0;
@@ -457,7 +465,12 @@ export async function fetchMerchantVouchers(merchantId: string): Promise<Result<
  */
 export async function lookupMerchantVoucher(merchantId: string, code: string): Promise<Result<Voucher | null>> {
   if (!merchantId || !code) return { ok: true, data: null }
-  const r = await apiGet<any>(`/api/merchants/${merchantId}/vouchers/${encodeURIComponent(code)}`)
+  // `auth: true` — the guest-tolerant one: it attaches the session token when there is one and
+  // sends the request unauthenticated when there is not. The route needs it to answer
+  // `already_used`, which it derives from the CALLER'S OWN verified email; without a token it
+  // simply omits that field. A signed-out customer must still be able to see what the code is
+  // worth before being asked to sign in, so `auth: 'required'` would be wrong here.
+  const r = await apiGet<any>(`/api/merchants/${merchantId}/vouchers/${encodeURIComponent(code)}`, { auth: true })
   return mapOk(r, (row) => (row ? voucherFromRow(row) : null))
 }
 

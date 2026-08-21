@@ -495,6 +495,7 @@ export default function Storefront() {
     const err = voucherError(v, {
       userEmail: voucherEntry,
       fullyUsed: v ? voucherFullyUsed(v) : true,
+      alreadyUsed: v?.alreadyUsed,
     })
     if (err || !v) {
       setAppliedVoucher(null)
@@ -706,6 +707,7 @@ export default function Storefront() {
           const verr = voucherError(fresh, {
             userEmail: voucherEntry,
             fullyUsed: voucherFullyUsed(fresh),
+            alreadyUsed: fresh.alreadyUsed,
           })
           if (verr) {
             setAppliedVoucher(null)
