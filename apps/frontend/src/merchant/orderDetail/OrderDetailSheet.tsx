@@ -1,28 +1,22 @@
 import { useState, useEffect } from 'react'
 import { useSession } from '../../SessionContext'
-import { setOrderStatus, setOrderNote, setOrderTracking, fetchPaymentProof, fetchOrderInvoice } from '../../store'
+import { setOrderStatus, setOrderNote, setOrderTracking, fetchPaymentProof } from '../../store'
 import { formatMoney } from '../../currency'
 import { formatAddress } from '../../address'
 import { formatCalendarDate } from '../../orderDate'
-import { fmtDateTime } from '../../merchantDate'
 import { formatTaxRate } from '../../taxRate'
 import { toast } from 'sonner'
-import { Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
-} from '@/components/ui/sheet'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { COURIERS, trackingUrl, courierName } from '../../couriers'
-import { ORDER_STATUSES, STATUS_LABELS, StatusBadge } from '../../orderStatus'
+import { ORDER_STATUSES, STATUS_LABELS } from '../../orderStatus'
 import { fulfilmentLabel } from '../../fulfilmentLabel'
-import { canIssueInvoice } from '@bitetime/shared'
 import WaLink from '../WaLink'
-import InvoiceButton from '../../components/InvoiceButton'
-import SendInvoiceOnWa from '../SendInvoiceOnWa'
 import { ItemSelections } from '../../ItemSelections'
+import OrderHeader from './OrderHeader'
 import DrawerCard, { LBL } from './DrawerCard'
 
 // A labelled key/value line in the detail sheet — label in a fixed left column,
@@ -134,15 +128,6 @@ export default function OrderDetailSheet({
     }).finally(() => setSavingTrack(false))
   }
 
-  const copyOrderNumber = async (n: string) => {
-    try {
-      await navigator.clipboard.writeText(n)
-      toast.success(t('Order number copied', '订单号已复制'))
-    } catch {
-      toast.error(t('Could not copy — copy it manually', '无法复制 — 请手动复制'))
-    }
-  }
-
   const orderCurrency = order?.currency ?? merchant?.currency
   const noteDirty = order != null && noteDraft.trim() !== (order.note ?? '')
   const trackDirty = order != null &&
@@ -162,54 +147,7 @@ export default function OrderDetailSheet({
       >
         {order && (
           <>
-            <SheetHeader className="shrink-0 border-b border-border pr-9">
-              <div className="flex items-center gap-[10px] flex-wrap">
-                <SheetTitle className="text-[15px]">{order.order_number || '—'}</SheetTitle>
-                {/* The number is what a merchant reads back to a customer on the phone or pastes
-                    into their own books. Selecting six characters of a sheet title on a phone is
-                    the fiddly part, so it gets a button. Absent when there is no number to copy. */}
-                {order.order_number && (
-                  <Button
-                    variant="ghost"
-                    size="iconRound"
-                    aria-label={t('Copy order number', '复制订单号')}
-                    onClick={() => copyOrderNumber(order.order_number!)}
-                  >
-                    <Copy className="size-3.5" />
-                  </Button>
-                )}
-                <StatusBadge status={order.status || 'new'} t={t} />
-              </div>
-              <span className="text-[12px] text-muted-foreground">{fmtDateTime(order.created_at)}</span>
-              {/* ONE row for the two ways one paper reaches one customer: the merchant downloads
-                  it themselves, or sends the customer the link to fetch their own. The word
-                  "invoice" is said ONCE, by the label — spelled out in both buttons it filled two
-                  lines of a header that is mostly an order number. `canIssueInvoice` gates the
-                  whole row, label included: the same shared rule each button applies on its own,
-                  hoisted so an un-invoiceable order shows no orphaned caption. */}
-              {canIssueInvoice(order.status) && (
-                <div className="flex items-center gap-4 flex-wrap">
-                  <span className={LBL}>{t('Invoice', '账单')}</span>
-                  <InvoiceButton
-                    status={order.status}
-                    orderNumber={order.order_number}
-                    fetcher={() => fetchOrderInvoice(merchant!.id, order.id)}
-                    className="text-[13px]"
-                    label={t('Download', '下载')}
-                  />
-                  {/* A WhatsApp message the merchant presses send on. It carries the LINK to that
-                      customer's own invoice door, never the file — see `invoiceShare.ts`. */}
-                  {!readOnly && (
-                    <SendInvoiceOnWa
-                      status={order.status}
-                      orderNumber={order.order_number}
-                      customerWa={order.customer_wa}
-                      customerName={order.customer_name}
-                    />
-                  )}
-                </div>
-              )}
-            </SheetHeader>
+            <OrderHeader order={order} readOnly={readOnly} merchantId={merchant!.id} />
 
             <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col gap-3 p-3 sm:p-4">
               {/* Customer */}
