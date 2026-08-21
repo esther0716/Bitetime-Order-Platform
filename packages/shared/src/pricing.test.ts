@@ -350,8 +350,47 @@ describe('voucherError', () => {
     expect(voucherError(null, CTX)).toBe('invalid')
   })
 
-  it('returns already_used when the user is in usedBy', () => {
-    expect(voucherError({ code: 'X', usedBy: ['me@x.com'] } as any, CTX)).toBe('already_used')
+  it('returns customer_limit_reached when the user is in usedBy', () => {
+    // The un-migrated fallback: a caller with no server-derived count can only have meant the
+    // one-per-customer rule, which membership in `usedBy` is exactly.
+    expect(voucherError({ code: 'X', usedBy: ['me@x.com'] } as any, CTX)).toBe('customer_limit_reached')
+  })
+
+  it('takes the server-derived customerLimitReached over any list scan', () => {
+    // What the browser actually uses now: it is never shown `usedBy`, because that list is
+    // account email addresses and the lookup route is public.
+    expect(voucherError({ code: 'X' } as any, { ...CTX, customerLimitReached: true })).toBe('customer_limit_reached')
+  })
+
+  it('returns expired past the expiry, and fails closed on an unparseable one', () => {
+    const now = new Date('2026-08-31T16:30:00Z')
+    expect(voucherError({ code: 'X', expiresAt: '2026-08-31T15:59:59.999Z' } as any, { ...CTX, now })).toBe('expired')
+    // Still live AT the boundary, matching promoState.
+    expect(voucherError({ code: 'X', expiresAt: '2026-08-31T16:30:00.000Z' } as any, { ...CTX, now })).toBeNull()
+    // Every comparison against a NaN date is false, so the naive form reads a corrupt value as
+    // "runs for ever". Refusing a discount is the safe direction here.
+    expect(voucherError({ code: 'X', expiresAt: 'never' } as any, { ...CTX, now })).toBe('expired')
+  })
+
+  it('returns min_order under the minimum, coercing the string a numeric column returns', () => {
+    // `'50' < 40` is false in JavaScript. Uncoerced, the minimum would silently stop refusing —
+    // the cross-driver trap productFromRow documents.
+    expect(voucherError({ code: 'X', minOrder: '50' } as any, { ...CTX, subtotal: 40 })).toBe('min_order')
+    expect(voucherError({ code: 'X', minOrder: 50 } as any, { ...CTX, subtotal: 50 })).toBeNull()
+  })
+
+  it('reports the terminal refusal first when several apply', () => {
+    // Order is the message: telling a customer to spend more on a voucher that has expired is
+    // advice that costs them money and fails anyway.
+    const now = new Date('2026-09-01T00:00:00Z')
+    const v = { code: 'X', expiresAt: '2026-08-31T15:59:59.999Z', minOrder: 50 } as any
+    expect(voucherError(v, { ...CTX, now, subtotal: 10 })).toBe('expired')
+    expect(voucherError(v, { ...CTX, now, subtotal: 10, fullyUsed: true })).toBe('fully_used')
+  })
+
+  it('skips the checks a caller gave it nothing to answer with', () => {
+    // No cart yet, no clock: the pre-flight must not refuse on a rule it cannot evaluate.
+    expect(voucherError({ code: 'X', minOrder: 50, expiresAt: '2020-01-01T00:00:00Z' } as any, CTX)).toBeNull()
   })
 
   it('honors a precomputed fullyUsed flag', () => {

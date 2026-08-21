@@ -446,6 +446,22 @@ export default function Storefront() {
     // here is a second rule, and the customer meets it as a refused checkout (`price_changed`).
     tax,
   })
+
+  /**
+   * How much more this basket needs before the applied voucher does anything, or 0.
+   *
+   * DERIVED, never stored: the storefront keeps an applied voucher across cart edits, so a number
+   * captured when the code was typed would go stale on the next tap — stating a gap the customer
+   * has already closed, or none when they have opened one. `priceOrder` has meanwhile dropped the
+   * discount to zero on its own (`voucherApplies`), so the total on screen is already honest; this
+   * is what explains it.
+   */
+  const voucherShortfall = (() => {
+    const min = Number(appliedVoucher?.minOrder ?? NaN)
+    if (!Number.isFinite(min)) return 0
+    return Math.max(0, Math.round((min - bd.subtotal) * 100) / 100)
+  })()
+
   const cartItems: ReceiptLine[] = bd.lines.map(l => ({
     id: l.id, name: l.name, qty: l.qty, price: l.unitPrice, promo: l.promo,
     key: l.key, selections: l.selections,
@@ -495,8 +511,22 @@ export default function Storefront() {
     const err = voucherError(v, {
       userEmail: voucherEntry,
       fullyUsed: v ? voucherFullyUsed(v) : true,
+      customerLimitReached: v?.customerLimitReached,
+      subtotal: bd.subtotal,
+      now: new Date(),
     })
-    if (err || !v) {
+    // `min_order` is the ONE code that does not reject. A basket under the minimum KEEPS the
+    // voucher — asking for a little more is what a minimum-order voucher is for, and the customer
+    // re-qualifies the moment they add the item, with the reason still on screen. The gap itself
+    // is not set here: it is derived below, so it tracks every cart edit instead of freezing the
+    // number that happened to be true when the code was typed. Every other code is terminal —
+    // adding to the cart cannot revive a spent or expired voucher.
+    if (err && err !== 'min_order') {
+      setAppliedVoucher(null)
+      setVoucherMsg({ kind: 'voucher_error', code: err })
+      return
+    }
+    if (!v) {
       setAppliedVoucher(null)
       setVoucherMsg({ kind: 'voucher_error', code: err ?? 'invalid' })
       return
@@ -706,7 +736,17 @@ export default function Storefront() {
           const verr = voucherError(fresh, {
             userEmail: voucherEntry,
             fullyUsed: voucherFullyUsed(fresh),
+            customerLimitReached: fresh.customerLimitReached,
+            subtotal: bd.subtotal,
+            now: new Date(),
           })
+          // Here `min_order` DOES stop the submit, unlike at apply time: the customer is pressing
+          // Place Order, and the backend would refuse it anyway (`voucher_below_minimum`). The gap
+          // is already on screen from `voucherShortfall`, so this only has to block.
+          if (verr === 'min_order') {
+            setError({ kind: 'voucher_error', code: 'min_order' })
+            return
+          }
           if (verr) {
             setAppliedVoucher(null)
             setVoucherMsg({ kind: 'voucher_error', code: verr })
@@ -1517,7 +1557,19 @@ export default function Storefront() {
                 </Button>
               </div>
             )}
-            {voucherMsg && (
+            {appliedVoucher && voucherShortfall > 0 && (
+              <p className="mt-2 text-[13px]">
+                {noticeText(
+                  { kind: 'voucher_shortfall', shortfall: voucherShortfall, voucherCode: appliedVoucher.code },
+                  noticeCtx,
+                )}
+              </p>
+            )}
+            {/* The "✓ Voucher applied: 20% off" line is SUPPRESSED while a shortfall stands. Both
+                statements are true, and together they read as a contradiction: the customer is
+                told the discount is on and, one line up, that it is not doing anything. The gap is
+                the more useful of the two, and it is the one that tells them what to do. */}
+            {voucherMsg && !(voucherMsg.kind === 'voucher_applied' && voucherShortfall > 0) && (
               <p className="mt-2 text-[13px]">{noticeText(voucherMsg, noticeCtx)}</p>
             )}
           </div>

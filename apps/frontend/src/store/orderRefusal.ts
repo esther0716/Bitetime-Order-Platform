@@ -90,8 +90,12 @@ export function orderRefusalPlan(code: OrderRefusalCode | undefined, ctx: OrderR
   switch (code) {
     case 'voucher_not_found':
       return dropVoucher(t('That voucher is no longer valid. Please place the order without it.', '该优惠券已失效，请不使用优惠券重新下单。'))
-    case 'voucher_already_used':
-      return dropVoucher(t('You have already used this voucher. Please place the order without it.', '你已使用过此优惠券，请不使用优惠券重新下单。'))
+    case 'voucher_customer_limit_reached':
+      return dropVoucher(t('You have used this voucher as many times as allowed. Please place the order without it.', '你使用此优惠券的次数已达上限，请不使用优惠券重新下单。'))
+    case 'voucher_expired':
+      return dropVoucher(t('This voucher has expired. Please place the order without it.', '此优惠券已过期，请不使用优惠券重新下单。'))
+    case 'voucher_below_minimum':
+      return dropVoucher(t('Your order is below this voucher\u2019s minimum. Please place the order without it.', '您的订单未达到此优惠券的最低消费，请不使用优惠券重新下单。'))
     case 'voucher_fully_used':
       return dropVoucher(t('This voucher has been fully claimed. Please place the order without it.', '此优惠券已被领完，请不使用优惠券重新下单。'))
     case 'voucher_requires_account':

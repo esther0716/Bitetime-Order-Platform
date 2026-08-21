@@ -38,7 +38,7 @@ describe('orderRefusalPlan', () => {
   })
 
   it('drops the voucher on every voucher refusal', () => {
-    for (const code of ['voucher_not_found', 'voucher_already_used', 'voucher_fully_used', 'voucher_requires_account'] as const) {
+    for (const code of ['voucher_not_found', 'voucher_customer_limit_reached', 'voucher_fully_used', 'voucher_requires_account', 'voucher_expired', 'voucher_below_minimum'] as const) {
       expect(orderRefusalPlan(code, ctx()).actions).toEqual(['drop_voucher'])
     }
   })

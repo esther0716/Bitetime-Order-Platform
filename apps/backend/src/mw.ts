@@ -16,7 +16,9 @@ export type AppEnv = {
   }
 }
 
-function bearer(c: Parameters<MiddlewareHandler>[0]): string {
+// Exported for the ONE route that must read a caller's identity without requiring it: the public
+// voucher lookup, which answers "have you already used this?" only when a JWT is present.
+export function bearer(c: Parameters<MiddlewareHandler>[0]): string {
   return (c.req.header('Authorization') || '').replace(/^Bearer\s+/i, '')
 }
 
