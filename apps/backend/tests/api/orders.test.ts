@@ -266,11 +266,15 @@ describe('POST /api/orders', () => {
 
   // ── The happy path, and the format that must not move ───────────────────────
 
+  // The status rides back with the number because the order-placed screen has to know whether it
+  // may offer an invoice: an order at a shop taking manual payment is born `pending_payment` and
+  // has none yet. It is READ BACK rather than re-derived in the browser — the rule for which shops
+  // those are belongs to the statement that writes it (#242).
   it('places an order and returns its number', async () => {
     const res = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone() }))
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ orderNumber: `OR-${DAY}-0050`, id: expect.any(String) })
+    expect(await res.json()).toEqual({ orderNumber: `OR-${DAY}-0050`, id: expect.any(String), status: 'new' })
   })
 
   it('writes the order row, with the cart and the total', async () => {
@@ -293,8 +297,8 @@ describe('POST /api/orders', () => {
     const first = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone() }))
     const second = await post(body(shop, productId, { fulfilDate: tomorrowInShopZone() }))
 
-    expect(await first.json()).toEqual({ orderNumber: `OR-${DAY}-0050`, id: expect.any(String) })
-    expect(await second.json()).toEqual({ orderNumber: `OR-${DAY}-0051`, id: expect.any(String) })
+    expect(await first.json()).toEqual({ orderNumber: `OR-${DAY}-0050`, id: expect.any(String), status: 'new' })
+    expect(await second.json()).toEqual({ orderNumber: `OR-${DAY}-0051`, id: expect.any(String), status: 'new' })
   })
 
   // ── The intake gate, now a TypeScript invariant (db.ts bypasses RLS) ───────
@@ -723,7 +727,7 @@ describe('POST /api/orders', () => {
 
     expect(retry.status).toBe(200)
     // The failed attempt burned nothing: this is still the day's FIRST order.
-    expect(await retry.json()).toEqual({ orderNumber: `OR-${DAY}-0050`, id: expect.any(String) })
+    expect(await retry.json()).toEqual({ orderNumber: `OR-${DAY}-0050`, id: expect.any(String), status: 'new' })
   })
 
   // ── The one-per-customer key comes from the JWT and from nowhere else (#72) ──

@@ -40,8 +40,8 @@ anything — and the merchant can send one anyway when asked.
 
 Title **Invoice**, filename `Invoice-<order_number>.pdf`, PDF document title `Invoice <order_number>`.
 
-The page is a **ticket, 226pt wide** (80mm) and as tall as the order needs — one page, never
-paginated. Blocks run: header (INVOICE over the shop name), the shop's address, a perforation, the
+The page is a **ticket, 226pt wide** (80mm), as tall as the order needs up to one sheet (842pt),
+then continued on further pages with the shop name and order number repeated and a `1 / 2` foot. Blocks run: header (INVOICE over the shop name), the shop's address, a perforation, the
 order pairs (number/amount, placed/for, method), billed-to and delivery address, a perforation, the
 item lines, the money block with the total in 15pt, the payment well, a perforation, and the QR
 block over a scalloped foot.

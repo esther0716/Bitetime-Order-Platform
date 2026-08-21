@@ -324,7 +324,12 @@ export function invoiceQrUrl(order: any, merchant: any, frontendUrl: string): st
  * at the summed height, and every op then runs against a known top. Measuring and drawing in one
  * pass, with the numbers written twice, is how the two come to disagree.
  */
-interface Block { height: number; draw: (page: PDFPage, top: number) => void }
+interface Block {
+  height: number
+  draw: (page: PDFPage, top: number) => void
+  /** The torn edge. Nothing may be placed below it — see where the page number goes. */
+  tail?: boolean
+}
 
 interface Ctx { font: PDFFont }
 
@@ -519,12 +524,45 @@ function qrBlock(ctx: Ctx, url: string, orderNumber: string): Block {
 function scallops(): Block {
   return {
     height: 14,
+    tail: true,
     draw(page, top) {
       const radius = 7
       for (let x = radius; x < W; x += radius * 2.4) {
         page.drawCircle({ x, y: top - 12, size: radius, color: rgb(1, 1, 1), borderColor: RULE, borderWidth: 0.6 })
       }
       page.drawRectangle({ x: 0, y: top - 20, width: W, height: 8, color: rgb(1, 1, 1) })
+    },
+  }
+}
+
+/**
+ * The head of a continuation page: whose ticket this is, and that it is not the start of one.
+ *
+ * A second sheet with no shop name and no order number on it is a scrap of paper. This is the
+ * smallest thing that keeps it attached to the first.
+ */
+function continuedHeader(ctx: Ctx, doc: InvoiceDoc): Block {
+  return {
+    height: 40,
+    draw(page, top) {
+      text(page, doc.shopName, PAD, top - 16, { size: 10, font: ctx.font })
+      text(page, doc.orderNumber, W - PAD, top - 16, { size: 8, font: ctx.font, color: MUTED, align: 'right' })
+      page.drawLine({
+        start: { x: PAD, y: top - 28 }, end: { x: W - PAD, y: top - 28 },
+        thickness: 0.7, color: RULE, dashArray: [3, 3],
+      })
+    },
+  }
+}
+
+/** `1 / 2` at the foot, drawn only when there IS more than one page. */
+function pageFoot(ctx: Ctx, index: number, total: number): Block {
+  return {
+    height: 22,
+    draw(page, top) {
+      text(page, `${index} / ${total}`, W / 2, top - 14, {
+        size: 7, font: ctx.font, color: MUTED, align: 'center',
+      })
     },
   }
 }
@@ -579,14 +617,50 @@ export async function renderInvoicePdf(
   ]
 
   const live = blocks.filter((b): b is Block => b !== null)
-  const height = live.reduce((sum, b) => sum + b.height, 0) + PAD
-  const page = pdf.addPage([W, height])
 
-  let top = height
+  // Fill pages up to A4's height and start another when the next block will not fit.
+  //
+  // A till roll can be a metre long; a PDF viewer showing one is a page nobody can read, and a
+  // printer given one either shrinks it to illegibility or crops it. So the ticket grows to at
+  // most one sheet's worth and then continues, with the shop name and order number repeated at
+  // the head of each continuation and a `1 / 2` at every foot.
+  //
+  // Blocks are ATOMIC: an item row, the money block, the QR never split across a break. Their
+  // heights are already known here, which is the whole reason the layout measures before it draws.
+  const MAX = 842
+  const pages: Block[][] = []
+  let current: Block[] = []
+  let used = PAD
+
   for (const block of live) {
-    block.draw(page, top)
-    top -= block.height
+    // `+ 22` leaves room for the foot a multi-page ticket will need. Reserving it on every page
+    // costs one line of white on a single-page ticket and avoids a second pagination pass.
+    if (current.length > 0 && used + block.height + 22 > MAX) {
+      pages.push(current)
+      current = [continuedHeader(ctx, doc)]
+      used = PAD + current[0].height
+    }
+    current.push(block)
+    used += block.height
   }
+  pages.push(current)
+
+  pages.forEach((blocks, i) => {
+    // The number goes ABOVE the torn edge, not below it: past the scallops is off the ticket, and
+    // a page number printed there reads as something that fell off another document.
+    const foot = pageFoot(ctx, i + 1, pages.length)
+    const numbered = pages.length === 1 ? blocks
+      : blocks[blocks.length - 1]?.tail
+        ? [...blocks.slice(0, -1), foot, blocks[blocks.length - 1]]
+        : [...blocks, foot]
+    const height = numbered.reduce((sum, b) => sum + b.height, 0) + PAD
+    const page = pdf.addPage([W, height])
+    let top = height
+    for (const block of numbered) {
+      block.draw(page, top)
+      top -= block.height
+    }
+  })
 
   return pdf.save()
 }

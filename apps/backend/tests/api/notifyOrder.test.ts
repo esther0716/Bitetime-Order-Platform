@@ -16,7 +16,7 @@
 // live email/Telegram network is touched; the database is never mocked.
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { app, notifyDeps } from '../../src/app.js'
-import { makeUser, resetMerchant, seedMerchant, seedProduct, serviceClient } from '../rls/helpers.js'
+import { makePhoneOnlyUser, makeUser, resetMerchant, seedMerchant, seedProduct, serviceClient } from '../rls/helpers.js'
 import { todayInZone, DEFAULT_TIMEZONE } from '@bitetime/shared'
 
 /**
@@ -399,10 +399,7 @@ describe('POST /api/notify/order — merchant new-order email fan-out', () => {
   it('skips when the owner account carries no address at all', async () => {
     // A phone-only signup reads back `email: ''` from Auth — falsy, so there is nothing to send
     // to even though the account plainly exists.
-    const { data: created } = await svc().auth.admin.createUser({
-      phone: '+60123400002', password: 'password123', phone_confirm: true,
-    })
-    const phoneOnlyId = created!.user!.id
+    const phoneOnlyId = await makePhoneOnlyUser('+60123400002', 'password123')
     const shop = await seedMerchant({ slug: 'notify-phone-owner', owner_id: phoneOnlyId, name: 'Phone Owner Shop' })
     const shopProduct = await seedProduct({ merchant_id: shop, price: 13 })
     const orderNumber = await placeOrderReturningNumber(orderBody(shop, shopProduct))

@@ -225,6 +225,37 @@ export async function makeUser(email: string, password: string) {
 }
 
 /**
+ * A PHONE-ONLY account, idempotently — the same guarantee `makeUser` gives for an email one.
+ *
+ * Auth reads such an account back with `email: ''`, which is the property the notify suites need:
+ * an owner who plainly exists and yet has nothing to send to.
+ *
+ * The delete-first is the whole point. `createUser` refuses a phone that already exists, and it
+ * refuses it by returning `{ user: null }` rather than by throwing — so a suite that simply
+ * created one passed on a fresh database and failed on every run after with
+ * `Cannot read properties of null`, an error naming nothing about its cause.
+ */
+export async function makePhoneOnlyUser(phone: string, password: string): Promise<string> {
+  const svc = serviceClient()
+  const rows = await authDb()<{ id: string }[]>`
+    select id from auth.users where phone = ${phone.replace(/^\+/, '')} limit 1
+  `
+  const prior = rows[0]?.id
+  if (prior) {
+    // REUSED when it cannot be deleted, exactly as `makeUser` does and for the same reason: an
+    // account that owns a shop is undeletable (`merchants.owner_id` is ON DELETE NO ACTION), and
+    // this suite's phone-only account owns one by the time the test has run once. The account has
+    // no state worth resetting — its whole job is to have no email — so reuse is not a compromise.
+    const { error: deleteErr } = await svc.auth.admin.deleteUser(prior)
+    if (deleteErr) return prior
+  }
+
+  const { data, error } = await svc.auth.admin.createUser({ phone, password, phone_confirm: true })
+  if (error || !data?.user) throw new Error(`creating phone account ${phone}: ${error?.message ?? 'no user returned'}`)
+  return data.user.id
+}
+
+/**
  * The id of the account with this email, straight from `auth.users`. Null when there is none.
  *
  * SQL, and not `listUsers`, and that is not a micro-optimisation. The admin list endpoint cannot

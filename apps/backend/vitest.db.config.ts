@@ -129,5 +129,19 @@ export default defineConfig({
     // Files run in parallel (vitest's default). That is safe only because each suite owns a
     // disjoint set of merchant slugs and user emails — its fixtures are keyed on them and it
     // clears them on the way in. A new suite that reuses another's slug will flake here.
+    //
+    // THE TIMEOUT IS 30s, NOT VITEST'S 5s, and the reason is arithmetic rather than caution.
+    // Almost every test here begins with `makeUser`, and one `makeUser` is a delete, a create and
+    // a sign-in against GoTrue — TWO bcrypt hashes and three round trips before the test has
+    // asserted anything. Warm, on an idle machine, that is about 300ms. On a developer laptop
+    // running several Supabase stacks it was measured at 5.4 SECONDS for a single signup, which
+    // put every one of these suites on the wrong side of a 5s limit at once: 170 failures in a
+    // run, every one of them a timeout inside a fixture, none of them a defect. A timeout is
+    // meant to catch a test that has hung, and 5s cannot tell hung from busy here.
+    //
+    // This hides nothing: a genuinely stuck test still fails, thirty seconds later, and the suites
+    // that pass do so in well under a second each.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 })

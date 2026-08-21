@@ -340,22 +340,44 @@ describe('renderInvoicePdf', () => {
     expect(outlined.length).toBeGreaterThanOrEqual(7)
   })
 
-  // The ticket is ONE page that grows, the way a till roll does — never a second sheet. A long
-  // order must therefore make a taller page, and the total must still be on it.
-  it('grows the page instead of paginating', async () => {
-    const short = await PDFDocument.load(await renderInvoicePdf(ORDER, MERCHANT, opts))
+  // The ticket grows down to a sheet's worth and then CONTINUES. A metre-long page is one no
+  // viewer can read and no printer can place; a second ticket page is both.
+  it('keeps a short order on one page', async () => {
+    const pdf = await PDFDocument.load(await renderInvoicePdf(ORDER, MERCHANT, opts))
+    expect(pdf.getPageCount()).toBe(1)
+    expect(pdf.getPage(0).getWidth()).toBe(226)
+    expect(pdf.getPage(0).getHeight()).toBeLessThanOrEqual(842)
+  })
+
+  it('continues onto further pages rather than growing without bound', async () => {
     const items = Array.from({ length: 40 }, (_, i) => ({
       id: `p${i}`, name: `Item number ${i}`, qty: 1, price: 3,
     }))
-    const long = await PDFDocument.load(
+    const pdf = await PDFDocument.load(
       await renderInvoicePdf({ ...ORDER, items, total: 129.24 }, MERCHANT, opts),
     )
 
-    expect(short.getPageCount()).toBe(1)
-    expect(long.getPageCount()).toBe(1)
-    expect(long.getPage(0).getHeight()).toBeGreaterThan(short.getPage(0).getHeight() + 400)
-    // The till-roll width never changes, whatever the order holds.
-    expect(long.getPage(0).getWidth()).toBe(short.getPage(0).getWidth())
+    expect(pdf.getPageCount()).toBeGreaterThan(1)
+    for (const page of pdf.getPages()) {
+      // The till-roll width never changes, and no page may exceed a sheet.
+      expect(page.getWidth()).toBe(226)
+      expect(page.getHeight()).toBeLessThanOrEqual(842)
+    }
+  })
+
+  // A wrapping name, a long option line and a payment note are the three things that push a
+  // block's height around; none of them may push a block off the bottom of its page.
+  it('never lets a block overflow the page it was placed on', async () => {
+    const items = Array.from({ length: 18 }, (_, i) => ({
+      id: `p${i}`,
+      name: `A deliberately long product name number ${i} that will wrap across lines`,
+      qty: 2, price: 7.5,
+      selections: [{ groupName: 'Milk', optionName: `Oat milk option ${i}`, qty: 1, delta: 3 }],
+    }))
+    const pdf = await PDFDocument.load(
+      await renderInvoicePdf({ ...ORDER, items, total: 300 }, MERCHANT, opts),
+    )
+    for (const page of pdf.getPages()) expect(page.getHeight()).toBeLessThanOrEqual(842)
   })
 
   // The order's payment note is free text a merchant types, newlines and all.

@@ -40,8 +40,13 @@ merchant's order sheet — requests the same endpoint and receives the same byte
 **The page IS a ticket**: 226pt wide — 80mm, a till roll — and as tall as the order needs, with a
 perforation rule and notched edges. The shape is chosen for where the document is actually read: a
 phone, in a chat, where an A4 sheet arrives as a postage stamp to pinch open. It prints scaled-to-fit
-on A4 and feeds a thermal printer natively. The cost is that there is no pagination — a forty-line
-order makes a very long page rather than a second one, exactly as a till roll does.
+on A4 and feeds a thermal printer natively.
+
+It grows to **at most one sheet's height (842pt) and then continues**, repeating the shop name and
+order number at the head of each further page and numbering every foot `1 / 2`. A till roll can be a
+metre long; a PDF of one is a page nobody can read and no printer can place. Blocks are atomic — an
+item row, the money block, the QR never split across a break — which is the whole reason the layout
+measures every block before it draws any of them.
 
 A **QR code** stands where a shop receipt puts its barcode, carrying
 `/invoice?shop=<slug>&order=<number>` — this order's own lookup, with the number filled in. It stops
