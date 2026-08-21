@@ -41,21 +41,14 @@ The header states identity only:
 - a status chip and a fulfilment-mode chip;
 - the placed date and the wanted date, as muted text.
 
-The invoice actions leave the header body. On a desktop the drawer shows
-**Download invoice** as a button and puts **Send invoice on WhatsApp** in a
-`⋯` menu. On a phone the `⋯` menu holds the download, the WhatsApp send and the
-copy-number action.
+The invoice actions leave the header entirely. They are a card of their own — see
+`Invoice` below.
 
-`canIssueInvoice(order.status)` gates the two invoice items exactly as it does
-today. It does **not** gate the menu, because on a phone the menu also holds the
-copy-number action, and an order that cannot be invoiced still has a number a
-merchant reads back over the phone.
-
-If the menu holds no item, the drawer does not draw the `⋯` button. On a desktop
-the only item is the WhatsApp send, so the button is drawn there only when that
-send exists — which the header decides by asking `waDigits` the same question
-`SendInvoiceOnWa` asks itself. A guest order with no dialable number therefore
-draws no `⋯` rather than one that opens an empty panel.
+They spent a version at the end of the title row, collapsing into a `⋯` menu on
+a phone. That menu cost more than it earned: a second copy of the download
+button for the other breakpoint, a rule for whether it would open empty, and a
+phone where an un-invoiceable order had no way to copy its own number. A card
+needs none of it, and the copy button is now drawn at every width.
 
 ### Body
 
@@ -70,6 +63,7 @@ The cards, in order:
 |------|-------|
 | Items | The line items, their option selections, the promo chip, and the line totals. The card's title row states the line count, so a long order says how long it is before the merchant scrolls it. |
 | Payment | Subtotal, shipping, discount, tax and the emphasised total. The subtotal is summed from the line items, because `orders` stores no subtotal column — without it the card lists three adjustments under a total they cannot be checked against. The payment proof thumbnail sits beside the totals on a desktop, and below the total on a phone, and the card's title row carries a **Proof uploaded** chip when there is one. |
+| Invoice | **Download invoice** and **Send on WhatsApp**. `canIssueInvoice(order.status)` gates the whole card, label included, so an un-invoiceable order shows no orphaned caption; the WhatsApp half gates itself again and is absent for a guest with no dialable number and for a read-only drawer. |
 | Customer & delivery | Customer name, WhatsApp link, fulfilment mode and date, region, and the address. Two columns at `sm` and above, one column below. |
 | Tracking | Courier and AWB. Delivery orders only. |
 | Note | The note textarea, or the note as text when the drawer is read-only. |
@@ -139,9 +133,10 @@ The repository already nests `analytics/`, `pixels/` and `store/` this way.
 |------|------|
 | `OrderDetailSheet.tsx` | The `Sheet`, the note/courier/AWB drafts, the three save handlers, and the header/body/footer frame. |
 | `DrawerCard.tsx` | The white card itself — a title row, a body, and an optional footer for the card's own save button. |
-| `OrderHeader.tsx` | Number, copy, chips, dates, invoice actions and the `⋯` menu. |
+| `OrderHeader.tsx` | Number, copy, chips and dates. Nothing else. |
 | `ItemsCard.tsx` | The line items. |
 | `PaymentCard.tsx` | The totals and the payment proof, including the proof fetch effect. |
+| `InvoiceCard.tsx` | The two ways one invoice reaches one customer. |
 | `CustomerCard.tsx` | Customer and fulfilment fields. |
 | `TrackingCard.tsx` | Courier and AWB, editable or read-only. |
 | `NoteCard.tsx` | The note, editable or read-only. |

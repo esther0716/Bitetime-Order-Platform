@@ -7,6 +7,7 @@ import OrderHeader from './OrderHeader'
 import StatusFooter from './StatusFooter'
 import ItemsCard from './ItemsCard'
 import PaymentCard from './PaymentCard'
+import InvoiceCard from './InvoiceCard'
 import CustomerCard from './CustomerCard'
 import TrackingCard from './TrackingCard'
 import NoteCard from './NoteCard'
@@ -99,11 +100,12 @@ export default function OrderDetailSheet({
       >
         {order && (
           <>
-            <OrderHeader order={order} readOnly={readOnly} merchantId={merchant!.id} />
+            <OrderHeader order={order} />
 
             <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col gap-3 p-3 sm:p-4">
               <ItemsCard items={order.items ?? []} currency={orderCurrency} />
               <PaymentCard order={order} currency={orderCurrency} merchantId={merchant!.id} />
+              <InvoiceCard order={order} merchantId={merchant!.id} readOnly={readOnly} />
               <CustomerCard order={order} />
 
               <TrackingCard
