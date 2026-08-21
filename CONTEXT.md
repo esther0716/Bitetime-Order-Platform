@@ -167,6 +167,12 @@ So:
 
 **A could-not-ask is not a zero.** Overview and the order list say so on screen rather than rendering an empty chart or an empty table. Collapsing a failed read to `[]` is how a merchant comes to trust a number that is not one — the row cap was only how it happened.
 
+**The order drawer** (`merchant/orderDetail/`) is a header, a scrolling body of cards and a fixed status footer. It grew for a year as one flat scroll of hairline-separated sections, which is how seven groups came to carry the same weight and how the status control — the thing a merchant opens the drawer to use most — ended up last on the page, past the items, the address, the courier fields and the note. The footer is where the status lives now, and it offers one button for the next step in the chain `new → preparing → ready → completed`.
+
+`nextStatus.ts` holds that chain as a **lookup and not the next index in `ORDER_STATUSES`**. That array is a vocabulary, not a line: `pending_payment` sits before `new` and `cancelled` after `completed` because that reads well in a list. Walking it by index would offer "cancel this order" as the one-click move on a completed order, and would advance an unpaid one — which asserts that the money arrived. A merchant says that themselves, by choosing the value. An unknown status returns `null` for the reason `STATUS_BADGE` falls back to neutral: it is a status the module has not been taught, and guessing its successor would write to the database on a guess.
+
+A suspended shop gets **no footer at all**, so no status write is reachable there; the note and the courier render as text.
+
 ## Refusal
 
 A reason the backend would not take an order or price a delivery, named by a **wire code** the customer's browser can act on — as opposed to a bug, which carries no code and is never dressed up as one. The vocabulary is `packages/shared/src/refusal.ts`: the codes, what each one means, and the HTTP status it carries.
