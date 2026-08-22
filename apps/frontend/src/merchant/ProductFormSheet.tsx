@@ -9,6 +9,8 @@ import { coerceQuantity, UNITS } from '../productUnit'
 import { formatMoney, currencyDef } from '../currency'
 import { promoEndFromDate, promoEndToDate } from '../promoEnd'
 import { hasPromo, promoSummaryParts } from './promoSummary'
+import { draftChanged, type ProductDraft } from './productDraft'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -126,6 +128,13 @@ export default function ProductFormSheet({
   // promo must never be hidden behind a disclosure the merchant did not know to open.
   const [promoOpen, setPromoOpen] = useState(false)
   const [seeded, setSeeded] = useState<string | null>(null)
+  // What the form held when it opened. `draftChanged` measures against this, and an edit-mode
+  // photo change moves it — see `persistImages`.
+  const [savedDraft, setSavedDraft] = useState<ProductDraft>(
+    () => ({ form: BLANK, images: [], optionGroups: [] }),
+  )
+  // Open when closing the sheet would throw typed work away.
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
 
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
@@ -137,30 +146,42 @@ export default function ProductFormSheet({
     setSeeded(sessionId)
     setMsg('')
     setNewCategory(null)
-    if (product) {
-      setForm({
-        name: product.name ?? '', name_zh: product.name_zh ?? '', descr: product.descr ?? '',
-        price: String(product.price ?? ''), unit: product.unit ?? 'pcs',
-        unit_quantity: product.unit_quantity ?? 1, active: product.active,
-        promo_price: product.promo_price === null || product.promo_price === undefined ? '' : String(product.promo_price),
-        promo_limit: product.promo_limit === null || product.promo_limit === undefined ? '' : String(product.promo_limit),
-        promo_end: promoEndToDate(product.promo_end),
-        // THE STORED VALUE, VERBATIM, dangling id and all. `categoryItems` keeps a dead id
-        // selectable, the way `unitItems` keeps a legacy unit selectable, so a rename round-trips
-        // byte-identically instead of quietly unfiling the product.
-        category_id: product.category_id ?? '',
-      })
-      setImages(product.image_urls ?? [])
-      setOptionGroups(optionGroupsFromRow(product.option_groups))
-      setPromoEnded(promoHasEnded(product.promo_end))
-      setPromoOpen(product.promo_price !== null && product.promo_price !== undefined)
-    } else {
-      setForm(BLANK)
-      setImages([])
-      setOptionGroups([])
-      setPromoEnded(false)
-      setPromoOpen(false)
-    }
+    setConfirmDiscard(false)
+    const seededForm = product
+      ? {
+          name: product.name ?? '', name_zh: product.name_zh ?? '', descr: product.descr ?? '',
+          price: String(product.price ?? ''), unit: product.unit ?? 'pcs',
+          unit_quantity: product.unit_quantity ?? 1, active: product.active,
+          promo_price: product.promo_price === null || product.promo_price === undefined ? '' : String(product.promo_price),
+          promo_limit: product.promo_limit === null || product.promo_limit === undefined ? '' : String(product.promo_limit),
+          promo_end: promoEndToDate(product.promo_end),
+          // THE STORED VALUE, VERBATIM, dangling id and all. `categoryItems` keeps a dead id
+          // selectable, the way `unitItems` keeps a legacy unit selectable, so a rename round-trips
+          // byte-identically instead of quietly unfiling the product.
+          category_id: product.category_id ?? '',
+        }
+      : BLANK
+    const seededImages: string[] = product ? (product.image_urls ?? []) : []
+    const seededGroups = product ? optionGroupsFromRow(product.option_groups) : []
+    setForm(seededForm)
+    setImages(seededImages)
+    setOptionGroups(seededGroups)
+    setPromoEnded(product ? promoHasEnded(product.promo_end) : false)
+    setPromoOpen(product ? product.promo_price !== null && product.promo_price !== undefined : false)
+    // ONE snapshot, built from the very values the form was given. Deriving it separately would
+    // let the two drift, and the drift would show up as a warning about a change nobody made.
+    setSavedDraft({ form: seededForm, images: seededImages, optionGroups: seededGroups })
+  }
+
+  // Closing the sheet — by a press outside, by Escape, or by the X — discards whatever is typed.
+  // That is fine for a form nobody touched and not fine for a half-filled one, so a changed draft
+  // asks first. Saving does not come through here: `save` calls `onOpenChange` directly, because
+  // by then there is nothing to lose.
+  const dirty = draftChanged({ form, images, optionGroups }, savedDraft)
+
+  function requestOpenChange(next: boolean) {
+    if (!next && dirty) { setConfirmDiscard(true); return }
+    onOpenChange(next)
   }
 
   /**
@@ -259,7 +280,11 @@ export default function ProductFormSheet({
     // No promo handling here: `product` IS the stored row, so its promo columns go back unchanged,
     // which the backend's change-based gate lets through on any plan (#145).
     const r = await upsertProduct({ ...product, image_urls })
-    if (r.ok) await onSaved()
+    if (!r.ok) return
+    // This write SAVED the photos, so they become part of the snapshot. Without this the sheet
+    // would warn about discarding a change that is already in the database.
+    setSavedDraft(d => ({ ...d, images: image_urls }))
+    await onSaved()
   }
 
   /**
@@ -333,340 +358,366 @@ export default function ProductFormSheet({
   const sold = product?.promo_sold ?? 0
 
   return (
-    // disablePointerDismissal: the unit Select portals its menu to <body>, so an item click
-    // would otherwise read as an outside-press and close the sheet. Close via the X or Escape.
-    <Sheet open={open} onOpenChange={onOpenChange} disablePointerDismissal>
-      {/* SheetContent carries `data-[side=right]:w-3/4` and `data-[side=right]:sm:max-w-sm`, and a
-          plain utility has one variant against its two — so Tailwind orders the base FIRST and it
-          wins. Matching the variant lets tailwind-merge drop the base instead. `gap-0` and
-          `overflow-hidden` undo the base popup's `gap-4` and let the body be the only scroller. */}
-      <SheetContent
-        side="right"
-        className="data-[side=right]:w-full data-[side=right]:sm:max-w-[680px] gap-0 overflow-hidden"
-      >
-        <SheetHeader className="shrink-0 border-b border-border pr-12">
-          <SheetTitle className="text-[17px]">
-            {product ? t('Edit product', '编辑产品') : t('Add a product', '添加产品')}
-          </SheetTitle>
-        </SheetHeader>
+    // Dismissable by a press outside, as well as by the X and Escape.
+    //
+    // The old dialog opted out of this with `disablePointerDismissal`, because the unit Select
+    // portals its menu to <body> and an item click read as an outside press that closed the whole
+    // form. That is no longer true: with the opt-out gone, choosing a unit, choosing a category
+    // and picking a promo end date all leave the sheet open, and only a press on the backdrop
+    // closes it. The opt-out was costing a merchant the ordinary way out of a drawer for nothing.
+    //
+    // All three discard the draft, so all three go through `requestOpenChange`: an untouched
+    // form just closes, and a changed one asks first.
+    <>
+      <Sheet open={open} onOpenChange={requestOpenChange}>
+        {/* SheetContent carries `data-[side=right]:w-3/4` and `data-[side=right]:sm:max-w-sm`, and a
+            plain utility has one variant against its two — so Tailwind orders the base FIRST and it
+            wins. Matching the variant lets tailwind-merge drop the base instead. `gap-0` and
+            `overflow-hidden` undo the base popup's `gap-4` and let the body be the only scroller. */}
+        <SheetContent
+          side="right"
+          className="data-[side=right]:w-full data-[side=right]:sm:max-w-[680px] gap-0 overflow-hidden"
+        >
+          <SheetHeader className="shrink-0 border-b border-border pr-12">
+            <SheetTitle className="text-[17px]">
+              {product ? t('Edit product', '编辑产品') : t('Add a product', '添加产品')}
+            </SheetTitle>
+          </SheetHeader>
 
-        <form onSubmit={save} className="flex-1 min-h-0 flex flex-col">
-          <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col gap-3 p-3 sm:p-4">
-            {msg && (
-              <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-lg px-[13px] py-[10px] leading-[1.5]">
-                {msg}
-              </div>
-            )}
+          <form onSubmit={save} className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col gap-3 p-3 sm:p-4">
+              {msg && (
+                <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-lg px-[13px] py-[10px] leading-[1.5]">
+                  {msg}
+                </div>
+              )}
 
-            <FormSection title={t('Details', '详情')}>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-[6px] min-w-0">
-                  <Label htmlFor="pm-1">{t('Name', '名称')}<RequiredMark /></Label>
-                  <Input
-                    id="pm-1"
-                    variant="compact"
-                    value={form.name}
-                    onChange={e => setForm({ ...form, name: e.target.value })}
-                    required
-                    placeholder={t('e.g. Brown Butter Cookie', '如：焦化奶油曲奇')}
-                  />
-                </div>
-                <div className="flex flex-col gap-[6px] min-w-0">
-                  <Label htmlFor="pm-2">{t('Chinese name', '中文名称')}</Label>
-                  <Input
-                    id="pm-2"
-                    variant="compact"
-                    value={form.name_zh}
-                    onChange={e => setForm({ ...form, name_zh: e.target.value })}
-                    placeholder="e.g. 焦化奶油曲奇"
-                  />
-                </div>
-                {/* Up here with the names, not down beside Photos. Which section a product belongs
-                    to is part of WHAT IT IS. Identity first, then price, then media. */}
-                <div className="flex flex-col gap-[6px] min-w-0">
-                  <Label htmlFor="pm-category">{t('Category', '分类')}</Label>
-                  <Select
-                    value={form.category_id}
-                    onValueChange={v => {
-                      // The inline create. Writing the shop's list mid-product-edit is a second,
-                      // separate save, so a product save that then fails leaves an empty category
-                      // behind — benign, because a category holding nothing renders nothing.
-                      if (v === NEW_CATEGORY) { setNewCategory(''); return }
-                      setNewCategory(null)
-                      setForm({ ...form, category_id: v ?? '' })
-                    }}
-                    items={categoryItems}
-                  >
-                    <SelectTrigger id="pm-category" className="bg-background border-border text-[13px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="z-modal-popover">
-                      {categoryItems.map(c => (
-                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {newCategory !== null && (
-                    <div className="flex gap-2">
-                      <Input
-                        variant="compact"
-                        autoFocus
-                        value={newCategory}
-                        maxLength={MENU_CATEGORY_NAME_MAX}
-                        onChange={e => setNewCategory(e.target.value)}
-                        // Enter inside a form submits it, and the product is not what is being
-                        // saved here. Create the category instead.
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void createCategory() } }}
-                        placeholder={t('New category name', '新分类名称')}
-                        aria-label={t('New category name', '新分类名称')}
-                      />
-                      <Button
-                        type="button" size="none"
-                        className="rounded-lg px-[14px] text-[13px] whitespace-nowrap"
-                        disabled={categoriesSaving || newCategory.trim() === ''}
-                        onClick={() => void createCategory()}
-                      >{categoriesSaving ? t('Saving…', '保存中…') : t('Create', '创建')}</Button>
-                    </div>
-                  )}
-                  {/* Shown only while the product has no category — the one state the rule is
-                      about. It used to sit under the picker at all times, one more always-on line
-                      of grey text in a form that had six of them. */}
-                  {!form.category_id && (
-                    <span className="text-[12px] text-muted-foreground">
-                      {t('Listed last on your storefront, without a heading.',
-                         '将排在店面最后，且不带标题。')}
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-col gap-[6px] min-w-0">
-                  <Label htmlFor="pm-3">{t('Description', '描述')}</Label>
-                  <Textarea
-                    id="pm-3"
-                    value={form.descr}
-                    onChange={e => setForm({ ...form, descr: e.target.value })}
-                    placeholder={t('Short description', '简短描述')}
-                    className="bg-background text-[13px] rounded-sm py-[7px] px-2.5 min-h-0"
-                  />
-                </div>
-              </div>
-            </FormSection>
-
-            <FormSection title={t('Price', '价格')}>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-[6px] min-w-0">
-                  <Label htmlFor="pm-4">{t(`Price (${symbol})`, `价格 (${symbol})`)}<RequiredMark /></Label>
-                  <Input
-                    id="pm-4"
-                    variant="compact"
-                    type="number"
-                    step="0.01"
-                    value={form.price}
-                    onChange={e => setForm({ ...form, price: e.target.value })}
-                    required
-                    placeholder="0.00"
-                  />
-                </div>
-                <div className="flex flex-col gap-[6px] min-w-0">
-                  <Label htmlFor="pm-5">{t('Sold as', '销售单位')}</Label>
-                  <div className="flex gap-2">
+              <FormSection title={t('Details', '详情')}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-[6px] min-w-0">
+                    <Label htmlFor="pm-1">{t('Name', '名称')}<RequiredMark /></Label>
                     <Input
-                      id="pm-qty"
+                      id="pm-1"
                       variant="compact"
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      className="w-20 shrink-0"
-                      value={form.unit_quantity}
-                      onChange={e => setForm({ ...form, unit_quantity: e.target.value })}
-                      aria-label={t('Unit quantity', '单位数量')}
-                      placeholder="1"
+                      value={form.name}
+                      onChange={e => setForm({ ...form, name: e.target.value })}
+                      required
+                      placeholder={t('e.g. Brown Butter Cookie', '如：焦化奶油曲奇')}
                     />
-                    <Select value={form.unit} onValueChange={v => setForm({ ...form, unit: v ?? form.unit })} items={unitItems}>
-                      <SelectTrigger id="pm-5" className="flex-1 min-w-0 bg-background border-border text-[13px]">
+                  </div>
+                  <div className="flex flex-col gap-[6px] min-w-0">
+                    <Label htmlFor="pm-2">{t('Chinese name', '中文名称')}</Label>
+                    <Input
+                      id="pm-2"
+                      variant="compact"
+                      value={form.name_zh}
+                      onChange={e => setForm({ ...form, name_zh: e.target.value })}
+                      placeholder="e.g. 焦化奶油曲奇"
+                    />
+                  </div>
+                  {/* Up here with the names, not down beside Photos. Which section a product belongs
+                      to is part of WHAT IT IS. Identity first, then price, then media. */}
+                  <div className="flex flex-col gap-[6px] min-w-0">
+                    <Label htmlFor="pm-category">{t('Category', '分类')}</Label>
+                    <Select
+                      value={form.category_id}
+                      onValueChange={v => {
+                        // The inline create. Writing the shop's list mid-product-edit is a second,
+                        // separate save, so a product save that then fails leaves an empty category
+                        // behind — benign, because a category holding nothing renders nothing.
+                        if (v === NEW_CATEGORY) { setNewCategory(''); return }
+                        setNewCategory(null)
+                        setForm({ ...form, category_id: v ?? '' })
+                      }}
+                      items={categoryItems}
+                    >
+                      <SelectTrigger id="pm-category" className="bg-background border-border text-[13px]">
                         <SelectValue />
                       </SelectTrigger>
-                      {/* z-modal-popover (400) floats above the drawer popup (z-drawer). */}
                       <SelectContent className="z-modal-popover">
-                        {unitItems.map(u => (
-                          <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                        {categoryItems.map(c => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {newCategory !== null && (
+                      <div className="flex gap-2">
+                        <Input
+                          variant="compact"
+                          autoFocus
+                          value={newCategory}
+                          maxLength={MENU_CATEGORY_NAME_MAX}
+                          onChange={e => setNewCategory(e.target.value)}
+                          // Enter inside a form submits it, and the product is not what is being
+                          // saved here. Create the category instead.
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void createCategory() } }}
+                          placeholder={t('New category name', '新分类名称')}
+                          aria-label={t('New category name', '新分类名称')}
+                        />
+                        <Button
+                          type="button" size="none"
+                          className="rounded-lg px-[14px] text-[13px] whitespace-nowrap"
+                          disabled={categoriesSaving || newCategory.trim() === ''}
+                          onClick={() => void createCategory()}
+                        >{categoriesSaving ? t('Saving…', '保存中…') : t('Create', '创建')}</Button>
+                      </div>
+                    )}
+                    {/* Shown only while the product has no category — the one state the rule is
+                        about. It used to sit under the picker at all times, one more always-on line
+                        of grey text in a form that had six of them. */}
+                    {!form.category_id && (
+                      <span className="text-[12px] text-muted-foreground">
+                        {t('Listed last on your storefront, without a heading.',
+                           '将排在店面最后，且不带标题。')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-[6px] min-w-0">
+                    <Label htmlFor="pm-3">{t('Description', '描述')}</Label>
+                    <Textarea
+                      id="pm-3"
+                      value={form.descr}
+                      onChange={e => setForm({ ...form, descr: e.target.value })}
+                      placeholder={t('Short description', '简短描述')}
+                      className="bg-background text-[13px] rounded-sm py-[7px] px-2.5 min-h-0"
+                    />
                   </div>
                 </div>
-              </div>
+              </FormSection>
 
-              {/* Three fields and three lines of grey help, always on screen, for something most
-                  products never have. Closed it is one row — and one row that still says what the
-                  promo IS, so a live promo is never hidden behind a disclosure. */}
-              <div className="mt-3 border-t border-border pt-3">
-                <button
-                  type="button"
-                  aria-expanded={promoOpen}
-                  onClick={() => setPromoOpen(o => !o)}
-                  className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-[13px] cursor-pointer hover:bg-muted"
-                >
-                  <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${promoOpen ? '' : '-rotate-90'}`} />
-                  <span className="font-medium">
-                    {hasPromo(form) ? t('Promo price', '优惠价') : t('Add a promo price', '添加优惠价')}
-                  </span>
-                  {!promoOpen && summary.length > 0 && (
-                    <span className="ml-auto truncate text-[12px] text-muted-foreground">
-                      {summary.join(' · ')}
-                    </span>
-                  )}
-                </button>
-
-                {promoOpen && (
-                  <div className="grid gap-3 pt-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-[6px] min-w-0">
-                      <Label htmlFor="pm-promo-price">{t(`Promo price (${symbol})`, `优惠价 (${symbol})`)}</Label>
+              <FormSection title={t('Price', '价格')}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-[6px] min-w-0">
+                    <Label htmlFor="pm-4">{t(`Price (${symbol})`, `价格 (${symbol})`)}<RequiredMark /></Label>
+                    <Input
+                      id="pm-4"
+                      variant="compact"
+                      type="number"
+                      step="0.01"
+                      value={form.price}
+                      onChange={e => setForm({ ...form, price: e.target.value })}
+                      required
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-[6px] min-w-0">
+                    <Label htmlFor="pm-5">{t('Sold as', '销售单位')}</Label>
+                    <div className="flex gap-2">
                       <Input
-                        id="pm-promo-price"
+                        id="pm-qty"
                         variant="compact"
                         type="number"
                         step="0.01"
-                        value={form.promo_price}
-                        onChange={e => setForm({ ...form, promo_price: e.target.value })}
-                        placeholder="0.00"
+                        min="0.01"
+                        className="w-20 shrink-0"
+                        value={form.unit_quantity}
+                        onChange={e => setForm({ ...form, unit_quantity: e.target.value })}
+                        aria-label={t('Unit quantity', '单位数量')}
+                        placeholder="1"
                       />
+                      <Select value={form.unit} onValueChange={v => setForm({ ...form, unit: v ?? form.unit })} items={unitItems}>
+                        <SelectTrigger id="pm-5" className="flex-1 min-w-0 bg-background border-border text-[13px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        {/* z-modal-popover (400) floats above the drawer popup (z-drawer). */}
+                        <SelectContent className="z-modal-popover">
+                          {unitItems.map(u => (
+                            <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="flex flex-col gap-[6px] min-w-0">
-                      <Label htmlFor="pm-promo-limit">{t('Promo limit', '优惠数量上限')}</Label>
-                      <Input
-                        id="pm-promo-limit"
-                        variant="compact"
-                        type="number"
-                        step="1"
-                        min="1"
-                        value={form.promo_limit}
-                        onChange={e => setForm({ ...form, promo_limit: e.target.value })}
-                        placeholder={t('No limit', '不限')}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-[6px] min-w-0 sm:col-span-2">
-                      <Label htmlFor="pm-promo-end">{t('Promo ends', '优惠结束日期')}</Label>
-                      {/* `clearable`, unlike the voucher expiry: there is no enclosing checkbox here,
-                          so this is the ONLY way back to "no end date" — and the native input this
-                          replaced had the browser's own clear control. */}
-                      <DateField
-                        id="pm-promo-end"
-                        value={form.promo_end}
-                        onChange={iso => setForm({ ...form, promo_end: iso })}
-                        tz={merchant?.timezone as string | undefined}
-                        t={t}
-                        lang={lang}
-                        clearable
-                        placeholder={t('No end date', '无结束日期')}
-                      />
-                      <span className="text-[12px] text-muted-foreground">
-                        {t('The promo runs to the end of that day.', '优惠持续到当天结束。')}
-                      </span>
-                    </div>
-                    {product && product.promo_price !== null && product.promo_price !== undefined && (() => {
-                      // M-1: `promo_sold` can outlive a LOWERED `promo_limit` — sell 8 against a cap
-                      // of 10, then drop the cap to 3, and the row is `promo_sold: 8, promo_limit: 3`.
-                      // Money is unaffected (`remaining = max(0, 3-8) = 0`, so the promo just ends),
-                      // but the raw numbers read as "8 of 3 sold", which looks broken. Clamp the
-                      // DISPLAY to the cap and say the promo is finished — the DB row is untouched.
-                      const limit = product.promo_limit
-                      const capReached = limit != null && sold >= limit
-                      const shownSold = limit != null ? Math.min(sold, limit) : sold
-                      return (
-                        <p className="text-[12px] text-muted-foreground sm:col-span-2">
-                          {limit
-                            ? t(`${shownSold} of ${limit} sold at the promo price.`,
-                                `已以优惠价售出 ${shownSold} / ${limit} 件。`)
-                            : t(`${sold} sold at the promo price.`,
-                                `已以优惠价售出 ${sold} 件。`)}
-                          {' '}
-                          {t('Changing the promo price starts the count again.', '更改优惠价将重新计数。')}
-                          {capReached && (
-                            <>
-                              {' '}
-                              {t('This promo is finished — the cap has been reached.', '此优惠已结束——已达上限。')}
-                            </>
-                          )}
-                          {promoEnded && (
-                            <>
-                              {' '}
-                              {t('This promo has ended.', '此优惠已结束。')}
-                            </>
-                          )}
-                        </p>
-                      )
-                    })()}
                   </div>
-                )}
-              </div>
-            </FormSection>
+                </div>
 
-            <FormSection title={t('Photos', '图片')}>
-              <ImagePicker
-                merchantId={merchant!.id}
-                productId={product ? product.id : sessionId}
-                value={images}
-                onChange={paths => {
-                  setImages(paths as string[])
-                  // Edit mode: the row exists, so persist immediately — that way a
-                  // removed photo isn't left dangling if the sheet is cancelled.
-                  if (product) return persistImages(paths as string[])
-                }}
-                t={t}
-              />
-            </FormSection>
+                {/* Three fields and three lines of grey help, always on screen, for something most
+                    products never have. Closed it is one row — and one row that still says what the
+                    promo IS, so a live promo is never hidden behind a disclosure. */}
+                <div className="mt-3 border-t border-border pt-3">
+                  <button
+                    type="button"
+                    aria-expanded={promoOpen}
+                    onClick={() => setPromoOpen(o => !o)}
+                    className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-[13px] cursor-pointer hover:bg-muted"
+                  >
+                    <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${promoOpen ? '' : '-rotate-90'}`} />
+                    <span className="font-medium">
+                      {hasPromo(form) ? t('Promo price', '优惠价') : t('Add a promo price', '添加优惠价')}
+                    </span>
+                    {!promoOpen && summary.length > 0 && (
+                      <span className="ml-auto truncate text-[12px] text-muted-foreground">
+                        {summary.join(' · ')}
+                      </span>
+                    )}
+                  </button>
 
-            <FormSection title={t('Options', '选项')}>
-              <OptionGroupsEditor
-                // Keyed on the opening, so each product gets its own editor. `open` is seeded from
-                // `value.length` on MOUNT only, so without this a new product inherited the
-                // expanded editor of whichever product was edited before it.
-                key={sessionId}
-                value={optionGroups}
-                onChange={setOptionGroups}
-                currency={currency}
-                t={t}
-                copyFrom={products
-                  .filter(p => p.id !== product?.id
-                    && optionGroupsFromRow(p.option_groups).length > 0)
-                  .map(p => ({
-                    id: p.id,
-                    name: (lang === 'zh' && p.name_zh) ? p.name_zh : p.name,
-                    groups: optionGroupsFromRow(p.option_groups),
-                  }))}
-              />
-            </FormSection>
-          </div>
+                  {promoOpen && (
+                    <div className="grid gap-3 pt-3 sm:grid-cols-2">
+                      <div className="flex flex-col gap-[6px] min-w-0">
+                        <Label htmlFor="pm-promo-price">{t(`Promo price (${symbol})`, `优惠价 (${symbol})`)}</Label>
+                        <Input
+                          id="pm-promo-price"
+                          variant="compact"
+                          type="number"
+                          step="0.01"
+                          value={form.promo_price}
+                          onChange={e => setForm({ ...form, promo_price: e.target.value })}
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-[6px] min-w-0">
+                        <Label htmlFor="pm-promo-limit">{t('Promo limit', '优惠数量上限')}</Label>
+                        <Input
+                          id="pm-promo-limit"
+                          variant="compact"
+                          type="number"
+                          step="1"
+                          min="1"
+                          value={form.promo_limit}
+                          onChange={e => setForm({ ...form, promo_limit: e.target.value })}
+                          placeholder={t('No limit', '不限')}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-[6px] min-w-0 sm:col-span-2">
+                        <Label htmlFor="pm-promo-end">{t('Promo ends', '优惠结束日期')}</Label>
+                        {/* `clearable`, unlike the voucher expiry: there is no enclosing checkbox here,
+                            so this is the ONLY way back to "no end date" — and the native input this
+                            replaced had the browser's own clear control. */}
+                        <DateField
+                          id="pm-promo-end"
+                          value={form.promo_end}
+                          onChange={iso => setForm({ ...form, promo_end: iso })}
+                          tz={merchant?.timezone as string | undefined}
+                          t={t}
+                          lang={lang}
+                          clearable
+                          placeholder={t('No end date', '无结束日期')}
+                        />
+                        <span className="text-[12px] text-muted-foreground">
+                          {t('The promo runs to the end of that day.', '优惠持续到当天结束。')}
+                        </span>
+                      </div>
+                      {product && product.promo_price !== null && product.promo_price !== undefined && (() => {
+                        // M-1: `promo_sold` can outlive a LOWERED `promo_limit` — sell 8 against a cap
+                        // of 10, then drop the cap to 3, and the row is `promo_sold: 8, promo_limit: 3`.
+                        // Money is unaffected (`remaining = max(0, 3-8) = 0`, so the promo just ends),
+                        // but the raw numbers read as "8 of 3 sold", which looks broken. Clamp the
+                        // DISPLAY to the cap and say the promo is finished — the DB row is untouched.
+                        const limit = product.promo_limit
+                        const capReached = limit != null && sold >= limit
+                        const shownSold = limit != null ? Math.min(sold, limit) : sold
+                        return (
+                          <p className="text-[12px] text-muted-foreground sm:col-span-2">
+                            {limit
+                              ? t(`${shownSold} of ${limit} sold at the promo price.`,
+                                  `已以优惠价售出 ${shownSold} / ${limit} 件。`)
+                              : t(`${sold} sold at the promo price.`,
+                                  `已以优惠价售出 ${sold} 件。`)}
+                            {' '}
+                            {t('Changing the promo price starts the count again.', '更改优惠价将重新计数。')}
+                            {capReached && (
+                              <>
+                                {' '}
+                                {t('This promo is finished — the cap has been reached.', '此优惠已结束——已达上限。')}
+                              </>
+                            )}
+                            {promoEnded && (
+                              <>
+                                {' '}
+                                {t('This promo has ended.', '此优惠已结束。')}
+                              </>
+                            )}
+                          </p>
+                        )
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </FormSection>
 
-          <div className="shrink-0 flex items-center justify-between gap-3 border-t border-border bg-card px-4 py-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <button
-                id="pm-active"
-                type="button"
-                role="switch"
-                aria-checked={form.active}
-                onClick={() => setForm({ ...form, active: !form.active })}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill transition-colors cursor-pointer ${form.active ? 'bg-primary' : 'bg-border'}`}
-              >
-                <span className={`inline-block size-5 rounded-pill bg-white shadow-sm transition-transform ${form.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-              </button>
-              <Label htmlFor="pm-active" className="min-w-0 truncate text-[13px]">
-                {form.active ? t('Visible in storefront', '在店面显示') : t('Hidden from customers', '对顾客隐藏')}
-              </Label>
+              <FormSection title={t('Photos', '图片')}>
+                <ImagePicker
+                  merchantId={merchant!.id}
+                  productId={product ? product.id : sessionId}
+                  value={images}
+                  onChange={paths => {
+                    setImages(paths as string[])
+                    // Edit mode: the row exists, so persist immediately — that way a
+                    // removed photo isn't left dangling if the sheet is cancelled.
+                    if (product) return persistImages(paths as string[])
+                  }}
+                  t={t}
+                />
+              </FormSection>
+
+              <FormSection title={t('Options', '选项')}>
+                <OptionGroupsEditor
+                  // Keyed on the opening, so each product gets its own editor. `open` is seeded from
+                  // `value.length` on MOUNT only, so without this a new product inherited the
+                  // expanded editor of whichever product was edited before it.
+                  key={sessionId}
+                  value={optionGroups}
+                  onChange={setOptionGroups}
+                  currency={currency}
+                  t={t}
+                  copyFrom={products
+                    .filter(p => p.id !== product?.id
+                      && optionGroupsFromRow(p.option_groups).length > 0)
+                    .map(p => ({
+                      id: p.id,
+                      name: (lang === 'zh' && p.name_zh) ? p.name_zh : p.name,
+                      groups: optionGroupsFromRow(p.option_groups),
+                    }))}
+                />
+              </FormSection>
             </div>
-            {/* `size="none"`, not `md`: every md button is `w-full`, which in a pinned footer
-                eats the row and squeezes the visibility toggle off the left edge. */}
-            <Button
-              type="submit"
-              size="none"
-              className="shrink-0 rounded-lg px-[18px] py-[9px] text-sm pointer-coarse:min-h-11"
-              disabled={busy}
-            >
-              {busy ? t('Saving…', '保存中…') : product ? t('Save changes', '保存更改') : t('Add product', '添加产品')}
-            </Button>
-          </div>
-        </form>
-      </SheetContent>
-    </Sheet>
+
+            <div className="shrink-0 flex items-center justify-between gap-3 border-t border-border bg-card px-4 py-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  id="pm-active"
+                  type="button"
+                  role="switch"
+                  aria-checked={form.active}
+                  onClick={() => setForm({ ...form, active: !form.active })}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill transition-colors cursor-pointer ${form.active ? 'bg-primary' : 'bg-border'}`}
+                >
+                  <span className={`inline-block size-5 rounded-pill bg-white shadow-sm transition-transform ${form.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                </button>
+                <Label htmlFor="pm-active" className="min-w-0 truncate text-[13px]">
+                  {form.active ? t('Visible in storefront', '在店面显示') : t('Hidden from customers', '对顾客隐藏')}
+                </Label>
+              </div>
+              {/* `size="none"`, not `md`: every md button is `w-full`, which in a pinned footer
+                  eats the row and squeezes the visibility toggle off the left edge. */}
+              <Button
+                type="submit"
+                size="none"
+                className="shrink-0 rounded-lg px-[18px] py-[9px] text-sm pointer-coarse:min-h-11"
+                disabled={busy}
+              >
+                {busy ? t('Saving…', '保存中…') : product ? t('Save changes', '保存更改') : t('Add product', '添加产品')}
+              </Button>
+            </div>
+          </form>
+        </SheetContent>
+      </Sheet>
+
+      {/* Outside the Sheet on purpose: a dialog is z-modal (300) and the sheet z-drawer (200), so
+          this paints above without the `z-modal-popover` override the in-form confirms need. */}
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title={product ? t('Discard your changes?', '放弃更改？') : t('Discard this product?', '放弃此产品？')}
+        body={product
+          ? t('This product has changes you have not saved. If you leave now, they are lost.',
+              '此产品有未保存的更改。现在离开将会丢失。')
+          : t('You have not saved this product. If you leave now, what you typed is lost.',
+              '此产品尚未保存。现在离开将会丢失已填写的内容。')}
+        confirmLabel={t('Discard', '放弃')}
+        cancelLabel={t('Keep editing', '继续编辑')}
+        onConfirm={() => onOpenChange(false)}
+      />
+    </>
   )
 }
