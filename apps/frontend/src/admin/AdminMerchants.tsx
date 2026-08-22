@@ -134,7 +134,7 @@ const columns: ColumnDef<MerchantRow>[] = [
                 <Button
                   variant="ghost"
                   size="none"
-                  className="size-8 p-0 rounded-pill cursor-pointer hover:bg-brand-100 hover:text-primary"
+                  className="size-9 p-0 rounded-pill cursor-pointer pointer-coarse:size-11 hover:bg-brand-100 hover:text-primary"
                   disabled={busy === m.id}
                   aria-label={t('Actions', '操作')}
                 />
@@ -148,11 +148,11 @@ const columns: ColumnDef<MerchantRow>[] = [
                   {/* Not an approval any more — signup provisions its own trial. This is the
                       fallback for a shop whose provisioning failed and whose owner never retried. */}
                   <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onApprove(m.id)}>{t('Start trial', '开始试用')}</DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onReject(m.id)}>{t('Reject', '拒绝')}</DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" className="cursor-pointer" onClick={() => meta.onReject(m.id)}>{t('Reject', '拒绝')}</DropdownMenuItem>
                 </>
               )}
               {m.status === 'active' && (
-                <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onSuspend(m.id)}>{t('Suspend', '暂停')}</DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" className="cursor-pointer" onClick={() => meta.onSuspend(m.id)}>{t('Suspend', '暂停')}</DropdownMenuItem>
               )}
               {m.status === 'suspended' && (
                 <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onReactivate(m.id)}>{t('Reactivate', '恢复')}</DropdownMenuItem>
