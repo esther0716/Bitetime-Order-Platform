@@ -129,8 +129,26 @@
         ]
       }
     </script>
-    <script>window.praxor=window.praxor||function(){(window.praxor.q=window.praxor.q||[]).push(arguments)};window.praxor.id=window.praxor.id||function(){try{return sessionStorage.getItem("praxor_vid")}catch(e){return null}}</script>
-    <script defer src="https://api-production-cd12.up.railway.app/analytics/track.js" data-site-id="96b4b6ce-2e53-4889-83dc-b8065145d5aa"></script>
+    <!--
+      NO ANALYTICS SNIPPET HERE, and that is deliberate. Praxor's drop-in track.js is a
+      document-level tracker: it beacons on load, patches history.pushState and listens for
+      popstate, and every one of those sends `location.pathname` alone.
+
+      Three things it gets wrong for this app, which is one SPA serving both the platform and
+      every merchant's storefront:
+
+      1. It is route-blind, so it reports /s/<slug> — a merchant's customers, browsing a shop.
+         src/analytics/scope.ts exists to keep those out, and a tag in this file walks past it.
+      2. Dashboard sections live in the URL HASH (src/useDashboardSection.ts), so one merchant
+         clicking through their own tabs pushes a fresh entry per click and each one reports as
+         another /merchant pageview. It made /merchant the busiest page on the site.
+      3. It duplicates src/analytics/useAnalytics.ts, which already reports one pageview per
+         platform route under the same site id. Every real navigation was counted twice.
+
+      The SDK in useAnalytics.ts is the one tracker. It runs with autoCapturePageviews and
+      trackOutboundLinks OFF and passes the path explicitly. Re-adding a snippet here turns all
+      three faults back on at once.
+    -->
   </head>
   <body>
     <div id="root"></div>
