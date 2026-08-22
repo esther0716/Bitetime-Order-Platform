@@ -258,7 +258,7 @@ export default function AdminReleases() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-lg font-heading text-foreground">{t('Releases', '更新日志')}</h2>
         <Button variant="default" size="sm" onClick={pull} disabled={pulling}>
           {pulling ? t('Pulling…', '拉取中…') : t('Pull releases from GitHub', '从 GitHub 拉取更新')}
