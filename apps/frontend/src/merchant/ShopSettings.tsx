@@ -10,6 +10,7 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
 import { Badge } from '../components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
+import { trackEvent } from '../analytics/events'
 import { useNavGuard } from './NavGuard'
 import { isDirty, type SettingsFields } from './settingsDirty'
 import { useSaved } from './useSaved'
@@ -225,6 +226,11 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         return
       }
 
+      // Read BEFORE the save, because the save is what makes it true. Unlike the link step's
+      // flag, this one is written on every Shipping save, so the flag alone cannot say whether
+      // this save was the first — only its value beforehand can.
+      const completesShippingStep = merchant!.onboarding_shipping_set !== true
+
       // shopRates writes what it reads on both sides of the wire: a BLANK EM falls back to WM
       // (not free EM shipping); a typed 0 is an honest zero.
       const shipping = shopRates({ WM: fields.wm, EM: fields.em })
@@ -249,6 +255,8 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         origin_address: fields.originPlaceId ? (fields.originAddress || null) : null,
       })
       if (!saved.ok) { toast.error(saved.error.message || t('Save failed', '保存失败')); return }
+      // After the save succeeded: a step the shop does not actually have is not a step completed.
+      if (completesShippingStep) trackEvent('onboarding_step', { step: 'shipping' })
       await refreshMerchant()
       // Show back what was actually SAVED, read through the one function that also reads it on
       // reload, not the raw strings that were typed.

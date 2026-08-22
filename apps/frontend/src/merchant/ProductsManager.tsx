@@ -6,6 +6,8 @@ import { MoreHorizontal, Package, Lock } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
 import { lookupProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl, updateMerchantConfig } from '../store'
+import { firstProductAdded } from './firstProduct'
+import { trackEvent } from '../analytics/events'
 import { coerceQuantity, formatUnit } from '../productUnit'
 import { formatMoney, currencyDef } from '../currency'
 import { promoEndFromDate, promoEndToDate } from '../promoEnd'
@@ -240,7 +242,23 @@ export default function ProductsManager() {
   // columns stay stable (see ProductTableMeta). null → no confirm open.
   const [pendingDelete, setPendingDelete] = useState<any | null>(null)
 
-  async function load() { const r = await lookupProducts(merchant!.id); setRows(r.ok ? r.data : []) }
+  // Both create paths end here — the add-product form and MenuImportDialog's bulk save (onSaved) —
+  // which is what lets ONE check cover both, and lets a fifteen-item menu import report a single
+  // first product rather than fifteen.
+  //
+  // The mount effect below deliberately does NOT go through this function. It must not: on a shop
+  // that already has a menu it would read 0 → n and report a first product on every dashboard
+  // visit. `rows === null` is the same guard from the other side — it means the count was never
+  // known, which is not the same fact as a menu known to be empty.
+  async function load() {
+    const before = rows
+    const r = await lookupProducts(merchant!.id)
+    const next = r.ok ? r.data : []
+    setRows(next)
+    if (before !== null && firstProductAdded(before.length, next.length)) {
+      trackEvent('onboarding_step', { step: 'product' })
+    }
+  }
   useEffect(() => { lookupProducts(merchant!.id).then(r => setRows(r.ok ? r.data : [])) }, [merchant!.id])
 
   function openAdd() {
