@@ -18,7 +18,11 @@ describe('public reads', () => {
     const { data: os } = await owner.auth.getSession()
     shopId = await seedMerchant({ slug: 'pub-shop', owner_id: os.session!.user.id })
     await seedProduct({ merchant_id: shopId, name: 'Latte', price: 12 })
-    await serviceClient().from('vouchers').insert({ merchant_id: shopId, code: 'PUBTEN', kind: 'flat', amount: 10 })
+    // Seeded WITH redeemers, because the property under test is that they do not come back out.
+    await serviceClient().from('vouchers').insert({
+      merchant_id: shopId, code: 'PUBTEN', kind: 'flat', amount: 10, max_uses: 5,
+      used_by: ['alice@example.com', 'bob@example.com'],
+    })
   })
 
   it('returns a merchant by slug without owner_id or referred_by_code', async () => {
@@ -51,6 +55,29 @@ describe('public reads', () => {
     const miss = await get(`/api/merchants/${shopId}/vouchers/NOPE`)
     expect(miss.status).toBe(200)
     expect(await miss.json()).toBeNull()
+  })
+
+  // This route takes no token and a voucher code is printed on flyers and posters, so anyone who
+  // reads one could ask it a question. It used to answer with `select('*')` — the whole row,
+  // `used_by` included, which is the ACCOUNT EMAIL of every customer who has redeemed the code.
+  //
+  // Asserted by scanning the serialised body rather than by naming `used_by`: the failure mode is
+  // a field someone adds back later under another name, or a spread of the row, and neither would
+  // trip a `not.toHaveProperty('used_by')`.
+  it('never returns a redeemer identity to an anonymous caller', async () => {
+    const res = await get(`/api/merchants/${shopId}/vouchers/PUBTEN`)
+    const body = await res.text()
+    expect(body).not.toContain('@example.com')
+    expect(body).not.toContain('used_by')
+
+    // And it still says everything the storefront prices from, plus the derived cap.
+    const v = JSON.parse(body) as Record<string, unknown>
+    expect(v.code).toBe('PUBTEN')
+    expect(v.kind).toBe('flat')
+    expect(Number(v.amount)).toBe(10)
+    expect(v.fully_used).toBe(false)
+    // Absent, not false: an anonymous caller was never asked who they are.
+    expect(v).not.toHaveProperty('already_used')
   })
 
   it('returns 500 when the merchant id is a malformed uuid (could-not-ask, not empty)', async () => {

@@ -15,7 +15,10 @@ import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
-import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, type AppEnv } from './mw.js'
+import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, bearer, type AppEnv } from './mw.js'
+import { voucherPublicView, voucherMerchantView } from './voucherView.js'
+import { expiryInstant } from './voucherExpiry.js'
+import { redemptionCounts, myRedemptionCount } from './voucherRedemptionsDb.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
@@ -29,6 +32,8 @@ import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
 import { signUpCustomer, isDuplicateEmailError } from './customerSignup.js'
 import { createSlidingWindow } from './rateLimit.js'
 import { clientIp } from './clientIp.js'
+import { invoiceFileName, renderInvoicePdf } from './invoice.js'
+import { invoiceFont } from './invoiceFont.js'
 import { phoneKey } from './phone.js'
 import {
   shopCustomers, isShopCustomerSort, pickShopCustomerFields, DEFAULT_SHOP_CUSTOMER_SORT,
@@ -40,7 +45,7 @@ import { writeProductOrder } from './productOrderDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT } from './quotaWindows.js'
+import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT } from './quotaWindows.js'
 import { usagePeriod, nextResetDate, LIFETIME_PERIOD, type AiFeature } from './aiUsage.js'
 import { consumeAiCall } from './aiUsageDb.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
@@ -69,7 +74,7 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
+import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
 import type { CartLine, Granularity } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename, type ReportWindow } from './report.js'
 import { resolveRevenueRange, type ResolvedRevenueRange } from './revenueWindow.js'
@@ -658,11 +663,23 @@ app.get('/api/merchants/:id/report.xlsx', requireMerchantOwns, async (c) => {
   })
 })
 
+// Owner-scoped, and STILL not a verbatim row. `used_by` holds the platform account emails of the
+// shop's redeemers, and CONTEXT.md -> Shop customer draws that boundary explicitly: a shop sees
+// shop-scoped facts plus the has-an-account flag, and no account email. A WhatsApp number was
+// volunteered to this shop; an email was volunteered to the platform. The merchant gets the count
+// they actually use — how many redemptions the code has taken — and never the keys behind it.
 app.get('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
-  const { data, error } = await admin.from('vouchers').select('*').eq('merchant_id', m.id)
+  const { data, error } = await admin
+    .from('vouchers')
+    .select('id, merchant_id, code, kind, amount, max_uses, per_customer_limit, expires_at, min_order, used_by, active, created_at')
+    .eq('merchant_id', m.id).eq('active', true)
   if (error) return c.json({ error: 'Lookup failed' }, 500)
-  return c.json(data ?? [])
+  const rows = data ?? []
+  // One grouped count for the whole list, not one query per voucher. `used_by` is still selected
+  // only as `voucherMerchantView`'s fallback until the column is dropped.
+  const counts = await redemptionCounts(rows.map(r => r.id as string))
+  return c.json(rows.map(r => voucherMerchantView(r, m.timezone, counts[r.id as string] ?? 0)))
 })
 
 app.get('/api/merchants/:id/billing', requireMerchantOwns, async (c) => {
@@ -1072,12 +1089,51 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
   // that has stepped down to Basic is told it is not a code rather than being quoted a discount
   // the order transaction will then refuse. Same answer, one screen earlier.
   const { data, error } = await admin
-    .from('vouchers').select('*').eq('merchant_id', id).eq('code', code)
+    .from('vouchers')
+    .select('id, code, kind, amount, max_uses, per_customer_limit, expires_at, min_order, used_by')
+    .eq('merchant_id', id).eq('code', code)
+    // Also what disambiguates the PARTIAL unique index: a retired row and a live row may share a
+    // code, so a lookup on the string alone would be ambiguous. `maybeSingle` would 500 on it.
     .eq('active', true).maybeSingle()
   // Same contract: 5xx = could-not-ask; 200 null = shop has no such voucher.
   if (error) return c.json({ error: 'Lookup failed' }, 500)
-  return c.json(data ?? null)
+  if (!data) return c.json(null)
+  // This route is PUBLIC and a voucher code is printed on flyers, so the row must never leave
+  // verbatim: `used_by` holds the account email of every redeemer. `voucherPublicView` derives
+  // `fully_used` and drops the keys. The caller's own "have I used this?" is answered from THEIR
+  // OWN verified email and only when they present one — auth-optional, because a signed-out
+  // customer still needs to see the discount before being asked to sign in.
+  const user = await getUserFromToken(bearer(c))
+  const email = (user?.email ?? '').trim().toLowerCase()
+  // Their OWN count, and only theirs — the query is keyed on the email off their verified JWT, so
+  // there is no shape of this request that asks about a stranger.
+  const mine = email ? await myRedemptionCount(data.id as string, email) : undefined
+  return c.json(voucherPublicView(data, user?.email ?? null, mine))
 })
+
+/**
+ * A refused value, distinct from `null` (which means "unbounded" for both of these).
+ *
+ * A sentinel rather than a thrown error because the two callers want to answer 400, and rather
+ * than `undefined` because `undefined` is what an absent field already is.
+ */
+const BAD = Symbol('invalid')
+
+/** An optional whole-number limit: absent/blank/null is unbounded, anything below 1 is refused. */
+function optionalCount(v: unknown): number | null | typeof BAD {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  if (!Number.isInteger(n) || n < 1) return BAD
+  return n
+}
+
+/** An optional money threshold: absent/blank/null is no threshold, negative is refused. */
+function optionalMoney(v: unknown): number | null | typeof BAD {
+  if (v == null || v === '') return null
+  const n = Number(v)
+  if (!Number.isFinite(n) || n < 0) return BAD
+  return n
+}
 
 // Voucher create. The insert goes through `admin` (service_role), so forcing merchant_id
 // from :id (never read from the body) is what stops a crafted body from creating a voucher
@@ -1087,27 +1143,74 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
 // old client-side `input.code.trim().toUpperCase()`.
 app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
+  const m = c.get('merchant')
   const b = await c.req.json().catch(() => ({} as any))
   const code = String(b?.code ?? '').trim().toUpperCase()
   if (!code) return c.json({ error: 'Missing code' }, 400)
+
+  const maxUses = optionalCount(b?.maxUses)
+  // ABSENT is one each; an explicit `null` is unlimited. The two are deliberately not the same
+  // answer: unlimited is the value that costs the merchant money, so it has to be said out loud
+  // rather than arrived at by leaving a field off. `undefined` also has to survive `optionalCount`,
+  // which folds absent onto null for every other limit.
+  const perCustomerLimit = b?.perCustomerLimit === undefined ? 1 : optionalCount(b.perCustomerLimit)
+  if (maxUses === BAD || perCustomerLimit === BAD) return c.json({ error: 'Invalid limit' }, 400)
+
+  // Both unbounded is an unlimited discount for one person — #72 reached through the dashboard
+  // rather than the request body. `vouchers_bounded` refuses it too; this answers with a message
+  // that names the rule instead of a bare 500 out of PostgREST.
+  if (maxUses === null && perCustomerLimit === null) {
+    return c.json({ error: 'unbounded_voucher' }, 400)
+  }
+
+  // The merchant picks a DATE; the column holds an INSTANT — 23:59:59.999 on the SHOP's clock, so
+  // the code covers the whole of the day they chose. The conversion happens HERE and nowhere else,
+  // which is what keeps `@bitetime/shared` ignorant of timezones. A present-but-unparseable date
+  // is refused rather than dropped: a voucher silently created with no expiry is a discount the
+  // merchant believes will stop and does not.
+  const expiresAt = b?.expiresOn == null || b.expiresOn === ''
+    ? null
+    : expiryInstant(b.expiresOn, m.timezone)
+  if (b?.expiresOn && !expiresAt) return c.json({ error: 'Invalid expiry date' }, 400)
+
+  const minOrder = optionalMoney(b?.minOrder)
+  if (minOrder === BAD) return c.json({ error: 'Invalid minimum order' }, 400)
+
   const { data, error } = await admin.from('vouchers').insert({
     merchant_id: id,
     code,
     kind: b?.kind,
     amount: b?.amount,
-    max_uses: b?.maxUses ?? null,
+    max_uses: maxUses,
+    per_customer_limit: perCustomerLimit,
+    expires_at: expiresAt,
+    min_order: minOrder,
   }).select().single()
+  // A duplicate code is the merchant's own mistake and gets its own answer. The index is PARTIAL
+  // (`where active`), so this can only collide with a LIVE voucher — a retired code's string is
+  // free to use again.
+  if (error?.code === '23505') return c.json({ error: 'duplicate_code' }, 409)
   if (error) return c.json({ error: 'Create failed' }, 500)
-  return c.json(data)
+  // Through the same view as the list, so the dashboard reads ONE voucher shape. A fresh row's
+  // `used_by` is empty and leaks nothing today; the point is that it can never start to.
+  return c.json(voucherMerchantView(data, m.timezone, 0))
 })
 
 // Voucher delete. requireMerchantOwns only proves the caller owns :id — it says nothing
 // about voucherId, so an owner of shop A could otherwise delete shop B's voucher by nesting
 // it under :id = A. Loading the voucher and checking merchant_id === :id before deleting is
 // what closes that hole (Global Constraint 2), mirroring the product DELETE handler above.
+// DEACTIVATE, not delete. A hard delete would take the redemption history with it, and
+// delete-and-recreate was also how a merchant silently reset `used_by`. Every read filters
+// `active`, so the code disappears from the dashboard and stops redeeming — the customer-facing
+// behaviour is identical to what a delete did.
+//
+// The unique index is PARTIAL (`(merchant_id, code) where active`), so retiring a code frees its
+// string: recreating it makes a NEW row with a new id, and the old campaign's redemptions stay
+// attached to the old campaign and count against nobody.
 app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
   const voucherId = c.req.param('voucherId')
-  const { error } = await admin.from('vouchers').delete().eq('id', voucherId)
+  const { error } = await admin.from('vouchers').update({ active: false }).eq('id', voucherId)
   if (error) return c.json({ error: 'Delete failed' }, 500)
   return c.json({ ok: true })
 })
@@ -1165,6 +1268,106 @@ app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
   if (!path) return c.json({ error: 'not_found' }, 404)
 
   return streamPrivateObject('payment-proof', path)
+})
+
+// ── Invoice ───────────────────────────────────────────────────────────────────
+//
+// One document, three doors, and the SAME bytes through all three — a guest today is an account
+// holder next month, and they must not be handed two different papers for two orders from one
+// shop. See docs/adr/0017 and CONTEXT.md → Invoice.
+//
+// Every refusal here is the same 404. A status that cannot be issued, an order that does not
+// exist, a stranger's order and a wrong phone are one answer, because any distinction between
+// them tells a caller which order numbers are real.
+
+/** The generated PDF, as a download. */
+function invoicePdfResponse(pdf: Uint8Array, orderNumber: string): Response {
+  // Copied into a plain ArrayBuffer: pdf-lib hands back a Uint8Array over a pooled buffer, which
+  // is not the `BodyInit` the fetch types accept, and slicing is also what guarantees the body is
+  // exactly this document's bytes.
+  const body = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) as ArrayBuffer
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${invoiceFileName(orderNumber)}"`,
+      // A shop can edit its payment note or its address, and the document reads both live. Never
+      // cached, so a re-download is never yesterday's paper.
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+
+/** Render, or answer the one refusal this endpoint family has. */
+async function invoiceFor(c: Context, order: Record<string, any> | null, merchant: Record<string, any> | null) {
+  if (!order || !merchant || !canIssueInvoice(order.status)) return c.json({ error: 'not_found' }, 404)
+  const pdf = await renderInvoicePdf(order, merchant, { font: invoiceFont(), frontendUrl: env.frontendUrl })
+  return invoicePdfResponse(pdf, order.order_number)
+}
+
+// The merchant's own copy — the one they forward on WhatsApp when a customer asks them directly.
+app.get(
+  '/api/merchants/:id/orders/:orderId/invoice.pdf',
+  requireMerchantOwns,
+  requireOwnsChild('orders', 'orderId'),
+  async (c) => invoiceFor(c, c.get('child'), c.get('merchant')),
+)
+
+// The signed-in customer's copy, scoped by the order's `user_id` — the same shape as the
+// payment-proof twin above, and inline for the same reason: `requireOwnsChild` proves MERCHANT
+// ownership, which is the wrong question for a customer.
+app.get('/api/orders/:orderId/invoice.pdf', requireUser, async (c) => {
+  const user = c.get('user')
+  const { data: order, error } = await admin
+    .from('orders').select('*').eq('id', c.req.param('orderId')).maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+  if (!order || order.user_id !== user.id) return c.json({ error: 'not_found' }, 404)
+  const { data: merchant } = await admin
+    .from('merchants').select('*').eq('id', order.merchant_id).maybeSingle()
+  return invoiceFor(c, order, merchant)
+})
+
+/**
+ * The guest's door.
+ *
+ * A guest order carries `user_id = null` for ever and there is no `/track` any more, so this is
+ * the only way that customer reaches their own document. What they can prove is the order number
+ * and the phone they typed, matched on `phoneKey()` — the last-eight-digits rule that already
+ * keys a shop customer (ADR 0007), reused rather than re-derived.
+ *
+ * The shop is REQUIRED, and is not decoration: an order number is unique per shop only — the
+ * prefix is the first two alphanumerics of the slug — so without it `BI-260820-0051` can name
+ * two orders at two shops.
+ *
+ * The pair is guessable, and ADR 0018 accepts that knowingly. The limit below is what bounds it;
+ * it is in memory, so a second backend instance doubles it (#101).
+ */
+app.post('/api/orders/invoice', async (c) => {
+  if (!invoiceLookupIpWindow.allow(ipOf(c))) return c.json({ error: 'rate_limited' }, 429)
+
+  const body = await c.req.json().catch(() => ({}))
+  const slug = typeof body.shop === 'string' ? body.shop.trim().toLowerCase() : ''
+  const orderNumber = typeof body.orderNumber === 'string' ? body.orderNumber.trim().toUpperCase() : ''
+  // Null for a phone with no digits, which must never become a key: '' is what BOTH an absent
+  // phone and a phone-less order reduce to, and matching those would hand back the enumeration
+  // the phone requirement exists to remove.
+  const key = phoneKey(typeof body.phone === 'string' ? body.phone : '')
+  if (!slug || !orderNumber || !key) return c.json({ error: 'not_found' }, 404)
+
+  const { data: merchant, error: mErr } = await admin
+    .from('merchants').select('*').eq('slug', slug).maybeSingle()
+  if (mErr) return c.json({ error: 'lookup_failed' }, 500)
+  if (!merchant) return c.json({ error: 'not_found' }, 404)
+
+  const { data: order, error } = await admin
+    .from('orders').select('*')
+    .eq('merchant_id', merchant.id)
+    .eq('order_number', orderNumber)
+    .eq('customer_phone_key', key)
+    .maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+
+  return invoiceFor(c, order, merchant)
 })
 
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────

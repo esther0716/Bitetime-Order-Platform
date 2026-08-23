@@ -23,7 +23,8 @@ export {
 } from './trialFeedback.js'
 export type { TrialFeedbackDraft, TrialFeedbackValidation } from './trialFeedback.js'
 export {
-  priceOrder, voucherError, shippingFee, voucherFromRow, shopRates, shopTax,
+  priceOrder, voucherError, voucherExpired, voucherBelowMinimum, voucherApplies,
+  shippingFee, voucherFromRow, shopRates, shopTax,
   promoState, promoClaims, productFromRow, optionGroupsFromRow,
   shopDistance, routedKm, distanceFee, exceedsMaxKm,
   shopMethods, offersMethod, firstOfferedMethod, FULFILMENT_METHODS, isDistancePriced,
@@ -70,5 +71,6 @@ export {
   MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
 } from './menuCategories.js'
 export type { MenuCategory, CategoryConfigError } from './menuCategories.js'
+export { INVOICE_STATUSES, canIssueInvoice } from './invoice.js'
 export { validateShopDescription, SHOP_DESCRIPTION_MAX } from './shopDescription.js'
 export type { ShopDescriptionError } from './shopDescription.js'

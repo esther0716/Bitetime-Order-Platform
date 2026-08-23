@@ -8,9 +8,9 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
+import { trackEvent } from '../analytics/events'
 import { useNavGuard } from './NavGuard'
 import { isDirty, type SettingsFields } from './settingsDirty'
 import { useSaved } from './useSaved'
@@ -20,13 +20,14 @@ import SubscriptionTab from './SubscriptionTab'
 import { useDashboardSubsection } from '../useDashboardSection'
 import AddressAutocomplete from '../store/AddressAutocomplete'
 import PaymentQrPicker from './PaymentQrPicker'
+import SettingsMenu from './SettingsMenu'
 
 type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'marketing' | 'notifications' | 'subscription' | 'referral'
 
-// Tabbed Shop Settings (issue #19). A container renders a horizontal tab bar and
-// the active tab's form; each tab is its own form with its own Save. Only the
-// active tab can be dirty — the unsaved guard blocks leaving a dirty tab — so the
-// container tracks a single `dirty` flag and registers it with the NavGuard.
+// Shop Settings (issue #19). A container renders a submenu column and the active
+// tab's form; each tab is its own form with its own Save. Only the active tab can
+// be dirty — the unsaved guard blocks leaving a dirty tab — so the container tracks
+// a single `dirty` flag and registers it with the NavGuard.
 export default function ShopSettings() {
   const { t } = useSession()
   const { guard, registerBlocker } = useNavGuard()
@@ -81,38 +82,39 @@ export default function ShopSettings() {
   }
 
 
+  const activeLabel = TABS.find(x => x.key === tab)!.label
+
   return (
-    <div className="w-full">
-      <Tabs value={tab} onValueChange={(v) => changeTab(v as TabKey)} className="mb-6">
-        {/* Six nowrap tabs outgrow the column long before any phone width, so the rail WRAPS
-            rather than scrolls. A scrolling rail hid two things at once: the merchant had no
-            way to know the tabs continued past the edge, and — worse — Base UI's tabs do not
-            scroll the active tab into view, so a deep link at `#settings/subscription` (which
-            is where every Pro CTA points, #112) opened the Subscription panel under a rail
-            still showing Shipping. Wrapping removes both: nothing is off-screen, so there is
-            no affordance to signal and nothing to scroll to.
+    // Two columns on desktop, stacked on mobile. `items-start` keeps the submenu's hairline
+    // the height of the menu rather than stretching it down the whole panel.
+    <div className="w-full flex items-start gap-6 max-sm:flex-col max-sm:gap-0">
+      <SettingsMenu
+        heading={t('Settings', '设置')}
+        items={TABS}
+        active={tab}
+        onSelect={changeTab}
+      />
 
-            No breakpoint on purpose. The triggers keep `flex-1`, so while all six fit they are
-            one stretched row exactly as before; past that they wrap and each row fills. The
-            width where that happens depends on the dashboard column, not on the viewport, so
-            a `max-sm:` here would leave the tablet widths overflowing — which is the bug this
-            replaced. */}
-        <TabsList className="flex-wrap">
-          {TABS.map(({ key, label }) => (
-            <TabsTrigger key={key} value={key} className="group/tab">
-              {label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      {/* `min-w-0` so a wide child (the subscription table) shrinks rather than pushing the
+          submenu column out of the row. */}
+      <div className="flex-1 min-w-0 w-full">
+        {/* The panel names itself. With the tab rail gone nothing else does, and a settings
+            form that opens from a deep link (`#settings/subscription`, every Pro CTA) would
+            otherwise arrive unlabelled.
+            Hidden on mobile, where the collapsed submenu trigger already carries the same
+            label a few pixels above it. */}
+        <h2 className="font-heading text-[19px] font-medium text-primary mb-5 max-sm:hidden">
+          {activeLabel}
+        </h2>
 
-      {tab === 'shipping' && <ShippingTab onDirtyChange={setDirty} />}
-      {tab === 'fulfilment' && <FulfilmentTab onDirtyChange={setDirty} />}
-      {tab === 'payment' && <PaymentTab onDirtyChange={setDirty} />}
-      {tab === 'marketing' && <MarketingTab onDirtyChange={setDirty} />}
-      {tab === 'notifications' && <NotificationsTab onDirtyChange={setDirty} />}
-      {tab === 'subscription' && <SubscriptionTab />}
-      {tab === 'referral' && <ReferralTab />}
+        {tab === 'shipping' && <ShippingTab onDirtyChange={setDirty} />}
+        {tab === 'fulfilment' && <FulfilmentTab onDirtyChange={setDirty} />}
+        {tab === 'payment' && <PaymentTab onDirtyChange={setDirty} />}
+        {tab === 'marketing' && <MarketingTab onDirtyChange={setDirty} />}
+        {tab === 'notifications' && <NotificationsTab onDirtyChange={setDirty} />}
+        {tab === 'subscription' && <SubscriptionTab />}
+        {tab === 'referral' && <ReferralTab />}
+      </div>
     </div>
   )
 }
@@ -224,6 +226,11 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         return
       }
 
+      // Read BEFORE the save, because the save is what makes it true. Unlike the link step's
+      // flag, this one is written on every Shipping save, so the flag alone cannot say whether
+      // this save was the first — only its value beforehand can.
+      const completesShippingStep = merchant!.onboarding_shipping_set !== true
+
       // shopRates writes what it reads on both sides of the wire: a BLANK EM falls back to WM
       // (not free EM shipping); a typed 0 is an honest zero.
       const shipping = shopRates({ WM: fields.wm, EM: fields.em })
@@ -248,6 +255,8 @@ function ShippingTab({ onDirtyChange }: TabProps) {
         origin_address: fields.originPlaceId ? (fields.originAddress || null) : null,
       })
       if (!saved.ok) { toast.error(saved.error.message || t('Save failed', '保存失败')); return }
+      // After the save succeeded: a step the shop does not actually have is not a step completed.
+      if (completesShippingStep) trackEvent('onboarding_step', { step: 'shipping' })
       await refreshMerchant()
       // Show back what was actually SAVED, read through the one function that also reads it on
       // reload, not the raw strings that were typed.

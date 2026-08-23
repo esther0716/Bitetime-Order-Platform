@@ -1,5 +1,5 @@
 import type postgres from 'postgres'
-import { priceOrder, validateSelections, voucherFromRow, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import { priceOrder, validateSelections, voucherFromRow, voucherExpired, voucherBelowMinimum, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { CartLine, PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
 import { phoneKey } from './phone.js'
@@ -120,7 +120,7 @@ export async function placeOrder(
   input: PlaceOrderInput,
   now = new Date(),
   distanceDeps: DistanceDeps = liveDistanceDeps,
-): Promise<{ orderNumber: string; id: string }> {
+): Promise<{ orderNumber: string; id: string; status: string }> {
   // THE ROUTING CALL HAPPENS HERE, OUTSIDE THE TRANSACTION, and that placement is the whole
   // reason this function is no longer a bare `withTransaction(...)`. Inside, the transaction
   // holds this shop's single `order_counters` row lock, which serialises every checkout at that
@@ -191,10 +191,12 @@ export async function placeOrder(
     const orderNumber = formatOrderNumber(merchant.order_prefix, day, await nextCounterValue(tx, input.merchantId, day))
 
     // The claim and the discount read the same locked row, so the voucher that is spent is
-    // exactly the voucher that was priced.
-    const voucher = input.voucherCode
-      ? await claimVoucher(tx, input.merchantId, input.voucherCode, input.userEmail)
+    // exactly the voucher that was priced. The redemption ROW is written later, once the order it
+    // belongs to exists — see `claimVoucher`.
+    const claimed = input.voucherCode
+      ? await claimVoucher(tx, input.merchantId, input.voucherCode, input.userEmail, now)
       : null
+    const voucher = claimed?.voucher ?? null
 
     // Scoped to this merchant, and that predicate is the ONLY thing keeping a stranger's
     // product out of this cart: no RLS runs on this connection. LOCKED (`for update`), which is
@@ -227,6 +229,14 @@ export async function placeOrder(
       tax: merchant.tax,
       now,
     })
+
+    // The minimum, refused rather than silently priced at a zero discount. `priceOrder` has
+    // already dropped the discount for the same reason (`voucherApplies`); this is what stops the
+    // customer spending a redemption to receive nothing. The subtotal is the priced one — the
+    // number the rule is defined against, pre-discount, food only.
+    if (voucher && voucherBelowMinimum(voucher, bd.subtotal)) {
+      throw new OrderError('voucher_below_minimum')
+    }
 
     // A pending fee is never committed. Unreachable — the refusals above cover every route to
     // it — and asserted anyway, because the one thing this feature must never do is charge a
@@ -284,7 +294,7 @@ export async function placeOrder(
     const distanceBase = distanceKm === null ? null : merchant.distance.base
     const distanceRate = distanceKm === null ? null : merchant.distance.ratePerKm
 
-    const [{ id }] = await tx<{ id: string }[]>`
+    const [{ id, status }] = await tx<{ id: string; status: string }[]>`
       insert into orders (
         merchant_id, user_id, customer_name, customer_wa, customer_phone_key, mode, address,
         shipping_fee, items, total, currency, discount, tax, tax_rate, voucher_code, fulfil_date, order_number, status,
@@ -324,10 +334,19 @@ export async function placeOrder(
         ${distanceBase},
         ${distanceRate}
       )
-      returning id
+      returning id, status
     `
 
-    return { orderNumber, id }
+    // The redemption, now that the order it was spent on exists. Still inside the transaction and
+    // still under the voucher's row lock, so a failure here rolls the order back — the property
+    // that made the claim part of this transaction in the first place (#122's swallowed redeem).
+    await claimed?.claim(id)
+
+    // The status is returned, not re-derived by the caller. It decides whether the order-placed
+    // screen can offer the invoice at all (a `pending_payment` order cannot be issued one), and
+    // the shape of the rule — "born pending_payment when the shop takes manual payment" — is
+    // stated once, here, in the statement that actually writes it.
+    return { orderNumber, id, status }
   })
 }
 
@@ -666,7 +685,8 @@ async function claimVoucher(
   merchantId: string,
   code: string,
   userEmail: string | null,
-): Promise<PricedVoucher> {
+  now: Date,
+): Promise<{ voucher: PricedVoucher; claim: (orderId: string) => Promise<void> }> {
   const entry = (userEmail ?? '').trim().toLowerCase()
   // A guest, or an account with no email address (phone-only auth). Either way the claim
   // cannot be keyed. Refused, never keyed on '' — every anonymous redemption would otherwise
@@ -675,32 +695,79 @@ async function claimVoucher(
 
   // `kind` and `amount` are selected because THIS row is what the order is priced from — the
   // discount must come from the voucher that was locked, not from a second, unlocked read.
-  const rows = await tx<{ id: string; code: string; kind: string; amount: string; max_uses: number | null; used_by: string[] }[]>`
-    select id, code, kind, amount, max_uses, used_by from vouchers
+  //
+  // The lock is what makes every count below real. It is taken here and held to commit, so the
+  // two concurrent checkouts that both read the last slot cannot both take it.
+  const rows = await tx<{
+    id: string; code: string; kind: string; amount: string; max_uses: number | null
+    per_customer_limit: number | null; expires_at: string | null; min_order: string | null
+  }[]>`
+    select id, code, kind, amount, max_uses, per_customer_limit, expires_at, min_order
+    from vouchers
     where merchant_id = ${merchantId} and code = ${code} and active
     for update
   `
-  const voucher = rows[0]
+  const row = rows[0]
   // `active` is folded into the lookup rather than checked after it, so an inactive voucher is
   // indistinguishable from a missing one here and reuses `voucher_not_found`. This is a column
   // filter on a row the transaction was already reading, and it must stay one — a billing lookup
   // on the checkout path is a slow or wrong answer costing a real order.
-  if (!voucher) throw new OrderError('voucher_not_found')
+  //
+  // It also disambiguates the PARTIAL unique index: `(merchant_id, code) where active` allows a
+  // retired row and a live row to share a code, so a lookup on the string alone would be
+  // ambiguous. `and active` is what keeps this exactly one row.
+  if (!row) throw new OrderError('voucher_not_found')
 
-  // One redemption per customer. A re-redeem is an error, never a silent no-op — the caller
-  // has to be able to block the duplicate rather than re-grant the discount.
-  if (voucher.used_by.includes(entry)) throw new OrderError('voucher_already_used')
+  const voucher = voucherFromRow(row as unknown as Record<string, unknown>)
 
-  // A null cap is unlimited in total, still one per customer via the check above.
-  if (voucher.max_uses !== null && voucher.used_by.length >= voucher.max_uses) {
+  // Counted under the lock, from `voucher_redemptions` — not from a jsonb array's length. Two
+  // counts, and they answer different questions: how many this PERSON has taken, and how many the
+  // CODE has taken. `used_by` was a set, and a set cannot answer the first one now that a customer
+  // may hold several (#241).
+  const [counts] = await tx<{ mine: string; total: string }[]>`
+    select
+      count(*) filter (where customer_key = ${entry}) as mine,
+      count(*) as total
+    from voucher_redemptions
+    where voucher_id = ${row.id}
+  `
+  const mine = Number(counts?.mine ?? 0)
+  const total = Number(counts?.total ?? 0)
+
+  // A null per-customer limit is unlimited, and the column defaults to 1 — the rule every voucher
+  // predating #241 was created under. A re-redeem past the allowance is an error, never a silent
+  // no-op: the caller has to be able to block the duplicate rather than re-grant the discount.
+  if (row.per_customer_limit != null && mine >= row.per_customer_limit) {
+    throw new OrderError('voucher_customer_limit_reached')
+  }
+
+  // A null cap is unlimited in total, still bounded per customer by the check above. The database
+  // refuses BOTH being null (`vouchers_bounded`), so this pair can never be an open till.
+  if (row.max_uses !== null && total >= row.max_uses) {
     throw new OrderError('voucher_fully_used')
   }
 
-  await tx`
-    update vouchers set used_by = used_by || ${tx.json([entry] as never)}
-    where id = ${voucher.id}
-  `
-  return voucherFromRow(voucher as unknown as Record<string, unknown>)
+  // Expiry is refused HERE as well as dropped in `priceOrder`, and the two are not redundant.
+  // `priceOrder` stops the money; this stops the REDEMPTION. Without it a customer holding an
+  // expired code would commit an order at full price and burn one of their allowance on a
+  // discount of zero. The MINIMUM is the same rule and is checked by the caller, once the cart has
+  // been priced — it needs a subtotal, and the products are not loaded until after this lock.
+  if (voucherExpired(voucher, now)) throw new OrderError('voucher_expired')
+
+  // The WRITE is deferred, and the reason is `order_id`. The claim's checks must run here, before
+  // pricing, under the lock; the redemption row wants the order it was spent on, and that row does
+  // not exist yet. Both happen inside ONE transaction, so the pair commits whole or not at all —
+  // and the lock taken above is still held when the insert runs, so no second checkout can slip
+  // between the count and the write.
+  return {
+    voucher,
+    claim: async (orderId: string) => {
+      await tx`
+        insert into voucher_redemptions (voucher_id, customer_key, order_id, redeemed_at)
+        values (${row.id}, ${entry}, ${orderId}, ${now})
+      `
+    },
+  }
 }
 
 /**

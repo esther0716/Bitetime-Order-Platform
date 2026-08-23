@@ -13,6 +13,7 @@
 // "Praxor is not configured" the ordinary state rather than a special case.
 
 import type { PraxorClient } from 'praxor'
+import type { OnboardingStep } from '../merchant/onboardingSteps'
 
 /** The two billing cycles. One plan remains, so there is no `plan` property anywhere here. */
 export type Billing = 'monthly' | 'yearly'
@@ -35,6 +36,7 @@ export type AnalyticsEvent =
   | 'trial_started'
   | 'merchant_login'
   | 'billing_checkout_started'
+  | 'onboarding_step'
   | 'cta_click'
 
 // `type`, NOT `interface`, and it matters: an interface has no implicit index signature, so it is
@@ -46,6 +48,17 @@ type EventProps = {
   trial_started: undefined
   merchant_login: undefined
   billing_checkout_started: { billing: Billing; from: 'subscription' | 'suspended' }
+  /**
+   * One of the three setup steps just completed, for the first and only time in this shop's life.
+   * Which step, and nothing else — the drop-off point is the whole question, and a shop id would
+   * make this the one event here that identifies a merchant.
+   *
+   * There is deliberately no `shop_activated` beside it: a shop that fired all three IS activated,
+   * so the fourth event would be derived data. It would also have nowhere honest to remember it had
+   * already fired, and an event re-sent per visit is how /merchant became the busiest page on the
+   * site (see the comment in index.html).
+   */
+  onboarding_step: { step: OnboardingStep }
   cta_click: { from: string; cta: string; billing?: Billing }
 }
 

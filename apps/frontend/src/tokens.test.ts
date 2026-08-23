@@ -159,6 +159,12 @@ describe('solid status fills carry legible white text', () => {
   it.each(['--success-500', '--danger-500', '--info-500'])('%s', (name) => {
     expect(contrastRatio('#FFFFFF', token(name))).toBeGreaterThanOrEqual(AA_LARGE)
   })
+
+  /* The two SOLID status badges — `new` on info-fg and `ready` on success-fg — set white at
+     11px, which is small text and so owes the full 4.5:1, not the large-text figure above. */
+  it.each(['--info-fg', '--success-fg'])('%s carries small white text', (name) => {
+    expect(contrastRatio('#FFFFFF', token(name))).toBeGreaterThanOrEqual(AA_TEXT)
+  })
 })
 
 describe('non-colour scales exist', () => {

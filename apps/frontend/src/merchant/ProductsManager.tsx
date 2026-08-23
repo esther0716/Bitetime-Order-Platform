@@ -3,77 +3,26 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { MoreHorizontal, Package, Lock } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
-import { lookupProducts, upsertProduct, deleteProduct, deleteProductImages, productImageUrl, updateMerchantConfig } from '../store'
-import { coerceQuantity, formatUnit } from '../productUnit'
-import { formatMoney, currencyDef } from '../currency'
-import { promoEndFromDate, promoEndToDate } from '../promoEnd'
+import { lookupProducts, deleteProduct, deleteProductImages, productImageUrl, updateMerchantConfig } from '../store'
+import { firstProductAdded } from './firstProduct'
+import { trackEvent } from '../analytics/events'
+import { formatUnit, UNITS } from '../productUnit'
+import { formatMoney } from '../currency'
 import { SkeletonText } from '../components/Loaders'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
-import { Textarea } from '../components/ui/textarea'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from '../components/ui/dropdown-menu'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { DataTable, SortableHeader } from '../components/ui/data-table'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../components/ui/empty'
-import ImagePicker from './ProductImages'
-import OptionGroupsEditor from './OptionGroupsEditor'
-import MenuCategoriesDialog, { blankCategory, categoryProblem } from './MenuCategoriesDialog'
+import ProductFormSheet from './ProductFormSheet'
+import MenuCategoriesDialog from './MenuCategoriesDialog'
 import MenuImportDialog from './MenuImportDialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '../components/ui/tooltip'
 import { findCategory } from '../menuGroups'
-import {
-  optionGroupsFromRow, menuCategoriesFromRow, validateMenuCategories,
-  MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
-} from '@bitetime/shared'
-import type { OptionGroup, MenuCategory } from '@bitetime/shared'
-
-// The picker's "create one" entry. A sentinel rather than a real id: it must not collide with a
-// category id, and a UUID never starts with a space.
-const NEW_CATEGORY = ' new '
-
-/**
- * Has this product's sale already finished? Read once, when the edit dialog opens.
- *
- * MODULE SCOPE on purpose. `Date.now()` is impure, and the React Compiler refuses one called from
- * anything it compiles — which `openEdit` became once it started reading a value derived during
- * render. Outside the component the call is opaque to the compiler and the rule is satisfied
- * honestly rather than silenced.
- *
- * Display-only, so the device clock is an acceptable stand-in for the server's here — unlike the
- * storefront's price quote (#68), this never becomes an order, so a merchant's laptop being a few
- * minutes off makes the hint early or late, never a wrong price.
- */
-const promoHasEnded = (promoEnd: unknown): boolean =>
-  !!promoEnd && new Date(promoEnd as string).getTime() < Date.now()
-
-// Canonical unit options (value stored as-is; label is bilingual).
-const UNITS: { value: string; en: string; zh: string }[] = [
-  { value: 'pcs', en: 'pcs', zh: '件' },
-  { value: 'box', en: 'box', zh: '盒' },
-  { value: 'set', en: 'set', zh: '套' },
-  { value: 'pack', en: 'pack', zh: '包' },
-  { value: 'dozen', en: 'dozen', zh: '打' },
-  { value: 'bottle', en: 'bottle', zh: '瓶' },
-  { value: 'cup', en: 'cup', zh: '杯' },
-  { value: 'jar', en: 'jar', zh: '罐' },
-  { value: 'tray', en: 'tray', zh: '盘' },
-  { value: 'slice', en: 'slice', zh: '片' },
-  { value: 'kg', en: 'kg', zh: '公斤' },
-  { value: 'g', en: 'g', zh: '克' },
-]
-
-// `category_id: ''` is the form's "no category". It becomes NULL on the way out — the column has
-// no empty-string state, and the two must not be allowed to diverge into "unfiled" and "filed
-// under nothing".
-const BLANK = {
-  name: '', name_zh: '', descr: '', price: '', unit: 'pcs', unit_quantity: 1, active: true,
-  promo_price: '', promo_limit: '', promo_end: '', category_id: '',
-}
+import { menuCategoriesFromRow } from '@bitetime/shared'
+import type { MenuCategory } from '@bitetime/shared'
 
 // Handlers + language + currency ride on table.options.meta so the column defs stay
 // stable (defined once) and never reset sorting when a row action refetches.
@@ -178,7 +127,7 @@ const columns: ColumnDef<any>[] = [
                 <Button
                   variant="ghost"
                   size="none"
-                  className="size-8 p-0 rounded-pill cursor-pointer hover:bg-brand-100 hover:text-primary"
+                  className="size-9 p-0 rounded-pill cursor-pointer pointer-coarse:size-11 hover:bg-brand-100 hover:text-primary"
                   aria-label={t('Actions', '操作')}
                 />
               }
@@ -187,7 +136,8 @@ const columns: ColumnDef<any>[] = [
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onEdit(p)}>{t('Edit', '编辑')}</DropdownMenuItem>
-              <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onRemove(p)}>{t('Delete', '删除')}</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" className="cursor-pointer" onClick={() => meta.onRemove(p)}>{t('Delete', '删除')}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -199,18 +149,13 @@ const columns: ColumnDef<any>[] = [
 export default function ProductsManager() {
   const { t, lang, merchant, refreshMerchant } = useSession()
   const [rows, setRows] = useState<any[] | null>(null)
-  const [form, setForm] = useState<any>(BLANK)
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState('')
-  // editingProduct = the row being edited (null → add mode).
+  // editingProduct = the row the form is open on (null → add mode).
   const [editingProduct, setEditingProduct] = useState<any | null>(null)
   const [formOpen, setFormOpen] = useState(false)
-  // Draft id lets the add-form upload images to Storage before the row exists.
-  const [draftId, setDraftId] = useState(() => crypto.randomUUID())
-  // Photos being edited in the add/edit dialog (add: new draft; edit: the row's).
-  const [images, setImages] = useState<string[]>([])
-  // Saved by the product's own upsert, not by a second write — see ADR 0008.
-  const [optionGroups, setOptionGroups] = useState<OptionGroup[]>([])
+  // One id per opening of the form. It is what tells ProductFormSheet a NEW opening has arrived
+  // (the same product twice must still start clean), and in add mode it doubles as the product's
+  // id, which is what lets the form upload photos to Storage before the row exists.
+  const [formSession, setFormSession] = useState(() => crypto.randomUUID())
   // The shop's menu sections (ADR 0013). Read off the merchant row the session already holds —
   // no request — and written back through `PATCH /api/merchants/:id`, so `refreshMerchant` is
   // what makes a save visible rather than a local copy that could drift from the row.
@@ -221,164 +166,42 @@ export default function ProductsManager() {
   // saves none until asked.
   const [importOpen, setImportOpen] = useState(false)
   const [categoriesSaving, setCategoriesSaving] = useState(false)
-  // The inline "+ New category…" draft in the product form. `null` is "not creating one" — an
-  // empty string is a merchant who opened it and has not typed yet, and the two are different.
-  const [newCategory, setNewCategory] = useState<string | null>(null)
-  const currency = merchant?.currency
-  const symbol = currencyDef(currency).symbol
-  // Whether the row being edited has a promo whose end date has already passed. Computed once, in
-  // openEdit below, rather than read from `Date.now()` during render (React Compiler forbids calling
-  // an impure function while rendering — the result would also go stale without a re-render to
-  // recompute it anyway). Display-only, so the device clock is an acceptable stand-in for the
-  // server's here — unlike the storefront's price quote (#68), this never becomes an order, so a
-  // merchant's laptop clock being a few minutes off only makes the hint a few minutes early or late,
-  // never a wrong price. `promo_end` is an absolute instant already (see promoEnd.ts).
-  const [promoEnded, setPromoEnded] = useState(false)
   // The row a Delete action is asking about, held here rather than in the column def so the
   // columns stay stable (see ProductTableMeta). null → no confirm open.
   const [pendingDelete, setPendingDelete] = useState<any | null>(null)
 
-  async function load() { const r = await lookupProducts(merchant!.id); setRows(r.ok ? r.data : []) }
+  const currency = merchant?.currency
+
+  // Both create paths end here — the add-product form and MenuImportDialog's bulk save (onSaved) —
+  // which is what lets ONE check cover both, and lets a fifteen-item menu import report a single
+  // first product rather than fifteen.
+  //
+  // The mount effect below deliberately does NOT go through this function. It must not: on a shop
+  // that already has a menu it would read 0 → n and report a first product on every dashboard
+  // visit. `rows === null` is the same guard from the other side — it means the count was never
+  // known, which is not the same fact as a menu known to be empty.
+  async function load() {
+    const before = rows
+    const r = await lookupProducts(merchant!.id)
+    const next = r.ok ? r.data : []
+    setRows(next)
+    if (before !== null && firstProductAdded(before.length, next.length)) {
+      trackEvent('onboarding_step', { step: 'product' })
+    }
+  }
   useEffect(() => { lookupProducts(merchant!.id).then(r => setRows(r.ok ? r.data : [])) }, [merchant!.id])
 
   function openAdd() {
     setEditingProduct(null)
-    setForm(BLANK)
-    setImages([]); setOptionGroups([]); setDraftId(crypto.randomUUID()); setMsg(''); setPromoEnded(false)
+    setFormSession(crypto.randomUUID())
     setFormOpen(true)
   }
   function openEdit(p: any) {
     setEditingProduct(p)
-    setMsg('')
-    setForm({
-      name: p.name ?? '', name_zh: p.name_zh ?? '', descr: p.descr ?? '',
-      price: String(p.price ?? ''), unit: p.unit ?? 'pc', unit_quantity: p.unit_quantity ?? 1, active: p.active,
-      promo_price: p.promo_price === null || p.promo_price === undefined ? '' : String(p.promo_price),
-      promo_limit: p.promo_limit === null || p.promo_limit === undefined ? '' : String(p.promo_limit),
-      promo_end: promoEndToDate(p.promo_end),
-      // THE STORED VALUE, VERBATIM, dangling id and all. `categoryItems` keeps a dead id
-      // selectable, the way `unitItems` keeps a legacy unit selectable, so a rename round-trips
-      // byte-identically instead of quietly unfiling the product.
-      category_id: p.category_id ?? '',
-    })
-    setImages(p.image_urls ?? [])
-    setOptionGroups(optionGroupsFromRow(p.option_groups))
-    setPromoEnded(promoHasEnded(p.promo_end))
+    setFormSession(crypto.randomUUID())
     setFormOpen(true)
   }
 
-  /**
-   * The promo columns, from the three form fields. An empty field is NULL — no promo / no cap / no
-   * end date — and `promo_price: 0` is a real promo (a free item), so this tests for '' and never
-   * for falsiness.
-   *
-   * `promo_sold` is deliberately absent: the browser cannot write it (a DB trigger pins it), and it
-   * is the backend's counter. The whole-row spread below still carries it back unchanged; the
-   * trigger is what makes that harmless.
-   */
-  function promoFields(f: any) {
-    return {
-      promo_price: f.promo_price === '' ? null : Number(f.promo_price),
-      promo_limit: f.promo_limit === '' ? null : Number(f.promo_limit),
-      promo_end: promoEndFromDate(f.promo_end),
-    }
-  }
-
-  /**
-   * The promo columns to send with this write.
-   *
-   * `form`'s own promo keys are STRINGS ('' for empty) and must never reach the write: '' is not
-   * a number. `promoFields` is what turns them into the three real columns, and this ALWAYS
-   * returns all three, to spread AFTER `...form` rather than deleting them afterwards.
-   */
-  function promoWrite() {
-    return promoFields(form)
-  }
-
-  /**
-   * Returns a message to show, or null. The DB has the same checks — this is the one with words.
-   *
-   * The `promo_limit` check runs first and unconditionally (not gated on `promo_price !== ''`): the
-   * `min="1" step="1"` on the input is a convenience, not the enforcement, so a limit of 0 must be
-   * refused here even for a product with no promo price set at all — otherwise it reaches Postgres's
-   * `products_promo_limit_positive` constraint as a raw error.
-   */
-  function promoProblem(f: any): string | null {
-    if (f.promo_limit !== '' && (!Number.isInteger(Number(f.promo_limit)) || Number(f.promo_limit) < 1)) {
-      return t('The promo limit must be a whole number of at least 1.', '优惠数量上限必须是不小于 1 的整数。')
-    }
-    if (f.promo_price === '') return null
-    const promo = Number(f.promo_price)
-    const price = Number(f.price) || 0
-    if (!Number.isFinite(promo) || promo < 0) {
-      return t('The promo price must be a number, and not negative.', '优惠价必须是非负数字。')
-    }
-    if (promo >= price) {
-      return t('The promo price must be below the normal price.', '优惠价必须低于原价。')
-    }
-    return null
-  }
-
-  async function save(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault(); setBusy(true); setMsg('')
-    const problem = promoProblem(form)
-    if (problem) { setMsg(problem); setBusy(false); return }
-    const r = editingProduct
-      // Spread the original row first so sort / active / etc. survive the upsert.
-      ? await upsertProduct({
-          ...editingProduct, ...form, ...promoWrite(),
-          image_urls: images,
-          option_groups: optionGroups,
-          price: Number(form.price) || 0,
-          unit_quantity: coerceQuantity(form.unit_quantity),
-          // '' is the form's "no category" and NULL is the column's; the picker's create sentinel
-          // is intercepted before it can land here, and this is the belt to that brace — a
-          // sentinel written as an id would be a product filed under a category nobody can name.
-          category_id: form.category_id && form.category_id !== NEW_CATEGORY ? form.category_id : null,
-        })
-      : await upsertProduct({
-          ...form,
-          ...promoWrite(),
-          id: draftId,
-          image_urls: images,
-          option_groups: optionGroups,
-          price: Number(form.price) || 0,
-          unit_quantity: coerceQuantity(form.unit_quantity),
-          // '' is the form's "no category" and NULL is the column's; the picker's create sentinel
-          // is intercepted before it can land here, and this is the belt to that brace — a
-          // sentinel written as an id would be a product filed under a category nobody can name.
-          category_id: form.category_id && form.category_id !== NEW_CATEGORY ? form.category_id : null,
-          merchant_id: merchant!.id,
-        })
-    if (r.ok) {
-      setFormOpen(false); setForm(BLANK); setEditingProduct(null); setImages([]); setOptionGroups([]); setDraftId(crypto.randomUUID())
-      await load()
-      toast.success(t('Product saved', '产品已保存'))
-    } else {
-      const err = r.error
-      // `promoProblem` above already catches a promo left above a base price the merchant just
-      // lowered in THIS save — it reads `f.price`, which is the price being saved, so `8 >= 7` is
-      // refused with words before this ever runs. This branch is a backstop for a DIFFERENT writer:
-      // the dashboard form is not the only thing that can touch a `products` row (a script, an
-      // admin tool, a direct SQL edit), and `products_promo_below_price` is what stops one of those
-      // leaving a promo priced above the item. Postgres's raw constraint string is not something to
-      // show a merchant if that ever collides with a live promo here.
-      if (err.message.includes('products_promo_below_price')) {
-        setMsg(t('The promo price is no longer below the normal price. Lower or clear the promo price first.',
-          '优惠价已不低于原价。请先降低或清除优惠价。'))
-      } else {
-        setMsg(err.message || t('Something went wrong.', '出错了。'))
-      }
-    }
-    setBusy(false)
-  }
-
-  async function setProductImages(p: any, image_urls: string[]) {
-    // No promo handling here: `p` IS the stored row, so its promo columns go back unchanged, which
-    // the backend's change-based gate lets through on any plan (#145).
-    const r = await upsertProduct({ ...p, image_urls })
-    if (r.ok) await load()
-  }
   // The name to quote back in the delete confirm, in the language being read.
   function productLabel(p: any) {
     return (lang === 'zh' && p.name_zh) ? p.name_zh : p.name
@@ -424,68 +247,6 @@ export default function ProductsManager() {
     onRemove: setPendingDelete,
   }
 
-  /**
-   * Create one category from the product form, without leaving it.
-   *
-   * A SECOND write, and knowingly so: the list lives on the merchant row and the product on its
-   * own, so there is no single upsert that could carry both (the arrangement ADR 0008 had for
-   * option groups and ADR 0013 gives up here). What that costs is an empty category left behind
-   * if the product save then fails — benign, because a category holding nothing renders nothing.
-   *
-   * Appended, never inserted: array order is display order, and a new section quietly landing in
-   * the middle of a menu the merchant arranged is worse than one landing at the end.
-   */
-  async function createCategory() {
-    const name = (newCategory ?? '').trim()
-    if (!name) return
-    const created = { ...blankCategory(), name }
-    const next = [...categories, created]
-    const bad = validateMenuCategories(next)
-    if (bad) { toast.error(categoryProblem(bad, t)); return }
-    if (await saveCategories(next)) {
-      setForm((f: any) => ({ ...f, category_id: created.id }))
-      setNewCategory(null)
-    }
-  }
-
-  /**
-   * What the picker offers. The leading entry is "no category" — the state most products are in
-   * and the one a merchant must be able to get back to, which is why it is an option rather than
-   * an empty selection.
-   *
-   * Hidden categories are OFFERED, marked as hidden: a merchant filing a product into a section
-   * they have switched off is a legitimate thing to do (arranging next month's menu), and
-   * removing the option would leave a product already in one unable to be re-selected.
-   */
-  const categoryItems = [
-    { value: '', label: t('No category', '不分类') },
-    // The leading entry keeps a DANGLING id selectable — its category was deleted, and the
-    // product still carries the id. Exactly the reason `unitItems` below keeps a legacy unit:
-    // dropping it would silently rewrite the column on the next save, which here means a Basic
-    // ex-Pro shop being refused an ordinary rename (`categoryChanged` sees null vs the stored id).
-    ...(form.category_id && !findCategory(categories, form.category_id)
-      ? [{ value: form.category_id as string, label: t('Deleted category', '已删除的分类') }]
-      : []),
-    ...categories.map(c => ({
-      value: c.id,
-      label: ((lang === 'zh' && c.name_zh) || c.name)
-        + (c.active ? '' : ` · ${t('hidden', '已隐藏')}`),
-    })),
-    ...(categories.length < MAX_MENU_CATEGORIES
-      ? [{ value: NEW_CATEGORY, label: t('+ New category…', '+ 新建分类…') }]
-      : []),
-  ]
-
-  // `items` feeds the trigger's label lookup and the rendered list from one expression.
-  // The leading entry keeps a legacy value (e.g. an old "pc") selectable so existing rows
-  // survive — dropping it would silently rewrite a merchant's unit on the next save.
-  const unitItems = [
-    ...(form.unit && !UNITS.some(u => u.value === form.unit)
-      ? [{ value: form.unit as string, label: form.unit as string }]
-      : []),
-    ...UNITS.map(u => ({ value: u.value, label: t(u.en, u.zh) })),
-  ]
-
   if (!rows) return (
     <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
       <SkeletonText lines={4} />
@@ -494,26 +255,32 @@ export default function ProductsManager() {
 
   return (
     <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
-      <div className="flex items-center justify-between gap-3 mb-4">
+      {/* `flex-wrap`, and no `whitespace-nowrap` on the buttons. Three nowrap buttons in a row
+          that cannot wrap are wider than this card on a phone, and a block card does not grow to
+          fit them — the PAGE does, which is the horizontal scroll that also drags the table's
+          right-hand columns off screen. Wrapping keeps them inside the card at any width, and a
+          label free to break inside its own button is the backstop for the one case wrapping
+          cannot fix: a single button wider than the whole row. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="font-heading text-[15px] font-medium text-primary flex items-center gap-2">
           {t('Your products', '您的产品')}
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button" variant="soft" size="none"
-            className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap"
+            className="rounded-lg py-[6px] px-[14px] text-[13px]"
             onClick={() => setCategoriesOpen(true)}
           >
             {t('Categories', '分类')}
           </Button>
           <Button
             type="button" variant="soft" size="none"
-            className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap"
+            className="rounded-lg py-[6px] px-[14px] text-[13px]"
             onClick={() => setImportOpen(true)}
           >
             {t('Import from a photo', '从照片导入')}
           </Button>
-          <Button data-tour="add-product" type="button" size="none" className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap" onClick={openAdd}>
+          <Button data-tour="add-product" type="button" size="none" className="rounded-lg py-[6px] px-[14px] text-[13px]" onClick={openAdd}>
             {t('+ Add product', '+ 添加产品')}
           </Button>
         </div>
@@ -586,286 +353,17 @@ export default function ProductsManager() {
         />
       )}
 
-      {/* Add / edit product details. disablePointerDismissal: the unit Select
-          portals its menu to <body>, so an item click would otherwise read as an
-          outside-press and close the dialog. Close via the X, Save, or Escape. */}
-      <Dialog open={formOpen} onOpenChange={setFormOpen} disablePointerDismissal>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingProduct ? t('Edit product', '编辑产品') : t('Add a product', '添加产品')}</DialogTitle>
-          </DialogHeader>
-          {msg && (
-            <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
-              {msg}
-            </div>
-          )}
-          <form onSubmit={save}>
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-col gap-[6px]">
-                <Label htmlFor="pm-1">{t('Name', '名称')}</Label>
-                <Input
-                  id="pm-1"
-                  variant="compact"
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  required
-                  placeholder={t('e.g. Brown Butter Cookie', '如：焦化奶油曲奇')}
-                />
-              </div>
-              <div className="flex flex-col gap-[6px]">
-                <Label htmlFor="pm-2">{t('Chinese name (optional)', '中文名称（可选）')}</Label>
-                <Input
-                  id="pm-2"
-                  variant="compact"
-                  value={form.name_zh}
-                  onChange={e => setForm({ ...form, name_zh: e.target.value })}
-                  placeholder="e.g. 焦化奶油曲奇"
-                />
-              </div>
-              {/* Up here with the names, not down beside Photos. Which section a product belongs
-                  to is part of WHAT IT IS, and it was landing below the promo block and the photo
-                  picker — past the fold on a laptop, so the merchant met it only after they had
-                  finished thinking about the product. Identity first, then price, then media. */}
-              <div className="flex flex-col gap-[6px] min-w-0">
-                <Label htmlFor="pm-category">{t('Category (optional)', '分类（可选）')}</Label>
-                <Select
-                  value={form.category_id}
-                  onValueChange={v => {
-                    // The inline create. Writing the shop's list mid-product-edit is a second,
-                    // separate save, so a product save that then fails leaves an empty category
-                    // behind — benign, because a category holding nothing renders nothing.
-                    if (v === NEW_CATEGORY) { setNewCategory(''); return }
-                    setNewCategory(null)
-                    setForm({ ...form, category_id: v ?? '' })
-                  }}
-                  items={categoryItems}
-                >
-                  <SelectTrigger id="pm-category" className="bg-background border-border text-[13px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="z-modal-popover">
-                    {categoryItems.map(c => (
-                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {newCategory !== null && (
-                  <div className="flex gap-2">
-                    <Input
-                      variant="compact"
-                      autoFocus
-                      value={newCategory}
-                      maxLength={MENU_CATEGORY_NAME_MAX}
-                      onChange={e => setNewCategory(e.target.value)}
-                      // Enter inside a form submits it, and the product is not what is being
-                      // saved here. Create the category instead.
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void createCategory() } }}
-                      placeholder={t('New category name', '新分类名称')}
-                      aria-label={t('New category name', '新分类名称')}
-                    />
-                    <Button
-                      type="button" size="none"
-                      className="rounded-lg px-[14px] text-[13px] whitespace-nowrap"
-                      disabled={categoriesSaving || newCategory.trim() === ''}
-                      onClick={() => void createCategory()}
-                    >{categoriesSaving ? t('Saving…', '保存中…') : t('Create', '创建')}</Button>
-                  </div>
-                )}
-                <span className="text-[12px] text-muted-foreground">
-                  {t('Products with no category are listed last on your storefront, without a heading.',
-                     '未分类的产品会排在店面最后，且不带标题。')}
-                </span>
-              </div>
-              <div className="flex flex-col gap-[6px]">
-                <Label htmlFor="pm-3">{t('Description', '描述')}</Label>
-                <Textarea
-                  id="pm-3"
-                  value={form.descr}
-                  onChange={e => setForm({ ...form, descr: e.target.value })}
-                  placeholder={t('Short description (optional)', '简短描述（可选）')}
-                  className="bg-background text-[13px] rounded-sm py-[7px] px-2.5 min-h-0"
-                />
-              </div>
-              <div className="flex flex-col gap-[6px]">
-                <Label htmlFor="pm-4">{t(`Price (${symbol})`, `价格 (${symbol})`)}</Label>
-                <Input
-                  id="pm-4"
-                  variant="compact"
-                  type="number"
-                  step="0.01"
-                  value={form.price}
-                  onChange={e => setForm({ ...form, price: e.target.value })}
-                  required
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="flex flex-col gap-[6px]">
-                <Label htmlFor="pm-5">{t('Unit', '单位')}</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="pm-qty"
-                    variant="compact"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    className="w-24"
-                    value={form.unit_quantity}
-                    onChange={e => setForm({ ...form, unit_quantity: e.target.value })}
-                    aria-label={t('Unit quantity', '单位数量')}
-                    placeholder="1"
-                  />
-                  <Select value={form.unit} onValueChange={v => setForm({ ...form, unit: v ?? form.unit })} items={unitItems}>
-                    <SelectTrigger id="pm-5" className="flex-1 bg-background border-border text-[13px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    {/* z-modal-popover (400) floats above the dialog popup (z-modal). */}
-                    <SelectContent className="z-modal-popover">
-                      {unitItems.map(u => (
-                        <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="contents">
-                <div className="flex flex-col gap-[6px]">
-                  <Label htmlFor="pm-promo-price">{t('Promo price', '优惠价')}</Label>
-                  <Input
-                    id="pm-promo-price"
-                    variant="compact"
-                    type="number"
-                    step="0.01"
-                    value={form.promo_price}
-                    onChange={e => setForm({ ...form, promo_price: e.target.value })}
-                    placeholder="0.00"
-                  />
-                  <span className="text-[12px] text-muted-foreground">{t('Leave empty for no promo.', '留空表示无优惠。')}</span>
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <Label htmlFor="pm-promo-limit">{t('Promo limit', '优惠数量上限')}</Label>
-                  <Input
-                    id="pm-promo-limit"
-                    variant="compact"
-                    type="number"
-                    step="1"
-                    min="1"
-                    value={form.promo_limit}
-                    onChange={e => setForm({ ...form, promo_limit: e.target.value })}
-                    placeholder={t('No limit', '不限')}
-                  />
-                  <span className="text-[12px] text-muted-foreground">
-                    {t('How many units sell at this price. Leave empty for no limit.', '以此价格出售的数量。留空表示不限。')}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <Label htmlFor="pm-promo-end">{t('Promo ends', '优惠结束日期')}</Label>
-                  <Input
-                    id="pm-promo-end"
-                    variant="compact"
-                    type="date"
-                    value={form.promo_end}
-                    onChange={e => setForm({ ...form, promo_end: e.target.value })}
-                  />
-                  <span className="text-[12px] text-muted-foreground">
-                    {t('The promo runs to the end of this day. Leave empty for no end date.', '优惠持续到当天结束。留空表示无结束日期。')}
-                  </span>
-                </div>
-              </div>
-              {editingProduct && editingProduct.promo_price !== null && editingProduct.promo_price !== undefined && (() => {
-                // M-1: `promo_sold` can outlive a LOWERED `promo_limit` — sell 8 against a cap of
-                // 10, then drop the cap to 3, and the row is `promo_sold: 8, promo_limit: 3`.
-                // Money is unaffected (`remaining = max(0, 3-8) = 0`, so the promo just ends), but
-                // the raw numbers read as "8 of 3 sold", which looks broken. Clamp the DISPLAY to
-                // the cap and say the promo is finished — the DB row itself is untouched.
-                const sold = editingProduct.promo_sold ?? 0
-                const limit = editingProduct.promo_limit
-                const capReached = limit != null && sold >= limit
-                const shownSold = limit != null ? Math.min(sold, limit) : sold
-                return (
-                  <p className="text-[12px] text-muted-foreground">
-                    {limit
-                      ? t(`${shownSold} of ${limit} sold at the promo price.`,
-                          `已以优惠价售出 ${shownSold} / ${limit} 件。`)
-                      : t(`${sold} sold at the promo price.`,
-                          `已以优惠价售出 ${sold} 件。`)}
-                    {' '}
-                    {t('Changing the promo price starts the count again.', '更改优惠价将重新计数。')}
-                    {capReached && (
-                      <>
-                        {' '}
-                        {t('This promo is finished — the cap has been reached.', '此优惠已结束——已达上限。')}
-                      </>
-                    )}
-                    {promoEnded && (
-                      <>
-                        {' '}
-                        {t('This promo has ended.', '此优惠已结束。')}
-                      </>
-                    )}
-                  </p>
-                )
-              })()}
-              <div className="flex flex-col gap-[6px]">
-                <Label>{t('Photos (optional)', '图片（可选）')}</Label>
-                <ImagePicker
-                  merchantId={merchant!.id}
-                  productId={editingProduct ? editingProduct.id : draftId}
-                  value={images}
-                  onChange={paths => {
-                    setImages(paths as string[])
-                    // Edit mode: the row exists, so persist immediately — that way a
-                    // removed photo isn't left dangling if the dialog is cancelled.
-                    if (editingProduct) return setProductImages(editingProduct, paths as string[])
-                  }}
-                  t={t}
-                />
-              </div>
-              <div className="flex flex-col gap-[6px] min-w-0">
-                <Label>{t('Options (optional)', '选项（可选）')}</Label>
-                <OptionGroupsEditor
-                  // Keyed on the product, so each one gets its own editor. `open` is seeded from
-                  // `value.length` on MOUNT only, so without this a new product inherited the
-                  // expanded editor of whichever product was edited before it.
-                  key={editingProduct?.id ?? draftId}
-                  value={optionGroups}
-                  onChange={setOptionGroups}
-                  currency={currency}
-                  t={t}
-                  copyFrom={rows
-                    .filter(p => p.id !== editingProduct?.id
-                      && optionGroupsFromRow(p.option_groups).length > 0)
-                    .map(p => ({
-                      id: p.id,
-                      name: (lang === 'zh' && p.name_zh) ? p.name_zh : p.name,
-                      groups: optionGroupsFromRow(p.option_groups),
-                    }))}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <div className="flex flex-col">
-                  <Label htmlFor="pm-active">{t('Visible in storefront', '在店面显示')}</Label>
-                  <span className="text-[12px] text-muted-foreground">
-                    {form.active ? t('Customers can order this', '顾客可下单') : t('Hidden from customers', '对顾客隐藏')}
-                  </span>
-                </div>
-                <button
-                  id="pm-active"
-                  type="button"
-                  role="switch"
-                  aria-checked={form.active}
-                  onClick={() => setForm({ ...form, active: !form.active })}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill transition-colors cursor-pointer ${form.active ? 'bg-primary' : 'bg-border'}`}
-                >
-                  <span className={`inline-block size-5 rounded-pill bg-white shadow-sm transition-transform ${form.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                </button>
-              </div>
-            </div>
-            <Button type="submit" size="md" className="mt-4 w-full" disabled={busy}>
-              {busy ? t('Saving…', '保存中…') : editingProduct ? t('Save changes', '保存更改') : t('Add product', '添加产品')}
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ProductFormSheet
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        product={editingProduct}
+        sessionId={formSession}
+        products={rows}
+        categories={categories}
+        categoriesSaving={categoriesSaving}
+        onSaveCategories={saveCategories}
+        onSaved={load}
+      />
 
       <ConfirmDialog
         open={!!pendingDelete}

@@ -8,6 +8,7 @@ import { storefrontUrl } from '../storefrontUrl'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { trackEvent } from '../analytics/events'
 
 export default function ShareStorefront() {
   const { t, merchant, refreshMerchant } = useSession()
@@ -22,6 +23,9 @@ export default function ShareStorefront() {
   // failed flag write must never block or fail the share the merchant asked for.
   const markShared = () => {
     if (!merchant.onboarding_link_shared) {
+      // Inside the guard, so the step reports once ever. The flag is the memory; the event is not
+      // allowed one of its own.
+      trackEvent('onboarding_step', { step: 'link' })
       updateMerchantConfig(merchant.id, { onboarding_link_shared: true })
         .then(r => { if (r.ok) return refreshMerchant() })
         .catch(() => {})

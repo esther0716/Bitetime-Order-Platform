@@ -1,9 +1,14 @@
 import type { Merchant } from '../types'
 
-export interface OnboardingState {
-  product: boolean
-  shipping: boolean
-  link: boolean
+/**
+ * The three steps, as names.
+ *
+ * Here rather than in analytics/events.ts because this module is what DEFINES them: the checklist
+ * and the measurement of the checklist must not drift into calling the same step two things.
+ */
+export type OnboardingStep = 'product' | 'shipping' | 'link'
+
+export interface OnboardingState extends Record<OnboardingStep, boolean> {
   doneCount: number
   allDone: boolean
 }

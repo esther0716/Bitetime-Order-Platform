@@ -60,6 +60,28 @@ describe('trackEvent', () => {
     expect(track).toHaveBeenCalledTimes(4)
   })
 
+  it('sends which onboarding step a shop just completed', () => {
+    const track = vi.fn()
+    setAnalyticsClient(fakeClient(track))
+    trackEvent('onboarding_step', { step: 'product' })
+    expect(track).toHaveBeenCalledWith('onboarding_step', { step: 'product' })
+  })
+
+  // The three step names come from onboardingSteps.ts, so the checklist and the measurement of it
+  // cannot drift into naming the same step two different things.
+  it('accepts each of the three onboarding steps and nothing else', () => {
+    const track = vi.fn()
+    setAnalyticsClient(fakeClient(track))
+    trackEvent('onboarding_step', { step: 'product' })
+    trackEvent('onboarding_step', { step: 'shipping' })
+    trackEvent('onboarding_step', { step: 'link' })
+    // @ts-expect-error there is no fourth onboarding step
+    trackEvent('onboarding_step', { step: 'payment' })
+    // @ts-expect-error the step is required; the event says nothing without it
+    trackEvent('onboarding_step')
+    expect(track).toHaveBeenCalledTimes(5)
+  })
+
   it('stops sending once the client is cleared', () => {
     const track = vi.fn()
     setAnalyticsClient(fakeClient(track))

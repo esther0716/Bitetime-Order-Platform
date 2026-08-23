@@ -10,7 +10,7 @@ import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { pendingShopMetadata } from './merchant/pendingShop';
 import type { PendingShop } from './merchant/pendingShop';
-import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForm, mapOk, toVoid } from './api'
+import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForFile, apiSendForm, mapOk, toVoid } from './api'
 import type { Result } from './api'
 import type { CartLine } from '@bitetime/shared'
 
@@ -417,14 +417,22 @@ export function onAuthChange(callback: (user: User | null, event?: string) => vo
 // ── Vouchers ──────────────────────────────────────────────────────────────────
 
 // Uses left on a voucher. Infinity = no total cap (still capped to 1 per customer).
+//
+// `usedCount` is the API's own count. It replaced a `usedBy.length` read here: `used_by` is the
+// list of redeemers' ACCOUNT EMAIL ADDRESSES and no longer leaves the backend, on either the
+// public route or the merchant's own (see apps/backend/src/voucherView.ts). The array fallback
+// survives for a legacy shape only and counts nothing that is not already in `usedCount`.
 export function voucherUsesLeft(v: Voucher) {
-  const count = Array.isArray(v.usedBy) ? v.usedBy.length : 0;
+  const count = v.usedCount ?? (Array.isArray(v.usedBy) ? v.usedBy.length : 0);
   if (v.maxUses == null || v.maxUses === '') return Infinity;
   return Math.max(0, Number(v.maxUses) - count);
 }
 
 // True when the voucher can no longer be redeemed by anyone.
 export function voucherFullyUsed(v: Voucher) {
+  // The server's own answer, when it gave one. It is derived from `max_uses` against a count the
+  // browser is deliberately not shown, so it is the only reading that can be right here.
+  if (typeof v.fullyUsed === 'boolean') return v.fullyUsed;
   // Legacy single-use vouchers: `used:true` with no usedBy list.
   if (v.used && !Array.isArray(v.usedBy)) return true;
   return voucherUsesLeft(v) <= 0;
@@ -457,7 +465,12 @@ export async function fetchMerchantVouchers(merchantId: string): Promise<Result<
  */
 export async function lookupMerchantVoucher(merchantId: string, code: string): Promise<Result<Voucher | null>> {
   if (!merchantId || !code) return { ok: true, data: null }
-  const r = await apiGet<any>(`/api/merchants/${merchantId}/vouchers/${encodeURIComponent(code)}`)
+  // `auth: true` — the guest-tolerant one: it attaches the session token when there is one and
+  // sends the request unauthenticated when there is not. The route needs it to answer
+  // `already_used`, which it derives from the CALLER'S OWN verified email; without a token it
+  // simply omits that field. A signed-out customer must still be able to see what the code is
+  // worth before being asked to sign in, so `auth: 'required'` would be wrong here.
+  const r = await apiGet<any>(`/api/merchants/${merchantId}/vouchers/${encodeURIComponent(code)}`, { auth: true })
   return mapOk(r, (row) => (row ? voucherFromRow(row) : null))
 }
 
@@ -475,12 +488,24 @@ export async function lookupMerchantVoucher(merchantId: string, code: string): P
 // by vouchers_write_own).
 export async function createMerchantVoucher(input: {
   merchantId: string; code: string; kind: string; amount: number; maxUses?: number | null;
+  /** null = unlimited per customer. OMITTED means one each — the safe reading, since unlimited
+   *  is the value that costs the merchant money and must therefore be said out loud. */
+  perCustomerLimit?: number | null;
+  /** A shop-local DATE ('YYYY-MM-DD'). The server resolves it to the instant that day ends. */
+  expiresOn?: string | null;
+  minOrder?: number | null;
 }): Promise<Result<Voucher>> {
   const r = await apiSend<any>(`/api/merchants/${input.merchantId}/vouchers`, 'POST', {
     code: input.code,
     kind: input.kind,
     amount: input.amount,
     maxUses: input.maxUses ?? null,
+    perCustomerLimit: input.perCustomerLimit === undefined ? 1 : input.perCustomerLimit,
+    // A DATE, deliberately, not an instant. Which instant a merchant's chosen day ENDS depends on
+    // the shop's timezone, and the browser must not be the one to decide that — see
+    // apps/backend/src/voucherExpiry.ts.
+    expiresOn: input.expiresOn ?? null,
+    minOrder: input.minOrder ?? null,
   }, { auth: true })
   return mapOk(r, voucherFromRow)
 }
@@ -579,7 +604,7 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
   voucherCode?: string | null
   /** `YYYY-MM-DD` on the shop's clock. The backend re-checks it against the shop's window. */
   fulfilDate: string | null
-}): Promise<Result<{ orderNumber: string; id: string }, OrderError>> {
+}): Promise<Result<{ orderNumber: string; id: string; status: string }, OrderError>> {
   // Optional: a guest has no session, and guest checkout is a first-class path.
   const { data: { session } } = await auth.getSession()
   const token = session?.access_token
@@ -606,7 +631,7 @@ export async function placeOrder({ merchantId, customerName, customerWa, mode, a
     const payload = await res.json().catch(() => ({}))
     return { ok: false, error: new OrderError(payload?.error ?? 'order_failed', typeof payload?.now === 'string' ? payload.now : undefined) }
   }
-  return { ok: true, data: (await res.json()) as { orderNumber: string; id: string } }
+  return { ok: true, data: (await res.json()) as { orderNumber: string; id: string; status: string } }
 }
 
 /**
@@ -1052,6 +1077,43 @@ export async function fetchPaymentProof(merchantId: string, orderId: string): Pr
 export async function fetchMyPaymentProof(orderId: string): Promise<Result<Blob>> {
   const r = await apiGetFile(`/api/orders/${orderId}/payment-proof`, { auth: 'required' })
   return mapOk(r, d => d.blob)
+}
+
+// ── Invoice ───────────────────────────────────────────────────────────────────
+//
+// One document, three doors, the same bytes: a guest today is an account holder next month and
+// must not be handed two different papers. Which door a caller uses is decided by what they can
+// PROVE — a session, ownership of the shop, or the order number with the phone that placed it.
+// See CONTEXT.md → Invoice.
+
+/** The signed-in customer's own order. Scoped server-side by the order's `user_id`. */
+export async function fetchMyInvoice(orderId: string): Promise<Result<{ blob: Blob; filename: string | null }>> {
+  return apiGetFile(`/api/orders/${orderId}/invoice.pdf`, { auth: 'required' })
+}
+
+/** The merchant's copy of an order in their own shop — the one they forward when asked directly. */
+export async function fetchOrderInvoice(
+  merchantId: string,
+  orderId: string,
+): Promise<Result<{ blob: Blob; filename: string | null }>> {
+  return apiGetFile(`/api/merchants/${merchantId}/orders/${orderId}/invoice.pdf`, { auth: 'required' })
+}
+
+/**
+ * The guest door: an order number and the phone that placed it, scoped to one shop.
+ *
+ * Sends NO token even when one exists (`auth: false`): the caller is by definition someone with
+ * no account, the door proves the pair and nothing else, and a signed-in customer reaching this
+ * page still gets the same answer as everyone else. The shop is required because an order number
+ * is unique per shop only; the backend answers every failure with the same 404, so this Result
+ * carries nothing to branch on and the page says one sentence.
+ */
+export async function fetchGuestInvoice(
+  shop: string,
+  orderNumber: string,
+  phone: string,
+): Promise<Result<{ blob: Blob; filename: string | null }>> {
+  return apiSendForFile('/api/orders/invoice', { shop, orderNumber, phone }, { auth: false })
 }
 
 // ── Merchant config & secrets ─────────────────────────────────────────────────

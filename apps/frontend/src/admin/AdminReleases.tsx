@@ -118,7 +118,7 @@ const columns: ColumnDef<AdminRelease>[] = [
                 <Button
                   variant="ghost"
                   size="none"
-                  className="size-8 p-0 rounded-pill cursor-pointer hover:bg-brand-100 hover:text-primary"
+                  className="size-9 p-0 rounded-pill cursor-pointer pointer-coarse:size-11 hover:bg-brand-100 hover:text-primary"
                   disabled={busy === r.id}
                   aria-label={t('Actions', '操作')}
                 />
@@ -258,7 +258,7 @@ export default function AdminReleases() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-lg font-heading text-foreground">{t('Releases', '更新日志')}</h2>
         <Button variant="default" size="sm" onClick={pull} disabled={pulling}>
           {pulling ? t('Pulling…', '拉取中…') : t('Pull releases from GitHub', '从 GitHub 拉取更新')}

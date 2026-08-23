@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ReceiptText, Wallet, Users, TrendingUp, Download, Lock, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { saveBlob } from '../download'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -57,20 +58,9 @@ function DownloadReport({ selection, granularity }: { selection: RevenueSelectio
       toast.error(r.error.message || t('Could not build the report', '无法生成报表'))
       return
     }
-    // The anchor has to be IN the document for a programmatic click to download in Firefox, and
-    // the object URL has to outlive the click — revoking it synchronously can race the browser's
-    // own fetch of the blob and produce an empty file.
-    const url = URL.createObjectURL(r.data.blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = r.data.filename ?? (selection.kind === 'custom'
+    saveBlob(r.data.blob, r.data.filename ?? (selection.kind === 'custom'
       ? `revenue-${selection.from}_${selection.to}.xlsx`
-      : `revenue-${selection.days}d.xlsx`)
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
+      : `revenue-${selection.days}d.xlsx`))
   }
 
   // Icon-only, and built from the same geometry as the Pill above rather than from `Button`:

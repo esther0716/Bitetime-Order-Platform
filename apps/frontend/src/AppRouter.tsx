@@ -45,6 +45,7 @@ const MerchantHome = lazy(() => import('./merchant/MerchantHome'))
 const Storefront = lazy(() => import('./store/Storefront'))
 const OrderHistory = lazy(() => import('./store/OrderHistory'))
 const ResetPasswordPage = lazy(() => import('./ResetPasswordPage'))
+const InvoicePage = lazy(() => import('./InvoicePage'))
 const SampleShopsPage = lazy(() => import('./marketing/SampleShopsPage'))
 const ReleaseNotes = lazy(() => import('./marketing/ReleaseNotes'))
 const TermsPage = lazy(() => import('./legal/TermsPage'))
@@ -259,6 +260,11 @@ function AnimatedRoutes() {
               would swallow it, and a suspended shop must never lock a customer out of their own
               account. Role-blind — `?shop=` decides where they land afterwards. */}
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          {/* Top-level for the same reason, and for the same kind of person: a guest order is
+              orphaned for ever (`user_id` null), so this door is the ONLY way that customer
+              reaches their own invoice — and a shop being suspended must not close it. The shop
+              rides in `?shop=`, because an order number is unique per shop only. */}
+          <Route path="/invoice" element={<InvoicePage />} />
           {/* Top-level for the same reason, and it matters for the same kind of person: a
               customer of a SUSPENDED shop must still be able to read the notice describing data
               we already hold about them. A shop's status can never gate that. */}

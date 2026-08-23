@@ -231,11 +231,13 @@ export default function StorefrontArranger() {
     {/* The same card the other dashboard sections are drawn in. The MENU inside it is capped at
         phone width, because that is the width the merchant is previewing. */}
     <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
-      <div className="flex items-center justify-between gap-3 mb-2">
+      {/* Wraps for the same reason the products header does: heading plus two nowrap buttons is
+          wider than this card on a phone, and the overflow lands on the page, not the card. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
         <h3 className="font-heading text-[15px] font-medium text-primary flex items-center gap-2">
           {t('Your storefront', '您的店面')}
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button" variant="soft" size="none"
             className="rounded-lg py-[6px] px-[14px] text-[13px] whitespace-nowrap"

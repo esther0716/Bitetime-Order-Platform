@@ -17,8 +17,9 @@ import { Button } from '../components/ui/button'
  * out-shouted the headline and made the guest path the loudest thing on a screen whose whole
  * purpose is to offer an account. Same words, quieter voice.
  *
- * It is also true. It does not claim the order is unfindable: /track still resolves a single
- * order by number. The order number really is the recourse, and really is the only one.
+ * It is also true. It does not claim the order is unfindable: `/invoice?shop=<slug>` still hands
+ * a guest their own document, on the order number plus the phone they typed. The order number
+ * really is the recourse, and really is the only one.
  */
 export default function CheckoutGate({ onGuest }: { onGuest: () => void }) {
   const { t } = useSession()

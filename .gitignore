@@ -20,3 +20,4 @@ docs/research/
 apps/frontend/test-results
 apps/frontend/playwright-report
 apps/frontend/blob-report
+.superpowers/

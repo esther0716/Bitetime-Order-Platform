@@ -105,3 +105,34 @@ export const assistantMerchantWindow = createSlidingWindow({ limit: 50, windowMs
 export const MENU_IMPORT_LIFETIME_LIMIT = 30
 export const MENU_IMPORT_MONTHLY_LIMIT = 5
 export const ASSISTANT_MONTHLY_LIMIT = 60
+
+// The guest invoice door (#242, docs/adr/0018). Unlike everything above it, this bounds no
+// spending at all — no Google call, no Claude call, nothing the platform pays for. What it bounds
+// is DISCLOSURE: the door opens on an order number plus a phone, and an order number is a
+// structured, near-sequential string (`PREFIX-YYMMDD-XXXX`, the daily counter starting at 50), so
+// the pair is guessable by anyone who knows a shop's prefix and a customer's number. ADR 0018
+// accepts that knowingly; this is what makes guessing slow enough to be useless.
+//
+// Two windows, because one number cannot say both things. A customer who fat-fingers their phone
+// tries three or four times in a minute; a script tries thousands. 10/minute leaves the honest
+// customer untouched and takes a determined enumerator from minutes to weeks.
+//
+// Keyed by IP, which behind carrier-grade NAT is shared by many unrelated customers — hence 60 an
+// hour rather than the 10×60 the per-minute figure would imply, and hence a per-minute ceiling
+// generous enough that a shared address is not exhausted by two people at once.
+//
+// Same in-memory weaknesses as every other limiter here, inherited knowingly: resets on redeploy,
+// and stops protecting anything past one backend instance (#101, Out of Scope). The fix, if this
+// ever needs one, is a Postgres counter of the shape `ai_usage` already has.
+const invoiceLookupMinuteWindow = createSlidingWindow({ limit: 10, windowMs: 60_000, now: () => Date.now() })
+const invoiceLookupHourWindow = createSlidingWindow({ limit: 60, windowMs: 60 * 60_000, now: () => Date.now() })
+
+export const invoiceLookupIpWindow = {
+  allow(key: string): boolean {
+    // BOTH windows record the hit — an early return from the minute window would leave the hour
+    // window under-counting exactly the caller it exists to stop.
+    const minute = invoiceLookupMinuteWindow.allow(key)
+    const hour = invoiceLookupHourWindow.allow(key)
+    return minute && hour
+  },
+}

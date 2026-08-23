@@ -42,16 +42,26 @@ describe('the four-tone vocabulary', () => {
     }
   })
 
-  it('gives new and preparing the same hue but different weight', () => {
-    expect(classOf('new')).toMatch(/info/)
-    expect(classOf('preparing')).toMatch(/info/)
-    expect(classOf('new')).not.toBe(classOf('preparing'))
+  it.each([
+    ['new', 'preparing', /info/],
+    ['ready', 'completed', /success/],
+  ])('gives %s and %s the same hue but different weight', (solid, subtle, hue) => {
+    expect(classOf(solid)).toMatch(hue)
+    expect(classOf(subtle)).toMatch(hue)
+    expect(classOf(solid)).not.toBe(classOf(subtle))
+    // The solid one is the one still waiting on the merchant.
+    expect(classOf(solid)).toMatch(/text-white/)
+    expect(classOf(subtle)).not.toMatch(/text-white/)
   })
 
   it('maps the remaining statuses to their own tones', () => {
     expect(classOf('pending_payment')).toMatch(/warning/)
-    expect(classOf('ready')).toMatch(/success/)
-    expect(classOf('completed')).toMatch(/neutral/)
     expect(classOf('cancelled')).toMatch(/danger/)
+  })
+
+  /* Neutral is the unknown-status treatment. If a real status takes it back, an unrecognised
+     one becomes indistinguishable from that status instead of visibly untaught. */
+  it('leaves the neutral tone to unrecognised statuses only', () => {
+    for (const s of ORDER_STATUSES) expect(classOf(s), s).not.toMatch(/neutral/)
   })
 })
