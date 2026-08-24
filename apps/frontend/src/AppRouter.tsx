@@ -5,6 +5,7 @@ import { PageTransition } from './motion'
 import { SessionProvider, useSession } from './SessionContext'
 import { TooltipProvider } from './components/ui/tooltip'
 import { MerchantProvider, useMerchant } from './MerchantContext'
+import BrandTheme from './components/BrandTheme'
 import RequireRole from './RequireRole'
 import { useCanonical } from './canonical'
 import { useDocumentMeta } from './documentMeta'
@@ -109,6 +110,10 @@ function StorefrontShell() {
     // no to every question off a marketing path, which a storefront is. Mounted here, below the
     // not-found and status gates, so the subtree existing IS the proof that this is an active
     // shop's storefront: the hook can then state `inScope: true` as a fact.
+    // The shop's own colour, and only below the not-found and status gates: a merchant row is in
+    // hand here, and the shell renders a spinner until it is, so nothing flashes the platform
+    // accent first. Everything under /s/:slug is inside this — menu, checkout, order history.
+    <BrandTheme color={merchant.brand_color}>
     <ShopPixelsProvider merchant={merchant}>
       <Routes>
         <Route index element={<Storefront />} />
@@ -118,6 +123,7 @@ function StorefrontShell() {
         <Route path="orders" element={<OrderHistory />} />
       </Routes>
     </ShopPixelsProvider>
+    </BrandTheme>
   )
 }
 
