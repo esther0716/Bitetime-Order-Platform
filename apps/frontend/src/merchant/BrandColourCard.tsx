@@ -13,12 +13,14 @@ import { cn } from '@/lib/utils'
 /**
  * The one colour a merchant picks for their shop.
  *
- * ON THE STOREFRONT TAB, next to the description card, for the reason written there: Shop Settings
- * is where a merchant looks for a FACT about the shop — the address, the currency, the tax rate.
- * This is what the customer sees, so it belongs beside the menu preview.
+ * IN SHOP SETTINGS, on its own Brand tab. It sat on the Storefront tab first, on the reasoning
+ * `ShopDescriptionCard` states there — Settings holds FACTS about the shop, Storefront holds what
+ * the customer sees. That reasoning stopped applying once the colour began theming the DASHBOARD
+ * too: it is no longer a storefront thing, it is shop-wide config like the currency and the tax
+ * rate. The Storefront tab is also a drag surface, and a set-once picker is not workspace.
  *
- * ITS OWN Save, and the dirty flag reported UP rather than registered with NavGuard — the guard
- * holds exactly one blocker, and this screen already has two cards that can each be dirty.
+ * ITS OWN Save, and the dirty flag reported UP through `onDirtyChange` — the shared shape every
+ * Settings tab uses, and what lets `NavGuard` (one blocker slot) see unsaved work here.
  * `onDirtyChange` must be stable across renders; `useSaved` reports through an effect listing it.
  *
  * NO CONTRAST WARNING, deliberately. `brandTheme` makes every possible choice legible, so a warning
@@ -82,7 +84,7 @@ export default function BrandColourCard({ onDirtyChange }: {
   }
 
   return (
-    <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
+    <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border max-sm:p-4 max-sm:mb-6">
       <div className="flex items-center justify-between gap-3 mb-2">
         <h3 className="font-heading text-[15px] font-medium text-primary">
           {t('Brand colour', '品牌颜色')}

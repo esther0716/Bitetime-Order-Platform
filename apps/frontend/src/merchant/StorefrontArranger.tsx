@@ -23,7 +23,6 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '../components/
 import MenuRow from '../components/MenuRow'
 import MenuCategoriesDialog from './MenuCategoriesDialog'
 import ShopDescriptionCard from './ShopDescriptionCard'
-import BrandColourCard from './BrandColourCard'
 import { useNavGuard } from './NavGuard'
 import {
   arrangeMenu, reseedCategories, moveProduct, moveCategory, findProduct, resolveDropTarget,
@@ -59,7 +58,6 @@ export default function StorefrontArranger() {
   // The description card's own unsaved state, held HERE because the NavGuard has one blocker slot
   // and this screen shows two cards that can each be dirty. See ShopDescriptionCard's note.
   const [descriptionDirty, setDescriptionDirty] = useState(false)
-  const [colourDirty, setColourDirty] = useState(false)
 
   const merchantId = merchant!.id
   const currency = merchant?.currency
@@ -84,7 +82,7 @@ export default function StorefrontArranger() {
   const keys = blocks ? arrangementKeys(blocks) : saved
   const arrangementDirty = keys.categories !== saved.categories || keys.products !== saved.products
   // Either card holding unsaved work blocks a navigation, and both are on this one screen.
-  const dirty = arrangementDirty || descriptionDirty || colourDirty
+  const dirty = arrangementDirty || descriptionDirty
 
   // The same guard ShopSettings registers, so the sidebar cannot silently discard a rearrangement.
   useEffect(() => {
@@ -215,7 +213,6 @@ export default function StorefrontArranger() {
   if (!blocks) return (
     <>
       <ShopDescriptionCard onDirtyChange={setDescriptionDirty} />
-      <BrandColourCard onDirtyChange={setColourDirty} />
       <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
         <SkeletonText lines={4} />
       </div>
@@ -230,7 +227,6 @@ export default function StorefrontArranger() {
   return (
     <>
       <ShopDescriptionCard onDirtyChange={setDescriptionDirty} />
-      <BrandColourCard onDirtyChange={setColourDirty} />
 
     {/* The same card the other dashboard sections are drawn in. The MENU inside it is capped at
         phone width, because that is the width the merchant is previewing. */}

@@ -17,12 +17,13 @@ import { useSaved } from './useSaved'
 import ReferralTab from './ReferralTab'
 import FulfilmentTab from './FulfilmentTab'
 import SubscriptionTab from './SubscriptionTab'
+import BrandColourCard from './BrandColourCard'
 import { useDashboardSubsection } from '../useDashboardSection'
 import AddressAutocomplete from '../store/AddressAutocomplete'
 import PaymentQrPicker from './PaymentQrPicker'
 import SettingsMenu from './SettingsMenu'
 
-type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'marketing' | 'notifications' | 'subscription' | 'referral'
+type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'brand' | 'marketing' | 'notifications' | 'subscription' | 'referral'
 
 // Shop Settings (issue #19). A container renders a submenu column and the active
 // tab's form; each tab is its own form with its own Save. Only the active tab can
@@ -42,6 +43,7 @@ export default function ShopSettings() {
     { key: 'shipping', label: t('Shipping', '运费') },
     { key: 'fulfilment', label: t('Fulfilment', '取货') },
     { key: 'payment', label: t('Payment', '付款') },
+    { key: 'brand', label: t('Brand', '品牌') },
     { key: 'marketing', label: t('Marketing', '营销') },
     { key: 'notifications', label: t('Notifications', '通知') },
     { key: 'subscription', label: t('Subscription', '订阅') },
@@ -110,6 +112,7 @@ export default function ShopSettings() {
         {tab === 'shipping' && <ShippingTab onDirtyChange={setDirty} />}
         {tab === 'fulfilment' && <FulfilmentTab onDirtyChange={setDirty} />}
         {tab === 'payment' && <PaymentTab onDirtyChange={setDirty} />}
+        {tab === 'brand' && <BrandColourCard onDirtyChange={setDirty} />}
         {tab === 'marketing' && <MarketingTab onDirtyChange={setDirty} />}
         {tab === 'notifications' && <NotificationsTab onDirtyChange={setDirty} />}
         {tab === 'subscription' && <SubscriptionTab />}

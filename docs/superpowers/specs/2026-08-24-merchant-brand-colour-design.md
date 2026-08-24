@@ -320,9 +320,23 @@ Three mount points:
 for the saved snapshot and dirty flag, `onDirtyChange` reported up rather than registered with
 `NavGuard` (which holds one blocker), then `updateMerchantConfig` and `refreshMerchant`.
 
-It sits on the **Storefront tab**, beside the description card — not in Shop Settings. The reasoning
-is already written into `ShopDescriptionCard`: Settings is where a merchant looks for a *fact* about
-the shop (address, currency, tax rate); Storefront is where they look at what the customer sees.
+It sits in **Shop Settings, on its own Brand tab**.
+
+It was placed on the Storefront tab first, on the reasoning `ShopDescriptionCard` states there:
+Settings is where a merchant looks for a *fact* about the shop (address, currency, tax rate), and
+Storefront is where they look at what the customer sees. That reasoning does not survive this
+feature's own reach. The colour themes the **dashboard** as well as the storefront, so it is not
+"what the customer sees" — it is shop-wide config, the same kind of thing as the currency. Two
+smaller points agree: the Storefront tab is a drag surface for arranging a menu, and a set-once
+picker is not workspace; and `NavGuard` holds one blocker slot, which that screen was already
+sharing between the arrangement and the description.
+
+`ShopDescriptionCard` stays on Storefront. The description is customer-facing *copy* rendered under
+the shop name; the colour is configuration. The split is the point, not an inconsistency.
+
+A new tab rather than a corner of an existing one: Marketing is advertising pixel ids, and filing an
+appearance setting there would make that tab mean two unrelated things. Brand is also where a logo
+or a banner would go if either is ever built.
 
 Contents:
 
