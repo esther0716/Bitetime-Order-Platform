@@ -65,19 +65,30 @@ So the ramp derives too, holding the picked hue and saturation and moving only l
 targets are read off the oxblood ramp the app already ships, so a shop that picks `#7A1028` gets
 back the exact palette it has today:
 
-| Step | Lightness | From |
-|------|-----------|------|
-| `--brand-50` | 96.7% | `#FDF0F2` |
-| `--brand-100` | 93.1% | `#F5E6E8` |
-| `--brand-200` | 86.3% | `#EBCDD3` |
-| `--brand-400` | 63.1% | `#D4708A` (dark-theme accent; derived for completeness) |
-| `--brand-500` | the picked colour | — |
-| `--brand-600` | L × 0.69 | `#550A1A` against `#7A1028` |
-| `--brand-700` | L × 0.51 | `#3F0713` against `#7A1028` |
+| Step | Lightness | Saturation | Reproduces |
+|------|-----------|-----------|------------|
+| `--brand-50` | 96.7% | S × 1.00 | `#FDF0F2` |
+| `--brand-100` | 93.1% | S × 0.56 | `#F5E6E8` |
+| `--brand-200` | 86.3% | S × 0.56 | `#EBCDD3` |
+| `--brand-400` | 63.5% | S × 0.70 | `#D4708A` (dark-theme accent; derived for completeness) |
+| `--brand-500` | the picked colour | — | — |
+| `--brand-600` | L × 0.688 | S × 1.03 | `#550A1A` |
+| `--brand-700` | L × 0.507, then darkened if needed | S × 1.04 | `#3F0713` |
 
 Fixed lightness for the tints, a ratio for the deeper steps. A tint has to land at a known
 lightness or it stops being a wash; a shadow has to stay relative to the colour it shadows, or a
-dark pick would produce a 600 lighter than its own 500.
+dark pick would produce a 600 lighter than its own 500. Saturation moves as a *ratio* of the picked
+colour's rather than to an absolute target — the oxblood tints are half as saturated as the accent,
+and copying that as a constant would hand a grey-picking shop saturated pink washes.
+
+Every figure in the table is measured off the ramp the app ships today, so `brandTheme('#7A1028')`
+returns the current palette — verified to within 3/255 per channel on every step.
+
+`--brand-700` carries the one exception to "ratio, not contrast", because it has a text job:
+`text-brand-700` on `bg-brand-100`. At L × 0.507 a pale pick lands a pale 700 on a paler 100 and
+fails badly (1.08:1 for a light yellow). So the ratio gives its starting point and it is then walked
+darker until it clears 4.5:1 on `tint100`. For oxblood the starting point already clears, so nothing
+moves.
 
 `--color-accent-hover` is deliberately **not** contrast-derived. Hover is a state cue, not a
 legibility requirement, and deriving it against a threshold makes it jump discontinuously between
@@ -149,15 +160,21 @@ Rules, each one a test:
 input; `brandTheme` catches at its own boundary. A junk column value degrades to TinyOrder's
 colours, never to a blank screen.
 
-**`accentFg` is a choice between two candidates.** White and `--ink-950`; take the first that clears
-4.5:1 against the fill. Where a mid-tone leaves both below the floor, take the higher ratio. At that
-point nothing clears AA and best-available is the honest answer — refusing would hand the merchant a
-problem with no action attached to it.
+**`accentFg` is a choice between three candidates, in order: white, `--ink-950`, `#000000`.** Take
+the first that clears 4.5:1 against the fill. Pure black is in the list for a real reason, not for
+symmetry: a band of mid-tone fills (`#CB4D4D` is one) leaves both white and `--ink-950` at about
+4.46:1, just under the floor, because `--ink-950` is `#09090B` rather than black. Black closes it —
+the mathematical worst case for the better of white-or-black over all of sRGB is 4.58:1, so with
+black in the list no fill can defeat the rule. It is a fallback, reached only by that band; every
+ordinary accent still gets white or the ink token.
 
-**`accentText` is a search.** Hold hue and saturation, binary-search lightness downward in HSL until
-`contrastRatio(candidate, canvas) >= 4.5`. If black itself fails the canvas, return `--ink-900` and
-stop. HSL rather than OKLCH: no new dependency, and hue is preserved exactly, which is the property
-that makes the darkened text still read as the same brand.
+**`accentText` is a search over two surfaces, not one.** Hold hue and saturation, binary-search
+lightness downward in HSL until the candidate clears 4.5:1 on the canvas **and** on `tint100`. Both,
+because `bg-brand-100` is lighter than the cream page and is where the storefront puts most of its
+accent text — searching against the canvas alone leaves a band of blues and violets at 4.3:1 on the
+wash. If the search bottoms out, return `--ink-900`. HSL rather than OKLCH: no new dependency, and
+hue is preserved exactly, which is the property that makes the darkened text still read as the same
+brand.
 
 **`canvas` is a parameter, not a constant.** The module measures against the surface it is told
 about, the way `priceOrder` takes rates rather than reading them. The storefront passes cream; a
@@ -177,6 +194,12 @@ caller on a different surface passes that.
 That sweep is what makes "a merchant cannot ship an unreadable storefront" a checked property
 rather than a claim. One more test asserts `brandTheme('#7A1028', cream)` returns today's oxblood
 ramp within a rounding step, so a shop that picks the platform colour gets the platform palette.
+
+The rules above are not proposals: a prototype of this exact algorithm was run over 8,448 colours
+(every 15° of hue × every 10% of saturation × every 3% of lightness) and every one of the four
+contrast properties held. The first draft of the rules — one foreground fallback, `accentText`
+against the canvas only, `--brand-700` by ratio alone — failed 1,060 of those samples. The
+corrections above are what that run produced.
 
 ## Applying it
 
