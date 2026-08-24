@@ -260,8 +260,10 @@ export const PRIVACY: LegalDocument = {
       id: 'retention',
       heading: '6. How long we keep it',
       body: [
-        'Order records are kept for as long as the shop that received them is on the platform, because the shop needs its own trading history.',
-        'Account data is kept while the account exists. If a shop closes, we keep its data for a reasonable period afterwards to settle billing and handle any dispute, and then remove it.',
+        'Order records are kept for as long as the shop that received them is on the platform, because the shop needs its own trading history, and then for the period below.',
+        'Account data is kept while the account exists.',
+        'If a merchant cancels their subscription, or a shop closes for any other reason, we keep that shop\'s data — its account details, its menu and its order records — for two years from the date the subscription ends. We then delete it. Two years covers the period in which a billing question, a tax enquiry or a dispute about a past order can still arise, and a merchant who returns within that period finds their shop as they left it.',
+        `A shop can ask us to delete its data before those two years are up, and we will, except for what we must keep to meet a legal or accounting obligation. Write to ${email} to ask.`,
         'Cached delivery distance lookups expire within thirty days.',
       ],
     },

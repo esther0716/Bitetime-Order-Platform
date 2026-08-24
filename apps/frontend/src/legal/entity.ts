@@ -40,7 +40,7 @@ export function isRegisteredEntity(entity: LegalEntity): boolean {
 }
 
 /** The date both documents carry. Bump it whenever their wording changes materially. */
-export const LEGAL_LAST_UPDATED = '11 August 2026'
+export const LEGAL_LAST_UPDATED = '24 August 2026'
 
 /**
  * Has a lawyer actually read these documents?
