@@ -206,6 +206,33 @@ A shop's **shipping policy** is `merchants.shipping_mode` (`region` | `distance`
 
 No i18n library. Every string is passed as `t(englishString, chineseString)` where `t = (en, zh) => lang === 'zh' ? zh : en`. `t` and the `lang` (`'en'` | `'zh'`) state live in `SessionContext`.
 
+### Per-shop brand colour
+
+A shop's accent is `merchants.brand_color` (a hex, null for the platform oxblood). One pure module,
+`src/brandTheme.ts`, derives nine values from it — the whole `--brand-*` ramp plus the fill, its
+hover, the text ON a fill and the accent AS text — walking lightness in HSL until each clears AA.
+`src/brandTheme.test.ts` sweeps ~8,400 colours to prove no choice can be illegible, and pins
+`#7A1028` to the ramp `tokens.css` already ships. `normalizeBrandColor` in `@bitetime/shared` is the
+one rule for which strings are colours; the picker and `pickMerchantConfig` both run it.
+
+`components/BrandTheme.tsx` applies it, and **it must restate every token that carries the accent,
+not just `--color-accent`**: `index.css` declares `--primary: var(--color-accent)` on `:root`, and
+`var()` substitutes where the declaration lives, so a descendant override of `--color-accent` leaves
+`--primary`, `--ring` and `--focus-ring` oxblood. The ramp is set as **`--brand-*` primitives, not
+the `--color-brand-*` bridge**: both `@theme` blocks are `inline`, so `bg-brand-600` compiles to
+`var(--brand-600)` and the bridge is never read at runtime.
+
+`--primary` backs both `bg-primary` and `text-primary`, which the fill and text roles cannot share,
+so `[data-brand] .text-primary` in `index.css` redefines the text role inside a branded subtree
+only. `src/brandScope.test.ts` pins what makes that sound: no element carries both classes, none
+pairs `bg-primary` with `text-background` (a fill labelled with the page colour — the bug that made
+the computed on-fill colour unreachable), nothing reaches the accent through an arbitrary
+`[var(--…)]`, and the override set still covers the stylesheets' accent closure.
+
+Mounted in exactly two places — `StorefrontShell` in `AppRouter.tsx` and `Dashboard.tsx`. Marketing,
+`/admin` and the auth screens stay platform-coloured because no wrapper is above them. The invoice
+page and the invoice PDF are deliberately out of scope.
+
 ### Deployment
 
 Deployed via Vercel; set the project **Root Directory** to `apps/frontend`. `pnpm deploy` runs the frontend `vite build`. Vite `base` is `/`.
