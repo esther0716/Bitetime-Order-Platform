@@ -56,15 +56,21 @@ const INK_900 = '#18181B'
    4.58:1, so with black in the list no fill can defeat the rule. */
 const BLACK = '#000000'
 
-/* Lightness is absolute for the tints -- a wash has to land at a known lightness or it stops being
-   a wash. Saturation is a RATIO of the picked colour's: the oxblood tints are about half as
-   saturated as the accent, and copying that as a constant would hand a grey-picking shop saturated
-   pink washes. */
+/* The lighter steps are a FRACTION OF THE DISTANCE TO WHITE, `L + (1 - L) * k`, not an absolute
+   lightness. Absolute targets read fine off the oxblood ramp and then invert it: a shop picking a
+   pale yellow (L 0.80) would get a `--brand-400` at 0.635, DARKER than its own accent, breaking
+   what tokens.css states as a rule ("--brand-400 ... must stay LIGHTER than -500") and handing the
+   dark theme an accent darker than the light one. Measuring toward white keeps every tint above the
+   fill for any pick, and the `k` values below are exactly what reproduce the oxblood ramp.
+
+   Saturation is a ratio of the picked colour's for a related reason: the oxblood tints are about
+   half as saturated as the accent, and copying that as a constant would hand a grey-picking shop
+   saturated pink washes. */
 const TINTS = [
-  { key: 'tint50', s: 1.00, l: 0.967 },
-  { key: 'tint100', s: 0.56, l: 0.931 },
-  { key: 'tint200', s: 0.56, l: 0.863 },
-  { key: 'light400', s: 0.70, l: 0.635 },
+  { key: 'tint50', s: 1.00, k: 0.9548 },
+  { key: 'tint100', s: 0.56, k: 0.9054 },
+  { key: 'tint200', s: 0.56, k: 0.8122 },
+  { key: 'light400', s: 0.70, k: 0.4996 },
 ] as const
 
 /* The deeper steps are ratios of the picked lightness, not absolutes: a shadow has to stay relative
@@ -106,7 +112,7 @@ function derive(hex: string, canvas: string): BrandTheme {
   const { h, s, l } = hexToHsl(accent)
 
   const tints = Object.fromEntries(
-    TINTS.map((t) => [t.key, hslToHex(h, s * t.s, t.l)]),
+    TINTS.map((t) => [t.key, hslToHex(h, s * t.s, l + (1 - l) * t.k)]),
   ) as Record<(typeof TINTS)[number]['key'], string>
 
   const accentHover = hslToHex(h, s * HOVER.s, l * HOVER.l)

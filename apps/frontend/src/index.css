@@ -526,7 +526,16 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
    So the roles split by SCOPE instead: inside a branded subtree, `text-primary` means the darkened
    variant. The rule is unlayered, so it beats Tailwind's layered utility regardless of order, and
    it is inert everywhere the wrapper is absent -- which is what keeps the marketing pages, /admin
-   and the auth screens on the platform accent by construction rather than by an opt-out list. */
-[data-brand] .text-primary {
+   and the auth screens on the platform accent by construction rather than by an opt-out list.
+
+   THE VARIANTS NEED THEIR OWN SELECTORS. `hover:text-primary` compiles to a DIFFERENT class,
+   `.hover\:text-primary`, which `.text-primary` does not match -- so a rule covering only the bare
+   class leaves 46 call sites resolving to the raw picked colour, and a pale accent gets a legible
+   resting label with an illegible hover. `brandScope.test.ts` reads the variants out of the .tsx
+   sources and fails if one is not listed here. */
+[data-brand] .text-primary,
+[data-brand] .hover\:text-primary:hover,
+[data-brand] .focus\:text-primary:focus,
+[data-brand] .before\:text-primary:before {
   color: var(--color-accent-text);
 }

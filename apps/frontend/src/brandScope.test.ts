@@ -49,11 +49,38 @@ describe('the fill role and the text role never meet on one element', () => {
   })
 })
 
+/* A Tailwind VARIANT of an accent-text utility compiles to its own class — `hover:text-primary`
+   becomes `.hover\:text-primary`, which the bare `.text-primary` selector does not match. So every
+   variant in use needs its own selector in the scoped rule, and a variant added later would
+   otherwise resolve to the raw picked colour: a pale accent with a legible label and an illegible
+   hover. Read out of the sources rather than listed here, so the join cannot rot. */
+describe('the scoped rule covers every variant of the accent-text utility', () => {
+  const brandRule = readFileSync(fileURLToPath(new URL('index.css', here)), 'utf8')
+    .split('[data-brand]').slice(1).join('[data-brand]')
+
+  const variants = new Set(
+    files.flatMap((f) => [...f.text.matchAll(/([a-z][a-z0-9-]*):text-primary(?!-)/g)].map((m) => m[1])),
+  )
+
+  it('finds the variants in use', () => {
+    expect(variants.size).toBeGreaterThan(0)
+    expect([...variants]).toContain('hover')
+  })
+
+  it('names each of them in index.css', () => {
+    const missing = [...variants].filter((v) => !brandRule.includes(`.${v}\\:text-primary`))
+    expect(missing).toEqual([])
+  })
+})
+
 describe('nothing escapes the scoped rule through an arbitrary value', () => {
   it('reaches the accent through utilities only', () => {
     const offenders: string[] = []
     for (const f of files) {
-      const m = f.text.match(/\[var\(--(?:primary|color-accent|brand-500|color-brand-500)\)\]/g)
+      // Any accent-carrying token, not a list of four: `text-[var(--brand-600)]` escapes the
+      // scoped rule exactly as `text-[var(--primary)]` does, and a narrow list is a scan that
+      // passes because it was not looking.
+      const m = f.text.match(/\[var\(--(?:primary|ring|focus-ring|brand-\d+|color-(?:accent|brand-\d+|focus-ring))[^)]*\)\]/g)
       if (m) offenders.push(`${f.path}: ${m.join(', ')}`)
     }
     expect(offenders).toEqual([])

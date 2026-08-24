@@ -33,10 +33,10 @@ export default function BrandTheme({ color, children }: {
   const t = brandTheme(color)
   const style = {
     display: 'contents',
-    // Semantic accent tokens.
+    // Semantic accent tokens. The ON-FILL colour is carried by `--primary-foreground` below, which
+    // is what the utilities read; a `--color-accent-fg` here would be written and never read.
     '--color-accent': t.accent,
     '--color-accent-hover': t.accentHover,
-    '--color-accent-fg': t.accentFg,
     '--color-accent-text': t.accentText,
     '--color-focus-ring': t.ring,
     // tokens.css builds this at :root as `0 0 0 2px var(--color-focus-ring)`, already substituted

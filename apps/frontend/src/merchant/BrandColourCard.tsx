@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils'
    merchant with no hex code in hand still lands somewhere deliberate; the field beside them is for
    a shop that knows its own colour. */
 const SWATCHES: { hex: string; name: [string, string] }[] = [
-  { hex: PLATFORM_BRAND_COLOR, name: ['Oxblood', '酒红'] },
+  { hex: PLATFORM_BRAND_COLOR, name: ['Oxblood (default)', '酒红（默认）'] },
   { hex: '#C2410C', name: ['Ember', '炭橙'] },
   { hex: '#B45309', name: ['Amber', '琥珀'] },
   { hex: '#1F5C3D', name: ['Forest', '森绿'] },
@@ -128,6 +128,10 @@ export default function BrandColourCard({ onDirtyChange }: {
           placeholder={PLATFORM_BRAND_COLOR}
           spellCheck={false}
           onChange={e => setText(e.target.value.toUpperCase())}
+          // Normalised when the merchant leaves the field, not while they type: `#F0A` and `7a1028`
+          // are both accepted, and showing them back in the stored form is how the field stops
+          // disagreeing with the swatch it just matched. Invalid text is left exactly as typed.
+          onBlur={() => { if (parsed.ok && parsed.value) setText(parsed.value) }}
           aria-invalid={invalid}
         />
         {invalid ? (
@@ -137,11 +141,26 @@ export default function BrandColourCard({ onDirtyChange }: {
         ) : (
           <p className="text-[11px] text-muted-foreground leading-[1.5]">
             {pending
-              ? t('Leave it empty to go back to the default colour.', '留空可恢复默认颜色。')
-              : t('Empty: your shop uses the default colour.', '留空：您的店铺使用默认颜色。')}
+              ? t('Reset to go back to the default colour.', '重置可恢复默认颜色。')
+              : t('Your shop uses the default colour.', '您的店铺使用默认颜色。')}
           </p>
         )}
       </div>
+
+      {/* Clearing the field by hand is not a control. This one writes NULL — never the platform
+          hex — so a shop that resets is a shop that never chose, and a later change to the default
+          still reaches it. */}
+      {(pending || invalid) && (
+        <div className="mb-4">
+          <Button
+            type="button" variant="link" size="none"
+            className="text-[12px]"
+            onClick={() => setText('')}
+          >
+            {t('Reset to default', '恢复默认')}
+          </Button>
+        </div>
+      )}
 
       {/* The preview renders inside the SAME component the storefront mounts, fed the pending
           value — so what the merchant sees here cannot drift from what the customer gets. */}

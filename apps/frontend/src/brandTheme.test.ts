@@ -23,6 +23,22 @@ describe('the canvas the derivation measures against', () => {
   })
 })
 
+/* The module names three ink literals of its own. They are duplicates of tokens.css, and a
+   duplicate that nothing checks is one that drifts the day somebody retunes the ink ladder. */
+describe('the ink the derivation falls back to', () => {
+  it('matches tokens.css', () => {
+    const source = readFileSync(fileURLToPath(new URL('./brandTheme.ts', import.meta.url)), 'utf8')
+    const literal = (name: string) => {
+      const m = new RegExp(`const ${name} = '(#[0-9A-Fa-f]{6})'`).exec(source)
+      if (!m) throw new Error(`Literal not found in brandTheme.ts: ${name}`)
+      return m[1].toUpperCase()
+    }
+    expect(literal('INK_950')).toBe(token('--ink-950').toUpperCase())
+    expect(literal('INK_900')).toBe(token('--ink-900').toUpperCase())
+    expect(literal('WHITE')).toBe(token('--white').toUpperCase())
+  })
+})
+
 describe('a shop that picks the platform colour gets the platform palette', () => {
   const t = brandTheme('#7A1028')
   const near = (got: string, want: string) => {
@@ -113,12 +129,28 @@ describe('no colour a merchant can pick produces unreadable text', () => {
     }
   })
 
-  it('keeps the ramp going one way, so a hover is never lighter than its fill', () => {
+  /* The WHOLE ramp, in order, not just the two neighbours either side of the fill. An earlier
+     version checked only hover-vs-fill and tint50-vs-tint200, and could not see `light400`: with a
+     fixed lightness of 0.635 a pale pick put the 400 step BELOW its own 500, breaking what
+     tokens.css states as a rule and inverting the dark theme's accent. */
+  it('keeps the whole ramp going one way, lightest step to darkest', () => {
     for (const hex of samples) {
       const t = brandTheme(hex)
-      expect(hexToHsl(t.accentHover).l, `${hex} hover`).toBeLessThanOrEqual(hexToHsl(t.accent).l + 1e-9)
-      expect(hexToHsl(t.accentDeep).l, `${hex} deep`).toBeLessThanOrEqual(hexToHsl(t.accentHover).l + 1e-9)
-      expect(hexToHsl(t.tint50).l).toBeGreaterThan(hexToHsl(t.tint200).l)
+      const ladder = [t.tint50, t.tint100, t.tint200, t.light400, t.accent, t.accentHover, t.accentDeep]
+      const names = ['tint50', 'tint100', 'tint200', 'light400', 'accent', 'accentHover', 'accentDeep']
+      for (let i = 1; i < ladder.length; i++) {
+        expect(hexToHsl(ladder[i]).l, `${hex}: ${names[i]} vs ${names[i - 1]}`)
+          .toBeLessThanOrEqual(hexToHsl(ladder[i - 1]).l + 1e-9)
+      }
+    }
+  })
+
+  // The specific inversion the ladder above exists to catch, named so a regression reads clearly.
+  it('keeps the dark-theme step lighter than the fill even for a pale pick', () => {
+    for (const hex of ['#FFEE99', '#F5D90A', '#FFFFFF', '#E8F4FF']) {
+      const t = brandTheme(hex)
+      expect(hexToHsl(t.light400).l, `${hex} light400`)
+        .toBeGreaterThanOrEqual(hexToHsl(t.accent).l - 1e-9)
     }
   })
 })
