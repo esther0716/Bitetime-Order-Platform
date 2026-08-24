@@ -45,8 +45,8 @@ The merchant picks one hex. Nine values come out of it.
 |------|-------|------|
 | Fill | `--color-accent` | the picked colour, unchanged |
 | Fill, hover | `--color-accent-hover` | the ramp's 600 step |
-| Text **on** a fill | `--color-accent-fg` | white or `--ink-950`, whichever clears 4.5:1 |
-| The accent **as** text | `--color-accent-text` | picked hue, walked darker until 4.5:1 on the canvas |
+| Text **on** a fill | `--primary-foreground` | white, `--ink-950` or black — the first that clears 4.5:1 |
+| The accent **as** text | `--color-accent-text` | picked hue, walked darker until 4.5:1 on the canvas *and* the pale wash |
 
 `--color-accent-text` is a new token, declared in `tokens.css` beside the two that already exist.
 There is deliberately no `--color-accent-fg`: the on-fill colour travels as `--primary-foreground`,
