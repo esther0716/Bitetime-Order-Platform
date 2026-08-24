@@ -22,9 +22,9 @@ WCAG AA no matter which colour they pick, without the merchant being asked to th
 
 ## Non-goals
 
-- **A palette.** One accent, not a background, not a surface, not a text colour, not a tinted wash.
-  `--color-bg` stays cream, `--color-bg-surface` stays white, the ink ramp is untouched. See
-  *One colour, four roles*.
+- **A palette the merchant edits.** One picked colour. The shop's whole brand ramp is *derived*
+  from it (see *One colour, a ramp and four roles*), but the merchant sets one value and no other.
+  `--color-bg` stays cream, `--color-bg-surface` stays white, the ink ramp is untouched.
 - **Logos, banners, fonts, layout.** This feature is a colour. Nothing else about a storefront's
   appearance moves.
 - **The invoice.** Neither the lookup page nor the PDF. See *Deferred: the invoice*.
@@ -35,15 +35,16 @@ WCAG AA no matter which colour they pick, without the merchant being asked to th
 - **Dark theme.** `tokens.css`'s `.dark` block is unverified and unshipped; this feature does not
   change that, and derives against the light canvas only.
 
-## One colour, four roles
+## One colour, a ramp and four roles
 
-The merchant picks one hex. Four values come out of it, because the accent does four jobs and a
-single value cannot do them all legibly:
+The merchant picks one hex. Nine values come out of it.
+
+**Four roles**, because the accent does four jobs and a single value cannot do them all legibly:
 
 | Role | Token | Rule |
 |------|-------|------|
 | Fill | `--color-accent` | the picked colour, unchanged |
-| Fill, hover | `--color-accent-hover` | fixed step darker (HSL L × 0.82) |
+| Fill, hover | `--color-accent-hover` | the ramp's 600 step |
 | Text **on** a fill | `--color-accent-fg` | white or `--ink-950`, whichever clears 4.5:1 |
 | The accent **as** text | `--color-accent-text` | picked hue, walked darker until 4.5:1 on the canvas |
 
@@ -52,6 +53,31 @@ single value cannot do them all legibly:
 The split between the last two is the whole design. Auto-flipping the foreground keeps a pale-yellow
 button legible; it does nothing for a pale-yellow *price* on a cream page. A shop that picks yellow
 gets yellow buttons with dark labels and dark-amber prices — one brand, both readable.
+
+**A ramp**, because `--brand-*` is not decoration. `bg-brand-100` is the app's pale wash and has
+forty-odd call sites, twelve of them on surfaces this feature brands: three in `Storefront`, four in
+`OrderHistory`, plus `CheckoutGate`, `FulfilDatePicker`, `AddressAutocomplete` and most dashboard
+cards. `bg-brand-600` is every primary button's hover, and `text-brand-700` is the label on a
+`bg-brand-100` chip. Leave the ramp at platform values and a green shop gets green buttons on
+pale-pink washes — which reads as a half-finished theme, not as restraint.
+
+So the ramp derives too, holding the picked hue and saturation and moving only lightness. The
+targets are read off the oxblood ramp the app already ships, so a shop that picks `#7A1028` gets
+back the exact palette it has today:
+
+| Step | Lightness | From |
+|------|-----------|------|
+| `--brand-50` | 96.7% | `#FDF0F2` |
+| `--brand-100` | 93.1% | `#F5E6E8` |
+| `--brand-200` | 86.3% | `#EBCDD3` |
+| `--brand-400` | 63.1% | `#D4708A` (dark-theme accent; derived for completeness) |
+| `--brand-500` | the picked colour | — |
+| `--brand-600` | L × 0.69 | `#550A1A` against `#7A1028` |
+| `--brand-700` | L × 0.51 | `#3F0713` against `#7A1028` |
+
+Fixed lightness for the tints, a ratio for the deeper steps. A tint has to land at a known
+lightness or it stops being a wash; a shadow has to stay relative to the colour it shadows, or a
+dark pick would produce a 600 lighter than its own 500.
 
 `--color-accent-hover` is deliberately **not** contrast-derived. Hover is a state cue, not a
 legibility requirement, and deriving it against a threshold makes it jump discontinuously between
@@ -85,6 +111,12 @@ are: read it through `brandTheme()`, never directly.
   toast is worse than an error. It is also why validation cannot live only in the picker — the
   route is public, and the picker is not the only possible caller.
 
+The rule itself is `normalizeBrandColor` in `@bitetime/shared`, not a regex inside `writes.ts`. The
+picker runs it to decide whether Save is enabled and what to store; the endpoint runs it to decide
+whether to refuse. That is the shared package's stated purpose — a rule that must hold identically
+on both sides of the wire — and it follows `validateShopDescription`, which is there for the same
+reason. `brandTheme` itself stays frontend-only: nothing server-side renders a storefront.
+
 Nothing else server-side reads the column. The storefront is not server-rendered and not
 prerendered, so no derivation happens on the backend and no value is persisted that could drift
 from the rule that produced it.
@@ -96,8 +128,13 @@ runs in Vitest the same way the token test does.
 
 ```ts
 export interface BrandTheme {
-  accent: string       // fills
-  accentHover: string  // fills, hover/pressed
+  tint50: string       // --brand-50
+  tint100: string      // --brand-100, the pale wash
+  tint200: string      // --brand-200
+  light400: string     // --brand-400, dark-theme accent
+  accent: string       // --brand-500, fills — the picked colour
+  accentHover: string  // --brand-600, fills, hover/pressed
+  accentDeep: string   // --brand-700
   accentFg: string     // text on a fill
   accentText: string   // the accent used as text
   ring: string         // rgba(picked, .40)
@@ -128,9 +165,18 @@ caller on a different surface passes that.
 
 ### Test
 
-`brandTheme.test.ts` sweeps hues across the full lightness range and asserts, for every input, that
-`accentFg` clears 4.5:1 on `accent` and `accentText` clears 4.5:1 on the canvas. That sweep is what
-makes "a merchant cannot ship an unreadable storefront" a checked property rather than a claim.
+`brandTheme.test.ts` sweeps hues across the full lightness range and asserts, for every input:
+
+- `accentFg` clears 4.5:1 on `accent` — the label on a filled button;
+- `accentText` clears 4.5:1 on the canvas — the accent used as text on the page;
+- `accentText` clears 4.5:1 on `tint100` — the same text on the pale wash, which is where the
+  storefront actually puts most of it;
+- `accentDeep` clears 4.5:1 on `tint100` — the `text-brand-700` on `bg-brand-100` chip;
+- the ramp is monotonic from 50 to 700, the property `tokens.test.ts` already pins for oxblood.
+
+That sweep is what makes "a merchant cannot ship an unreadable storefront" a checked property
+rather than a claim. One more test asserts `brandTheme('#7A1028', cream)` returns today's oxblood
+ramp within a rounding step, so a shop that picks the platform colour gets the platform palette.
 
 ## Applying it
 
@@ -146,21 +192,20 @@ So the wrapper sets the whole **override set**, not one variable:
 ```
 --color-accent, --color-accent-hover, --color-accent-fg, --color-accent-text,
 --color-focus-ring, --focus-ring,
---color-brand-400, --color-brand-500, --color-brand-600,
+--color-brand-50, --color-brand-100, --color-brand-200, --color-brand-400,
+--color-brand-500, --color-brand-600, --color-brand-700,
 --primary, --primary-foreground, --ring
 ```
 
 `--focus-ring` is in the set because `tokens.css` builds it at `:root` as
 `0 0 0 2px var(--color-focus-ring)` — already substituted by the time it inherits, so the wrapper
-rebuilds the whole box-shadow, not just its colour. `--primary-foreground` takes `accentFg`; it is
-hard-coded to white today, which is exactly the value a pale accent must not keep.
+rebuilds the whole box-shadow, not just its colour.
 
-`--color-brand-*` are in the set because `@theme` generates `bg-brand-500`-style utilities that
-resolve their var at the element — twenty-five of those literals exist in `store/` and
-`components/ui/`, and leaving them out would leave buttons and table headers oxblood.
-
-`--brand-50/100/200` and `--brand-700` stay platform values. A shop's pale wash is where one accent
-starts becoming a palette.
+`--color-brand-*` are in the set — the whole ramp, per *One colour, a ramp and four roles* —
+because `@theme` generates `bg-brand-100`-style utilities that resolve their var at the element.
+Note that a closure test keyed on `--brand-500` would **not** have found these: `--color-brand-100`
+derives from `--brand-100`, which references nothing. They are in the set on the evidence of the
+call sites, not on the evidence of the CSS graph.
 
 ### Splitting fill from text without touching 279 call sites
 
@@ -191,6 +236,23 @@ are pinned by tests reading the `.tsx` sources off disk, the way `sitemap.test.t
   such an element uses `text-primary-foreground`.
 - **Nothing reaches the accent through an arbitrary value** (`text-[var(--primary)]` and friends).
   An arbitrary value skips the utility class and so escapes the scoped rule.
+
+### The primary button labels itself with the page colour
+
+`components/ui/button.tsx` renders its default variant as `bg-primary text-background` — the label
+is the **cream canvas colour**, not `--primary-foreground`. The token exists, `:root` sets it to
+white, and no button reads it. So `accentFg` would be computed correctly and reach nothing, and a
+shop picking a pale accent would ship cream-on-pale: the exact failure this feature promises cannot
+happen.
+
+The fix is one word: the variant becomes `text-primary-foreground`. That also makes the token's own
+comment true for the first time — it says white was chosen over cream deliberately, while the
+button has been shipping cream. Platform primary buttons therefore change from a cream label to a
+white one. It is a real, if small, visual change on every primary button in the app, and it is
+listed as its own step so a reviewer can accept or reject it on its own.
+
+A third source-scanning invariant follows: **no element combines `bg-primary` with
+`text-background`**, so the label of a fill can never again be the page's colour.
 
 ### Pinning the set
 
@@ -255,8 +317,9 @@ reasonable follow-ups. Neither is in this feature.
 
 - `brandTheme.test.ts` — the hue and lightness sweep, null and malformed falling back to the
   platform set, and the override-set closure read off the CSS.
-- Two source-scanning tests for the scoped text rule: no element carries both `bg-primary` and
-  `text-primary`, and nothing reaches the accent through an arbitrary `[var(--…)]` value.
+- Three source-scanning tests: no element carries both `bg-primary` and `text-primary`, none
+  combines `bg-primary` with `text-background`, and nothing reaches the accent through an
+  arbitrary `[var(--…)]` value.
 - Backend unit tests for `pickMerchantConfig` — a malformed hex is a 400; `null` and `''` both store
   `null`.
 - Run-and-verify per CLAUDE.md, not component tests. Pick a loud non-oxblood colour, save, then walk
