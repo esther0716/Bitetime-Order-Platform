@@ -48,7 +48,9 @@ The merchant picks one hex. Nine values come out of it.
 | Text **on** a fill | `--color-accent-fg` | white or `--ink-950`, whichever clears 4.5:1 |
 | The accent **as** text | `--color-accent-text` | picked hue, walked darker until 4.5:1 on the canvas |
 
-`--color-accent-fg` and `--color-accent-text` are new tokens; the first two already exist.
+`--color-accent-text` is a new token, declared in `tokens.css` beside the two that already exist.
+There is deliberately no `--color-accent-fg`: the on-fill colour travels as `--primary-foreground`,
+which is what the utilities read, and a second name for it would be written and never read.
 
 The split between the last two is the whole design. Auto-flipping the foreground keeps a pale-yellow
 button legible; it does nothing for a pale-yellow *price* on a cream page. A shop that picks yellow
@@ -67,19 +69,26 @@ back the exact palette it has today:
 
 | Step | Lightness | Saturation | Reproduces |
 |------|-----------|-----------|------------|
-| `--brand-50` | 96.7% | S × 1.00 | `#FDF0F2` |
-| `--brand-100` | 93.1% | S × 0.56 | `#F5E6E8` |
-| `--brand-200` | 86.3% | S × 0.56 | `#EBCDD3` |
-| `--brand-400` | 63.5% | S × 0.70 | `#D4708A` (dark-theme accent; derived for completeness) |
+| `--brand-50` | L + (1−L) × 0.9548 | S × 1.00 | `#FDF0F2` |
+| `--brand-100` | L + (1−L) × 0.9054 | S × 0.56 | `#F5E6E8` |
+| `--brand-200` | L + (1−L) × 0.8122 | S × 0.56 | `#EBCDD3` |
+| `--brand-400` | L + (1−L) × 0.4996 | S × 0.70 | `#D4708A` (dark-theme accent; derived for completeness) |
 | `--brand-500` | the picked colour | — | — |
 | `--brand-600` | L × 0.688 | S × 1.03 | `#550A1A` |
 | `--brand-700` | L × 0.507, then darkened if needed | S × 1.04 | `#3F0713` |
 
-Fixed lightness for the tints, a ratio for the deeper steps. A tint has to land at a known
-lightness or it stops being a wash; a shadow has to stay relative to the colour it shadows, or a
-dark pick would produce a 600 lighter than its own 500. Saturation moves as a *ratio* of the picked
-colour's rather than to an absolute target — the oxblood tints are half as saturated as the accent,
-and copying that as a constant would hand a grey-picking shop saturated pink washes.
+The lighter steps are a **fraction of the distance to white**, the deeper ones a ratio of the
+picked lightness. An earlier draft of this spec gave the tints an *absolute* lightness read off the
+oxblood ramp, and that inverts for a pale pick: at L 0.80 a shop's `--brand-400` would land at
+0.635, darker than its own accent, breaking what `tokens.css` states as a rule (`--brand-400` "must
+stay LIGHTER than -500") and handing the dark theme an accent darker than the light one. Measuring
+toward white keeps every tint above the fill for any pick. The deeper steps stay relative for the
+mirror reason: a shadow has to track the colour it shadows, or a dark pick produces a 600 lighter
+than its own 500.
+
+Saturation moves as a *ratio* of the picked colour's rather than to an absolute target — the
+oxblood tints are half as saturated as the accent, and copying that as a constant would hand a
+grey-picking shop saturated pink washes.
 
 Every figure in the table is measured off the ramp the app ships today, so `brandTheme('#7A1028')`
 returns the current palette — verified to within 3/255 per channel on every step.
@@ -189,7 +198,9 @@ caller on a different surface passes that.
 - `accentText` clears 4.5:1 on `tint100` — the same text on the pale wash, which is where the
   storefront actually puts most of it;
 - `accentDeep` clears 4.5:1 on `tint100` — the `text-brand-700` on `bg-brand-100` chip;
-- the ramp is monotonic from 50 to 700, the property `tokens.test.ts` already pins for oxblood.
+- the ramp is monotonic across the WHOLE ladder — 50, 100, 200, 400, 500, 600, 700 — not merely
+  either side of the fill. Checking only the neighbours is what let the `--brand-400` inversion
+  above through a green suite.
 
 That sweep is what makes "a merchant cannot ship an unreadable storefront" a checked property
 rather than a claim. One more test asserts `brandTheme('#7A1028', cream)` returns today's oxblood
@@ -213,7 +224,7 @@ is a half-branded storefront that looks like a caching bug.
 So the wrapper sets the whole **override set**, not one variable:
 
 ```
---color-accent, --color-accent-hover, --color-accent-fg, --color-accent-text,
+--color-accent, --color-accent-hover, --color-accent-text,
 --color-focus-ring, --focus-ring,
 --color-brand-50, --color-brand-100, --color-brand-200, --color-brand-400,
 --color-brand-500, --color-brand-600, --color-brand-700,
