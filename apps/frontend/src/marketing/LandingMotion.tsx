@@ -206,7 +206,7 @@ export const StorefrontPreview = memo(function StorefrontPreview({ t }: { t: TFn
         </ul>
 
         {/* Order bar (static mock) */}
-        <div className="mt-4 flex items-center justify-center rounded-md bg-primary py-2.5 text-[13px] font-medium text-background">
+        <div className="mt-4 flex items-center justify-center rounded-md bg-primary py-2.5 text-[13px] font-medium text-primary-foreground">
           {t('Place order', '下单')}
         </div>
       </div>

@@ -83,7 +83,7 @@ export default function PricingCards() {
                 className="flex flex-col p-7 rounded-lg bg-card border-[0.5px] border-primary shadow-[0_6px_24px_rgba(122,16,40,0.12)]"
               >
                 {tier.badge && (
-                  <span className="self-start text-[11px] font-semibold py-[3px] px-[10px] mb-3 rounded-pill bg-primary text-background">
+                  <span className="self-start text-[11px] font-semibold py-[3px] px-[10px] mb-3 rounded-pill bg-primary text-primary-foreground">
                     {t(tier.badge.en, tier.badge.zh)}
                   </span>
                 )}

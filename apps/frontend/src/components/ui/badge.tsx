@@ -12,7 +12,7 @@ const badgeVariants = cva(
       variant: {
         // Default: oxblood fill (same as --primary)
         default:
-          "bg-primary text-background [a]:hover:bg-brand-600",
+          "bg-primary text-primary-foreground [a]:hover:bg-brand-600",
         secondary:
           "bg-muted text-muted-foreground [a]:hover:bg-ink-200",
         destructive:

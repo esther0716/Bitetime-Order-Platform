@@ -93,7 +93,7 @@ export default function OrderTimeline({
               className={cn(
                 'relative z-[1] flex size-7 items-center justify-center rounded-pill transition-colors',
                 reached
-                  ? 'bg-primary text-background'
+                  ? 'bg-primary text-primary-foreground'
                   : 'border-[0.5px] border-border bg-card text-ink-400',
                 // The live step gets a soft halo so the eye lands on it first.
                 current && 'ring-4 ring-primary/15',

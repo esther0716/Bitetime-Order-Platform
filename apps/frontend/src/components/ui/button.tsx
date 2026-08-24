@@ -17,7 +17,7 @@ const buttonVariants = cva(
         // dashed keep their transparent background — a grey slab where a text link used to
         // be reads as broken layout, not as a disabled control.
         default:
-          "bg-primary text-background hover:bg-brand-600 disabled:bg-disabled-bg",
+          "bg-primary text-primary-foreground hover:bg-brand-600 disabled:bg-disabled-bg",
         // .cust-account-btn / .lang-btn — clay-border outline pill
         outline:
           "border-[0.5px] border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",

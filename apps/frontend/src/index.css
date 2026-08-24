@@ -513,3 +513,20 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
    styles itself from those tokens and imports no library CSS, so there is nothing left to undo.
    Do not reintroduce that stylesheet for a third picker: the import is global however local the
    component asking for it is, which is exactly how the revenue range came out library-blue. */
+
+/* ── A shop's own accent, scoped ────────────────────────────────────────────────────────────────
+   `BrandTheme.tsx` writes a shop's derived palette onto a wrapper as custom properties. That
+   handles every FILL, because `bg-primary` and `bg-brand-*` resolve their var at the element.
+
+   Text is the one role a variable cannot carry, because `--primary` backs `bg-primary` (77 uses)
+   AND `text-primary` (202). Set it to the picked colour and a pale accent is invisible as text; set
+   it to the darkened one and every button is dull. Retargeting one of those two sets to a new
+   utility is a 200-site sweep across surfaces this feature does not even brand.
+
+   So the roles split by SCOPE instead: inside a branded subtree, `text-primary` means the darkened
+   variant. The rule is unlayered, so it beats Tailwind's layered utility regardless of order, and
+   it is inert everywhere the wrapper is absent -- which is what keeps the marketing pages, /admin
+   and the auth screens on the platform accent by construction rather than by an opt-out list. */
+[data-brand] .text-primary {
+  color: var(--color-accent-text);
+}

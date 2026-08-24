@@ -35,7 +35,7 @@ function Pill({ active, onClick, children }: { active: boolean; onClick: () => v
       className={cn(
         'rounded-pill border-[0.5px] px-2.5 py-0.5 text-[11px] font-semibold transition-colors',
         active
-          ? 'border-primary bg-primary text-background'
+          ? 'border-primary bg-primary text-primary-foreground'
           : 'border-border bg-transparent text-muted-foreground hover:text-primary',
       )}
     >
@@ -159,7 +159,7 @@ function CustomRangePill({
             className={cn(
               'rounded-pill border-[0.5px] px-2.5 py-0.5 text-[11px] font-semibold transition-colors',
               active
-                ? 'border-primary bg-primary text-background'
+                ? 'border-primary bg-primary text-primary-foreground'
                 : 'border-border bg-transparent text-muted-foreground hover:text-primary',
             )}
           />

@@ -812,7 +812,7 @@ function GetUpdatesMockup() {
 function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t } = useSession()
   const stepClass = 'flex gap-3'
-  const numClass = 'shrink-0 w-5 h-5 rounded-pill bg-primary text-background text-[11px] font-medium flex items-center justify-center'
+  const numClass = 'shrink-0 w-5 h-5 rounded-pill bg-primary text-primary-foreground text-[11px] font-medium flex items-center justify-center'
   const textClass = 'text-[13px] text-foreground leading-[1.5]'
   const mockupWrapClass = 'ml-8 rounded-lg overflow-hidden border-[0.5px] border-border -mt-1'
 
