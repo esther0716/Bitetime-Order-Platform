@@ -823,6 +823,10 @@ app.get('/api/me/devices', requireUser, async (c) => {
       id: s.id,
       ...deviceIdentity(s.userAgent),
       current: s.id === caller.sessionId,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+      // The eviction RANK, which is not the same field as `updatedAt` and is the one the limit
+      // actually turns on. Sent so the order of this list is the order devices will go in.
       lastSeen: new Date(lastSeen(s)).toISOString(),
     }))
     .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))

@@ -124,15 +124,35 @@ describe('GET /api/me/devices', () => {
     const res = await call('/api/me/devices', 'GET', second)
     expect(res.status).toBe(200)
     const body = await res.json() as {
-      devices: { id: string; browser: string | null; platform: string | null; current: boolean; lastSeen: string }[]
+      devices: {
+        id: string; browser: string | null; platform: string | null; current: boolean
+        createdAt: string; updatedAt: string; lastSeen: string
+      }[]
       limit: number
     }
     expect(body.devices).toHaveLength(2)
     expect(body.devices.filter(d => d.current)).toHaveLength(1)
-    expect(new Date(body.devices[0].lastSeen).toString()).not.toBe('Invalid Date')
+    for (const field of ['createdAt', 'updatedAt', 'lastSeen'] as const) {
+      expect(new Date(body.devices[0][field]).toString(), field).not.toBe('Invalid Date')
+    }
     // The ceiling is quoted to the browser rather than restated there, so the screen cannot go on
     // saying "2" the day MERCHANT_DEVICE_LIMIT changes.
     expect(body.limit).toBe(MERCHANT_DEVICE_LIMIT)
+  })
+
+  it('reads refreshed_at as UTC, so a just-refreshed session does not rank hours stale', async () => {
+    // `auth.sessions.refreshed_at` is `timestamp WITHOUT time zone` while `created_at` is
+    // `timestamptz`. GoTrue writes UTC into it, so a driver that builds the Date in the server's
+    // local zone reads the instant early by the whole offset — and the limit then evicts a device
+    // used minutes ago instead of the genuinely stale one. Invisible on a UTC server.
+    const owner = await merchantOwner('devices-utc')
+    await sql`update auth.sessions set refreshed_at = (now() at time zone 'utc') where user_id = ${owner.userId}`
+
+    const body = await (await call('/api/me/devices', 'GET', owner.token)).json() as {
+      devices: { lastSeen: string }[]
+    }
+    const drift = Math.abs(Date.now() - new Date(body.devices[0].lastSeen).getTime())
+    expect(drift).toBeLessThan(5 * 60_000)
   })
 
   it('sends the device name as PARTS, never as a joined English phrase', async () => {

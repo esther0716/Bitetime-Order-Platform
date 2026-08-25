@@ -16,15 +16,34 @@
 import { sql } from './db.js'
 import type { SessionRow } from './deviceLimit.js'
 
-/** A row of `auth.sessions`, with the agent string the device list shows. */
+/** A row of `auth.sessions`, with the agent string and the timestamps the device list shows. */
 export interface DeviceSession extends SessionRow {
+  updatedAt: Date
   userAgent: string | null
 }
 
-/** Every live session for one account. */
+/**
+ * Every live session for one account.
+ *
+ * NOTE the cast on `refreshed_at`. It is `timestamp WITHOUT time zone`, while every other column
+ * here is `timestamptz`. GoTrue writes UTC into it, but a naive timestamp carries no offset, so
+ * the driver builds the Date in the SERVER's local zone and the instant reads EARLY by exactly
+ * that offset — eight hours, on a machine in Malaysia. Ranked against a correct `created_at`, that
+ * makes a session refreshed minutes ago look half a day stale, and the device limit then evicts
+ * the wrong one. `at time zone 'utc'` reads the column as what it actually is.
+ *
+ * It is harmless on a UTC server, which is exactly why it hides.
+ */
 export async function listSessions(userId: string): Promise<DeviceSession[]> {
-  const rows = await sql<{ id: string; created_at: Date; refreshed_at: Date | null; user_agent: string | null }[]>`
-    select id, created_at, refreshed_at, user_agent
+  const rows = await sql<{
+    id: string; created_at: Date; updated_at: Date; refreshed_at: Date | null; user_agent: string | null
+  }[]>`
+    select id,
+           created_at,
+           updated_at,
+           -- naive UTC column; see the note above this function
+           (refreshed_at at time zone 'utc') as refreshed_at,
+           user_agent
     from auth.sessions
     where user_id = ${userId}
   `
@@ -33,6 +52,7 @@ export async function listSessions(userId: string): Promise<DeviceSession[]> {
   return rows.map(r => ({
     id: r.id,
     createdAt: r.created_at,
+    updatedAt: r.updated_at,
     refreshedAt: r.refreshed_at,
     userAgent: r.user_agent,
   }))

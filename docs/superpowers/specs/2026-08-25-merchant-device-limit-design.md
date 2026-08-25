@@ -141,13 +141,23 @@ must not see an error.
 
 ## The device list
 
-Settings gains an eighth entry in the `SettingsMenu` item list. The panel shows one row for each
-session:
+Settings gains an eighth entry in the `SettingsMenu` item list. The panel is a small table, one row
+per session, in the server's order — which is EVICTION order, so the device that goes next is last:
 
 ```
-Chrome on macOS          This device
-Safari on iPhone         Last used 2 hours ago        [Sign out]
+DEVICE                      CREATED               UPDATED
+Chrome on macOS [Current]   25/08/2026, 12:14 pm  25/08/2026, 12:14 pm
+Safari on iPhone            21/08/2026, 09:02 am  25/08/2026, 07:55 am   [Sign out]
 ```
+
+The current device is marked by a **badge**, not by a line of text under its name. Timestamps use
+`fmtDateTime`, pinned to `en-MY` and deliberately not language-aware: the dashboard is the
+merchant's own back office and reads one way whatever the storefront toggle says.
+
+`updatedAt` is `auth.sessions.updated_at`. It is NOT the field the limit ranks on — that is
+`lastSeen` (`refreshed_at` falling back to `created_at`), which the response also carries and which
+fixes the list's order. The two track each other in practice; the row order is the authority on
+which device goes next.
 
 `deviceLabel.ts` is a pure module, and it returns the browser and platform as **parts**, never the
 phrase joining them. The join is prose — " on ", and the fallback — and prose is `t(en, zh)`'s job
@@ -159,9 +169,17 @@ Either part is null when it cannot be read, and the browser says "Unknown device
 own language only when BOTH are. One known name is still worth showing: "Linux" identifies a device
 better than "unknown" does.
 
-**The panel shows no IP address.** `auth.sessions` stores one. An IP address tells a merchant
-nothing they can act on. To make it useful, the platform must add a geolocation provider, and that
-is a second bill and a second thing to bound.
+**The panel shows no IP address and no Location column.** `auth.sessions` stores an IP. An address
+tells a merchant nothing they can act on, and turning one into a place name means adding a
+geolocation provider — a second bill and a second thing to bound. That stays a non-goal.
+
+**`refreshed_at` is read as UTC, explicitly.** It is `timestamp WITHOUT time zone` while every
+other column is `timestamptz`. GoTrue writes UTC into it, but a naive timestamp carries no offset,
+so the driver builds the Date in the server's local zone and the instant reads EARLY by that
+offset — eight hours on a Malaysian machine. Ranked against a correct `created_at`, a session
+refreshed minutes ago then looks half a day stale and the limit evicts the wrong device. The query
+casts with `at time zone 'utc'`. It is harmless on a UTC server, which is exactly why it hides, and
+`tests/api/devices.test.ts` pins it.
 
 ## Sign-out must stop being global
 

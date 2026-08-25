@@ -422,7 +422,15 @@ export interface Device {
   browser: string | null;
   platform: string | null;
   current: boolean;
-  /** ISO 8601. When the session was last used. */
+  /** ISO 8601. When this device signed in. */
+  createdAt: string;
+  /** ISO 8601. When this session was last written to. */
+  updatedAt: string;
+  /**
+   * ISO 8601, and the eviction RANK — `refreshed_at` falling back to `createdAt`. Not the same
+   * field as `updatedAt`: this is the one the limit actually turns on, so the list's order is the
+   * order devices will be signed out in.
+   */
   lastSeen: string;
 }
 
