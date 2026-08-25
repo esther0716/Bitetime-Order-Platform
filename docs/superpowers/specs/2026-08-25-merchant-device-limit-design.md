@@ -1,0 +1,225 @@
+# Merchant device limit — two devices, and the oldest one gives way
+
+Date: 2026-08-25
+No issue yet. The team brainstormed this directly. File an issue before implementation starts.
+
+## Problem
+
+A merchant account can sign in on an unlimited number of devices. Nothing in the codebase counts
+sessions, and nothing removes one.
+
+Supabase Auth permits this by default. A test against the local stack signed one account in three
+times and got three live sessions. The `[auth]` block in `apps/backend/supabase/config.toml` sets
+`jwt_expiry`, the password floor and the redirect list. It sets no session ceiling. GoTrue offers
+only `single_per_user`, which permits one session, not two.
+
+The shop owner shares one login with the staff. Each phone that signs in keeps its session for as
+long as it refreshes. The platform charges for one shop and cannot see how many devices hold it.
+
+## Goal
+
+A merchant account holds at most two live sessions. A third sign-in succeeds and removes the least
+recently used session. The merchant sees the two devices in Settings and can sign one out.
+
+## Non-goals
+
+- **Customer accounts and superadmin accounts.** They stay unlimited. The rule reads the
+  `merchants` table, so an account that owns no shop passes through the endpoint untouched.
+- **A hard block on the third device.** The design evicts, it does not refuse. A merchant who
+  loses a phone must never lose the shop with it.
+- **Device recognition.** One GoTrue session is one device. The platform runs no fingerprint and
+  stores no device identifier of its own.
+- **Geolocation.** `auth.sessions` holds an IP address. The device list does not show it. See
+  *The device list*.
+- **An email when a device is evicted.** The evicted device learns it on screen.
+
+## Decisions
+
+| Question | Decision |
+|---|---|
+| Which accounts | Merchants only |
+| The limit | 2 |
+| The third sign-in | It succeeds. The least recently used session goes |
+| What a device is | One GoTrue session |
+| Where the rule runs | The backend, after a sign-in succeeds |
+| Where the limit lives | `MERCHANT_DEVICE_LIMIT = 2` in `quotaWindows.ts` |
+| What the merchant sees | A Devices panel in Settings |
+
+## Eviction is a row delete, and it takes effect at once
+
+A run against the local stack proved the two facts this design rests on.
+
+Every access token carries a `session_id` claim. The claim names a row in `auth.sessions`.
+
+Delete that row, and GoTrue rejects the device's **unexpired** access token immediately:
+
+```
+GET /auth/v1/user   →  403 {"error_code":"session_not_found"}
+POST /auth/v1/token?grant_type=refresh_token  →  400 {"error_code":"refresh_token_not_found"}
+```
+
+Both the access token and the refresh token die together. The eviction is therefore instant, not
+late by up to one hour of `jwt_expiry`. It also holds for every path, not only this platform's API:
+Storage and PostgREST verify the same token against the same session.
+
+This is why the design needs no session table of its own. `auth.sessions` already stores
+`id`, `user_id`, `created_at`, `refreshed_at`, `user_agent` and `ip`. That is sufficient for the
+rule and for the screen.
+
+The backend reads and deletes rows in the `auth` schema. It adds no trigger and no column there.
+Supabase owns that schema and upgrades it, so this design keeps its distance: data statements only.
+
+**Production was checked on 2026-08-25, and it permits this.** The backend's own connection
+answered `current_user = postgres`, `can_select = true`, `can_delete = true`. The local stack
+answers the same. A later reader does not have to run the probe again.
+
+If a future Supabase change moves the backend to a role without that privilege, every eviction
+fails and the limit stops applying. The route reports the failure and the merchant stays signed in
+on every device, which is the correct direction to fail in. The alternatives are an
+`auth.sessions` trigger or a check in `mw.ts`. See *Rejected approaches*.
+
+## The rule is pure
+
+`apps/backend/src/deviceLimit.ts` holds the rule and performs no I/O:
+
+```ts
+chooseEvictions({ sessions, currentSessionId, limit }): string[]
+```
+
+This splits the same way `aiUsage.ts` and `aiUsageDb.ts` do. The pure half stays reachable from
+`pnpm test`, which runs without Supabase.
+
+Recency is `coalesce(refreshed_at, created_at)`. `refreshed_at` stays null until a session refreshes
+for the first time, so a rule that read `refreshed_at` alone would rank every new session as the
+oldest and evict the merchant's own login.
+
+**The current session is pinned first.** The function keeps the current session, then fills the
+remaining `limit - 1` slots by recency, then returns the rest. It does not simply keep the newest
+`limit` rows. The two orders agree in the ordinary case and disagree when a clock is wrong, and the
+merchant must never lose the device they are holding.
+
+The function returns an empty array when the account is at or under the limit.
+
+`deviceLimitDb.ts` holds the two statements and reaches Postgres through `db.ts`:
+
+- read the caller's sessions,
+- `delete from auth.sessions where id = any($1)`.
+
+`db.ts` is RLS-exempt, so both statements carry their own `user_id` predicate. On the backend's
+path, tenancy is a TypeScript invariant.
+
+## The endpoints
+
+The three paths sit under `/api/me/`, beside `/api/me/profile` and `/api/me/merchant`. They are
+about the caller's own account and carry no merchant id. A path with a merchant id in it would
+invite a handler that trusts one.
+
+### `POST /api/me/devices/enforce`
+
+Guard `requireUser`. The handler returns `200` and does nothing when the caller owns no `merchants`
+row, so a customer sign-in costs one no-op call.
+
+`signIn()` in `apps/frontend/src/store.ts` calls it after a sign-in succeeds.
+
+**The session id comes from the JWT. It never comes from the body.** `getUserFromToken` validates
+the token against GoTrue first. Only then does the handler decode that same string's payload for
+its `session_id` claim. This mirrors order attribution, which reads the JWT and ignores the body. A
+body-supplied session id would let any merchant evict any device by guessing an id.
+
+### `GET /api/me/devices`
+
+Guard `requireUser`. Returns the caller's own sessions. It marks the current one.
+
+### `DELETE /api/me/devices/:sessionId`
+
+Guard `requireUser`. Signs one device out. The handler refuses any id that is not in the caller's
+own session set. That check is the whole tenancy guard, because `db.ts` runs no policy.
+
+These two endpoints answer `403` for an account that owns no `merchants` row. Only `enforce`
+answers `200` for such an account, because the frontend calls it after every sign-in and a customer
+must not see an error.
+
+## The device list
+
+Settings gains an eighth entry in the `SettingsMenu` item list. The panel shows one row for each
+session:
+
+```
+Chrome on macOS          This device
+Safari on iPhone         Last used 2 hours ago        [Sign out]
+```
+
+`deviceLabel.ts` is a pure module. It turns a user-agent string into the phrase. It returns
+`Unknown device` when it cannot parse the string. It does not guess.
+
+**The panel shows no IP address.** `auth.sessions` stores one. An IP address tells a merchant
+nothing they can act on. To make it useful, the platform must add a geolocation provider, and that
+is a second bill and a second thing to bound.
+
+## Sign-out must stop being global
+
+`apps/frontend/src/store.ts:383` calls `auth.signOut()` with no arguments. The default scope in
+`@supabase/auth-js` is `global` (`GoTrueClient.js:3319`), which revokes **every** session the
+account holds.
+
+That default contradicts this feature. The merchant signs out on the phone, the laptop dies too,
+and a two-device account behaves as a one-device account.
+
+Change it to `auth.signOut({ scope: 'local' })`. This is part of the feature, not a separate
+cleanup.
+
+## What the evicted merchant sees
+
+The evicted device's next call returns `403`. `auth-js` emits `SIGNED_OUT`. `onAuthChange` in
+`store.ts` sends the merchant to the login screen.
+
+The login screen adds one message. It tells the merchant that the account permits two devices, and
+that a newer sign-in took the slot. Today the same bounce happens in silence for an expired session,
+which reads as a fault in the app.
+
+## Tests
+
+**Pure, under `pnpm test`, no Supabase:**
+
+- `deviceLimit.test.ts` — the function keeps the current session; it evicts the least recently used
+  row; it returns nothing under the limit; it handles a null `refreshed_at`; it handles two equal
+  timestamps.
+- `deviceLabel.test.ts` — the parser reads the common agents and returns `Unknown device` for the
+  rest.
+
+**Database-backed, under `pnpm --filter @bitetime/backend test:db`:**
+
+- `tests/api/devices.test.ts` — three real sign-ins leave two sessions. The evicted token gets a
+  `403`. The current token still works. `DELETE` with a stranger's session id is refused. A customer
+  account keeps all three sessions.
+
+Never mock the database in that suite. It exists to prove that Postgres and GoTrue behave this way.
+
+**The Settings panel is verified by running the app**, per `CLAUDE.md`.
+
+## Rejected approaches
+
+**A trigger on `auth.sessions`.** An after-insert trigger would fire on every login, whatever the
+client, and would cost nothing per request. It was rejected because it writes into the `auth`
+schema, which Supabase owns and upgrades, and because it hides the rule from anyone who reads
+`apps/backend/src`. The control here deters credential sharing. It does not defend against an
+attacker, so it does not need to survive a caller that skips the endpoint.
+
+**A check in `mw.ts` on every request.** This needs no client cooperation. It was rejected because
+it adds a query to every authenticated merchant request, permanently, to enforce a condition that
+changes only at sign-in.
+
+## Documentation to update
+
+- `CLAUDE.md` — a short entry under Auth & roles. Record the limit, the LRU rule, and the fact that
+  eviction is a delete from `auth.sessions`.
+- `CONTEXT.md` — the term *device*, defined as one GoTrue session.
+
+## Known limits
+
+- **The rule is client-cooperative.** A sign-in that never calls the endpoint keeps a third session
+  until the next sign-in that does call it. Accepted, for the reason under *Rejected approaches*.
+- **Two browsers on one computer count as two devices.** Chrome and Safari on one laptop hold two
+  sessions, so they fill the account.
+- **A cleared browser store burns a slot.** The old session stays as an idle row until a later
+  sign-in evicts it. It is always the least recently used row, so it goes first.
