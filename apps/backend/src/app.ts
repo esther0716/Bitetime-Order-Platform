@@ -46,9 +46,9 @@ import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
 import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT, MERCHANT_DEVICE_LIMIT } from './quotaWindows.js'
-import { chooseEvictions, sessionIdFromToken } from './deviceLimit.js'
+import { chooseEvictions, sessionIdFromToken, lastSeen } from './deviceLimit.js'
 import { listSessions, deleteSessions } from './deviceLimitDb.js'
-import { deviceLabel } from './deviceLabel.js'
+import { deviceIdentity } from './deviceLabel.js'
 import { usagePeriod, nextResetDate, LIFETIME_PERIOD, type AiFeature } from './aiUsage.js'
 import { consumeAiCall } from './aiUsageDb.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
@@ -812,16 +812,21 @@ app.get('/api/me/devices', requireUser, async (c) => {
   if (!(await ownsAShop(caller.userId))) return c.json({ error: 'Forbidden' }, 403)
 
   const sessions = await listSessions(caller.userId)
+  // The browser and platform go out as PARTS. The sentence joining them is prose, and prose is
+  // t(en, zh)'s job in the browser — a finished "Chrome on macOS" from here is untranslatable.
+  //
+  // `lastSeen` comes from deviceLimit.ts rather than being re-coalesced here: the ranking rule the
+  // eviction turns on has one home, so the list cannot drift out of step with what gets evicted.
   // Most recently used first, so the merchant reads the list in the order they expect.
   const devices = sessions
     .map(s => ({
       id: s.id,
-      label: deviceLabel(s.userAgent),
+      ...deviceIdentity(s.userAgent),
       current: s.id === caller.sessionId,
-      lastSeen: (s.refreshedAt ?? s.createdAt).toISOString(),
+      lastSeen: new Date(lastSeen(s)).toISOString(),
     }))
     .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
-  return c.json({ devices })
+  return c.json({ devices, limit: MERCHANT_DEVICE_LIMIT })
 })
 
 app.delete('/api/me/devices/:sessionId', requireUser, async (c) => {
@@ -836,12 +841,12 @@ app.delete('/api/me/devices/:sessionId', requireUser, async (c) => {
     return c.json({ error: 'bad_session_id' }, 400)
   }
 
-  // The caller's own sessions, and only those. `db.ts` runs no policy, so this membership test is
-  // the whole tenancy guard — a stranger's session id must read as absent, not as deletable.
-  const sessions = await listSessions(caller.userId)
-  if (!sessions.some(s => s.id === id)) return c.json({ error: 'not_found' }, 404)
-
-  await deleteSessions(caller.userId, [id])
+  // ONE statement, and its own `user_id` predicate is the whole tenancy guard: `db.ts` runs no
+  // policy, so a stranger's session id matches nothing and comes back as a 404. Reading the
+  // caller's sessions first and checking membership in TypeScript would be a second round trip
+  // for a decision Postgres already makes — and a wider window between the check and the delete.
+  const removed = await deleteSessions(caller.userId, [id])
+  if (removed === 0) return c.json({ error: 'not_found' }, 404)
   return c.json({ ok: true })
 })
 

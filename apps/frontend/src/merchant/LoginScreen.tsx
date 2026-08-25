@@ -23,7 +23,7 @@ export default function LoginScreen() {
   const [notice, setNotice] = useState('')
 
   // Set by onAuthChange when a SIGNED_OUT arrives that the tab did not ask for — the session row
-  // is gone. Either a third device took the slot, or the merchant signed this one out from
+  // is gone. Either another device took the last slot, or the merchant signed this one out from
   // another device. Both are the same news to the person reading it.
   //
   // Read as INITIAL STATE rather than in an effect: an effect that calls setState synchronously
@@ -39,10 +39,13 @@ export default function LoginScreen() {
     try { sessionStorage.removeItem(SIGNED_OUT_ELSEWHERE_KEY) } catch { /* private mode */ }
   }, [])
 
+  // Quotes NO figure. This screen is unauthenticated, so it cannot ask the server how many devices
+  // an account allows, and a "2" typed in here would go on saying 2 the day that number changes.
+  // The sentence is true without it; Settings → Devices quotes the real ceiling.
   const deviceNotice = signedOutElsewhere
     ? t(
-      'You were signed out. Your account allows 2 devices, so signing in on another one signs out the device used longest ago.',
-      '您已被登出。您的账号最多支持 2 台设备，在其他设备登录后，最久未使用的设备会被登出。',
+      'You were signed out because your account was signed in on another device. Signing in on a new device signs out the one used longest ago.',
+      '您已被登出，因为您的账号在另一台设备上登录了。在新设备登录后，最久未使用的设备会被登出。',
     )
     : ''
 
@@ -108,9 +111,17 @@ export default function LoginScreen() {
             ? t("Enter your email and we'll send you a link to set a new password.", '输入你的邮箱，我们会发送重设密码的链接。')
             : t('Sign in to manage your shop.', '登录以管理您的店铺。')}
         </p>
-        {(notice || deviceNotice) && (
+        {/* Rendered separately, not `notice || deviceNotice`: they answer different questions, and
+            `||` meant a merchant who asked for a reset link stopped being told why they were
+            signed out. This one explains the arrival, so it sits first. */}
+        {deviceNotice && (
           <div role="status" className="text-[13px] text-primary bg-danger-100 border border-danger-100 rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
-            {notice || deviceNotice}
+            {deviceNotice}
+          </div>
+        )}
+        {notice && (
+          <div role="status" className="text-[13px] text-primary bg-danger-100 border border-danger-100 rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+            {notice}
           </div>
         )}
         {msg && (

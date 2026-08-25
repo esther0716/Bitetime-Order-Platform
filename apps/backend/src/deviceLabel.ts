@@ -1,11 +1,18 @@
-// The one line a merchant reads for each of their signed-in devices: "Chrome on macOS".
+// What a merchant reads for each of their signed-in devices, as PARTS: "Chrome" and "macOS".
+//
+// It returns the two names and never the sentence joining them. The join is prose — " on ", and
+// the "unknown device" fallback — and prose is `t(en, zh)`'s job in the browser (CLAUDE.md →
+// Localisation). Returning a finished English string here would hand a Chinese merchant
+// "Chrome on macOS" with no way to translate it. The names themselves are proper nouns and are
+// the same in both languages.
 //
 // A user-agent string is a claim the browser makes about itself, not a fact. It is good enough to
 // help a merchant recognise their own phone in a list of two, and it is used for nothing else —
 // no rule reads it, and no security decision rests on it.
 //
-// This deliberately does NOT return a best guess. "Unknown device" is honest and a wrong device
-// name is not: the merchant is about to decide which session to sign out.
+// Both fields are null when the string cannot be read. That is deliberate: the caller says
+// "unknown device" in the reader's own language rather than being handed a guess, and the
+// merchant is about to decide which session to sign out.
 
 // Order matters twice over. Edge and Opera both carry the full Chrome agent, and Chrome carries
 // "Safari", so the more specific name has to be tested first or every browser reads as Chrome.
@@ -33,11 +40,14 @@ function firstMatch(table: [RegExp, string][], ua: string): string | null {
   return null
 }
 
-/** A short human name for a user-agent string, or 'Unknown device' when it cannot be read. */
-export function deviceLabel(userAgent: string | null): string {
+/** The browser and platform names read out of a user-agent string. Either may be null. */
+export interface DeviceIdentity {
+  browser: string | null
+  platform: string | null
+}
+
+/** Read a user-agent string into its browser and platform names, without guessing at either. */
+export function deviceIdentity(userAgent: string | null): DeviceIdentity {
   const ua = userAgent ?? ''
-  const browser = firstMatch(BROWSERS, ua)
-  const platform = firstMatch(PLATFORMS, ua)
-  if (browser && platform) return `${browser} on ${platform}`
-  return browser ?? platform ?? 'Unknown device'
+  return { browser: firstMatch(BROWSERS, ua), platform: firstMatch(PLATFORMS, ua) }
 }

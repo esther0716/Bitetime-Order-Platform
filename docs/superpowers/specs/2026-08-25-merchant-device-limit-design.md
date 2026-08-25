@@ -149,8 +149,15 @@ Chrome on macOS          This device
 Safari on iPhone         Last used 2 hours ago        [Sign out]
 ```
 
-`deviceLabel.ts` is a pure module. It turns a user-agent string into the phrase. It returns
-`Unknown device` when it cannot parse the string. It does not guess.
+`deviceLabel.ts` is a pure module, and it returns the browser and platform as **parts**, never the
+phrase joining them. The join is prose — " on ", and the fallback — and prose is `t(en, zh)`'s job
+in the browser. A finished English string from the backend is untranslatable: English reads
+"Chrome on macOS" and Chinese reads "macOS 上的 Chrome", which is a different word order, not a
+different dictionary.
+
+Either part is null when it cannot be read, and the browser says "Unknown device" in the reader's
+own language only when BOTH are. One known name is still worth showing: "Linux" identifies a device
+better than "unknown" does.
 
 **The panel shows no IP address.** `auth.sessions` stores one. An IP address tells a merchant
 nothing they can act on. To make it useful, the platform must add a geolocation provider, and that
@@ -209,9 +216,14 @@ who simply clicked Sign out is told nothing.
 
 **Database-backed, under `pnpm --filter @bitetime/backend test:db`:**
 
-- `tests/api/devices.test.ts` — three real sign-ins leave two sessions. The evicted token gets a
-  `403`. The current token still works. `DELETE` with a stranger's session id is refused. A customer
-  account keeps all three sessions.
+- `tests/api/devices.test.ts` — three real sign-ins leave two sessions. The evicted token is
+  refused: **`401` from this API**, which is what the browser sees, since `getUserFromToken` maps
+  GoTrue's own `403 session_not_found` onto Unauthorized. The current token still works. `DELETE`
+  with a stranger's session id is refused. A customer account keeps all three sessions. The device
+  list sends parts and no `label`.
+- `src/signOutScope.test.ts` — pins the two rules whose regression looks like success: `signOut`
+  passes `{ scope: 'local' }`, and the sign-out intent is consumed by the `SIGNED_OUT` handler so a
+  later eviction in the same tab is still announced.
 
 Never mock the database in that suite. It exists to prove that Postgres and GoTrue behave this way.
 

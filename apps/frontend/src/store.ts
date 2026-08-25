@@ -392,11 +392,14 @@ export async function updatePassword(password: string) {
 }
 
 /**
- * The key that tells the login screen this sign-out was the merchant's own doing.
+ * Set by `signOut` and CONSUMED by the `SIGNED_OUT` handler below — never read anywhere else.
  *
  * Without it, an intentional sign-out and an eviction are the same `SIGNED_OUT` event, and the
  * login screen would explain the device limit to someone who simply clicked Sign out.
  */
+const SIGN_OUT_INTENT_KEY = 'bt.sign_out_intent';
+
+/** Set when a sign-out was NOT this tab's doing. Read once and cleared by the login screen. */
 export const SIGNED_OUT_ELSEWHERE_KEY = 'bt.signed_out_elsewhere';
 
 export async function signOut() {
@@ -404,25 +407,38 @@ export async function signOut() {
   // `scope: 'global'`, which revokes EVERY session the account holds — so a merchant who signed
   // out on their phone lost the laptop too, and a two-device account behaved as a one-device
   // account. This line is what makes the device limit mean two devices.
-  try { sessionStorage.setItem(SIGNED_OUT_ELSEWHERE_KEY, 'no'); } catch { /* private mode */ }
+  try { sessionStorage.setItem(SIGN_OUT_INTENT_KEY, '1'); } catch { /* private mode */ }
   await auth.signOut({ scope: 'local' });
 }
 
 /** One signed-in device, as the Devices panel shows it. */
 export interface Device {
   id: string;
-  /** "Chrome on macOS", or "Unknown device". Read from the user agent, so it is a claim, not a fact. */
-  label: string;
+  /**
+   * The browser and platform as PARTS — "Chrome", "macOS" — never a joined sentence. The join is
+   * prose and belongs to `t(en, zh)`; both are null when the user agent could not be read. Read
+   * from the user agent, so it is a claim, not a fact.
+   */
+  browser: string | null;
+  platform: string | null;
   current: boolean;
   /** ISO 8601. When the session was last used. */
   lastSeen: string;
 }
 
-export async function fetchMyDevices(): Promise<Result<Device[]>> {
-  return mapOk(
-    await apiGet<{ devices: Device[] }>('/api/me/devices', { auth: 'required' }),
-    (d) => d.devices,
-  );
+/** The devices on this account, and how many the server allows. */
+export interface DeviceList {
+  devices: Device[];
+  /**
+   * The server's own ceiling, quoted rather than restated. The rule is enforced by
+   * MERCHANT_DEVICE_LIMIT in the backend's quotaWindows.ts and nowhere else, so a screen that
+   * hardcoded "2" would keep saying 2 the day that number changes.
+   */
+  limit: number;
+}
+
+export async function fetchMyDevices(): Promise<Result<DeviceList>> {
+  return apiGet<DeviceList>('/api/me/devices', { auth: 'required' });
 }
 
 export async function signOutDevice(sessionId: string): Promise<Result<void>> {
@@ -442,8 +458,12 @@ export function onAuthChange(callback: (user: User | null, event?: string) => vo
     // the same way to the person holding it, and the login screen says so.
     if (event === 'SIGNED_OUT') {
       try {
-        const mine = sessionStorage.getItem(SIGNED_OUT_ELSEWHERE_KEY) === 'no';
-        sessionStorage.setItem(SIGNED_OUT_ELSEWHERE_KEY, mine ? 'no' : 'yes');
+        // The intent is CONSUMED here, whether or not it was set. Leaving it for the login screen
+        // to clear was a bug: signing out lands on the marketing page, not on that screen, so the
+        // flag survived — and silenced the notice for a genuine eviction later in the same tab.
+        const mine = sessionStorage.getItem(SIGN_OUT_INTENT_KEY) === '1';
+        sessionStorage.removeItem(SIGN_OUT_INTENT_KEY);
+        if (!mine) sessionStorage.setItem(SIGNED_OUT_ELSEWHERE_KEY, 'yes');
       } catch { /* private mode: the login screen simply says nothing */ }
     }
     if (user && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {

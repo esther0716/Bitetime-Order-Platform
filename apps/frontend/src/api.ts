@@ -105,8 +105,16 @@ function forgetRevokedSession(): Promise<void> {
   return revocationCheck
 }
 
-// Turns a non-2xx Response into an ApiError, reading the backend's `{ error }` body when present.
-async function errorFromResponse(res: Response): Promise<ApiError> {
+/**
+ * Handle a non-2xx: read the backend's `{ error }` body into an ApiError, and on a 401 check
+ * whether the session behind it has been revoked.
+ *
+ * Named for BOTH jobs. It was `errorFromResponse`, which read as a pure converter and hid the fact
+ * that this function can sign the caller out. It stays one function because every request path
+ * funnels through here — moving the 401 check out would duplicate it across six call sites, which
+ * is how one of them ends up forgetting.
+ */
+async function handleFailedResponse(res: Response): Promise<ApiError> {
   const body = (await res.json().catch(() => ({}))) as { error?: string }
   if (res.status === 401) await forgetRevokedSession()
   return { status: res.status, code: body.error, message: body.error || `Request failed: ${res.status}` }
@@ -120,7 +128,7 @@ export async function apiGet<T>(path: string, opts?: Opts): Promise<Result<T>> {
   if ('fail' in h) return { ok: false, error: h.fail }
   try {
     const res = await fetch(`${API_URL}${path}`, { headers: h.headers })
-    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    if (!res.ok) return { ok: false, error: await handleFailedResponse(res) }
     return { ok: true, data: (await res.json()) as T }
   } catch {
     return { ok: false, error: NETWORK_ERROR }
@@ -131,7 +139,7 @@ export async function apiGet<T>(path: string, opts?: Opts): Promise<Result<T>> {
  * A GET whose body is a FILE, not JSON.
  *
  * `apiGet` parses the body and would choke on a workbook. Everything else is shared with it —
- * the same headers, the same `errorFromResponse` (failures are still JSON), and the same Result
+ * the same headers, the same `handleFailedResponse` (failures are still JSON), and the same Result
  * convention (#122).
  *
  * The filename comes from `Content-Disposition`, which the backend must EXPOSE via CORS for this
@@ -146,7 +154,7 @@ export async function apiGetFile(
   if ('fail' in h) return { ok: false, error: h.fail }
   try {
     const res = await fetch(`${API_URL}${path}`, { headers: h.headers })
-    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    if (!res.ok) return { ok: false, error: await handleFailedResponse(res) }
     const match = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
     return { ok: true, data: { blob: await res.blob(), filename: match?.[1] ?? null } }
   } catch {
@@ -161,7 +169,7 @@ export async function apiGetFile(
  * the customer's own identifiers, and a GET would write both into the URL, where they land in
  * browser history, in a referrer and in any proxy log between here and the backend.
  *
- * A refusal is still JSON, so failures go through the same `errorFromResponse` as everything else.
+ * A refusal is still JSON, so failures go through the same `handleFailedResponse` as everything else.
  */
 export async function apiSendForFile(
   path: string,
@@ -172,7 +180,7 @@ export async function apiSendForFile(
   if ('fail' in h) return { ok: false, error: h.fail }
   try {
     const res = await fetch(`${API_URL}${path}`, { method: 'POST', headers: h.headers, body: JSON.stringify(body) })
-    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    if (!res.ok) return { ok: false, error: await handleFailedResponse(res) }
     const match = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
     return { ok: true, data: { blob: await res.blob(), filename: match?.[1] ?? null } }
   } catch {
@@ -191,7 +199,7 @@ export async function apiSendFile<T>(path: string, file: File, opts?: Opts): Pro
   if ('fail' in h) return { ok: false, error: h.fail }
   try {
     const res = await fetch(`${API_URL}${path}`, { method: 'POST', headers: h.headers, body: file })
-    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    if (!res.ok) return { ok: false, error: await handleFailedResponse(res) }
     const text = await res.text()
     return { ok: true, data: (text ? JSON.parse(text) : null) as T }
   } catch {
@@ -213,7 +221,7 @@ export async function apiSendForm<T>(path: string, form: FormData, opts?: Opts):
   if ('fail' in h) return { ok: false, error: h.fail }
   try {
     const res = await fetch(`${API_URL}${path}`, { method: 'POST', headers: h.headers, body: form })
-    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    if (!res.ok) return { ok: false, error: await handleFailedResponse(res) }
     const text = await res.text()
     return { ok: true, data: (text ? JSON.parse(text) : null) as T }
   } catch {
@@ -232,7 +240,7 @@ export async function apiSend<T>(path: string, method: Method, body?: unknown, o
       headers: h.headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     })
-    if (!res.ok) return { ok: false, error: await errorFromResponse(res) }
+    if (!res.ok) return { ok: false, error: await handleFailedResponse(res) }
     const text = await res.text()
     return { ok: true, data: (text ? JSON.parse(text) : null) as T }
   } catch {

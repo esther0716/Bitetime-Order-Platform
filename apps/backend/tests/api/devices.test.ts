@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/app.js'
 import { sql } from '../../src/db.js'
 import { makeUser, seedMerchant, resetMerchant, SUPABASE_URL, ANON_KEY } from '../rls/helpers.js'
+import { MERCHANT_DEVICE_LIMIT } from '../../src/quotaWindows.js'
 
 /** A fresh sign-in for an existing account. Each call creates one more GoTrue session. */
 async function signInAgain(email: string, password: string): Promise<string> {
@@ -122,11 +123,27 @@ describe('GET /api/me/devices', () => {
 
     const res = await call('/api/me/devices', 'GET', second)
     expect(res.status).toBe(200)
-    const body = await res.json() as { devices: { id: string; label: string; current: boolean; lastSeen: string }[] }
+    const body = await res.json() as {
+      devices: { id: string; browser: string | null; platform: string | null; current: boolean; lastSeen: string }[]
+      limit: number
+    }
     expect(body.devices).toHaveLength(2)
     expect(body.devices.filter(d => d.current)).toHaveLength(1)
-    expect(typeof body.devices[0].label).toBe('string')
     expect(new Date(body.devices[0].lastSeen).toString()).not.toBe('Invalid Date')
+    // The ceiling is quoted to the browser rather than restated there, so the screen cannot go on
+    // saying "2" the day MERCHANT_DEVICE_LIMIT changes.
+    expect(body.limit).toBe(MERCHANT_DEVICE_LIMIT)
+  })
+
+  it('sends the device name as PARTS, never as a joined English phrase', async () => {
+    // The join is prose and belongs to t(en, zh) in the browser. A finished "Chrome on macOS" from
+    // the backend is untranslatable, and a Chinese merchant would read English here.
+    const owner = await merchantOwner('devices-parts')
+    const res = await call('/api/me/devices', 'GET', owner.token)
+    const body = await res.json() as { devices: Record<string, unknown>[] }
+    expect(body.devices[0]).not.toHaveProperty('label')
+    expect(body.devices[0]).toHaveProperty('browser')
+    expect(body.devices[0]).toHaveProperty('platform')
   })
 
   it('refuses an account that owns no shop', async () => {
