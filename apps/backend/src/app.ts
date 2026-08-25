@@ -45,7 +45,10 @@ import { writeProductOrder } from './productOrderDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT } from './quotaWindows.js'
+import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT, MERCHANT_DEVICE_LIMIT } from './quotaWindows.js'
+import { chooseEvictions, sessionIdFromToken } from './deviceLimit.js'
+import { listSessions, deleteSessions } from './deviceLimitDb.js'
+import { deviceLabel } from './deviceLabel.js'
 import { usagePeriod, nextResetDate, LIFETIME_PERIOD, type AiFeature } from './aiUsage.js'
 import { consumeAiCall } from './aiUsageDb.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
@@ -756,6 +759,90 @@ app.get('/api/me/merchant', requireUser, async (c) => {
   const user = c.get('user')
   const { data } = await admin.from('merchants').select('*').eq('owner_id', user.id).maybeSingle()
   return c.json(data ?? null)
+})
+
+// ── Device limit ──────────────────────────────────────────────────────────────
+//
+// A merchant account holds at most MERCHANT_DEVICE_LIMIT signed-in devices, and one device is one
+// GoTrue session. See docs/superpowers/specs/2026-08-25-merchant-device-limit-design.md.
+//
+// THE SESSION ID COMES FROM THE JWT, never from a body or a path. `requireUser` has already handed
+// the token to GoTrue, which rejects a bad signature, a stale expiry or a deleted session, so the
+// claim below is read from a string that is already proven. A body-supplied id would let any
+// merchant sign out any device by guessing a uuid.
+//
+// These sit under /api/me/ beside the two routes above, and carry no merchant id: a path with one
+// in it would invite a handler that trusts it.
+
+/** The caller's own user id and session id, or null when the token carries no session claim. */
+function callerSession(c: Context<AppEnv>): { userId: string; sessionId: string } | null {
+  const sessionId = sessionIdFromToken(bearer(c))
+  return sessionId ? { userId: c.get('user').id, sessionId } : null
+}
+
+/** True when this account owns a shop. The limit is a merchant rule and applies to nobody else. */
+async function ownsAShop(userId: string): Promise<boolean> {
+  const { data } = await admin.from('merchants').select('id').eq('owner_id', userId).limit(1)
+  return (data?.length ?? 0) > 0
+}
+
+// Called by the browser right after a sign-in succeeds.
+//
+// It answers 200 for a customer rather than 403, unlike the two routes below: every sign-in calls
+// this, and a customer signing in must not see an error in their console for a rule that is not
+// about them.
+app.post('/api/me/devices/enforce', requireUser, async (c) => {
+  const caller = callerSession(c)
+  if (!caller) return c.json({ evicted: 0 })
+  if (!(await ownsAShop(caller.userId))) return c.json({ evicted: 0 })
+
+  const sessions = await listSessions(caller.userId)
+  const doomed = chooseEvictions({
+    sessions,
+    currentSessionId: caller.sessionId,
+    limit: MERCHANT_DEVICE_LIMIT,
+  })
+  const evicted = await deleteSessions(caller.userId, doomed)
+  return c.json({ evicted })
+})
+
+app.get('/api/me/devices', requireUser, async (c) => {
+  const caller = callerSession(c)
+  if (!caller) return c.json({ error: 'no_session_claim' }, 401)
+  if (!(await ownsAShop(caller.userId))) return c.json({ error: 'Forbidden' }, 403)
+
+  const sessions = await listSessions(caller.userId)
+  // Most recently used first, so the merchant reads the list in the order they expect.
+  const devices = sessions
+    .map(s => ({
+      id: s.id,
+      label: deviceLabel(s.userAgent),
+      current: s.id === caller.sessionId,
+      lastSeen: (s.refreshedAt ?? s.createdAt).toISOString(),
+    }))
+    .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
+  return c.json({ devices })
+})
+
+app.delete('/api/me/devices/:sessionId', requireUser, async (c) => {
+  const caller = callerSession(c)
+  if (!caller) return c.json({ error: 'no_session_claim' }, 401)
+  if (!(await ownsAShop(caller.userId))) return c.json({ error: 'Forbidden' }, 403)
+
+  const id = c.req.param('sessionId')
+  // Checked here rather than left to Postgres: `id = any('{not-a-uuid}'::uuid[])` is a 22P02 and
+  // would reach the merchant as a 500 for what is an ordinary bad request.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return c.json({ error: 'bad_session_id' }, 400)
+  }
+
+  // The caller's own sessions, and only those. `db.ts` runs no policy, so this membership test is
+  // the whole tenancy guard — a stranger's session id must read as absent, not as deletable.
+  const sessions = await listSessions(caller.userId)
+  if (!sessions.some(s => s.id === id)) return c.json({ error: 'not_found' }, 404)
+
+  await deleteSessions(caller.userId, [id])
+  return c.json({ ok: true })
 })
 
 // Any signed-in customer's own history at a shop. NOT requireMerchantOwns — the uid filter,
