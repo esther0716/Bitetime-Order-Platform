@@ -170,12 +170,32 @@ cleanup.
 
 ## What the evicted merchant sees
 
-The evicted device's next call returns `403`. `auth-js` emits `SIGNED_OUT`. `onAuthChange` in
-`store.ts` sends the merchant to the login screen.
+**A revoked session does not announce itself, and this was wrong in the first draft of this spec.**
+The draft said the evicted device's next call returns `403` and `auth-js` emits `SIGNED_OUT`.
+Running the app showed otherwise. `auth-js` keeps the access token in `localStorage` and
+`getSession()` returns it without asking anyone until it expires, so the evicted device believes it
+is signed in for up to `jwt_expiry` — one hour. Meanwhile this platform's API answers `401`, and
+the dashboard reported it as:
 
-The login screen adds one message. It tells the merchant that the account permits two devices, and
-that a newer sign-in took the slot. Today the same bounce happens in silence for an expired session,
-which reads as a fault in the app.
+> We couldn't reach the server to load your shop. You are still signed in — this is on our side,
+> not yours.
+
+Wrong on both counts, and shown for an hour. GoTrue *does* answer `403 session_not_found`, but only
+to whoever asks it, and nothing was asking.
+
+So `api.ts` asks. `errorFromResponse` is the one funnel every non-2xx passes through, and on a
+`401` it calls `forgetRevokedSession()`: if a local session exists, it hands that token to
+`auth.getUser()` — a real round trip to GoTrue — and drops the session **only** when GoTrue itself
+rejects it. That fires `SIGNED_OUT`, and the merchant reaches the login screen at once.
+
+Both guards are load-bearing. Without the local-session check, a `401` for any other reason would
+sign out a caller whose token is perfectly good, and would fire `SIGNED_OUT` for a guest who was
+never signed in. Without GoTrue as the arbiter, an ordinary permission `401` would read as a
+revocation.
+
+The login screen then shows one message: the account permits two devices, and a newer sign-in took
+the slot. It is read once and cleared. An **intentional** sign-out sets a flag first, so a merchant
+who simply clicked Sign out is told nothing.
 
 ## Tests
 

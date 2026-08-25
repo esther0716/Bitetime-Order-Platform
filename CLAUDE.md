@@ -98,6 +98,7 @@ Multi-merchant ordering SaaS. React 19 + Vite + React Router (`react-router-dom`
 - Supabase Auth handles login/registration (`src/supabase.ts`, `src/store.ts`)
 - `SessionContext` derives `role`: `superadmin` if `profiles.app_role === 'superadmin'` (transitional email fallback to `bitetime@praxor.dev`), else `merchant` if the user owns a `merchants` row, else `customer`
 - `MerchantContext` resolves the active shop for `/s/:slug` storefronts
+- A **merchant** account holds at most `MERCHANT_DEVICE_LIMIT` (2) signed-in devices, and one device is one GoTrue session. `POST /api/me/devices/enforce`, which the browser calls after every sign-in, deletes the surplus rows from `auth.sessions` — least recently used first, and never the caller's own session. That delete is the whole mechanism: GoTrue then rejects the removed device's still-unexpired access token with `403 session_not_found`, on this API, Storage and PostgREST alike, so eviction is instant rather than one `jwt_expiry` late. The rule is `deviceLimit.ts` (pure) over `deviceLimitDb.ts` (two statements against the `auth` schema — reads and deletes only, never a trigger or a column); the session id is read from the JWT's `session_id` claim and never from a body. Customers and superadmins are not bounded. `store.ts`'s `signOut` MUST keep `{ scope: 'local' }` — `@supabase/auth-js` defaults to `global`, which revokes every session and makes the limit behave as one device. See `docs/superpowers/specs/2026-08-25-merchant-device-limit-design.md`.
 
 ### Merchant onboarding & slugs (`src/slug.ts`)
 
