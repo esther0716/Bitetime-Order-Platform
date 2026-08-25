@@ -211,8 +211,16 @@ No i18n library. Every string is passed as `t(englishString, chineseString)` whe
 A shop's accent is `merchants.brand_color` (a hex, null for the platform oxblood). One pure module,
 `src/brandTheme.ts`, derives nine values from it — the whole `--brand-*` ramp plus the fill, its
 hover, the text ON a fill and the accent AS text — walking lightness in HSL until each clears AA.
-`src/brandTheme.test.ts` sweeps ~8,400 colours to prove no choice can be illegible, and pins
-`#7A1028` to the ramp `tokens.css` already ships. `normalizeBrandColor` in `@bitetime/shared` is the
+The three pale washes are then **warmed toward the cream page** in OKLab (`src/oklab.ts`), because
+they measure toward WHITE and the page is not white: a blue wash bled to white lands on a warm page
+as a second, colder ground. **The pull is capped at half the tint's own chroma**, and that cap is
+the whole design — an uncapped pull moves a blue tint straight through neutral, since cream is the
+far end of the a/b plane from blue, and it hands a grey-picking shop beige washes. `--brand-400` is
+excluded: it is the dark-theme accent, not a wash. See ADR 0021.
+`src/brandTheme.test.ts` sweeps ~8,400 colours to prove no choice can be illegible, sweeps the cap
+itself, and pins `#7A1028` to the ramp `tokens.css` already ships — which means **`tokens.css`
+follows this module**: changing the derivation moves `--brand-50/100/200`, and those literals move
+with it or the pin fails. `normalizeBrandColor` in `@bitetime/shared` is the
 one rule for which strings are colours; the picker and `pickMerchantConfig` both run it.
 
 `components/BrandTheme.tsx` applies it, and **it must restate every token that carries the accent,

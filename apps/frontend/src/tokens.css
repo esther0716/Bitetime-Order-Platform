@@ -37,9 +37,12 @@
   --cream:   #F2EAE0;
 
   /* Oxblood, in Voltage's seven-step shape. -500 is the brand and is fixed. */
-  --brand-50:  #FDF0F2;
-  --brand-100: #F5E6E8;
-  --brand-200: #EBCDD3;
+  /* The three washes are WARMED toward the cream page — see brandTheme.ts. They are still what
+     `brandTheme('#7A1028')` returns, which is the rule this ramp lives by; the values moved when
+     the warming landed, not the rule. */
+  --brand-50:  #FCF1EF;
+  --brand-100: #F4E7E6;
+  --brand-200: #E6D0D1;
   --brand-400: #D4708A;  /* dark-theme accent — must stay LIGHTER than -500 */
   /* The PLATFORM accent, and the default for every shop. No longer immutable: a merchant may pick
      their own, and `brandTheme.ts` derives this whole ramp from it onto a wrapper element at

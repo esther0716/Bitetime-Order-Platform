@@ -1,5 +1,6 @@
 import { contrastRatio } from './contrast'
 import { hexToHsl, hslToHex, hexToRgb } from './hsl'
+import { hexToOklab, oklabToHex } from './oklab'
 import { normalizeBrandColor, PLATFORM_BRAND_COLOR } from '@bitetime/shared'
 
 /* One colour in, a whole palette out.
@@ -67,11 +68,59 @@ const BLACK = '#000000'
    half as saturated as the accent, and copying that as a constant would hand a grey-picking shop
    saturated pink washes. */
 const TINTS = [
-  { key: 'tint50', s: 1.00, k: 0.9548 },
-  { key: 'tint100', s: 0.56, k: 0.9054 },
-  { key: 'tint200', s: 0.56, k: 0.8122 },
-  { key: 'light400', s: 0.70, k: 0.4996 },
+  { key: 'tint50', s: 1.00, k: 0.9548, warm: true },
+  { key: 'tint100', s: 0.56, k: 0.9054, warm: true },
+  { key: 'tint200', s: 0.56, k: 0.8122, warm: true },
+  /* NOT warmed. --brand-400 is the dark-theme accent, not a wash on the cream page, so it has
+     none of the problem the pull below exists to fix -- and warming it moved it a visible step off
+     the oxblood ramp to buy nothing. */
+  { key: 'light400', s: 0.70, k: 0.4996, warm: false },
 ] as const
+
+/* THE WASHES ARE WARMED TOWARD THE PAGE, and this is the one part of the ramp that is not a pure
+   HSL walk.
+
+   The tints above measure toward WHITE, and the page is CREAM. Oxblood is warm, so the two agreed
+   by luck and the mismatch never showed. A cool pick is where it does: a blue wash bled to white
+   lands on a warm page as a second, colder ground -- measurably so, at 3.1 OKLab units from the
+   canvas against oxblood's own 1.9.
+
+   Two obvious fixes are both wrong, and were measured before this one was written. See
+   docs/adr/0021-the-washes-are-warmed-toward-the-page.md:
+     - Mixing the tint toward the canvas instead of toward white BLEACHES it. At k = 0.9054 the
+       destination is nearly neutral, so a 90 percent mix arrives nearly neutral: blue fell from 44
+       percent saturation to 6, and landed FURTHER from the cream (5.0) because the mix darkens as
+       it desaturates.
+     - Pulling the finished tint toward the canvas by a fixed fraction destroys the exact hues this
+       exists for. Cream sits at the warm end of the a/b plane, so a fixed pull moves a blue tint
+       straight THROUGH neutral -- blue is the hue furthest from the destination, and the pull is
+       longer than the chroma it acts on. Blue went to 3 percent saturation, and a shop picking grey
+       got beige washes it never asked for.
+
+   So the pull is CAPPED at a fraction of the tint's own chroma. That bounds how much of the brand
+   any pick can lose, whichever side of neutral it starts on: cool picks warm up and stay cool-hued
+   (blue 3.1 -> 2.6 from the canvas, still visibly blue at 19 percent), a grey pick stays grey
+   because half of nearly-zero chroma is nearly zero, and a warm pick is barely touched because the
+   pull is short to begin with. */
+const WARM_PULL = 0.35
+const CHROMA_CAP = 0.5
+
+function warmTowardCanvas(tint: string, canvas: string): string {
+  const [L, a, b] = hexToOklab(tint)
+  const [, ca, cb] = hexToOklab(canvas)
+  let da = (ca - a) * WARM_PULL
+  let db = (cb - b) * WARM_PULL
+  const step = Math.hypot(da, db)
+  const limit = Math.hypot(a, b) * CHROMA_CAP
+  if (step > limit && step > 0) {
+    da *= limit / step
+    db *= limit / step
+  }
+  /* Lightness is untouched: the k values above are the ramp's shape, and the warmth is a hue
+     correction, not a second lightness rule. It is also what keeps the ramp monotonic, which the
+     sweep in brandTheme.test.ts checks. */
+  return oklabToHex([L, a + da, b + db])
+}
 
 /* The deeper steps are ratios of the picked lightness, not absolutes: a shadow has to stay relative
    to the colour it shadows, or a dark pick would produce a 600 lighter than its own 500. */
@@ -112,7 +161,10 @@ function derive(hex: string, canvas: string): BrandTheme {
   const { h, s, l } = hexToHsl(accent)
 
   const tints = Object.fromEntries(
-    TINTS.map((t) => [t.key, hslToHex(h, s * t.s, l + (1 - l) * t.k)]),
+    TINTS.map((t) => {
+      const step = hslToHex(h, s * t.s, l + (1 - l) * t.k)
+      return [t.key, t.warm ? warmTowardCanvas(step, canvas) : step]
+    }),
   ) as Record<(typeof TINTS)[number]['key'], string>
 
   const accentHover = hslToHex(h, s * HOVER.s, l * HOVER.l)

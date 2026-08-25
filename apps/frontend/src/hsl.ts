@@ -2,9 +2,10 @@
    whole brand ramp from the single colour its merchant picked (`brandTheme.ts`). Pure and DOM-free,
    like `contrast.ts` next door, so both run in Vitest and in a test that reads tokens.css off disk.
 
-   HSL and not OKLCH, which is the better space and is not worth a dependency here. Every derivation
-   in brandTheme holds hue and moves lightness, and HSL holds hue exactly; OKLCH would buy
-   perceptual evenness across the ramp, which nothing in this feature measures. */
+   HSL because every LIGHTNESS derivation in brandTheme holds a hue and moves lightness, and HSL
+   holds hue exactly. It is the wrong space for the one MIX in that module -- warming a wash toward
+   the cream page -- which is why `oklab.ts` sits next door rather than this file growing a second
+   job. Neither costs a dependency. */
 
 export interface Hsl {
   /** Degrees, 0–360. */

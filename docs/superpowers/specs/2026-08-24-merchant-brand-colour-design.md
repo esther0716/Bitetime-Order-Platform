@@ -69,9 +69,9 @@ back the exact palette it has today:
 
 | Step | Lightness | Saturation | Reproduces |
 |------|-----------|-----------|------------|
-| `--brand-50` | L + (1−L) × 0.9548 | S × 1.00 | `#FDF0F2` |
-| `--brand-100` | L + (1−L) × 0.9054 | S × 0.56 | `#F5E6E8` |
-| `--brand-200` | L + (1−L) × 0.8122 | S × 0.56 | `#EBCDD3` |
+| `--brand-50` | L + (1−L) × 0.9548 | S × 1.00 | `#FCF1EF` |
+| `--brand-100` | L + (1−L) × 0.9054 | S × 0.56 | `#F4E7E6` |
+| `--brand-200` | L + (1−L) × 0.8122 | S × 0.56 | `#E6D0D1` |
 | `--brand-400` | L + (1−L) × 0.4996 | S × 0.70 | `#D4708A` (dark-theme accent; derived for completeness) |
 | `--brand-500` | the picked colour | — | — |
 | `--brand-600` | L × 0.688 | S × 1.03 | `#550A1A` |
@@ -92,6 +92,12 @@ grey-picking shop saturated pink washes.
 
 Every figure in the table is measured off the ramp the app ships today, so `brandTheme('#7A1028')`
 returns the current palette — verified to within 3/255 per channel on every step.
+
+**Amended, ADR 0021.** The three pale steps are warmed toward the cream page after the lightness
+walk above, capped at half the tint's own chroma. Measuring toward white is still what sets their
+lightness; the warming corrects only hue, and only for the steps that are washes on that page.
+`--brand-400` keeps the picked hue exactly. The `Reproduces` column above carries the values after
+the amendment, and `tokens.css` carries the same three.
 
 `--brand-700` carries the one exception to "ratio, not contrast", because it has a text job:
 `text-brand-700` on `bg-brand-100`. At L × 0.507 a pale pick lands a pale 700 on a paler 100 and

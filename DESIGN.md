@@ -14,9 +14,9 @@ colors:
   ink-950: "#09090B"
   white: "#FFFFFF"
   cream: "#F2EAE0"
-  brand-50: "#FDF0F2"
-  brand-100: "#F5E6E8"
-  brand-200: "#EBCDD3"
+  brand-50: "#FCF1EF"
+  brand-100: "#F4E7E6"
+  brand-200: "#E6D0D1"
   brand-400: "#D4708A"
   brand-500: "#7A1028"
   brand-600: "#550A1A"
@@ -160,7 +160,7 @@ Every pair named here is asserted by `apps/frontend/src/tokens.test.ts`, which r
 - **Brand 500** (`#7A1028`): oxblood. The brand voice — primary buttons, headings, active nav, focus rings. Carries identity on every platform screen, and is the default a shop inherits until its merchant picks another (ADR 0017). 10.41:1 on the page background.
 - **Brand 600** (`#550A1A`): hover/pressed on oxblood fills only. Never a resting fill.
 - **Brand 700** (`#3F0713`): text on a brand tint (chips, active rows).
-- **Brand 100 / 50** (`#F5E6E8` / `#FDF0F2`): the accent at low strength — selected-row wash, chip backgrounds.
+- **Brand 100 / 50** (`#F4E7E6` / `#FCF1EF`): the accent at low strength — selected-row wash, chip backgrounds.
 - **Brand 400** (`#D4708A`): a light rose, used **only** as the dark-theme accent. It exists because `-500` is far too dark to read on `#09090B`.
 
 ### Secondary

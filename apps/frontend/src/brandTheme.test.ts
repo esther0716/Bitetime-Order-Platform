@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { contrastRatio } from './contrast'
 import { hexToHsl, hslToHex } from './hsl'
+import { hexToOklab } from './oklab'
 import { brandTheme, BRAND_CANVAS } from './brandTheme'
 
 const AA = 4.5
@@ -151,6 +152,69 @@ describe('no colour a merchant can pick produces unreadable text', () => {
       const t = brandTheme(hex)
       expect(hexToHsl(t.light400).l, `${hex} light400`)
         .toBeGreaterThanOrEqual(hexToHsl(t.accent).l - 1e-9)
+    }
+  })
+})
+
+/* The warming has one job and one failure mode. The job: a wash on a cream page should not read as
+   a second, colder ground. The failure mode every simpler version of this had: bleaching the pick
+   out of its own washes, worst for exactly the cool hues the warming exists for, because cream is
+   at the warm end of the plane and the pull is longer than the chroma it acts on. The cap is what
+   separates the two, so it is what these pin. */
+describe('warming a wash toward the page cannot bleach the shop out of it', () => {
+  const chroma = (hex: string): number => hexToHsl(hex).s
+
+  it('keeps a cool pick visibly its own colour', () => {
+    for (const hex of ['#1D4ED8', '#0F766E', '#2563EB', '#0284C7']) {
+      const t = brandTheme(hex)
+      expect(chroma(t.tint100), `${hex} tint100 ${t.tint100}`).toBeGreaterThan(0.10)
+      expect(chroma(t.tint200), `${hex} tint200 ${t.tint200}`).toBeGreaterThan(0.10)
+    }
+  })
+
+  it('leaves a neutral pick neutral, rather than handing it beige washes', () => {
+    for (const hex of ['#52525B', '#3F3F46', '#71717A']) {
+      const t = brandTheme(hex)
+      for (const [name, tint] of [['tint50', t.tint50], ['tint100', t.tint100], ['tint200', t.tint200]] as const) {
+        expect(chroma(tint), `${hex} ${name} ${tint}`).toBeLessThan(0.08)
+      }
+    }
+  })
+
+  /* The cap is a fraction of the tint's OWN chroma, so no pick can lose more than that fraction of
+     it. Swept, because the hues at risk are not the ones anyone thinks to spot-check.
+
+     Measured in OKLab, which is where the cap is defined. HSL saturation is the wrong instrument
+     here: a pale wash sits within a few 1/255 steps of white, where HSL's saturation swings wildly
+     on a rounding difference and reports a bleaching that is not there. EPSILON is that same 8-bit
+     rounding, in a/b terms. */
+  it('never moves any wash more than the cap allows, for any pick', () => {
+    const CAP = 0.5
+    const EPSILON = 0.004
+    for (let h = 0; h < 360; h += 5) {
+      for (const s of [0.2, 0.5, 0.8, 1]) {
+        for (const l of [0.2, 0.4, 0.6, 0.8]) {
+          const hex = hslToHex(h, s, l)
+          // The un-warmed tint100, restated from the module's own figures.
+          const base = hslToHex(h, s * 0.56, l + (1 - l) * 0.9054)
+          const [, a0, b0] = hexToOklab(base)
+          const [, a1, b1] = hexToOklab(brandTheme(hex).tint100)
+          const moved = Math.hypot(a1 - a0, b1 - b0)
+          const allowed = Math.hypot(a0, b0) * CAP + EPSILON
+          expect(moved, `${hex}: ${base} -> ${brandTheme(hex).tint100}`).toBeLessThanOrEqual(allowed)
+        }
+      }
+    }
+  })
+
+  /* The dark-theme accent is excluded from the warming, so it holds the picked hue exactly. A
+     regression that warms it would show up here before it showed up in a dark theme nobody has
+     shipped yet. */
+  it('leaves the dark-theme step on the picked hue', () => {
+    for (const hex of ['#1D4ED8', '#7A1028', '#0F766E', '#EAB308']) {
+      const picked = hexToHsl(hex).h
+      const got = hexToHsl(brandTheme(hex).light400).h
+      expect(Math.abs(got - picked), `${hex} light400`).toBeLessThan(1.5)
     }
   })
 })
