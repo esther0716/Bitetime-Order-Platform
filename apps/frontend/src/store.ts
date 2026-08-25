@@ -19,7 +19,19 @@ import type { CartLine } from '@bitetime/shared'
 export async function signIn(email: string, password: string) {
   const { data, error } = await auth.signInWithPassword({ email, password });
   if (error) throw error;
+  // The device limit, enforced by the backend against the session this sign-in just created.
+  // Deliberately NOT awaited for its result and never thrown from: a merchant whose sign-in
+  // worked must reach their dashboard even if this call did not land. The worst outcome of a
+  // missed call is a third live session until the next sign-in, and the worst outcome of a
+  // throw here is a merchant who cannot get in at all.
+  void enforceDeviceLimit();
   return data.user;
+}
+
+/** Ask the backend to trim this account to its device limit. Failures are swallowed by design. */
+async function enforceDeviceLimit() {
+  const r = await apiSend<{ evicted: number }>('/api/me/devices/enforce', 'POST', undefined, { auth: 'required' });
+  if (!r.ok) console.error('Device limit not enforced:', r.error.message);
 }
 
 // Merchant sign-up. `shop` is what the form collected about the SHOP, parked on the auth user
@@ -379,8 +391,42 @@ export async function updatePassword(password: string) {
   if (error) throw error
 }
 
+/**
+ * The key that tells the login screen this sign-out was the merchant's own doing.
+ *
+ * Without it, an intentional sign-out and an eviction are the same `SIGNED_OUT` event, and the
+ * login screen would explain the device limit to someone who simply clicked Sign out.
+ */
+export const SIGNED_OUT_ELSEWHERE_KEY = 'bt.signed_out_elsewhere';
+
 export async function signOut() {
-  await auth.signOut();
+  // `scope: 'local'`, and the default is NOT that. `@supabase/auth-js` defaults `signOut()` to
+  // `scope: 'global'`, which revokes EVERY session the account holds — so a merchant who signed
+  // out on their phone lost the laptop too, and a two-device account behaved as a one-device
+  // account. This line is what makes the device limit mean two devices.
+  try { sessionStorage.setItem(SIGNED_OUT_ELSEWHERE_KEY, 'no'); } catch { /* private mode */ }
+  await auth.signOut({ scope: 'local' });
+}
+
+/** One signed-in device, as the Devices panel shows it. */
+export interface Device {
+  id: string;
+  /** "Chrome on macOS", or "Unknown device". Read from the user agent, so it is a claim, not a fact. */
+  label: string;
+  current: boolean;
+  /** ISO 8601. When the session was last used. */
+  lastSeen: string;
+}
+
+export async function fetchMyDevices(): Promise<Result<Device[]>> {
+  return mapOk(
+    await apiGet<{ devices: Device[] }>('/api/me/devices', { auth: 'required' }),
+    (d) => d.devices,
+  );
+}
+
+export async function signOutDevice(sessionId: string): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/me/devices/${sessionId}`, 'DELETE', undefined, { auth: 'required' }));
 }
 
 export async function getCurrentUser() {
@@ -391,6 +437,15 @@ export async function getCurrentUser() {
 export function onAuthChange(callback: (user: User | null, event?: string) => void) {
   const { data: { subscription } } = auth.onAuthStateChange((event, session) => {
     const user = session?.user ?? null;
+    // A SIGNED_OUT that this tab did not ask for means the session row is gone: either a third
+    // device took the slot, or the merchant signed this device out from another one. Both read
+    // the same way to the person holding it, and the login screen says so.
+    if (event === 'SIGNED_OUT') {
+      try {
+        const mine = sessionStorage.getItem(SIGNED_OUT_ELSEWHERE_KEY) === 'no';
+        sessionStorage.setItem(SIGNED_OUT_ELSEWHERE_KEY, mine ? 'no' : 'yes');
+      } catch { /* private mode: the login screen simply says nothing */ }
+    }
     if (user && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {
       // Ensure profile exists and email_confirmed is up to date.
       // This handles the case where email confirmation was required at signUp
