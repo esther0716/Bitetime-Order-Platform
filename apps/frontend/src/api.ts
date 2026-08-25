@@ -71,9 +71,44 @@ async function resolveHeaders(
   return { headers: base } // auth:true, no session → send unauthenticated
 }
 
+/**
+ * Drop a session the server has already revoked.
+ *
+ * A revoked session does NOT announce itself. `auth-js` keeps the access token in localStorage and
+ * `getSession()` hands it back without asking anyone until it expires, so a device whose
+ * `auth.sessions` row was deleted — signed out from another device, or evicted by the merchant
+ * device limit — goes on believing it is signed in for up to `jwt_expiry`. Every call to this API
+ * 401s meanwhile, and the dashboard reads that as "we couldn't reach the server, you are still
+ * signed in", which is wrong twice over.
+ *
+ * So a 401 asks the authority. `getUser(token)` is a round trip to GoTrue, which answers
+ * `session_not_found` for a deleted session; only then is the local session dropped, which fires
+ * `SIGNED_OUT` and lands the merchant on the login screen with an explanation.
+ *
+ * The local session must exist first: without that check a 401 for any other reason would sign out
+ * someone whose token is perfectly good, or fire SIGNED_OUT for a guest who was never signed in.
+ */
+let revocationCheck: Promise<void> | null = null
+function forgetRevokedSession(): Promise<void> {
+  // One check at a time. A page-load burst of parallel reads would otherwise each ask GoTrue.
+  revocationCheck ??= (async () => {
+    try {
+      const { data: { session } } = await supabaseAuth.getSession()
+      if (!session) return // never signed in — this 401 is about something else
+      const { error } = await supabaseAuth.getUser(session.access_token)
+      if (!error) return   // the token is fine, so the 401 was about permission, not identity
+      // Deliberately NOT store.ts's signOut(): that one flags the sign-out as the user's own doing,
+      // and this one is not. The unflagged SIGNED_OUT is what the login screen explains.
+      await supabaseAuth.signOut({ scope: 'local' })
+    } catch { /* offline mid-check: the next 401 asks again */ }
+  })().finally(() => { revocationCheck = null })
+  return revocationCheck
+}
+
 // Turns a non-2xx Response into an ApiError, reading the backend's `{ error }` body when present.
 async function errorFromResponse(res: Response): Promise<ApiError> {
   const body = (await res.json().catch(() => ({}))) as { error?: string }
+  if (res.status === 401) await forgetRevokedSession()
   return { status: res.status, code: body.error, message: body.error || `Request failed: ${res.status}` }
 }
 

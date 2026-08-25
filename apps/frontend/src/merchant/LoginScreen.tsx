@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
-import { signIn, requestPasswordReset } from '../store'
+import { signIn, requestPasswordReset, SIGNED_OUT_ELSEWHERE_KEY } from '../store'
 import { authErrorCode } from '../authError'
 import { trackEvent } from '../analytics/events'
 import { useSession } from '../SessionContext'
@@ -21,6 +21,30 @@ export default function LoginScreen() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [notice, setNotice] = useState('')
+
+  // Set by onAuthChange when a SIGNED_OUT arrives that the tab did not ask for — the session row
+  // is gone. Either a third device took the slot, or the merchant signed this one out from
+  // another device. Both are the same news to the person reading it.
+  //
+  // Read as INITIAL STATE rather than in an effect: an effect that calls setState synchronously
+  // is a cascading render, and this value is known before the first paint. A boolean and not the
+  // sentence, so the sentence still follows a language switch.
+  const [signedOutElsewhere] = useState(() => {
+    try { return sessionStorage.getItem(SIGNED_OUT_ELSEWHERE_KEY) === 'yes' } catch { return false }
+  })
+
+  // Cleared separately, so a later visit to this screen does not repeat old news. Clearing is an
+  // external write and not state, which is exactly what an effect is for.
+  useEffect(() => {
+    try { sessionStorage.removeItem(SIGNED_OUT_ELSEWHERE_KEY) } catch { /* private mode */ }
+  }, [])
+
+  const deviceNotice = signedOutElsewhere
+    ? t(
+      'You were signed out. Your account allows 2 devices, so signing in on another one signs out the device used longest ago.',
+      '您已被登出。您的账号最多支持 2 台设备，在其他设备登录后，最久未使用的设备会被登出。',
+    )
+    : ''
 
   // Never surface a raw supabase message — a server-side failure (a 500) carries an English DB
   // string, or none, which is how a raw error once rendered as "{}". Map to the handful of
@@ -84,9 +108,9 @@ export default function LoginScreen() {
             ? t("Enter your email and we'll send you a link to set a new password.", '输入你的邮箱，我们会发送重设密码的链接。')
             : t('Sign in to manage your shop.', '登录以管理您的店铺。')}
         </p>
-        {notice && (
+        {(notice || deviceNotice) && (
           <div role="status" className="text-[13px] text-primary bg-danger-100 border border-danger-100 rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
-            {notice}
+            {notice || deviceNotice}
           </div>
         )}
         {msg && (
