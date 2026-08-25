@@ -22,8 +22,9 @@ import { useDashboardSubsection } from '../useDashboardSection'
 import AddressAutocomplete from '../store/AddressAutocomplete'
 import PaymentQrPicker from './PaymentQrPicker'
 import SettingsMenu from './SettingsMenu'
+import DevicesTab from './DevicesTab'
 
-type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'brand' | 'marketing' | 'notifications' | 'subscription' | 'referral'
+type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'brand' | 'marketing' | 'notifications' | 'subscription' | 'referral' | 'devices'
 
 // Shop Settings (issue #19). A container renders a submenu column and the active
 // tab's form; each tab is its own form with its own Save. Only the active tab can
@@ -48,6 +49,7 @@ export default function ShopSettings() {
     { key: 'notifications', label: t('Notifications', '通知') },
     { key: 'subscription', label: t('Subscription', '订阅') },
     { key: 'referral', label: t('Referral', '推荐') },
+    { key: 'devices', label: t('Devices', '设备') },
   ]
 
   // The sub-tab lives in the URL hash (`#settings/payment`), so it survives a refresh and a Pro
@@ -117,6 +119,8 @@ export default function ShopSettings() {
         {tab === 'notifications' && <NotificationsTab onDirtyChange={setDirty} />}
         {tab === 'subscription' && <SubscriptionTab />}
         {tab === 'referral' && <ReferralTab />}
+        {/* No Save and no dirty state, so unlike its neighbours it takes no onDirtyChange. */}
+        {tab === 'devices' && <DevicesTab />}
       </div>
     </div>
   )
