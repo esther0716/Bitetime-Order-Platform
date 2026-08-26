@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { app, releaseDeps } from '../../src/app.js'
+import { env } from '../../src/env.js'
 import { makeUser, serviceClient } from '../rls/helpers.js'
 
 // The pull answers as soon as the drafts are stored and rewrites them afterwards, so every
@@ -21,6 +22,12 @@ function get(path: string, token?: string) {
 }
 function post(path: string, token?: string) {
   return app.request(path, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {} })
+}
+function internalPull(secret?: string) {
+  return app.request('/api/internal/releases-pull', {
+    method: 'POST',
+    headers: secret !== undefined ? { 'x-sweep-secret': secret } : {},
+  })
 }
 function patch(path: string, body: unknown, token?: string) {
   return app.request(path, {
@@ -225,5 +232,52 @@ describe('releases', () => {
     const bogusId = '00000000-0000-0000-0000-000000000000'
     expect((await patch(`/api/admin/releases/${bogusId}`, { status: 'published' }, superToken)).status).toBe(404)
     expect((await post(`/api/admin/releases/${bogusId}/regenerate`, superToken)).status).toBe(404)
+  })
+
+  // POST /api/internal/releases-pull — the release workflow's own door onto the same pull.
+  // No user token reaches it, so the shared secret is the whole gate and these check it holds.
+  describe('the workflow pull', () => {
+    it('refuses with no secret configured, and refuses a missing or wrong header', async () => {
+      const saved = env.releasePullSecret
+      env.releasePullSecret = ''
+      try {
+        expect((await internalPull('anything')).status).toBe(503)
+      } finally {
+        env.releasePullSecret = saved
+      }
+      expect((await internalPull()).status).toBe(403)
+      expect((await internalPull('wrong-secret')).status).toBe(403)
+    })
+
+    it('stores the new release as a draft, never as published', async () => {
+      releaseDeps.listReleases = async () => [
+        {
+          tag_name: 'releases-test-workflow', name: 'Workflow', body: 'raw body workflow',
+          html_url: 'https://github.com/x/y/releases/tag/releases-test-workflow',
+          published_at: '2026-08-26T00:00:00Z',
+        },
+      ]
+      releaseDeps.humanize = async () => ({ title: 'Cut by the workflow', summary: 'A summary.' })
+
+      const res = await internalPull(env.releasePullSecret)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ pulled: 1 })
+      await settleHumanization()
+
+      const rows = (await (await get('/api/admin/releases', superToken)).json()) as Array<{
+        tag: string; title: string | null; status: string
+      }>
+      const row = rows.find((r) => r.tag === 'releases-test-workflow')
+      expect(row?.title).toBe('Cut by the workflow')
+      expect(row?.status).toBe('draft')
+
+      // The merchant-facing endpoint must not see it until a human publishes it.
+      expect((await get('/api/releases/releases-test-workflow')).status).toBe(404)
+    })
+
+    it('answers 502 when GitHub cannot be reached', async () => {
+      releaseDeps.listReleases = async () => null
+      expect((await internalPull(env.releasePullSecret)).status).toBe(502)
+    })
   })
 })

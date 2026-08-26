@@ -69,6 +69,12 @@ export const env = {
   // trialFeedbackSweepSecret: unset means the endpoint always refuses (503).
   sampleShopScreenshotSweepSecret: process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET || '',
 
+  // Shared secret for the release pull called by .github/workflows/release.yml the moment it
+  // cuts a tag (POST /api/internal/releases-pull). Same posture as trialFeedbackSweepSecret:
+  // unset means the endpoint always refuses (503), and the only cost of that is that a
+  // superadmin pulls the release by hand from /admin, exactly as before this was automated.
+  releasePullSecret: process.env.RELEASE_PULL_SECRET || '',
+
   // Signs the merchant email-verification link (emailVerifyToken.ts).
   //
   // OPTIONAL, same posture as GOOGLE_MAPS_API_KEY and ANTHROPIC_API_KEY: unset, the feature is

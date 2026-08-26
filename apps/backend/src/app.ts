@@ -2212,9 +2212,15 @@ async function humanizeAndStore(row: { id: string; tag: string; name: string; ra
 // the rest. Reassigned per pull, so awaiting it awaits the most recent pull's work.
 export let releaseHumanization: Promise<unknown> = Promise.resolve()
 
-app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
+// The pull itself, shared by the two doors onto it: the superadmin button in /admin and the
+// release workflow's own call the moment it cuts a tag. One function, so an automatic pull and
+// a hand pull cannot drift apart.
+//
+// Returns the number of NEW releases stored. Throws only what the DB throws; a GitHub that
+// cannot be reached is reported as null, which each caller turns into its own status.
+async function pullReleases(): Promise<number | null> {
   const fetched = await releaseDeps.listReleases(env.githubToken, 10)
-  if (fetched === null) return c.json({ error: 'Could not reach GitHub' }, 502)
+  if (fetched === null) return null
 
   const existingTags = new Set(await listReleaseTags())
   const toPull = fetched.filter((r) => !existingTags.has(r.tag_name))
@@ -2246,7 +2252,13 @@ app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
   // no humanize_error — indistinguishable from still-in-progress. That is what the per-row
   // Regenerate action is for; the dashboard stops waiting after a bounded spell and leaves
   // the row sat there rather than pretending the work is still coming.
-  return c.json({ pulled: rows.length })
+  return rows.length
+}
+
+app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
+  const pulled = await pullReleases()
+  if (pulled === null) return c.json({ error: 'Could not reach GitHub' }, 502)
+  return c.json({ pulled })
 })
 
 app.get('/api/admin/releases', requireSuperadmin, async (c) => {
@@ -2280,6 +2292,27 @@ app.get('/api/releases/:tag', async (c) => {
   const row = await getPublishedReleaseByTag(c.req.param('tag'))
   if (!row) return c.json({ error: 'Release not found' }, 404)
   return c.json(row)
+})
+
+// Not user-authenticated — called by .github/workflows/release.yml the moment it cuts a tag,
+// gated by a shared secret header instead. `requireSuperadmin` cannot serve that caller: it
+// wants a GoTrue access token, and an access token expires, so there is nothing to put in a
+// repository secret that would still work next month.
+//
+// Fails CLOSED (503) when the secret is unset, matching the other internal routes. What that
+// costs is small and worth stating: the tag and the GitHub release still exist, so a
+// superadmin pulls them by hand from /admin exactly as they did before this was automated.
+//
+// This lands DRAFTS. Nothing here publishes, and nothing here should: the publish gate is a
+// human reading what Claude wrote about the release before every merchant does.
+app.post('/api/internal/releases-pull', async (c) => {
+  if (!env.releasePullSecret) return c.json({ error: 'Release pull disabled' }, 503)
+  const provided = c.req.header('x-sweep-secret') || ''
+  if (!safeEqualSecret(provided, env.releasePullSecret)) return c.json({ error: 'Forbidden' }, 403)
+
+  const pulled = await pullReleases()
+  if (pulled === null) return c.json({ error: 'Could not reach GitHub' }, 502)
+  return c.json({ pulled })
 })
 
 // ── Trial feedback (#155) ───────────────────────────────────────────────────────

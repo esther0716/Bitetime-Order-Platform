@@ -103,6 +103,10 @@ function loadSupabaseEnv() {
     process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET = 'test-screenshot-sweep-secret-stub'
   }
 
+  // Same reasoning once more: it only gates POST /api/internal/releases-pull, whose GitHub and
+  // Claude calls both go through `releaseDeps`, which the suite swaps.
+  if (!process.env.RELEASE_PULL_SECRET) process.env.RELEASE_PULL_SECRET = 'test-release-pull-secret-stub'
+
   const missing = Object.keys(FROM_CLI).filter(name => !process.env[name])
   if (missing.length === 0) return
 
