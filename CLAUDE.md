@@ -284,6 +284,32 @@ The `FAQPage` JSON-LD lives on **`/faq` and each `/for/<slug>`**, never on `/` a
 
 `index.html`'s static title and description are therefore the site's ONE default. Multiple pages with their own titles is what makes Google's **sitelinks** possible at all (#169) — a sitelink's label is the target page's `<title>` and its snippet is that page's meta description. Sitelinks stay algorithmic: no markup requests them, `SiteNavigationElement` is not used by Google, and they also need the site to rank first for its brand query.
 
+### Releases
+
+**Every push to `main` cuts a release** — `.github/workflows/release.yml`, so in practice every
+dev → main merge. It works out the version, creates the tag and the GitHub release with
+`--generate-notes`, then calls the backend so the release lands in the app as a draft. Nothing
+about it publishes: a superadmin still reads the Claude-written copy in `/admin` and presses
+Publish before merchants see it. The old `release: vX.Y.Z` pull request title is dead — the
+version is no longer something a human types.
+
+The version rule is `apps/backend/src/releaseVersion.ts` (pure, unit-tested): any `feat` in the
+range bumps the minor, a `!` or a `BREAKING CHANGE:` footer bumps the major, anything else bumps
+the patch. Only the commit SUBJECT decides `feat` versus `fix`, so a body that quotes another
+commit cannot move the version; merge commits are excluded, because their subject describes
+nothing and every commit they bring in is already in the range. Tags carry **no `v` prefix**, and
+the rule reads the two-part `0.2` as `0.2.0`. `pnpm --filter @bitetime/backend release:version`
+prints what the next tag would be, and nothing else — run it before a merge to see it.
+
+The workflow needs **`RELEASE_PULL_SECRET`** as a repo secret AND as the backend's own env var
+(`BACKEND_URL` it reuses from the screenshot sweep). It gates
+`POST /api/internal/releases-pull`, which is the same `pullReleases()` the superadmin button
+calls — one function, so an automatic pull and a hand pull cannot drift apart. `requireSuperadmin`
+could not serve this caller: that guard wants a GoTrue access token, and an access token expires,
+so there is nothing to put in a repo secret that still works next month. Unset, the endpoint fails
+closed with a 503 and the recovery is a superadmin pressing Pull — the tag and the GitHub release
+exist either way.
+
 ## Agent skills
 
 ### Issue tracker
