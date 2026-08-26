@@ -14,9 +14,9 @@ colors:
   ink-950: "#09090B"
   white: "#FFFFFF"
   cream: "#F2EAE0"
-  brand-50: "#FDF0F2"
-  brand-100: "#F5E6E8"
-  brand-200: "#EBCDD3"
+  brand-50: "#FCF1EF"
+  brand-100: "#F4E7E6"
+  brand-200: "#E6D0D1"
   brand-400: "#D4708A"
   brand-500: "#7A1028"
   brand-600: "#550A1A"
@@ -157,10 +157,10 @@ Every pair named here is asserted by `apps/frontend/src/tokens.test.ts`, which r
 
 ### Primary
 
-- **Brand 500** (`#7A1028`): oxblood. The single brand voice — primary buttons, headings, active nav, focus rings. Carries identity on every screen. 10.41:1 on the page background.
+- **Brand 500** (`#7A1028`): oxblood. The brand voice — primary buttons, headings, active nav, focus rings. Carries identity on every platform screen, and is the default a shop inherits until its merchant picks another (ADR 0017). 10.41:1 on the page background.
 - **Brand 600** (`#550A1A`): hover/pressed on oxblood fills only. Never a resting fill.
 - **Brand 700** (`#3F0713`): text on a brand tint (chips, active rows).
-- **Brand 100 / 50** (`#F5E6E8` / `#FDF0F2`): the accent at low strength — selected-row wash, chip backgrounds.
+- **Brand 100 / 50** (`#F4E7E6` / `#FCF1EF`): the accent at low strength — selected-row wash, chip backgrounds.
 - **Brand 400** (`#D4708A`): a light rose, used **only** as the dark-theme accent. It exists because `-500` is far too dark to read on `#09090B`.
 
 ### Secondary
@@ -197,7 +197,9 @@ Six order statuses, four colour families. `new` and `preparing` share the info h
 
 ### Named Rules
 
-**The One Voice Rule.** Oxblood is the only brand accent. It does not compete with a second saturated colour — the semantic set is reserved for status and nothing else. If a screen has two accents fighting, one of them is wrong.
+**The One Voice Rule.** One brand accent per screen. It does not compete with a second saturated colour — the semantic set is reserved for status and nothing else. If a screen has two accents fighting, one of them is wrong.
+
+Since ADR 0017 the voice is not always oxblood. A merchant picks their shop's colour, and `brandTheme.ts` derives the whole `--brand-*` ramp from it for that shop's storefront and dashboard. Oxblood stays the platform's voice — marketing, `/admin`, the auth screens — and the default for a shop that never chose. The rule itself is unchanged: still exactly one accent on any page. Derived palettes are contrast-gated by `brandTheme.test.ts` rather than `tokens.test.ts`, because they do not exist until a merchant types one.
 
 **The Subtle-Is-Not-Text Rule.** `--ink-400` (`#A1A1AA`) and `--ink-500` (`#71717A`) are border and icon colours. Neither clears AA as text on the cream canvas. All muted text goes on `--color-text-muted` (`--ink-600`). `tokens.test.ts` pins both below the text threshold on cream, so a future edit cannot quietly promote either.
 
@@ -293,7 +295,7 @@ The mono order number (`PREFIX-YYMMDD-XXXX`) is the brand's receipt stamp — th
 ## 6. Do's and Don'ts
 
 ### Do:
-- **Do** keep oxblood (`#7A1028`) as the single brand voice; hover to `#550A1A`, never a second resting accent (The One Voice Rule).
+- **Do** keep one brand voice per screen — oxblood (`#7A1028`) on platform surfaces, the shop's own colour on its storefront and dashboard; hover one step darker, never a second resting accent (The One Voice Rule).
 - **Do** reach for a **semantic** token first (`--color-bg`, `--color-text-muted`, `--color-border`). Primitives (`--ink-*`, `--brand-*`) are available for what the semantic layer does not name; if you need the same primitive in three places, add the semantic token instead.
 - **Do** build depth by stepping up off the cream canvas onto `#FFFFFF`, with `--ink-100`/`--ink-50` for rails and recesses, plus `0.5px` hairlines — before reaching for a shadow.
 - **Do** keep body copy on `--color-text` and secondary copy on `--color-text-muted` (`--ink-600`) — both clear AA on cream and on white. `--ink-400` and `--ink-500` are borders and icons only (The Subtle-Is-Not-Text Rule).

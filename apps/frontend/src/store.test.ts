@@ -158,53 +158,50 @@ describe('fetchProfileByUserId', () => {
   })
 })
 
-describe('signUp profile write', () => {
+describe('signUp', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('PUTs /api/me/profile with name/email/email_confirmed, a bearer token, and no user_id', async () => {
-    __mocks.signUp.mockResolvedValueOnce({
-      data: { user: { id: 'u1', email_confirmed_at: null } }, error: null,
-    })
-    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ ok: true }) })
+  const shop = {
+    name: 'Sunny Bakes',
+    businessNature: 'bakery',
+    currency: 'MYR' as const,
+    billing: 'yearly' as const,
+  }
+
+  it('POSTs the merchant signup door with the account AND the shop, and no bearer token', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) })
     vi.stubGlobal('fetch', fetchMock)
 
-    await signUp('Fai', 'f@x.co', 'pw')
+    await signUp('Fai', 'f@x.co', 'hunter2hunter2', shop)
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toMatch(/\/api\/me\/profile$/)
-    expect(init.method).toBe('PUT')
-    expect(init.headers.Authorization).toBe('Bearer tok')
-    const body = JSON.parse(init.body)
-    expect(body).toEqual({ name: 'Fai', email: 'f@x.co', email_confirmed: false })
-    expect(body).not.toHaveProperty('user_id')
+    expect(url).toMatch(/\/api\/merchant\/signup$/)
+    expect(init.method).toBe('POST')
+    // Unauthenticated by design: there is no account yet to hold a token.
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' })
+    expect(JSON.parse(init.body)).toEqual({
+      email: 'f@x.co', password: 'hunter2hunter2', name: 'Fai', shop,
+    })
   })
 
-  it('sends email_confirmed: true when the auth user is already confirmed', async () => {
-    __mocks.signUp.mockResolvedValueOnce({
-      data: { user: { id: 'u1', email_confirmed_at: '2026-07-02T00:00:00Z' } }, error: null,
-    })
-    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ ok: true }) })
-    vi.stubGlobal('fetch', fetchMock)
-
-    await signUp('Fai', 'f@x.co', 'pw')
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body).toMatchObject({ email_confirmed: true })
+  it('never calls auth.signUp — the client-side door is what left merchants in their inbox', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) }))
+    await signUp('Fai', 'f@x.co', 'hunter2hunter2', shop)
+    expect(__mocks.signUp).not.toHaveBeenCalled()
   })
 
-  it('does not throw when there is no session yet (pending email confirmation)', async () => {
-    // No session at signup time (email confirmation is on project-wide) → the PUT 401s, same
-    // shape as RLS blocking the old browser write; ensureGlobalProfile swallows it and signUp
-    // still resolves with the new user. It's retried from onAuthChange once a session exists.
-    __mocks.signUp.mockResolvedValueOnce({
-      data: { user: { id: 'u1', email_confirmed_at: null } }, error: null,
-    })
-    __mocks.getSession.mockResolvedValueOnce({ data: { session: null } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'Unauthorized' }) }))
+  it('throws the endpoint refusal as a SignupError carrying its code', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
+      ok: false, status: 409, json: async () => ({ error: 'duplicate_email' }),
+    }))
+    await expect(signUp('Fai', 'f@x.co', 'hunter2hunter2', shop))
+      .rejects.toMatchObject({ name: 'SignupError', code: 'duplicate_email' })
+  })
 
-    await expect(signUp('Fai', 'f@x.co', 'pw')).resolves.toMatchObject({ id: 'u1' })
+  it('reports an unreachable backend as network, not as a refusal', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch')))
+    await expect(signUp('Fai', 'f@x.co', 'hunter2hunter2', shop))
+      .rejects.toMatchObject({ code: 'network' })
   })
 })
 

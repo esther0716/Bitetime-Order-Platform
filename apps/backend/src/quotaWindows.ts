@@ -136,3 +136,14 @@ export const invoiceLookupIpWindow = {
     return minute && hour
   },
 }
+
+// How many devices one MERCHANT account may hold at once. A device is one GoTrue session.
+//
+// It sits here with the other platform figures rather than in deviceLimit.ts, so the numbers a
+// shop is measured against are in one file. Unlike everything else in this module it bounds no
+// spend and no request rate: it bounds credential sharing, which is why it is a small number and
+// not a generous one.
+//
+// Customers and superadmins are not bounded at all. See
+// docs/superpowers/specs/2026-08-25-merchant-device-limit-design.md.
+export const MERCHANT_DEVICE_LIMIT = 2

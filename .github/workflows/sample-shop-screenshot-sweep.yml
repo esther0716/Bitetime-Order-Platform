@@ -9,10 +9,32 @@ name: sample-shop-screenshot-sweep
 on:
   schedule:
     - cron: '0 4 * * 1'
-  workflow_dispatch: {}
+  # Every production deploy re-shoots every sample shop. A storefront redesign makes every stored
+  # screenshot stale at the same moment, and until this trigger existed the carousel showed the
+  # PREVIOUS design until the following Monday — three weeks of it, once. Vercel's GitHub
+  # integration writes the Deployment status this fires on, so there is nothing to poll and no
+  # sleep: the event arrives after the new build is live. The `if:` below is what keeps preview
+  # deploys — one per push on every branch — from each spending an Actions run.
+  deployment_status:
+  # Dispatched by POST /api/admin/set-merchant-sample the moment a superadmin flags a shop, so
+  # its card does not wait up to a week for the cron. `merchant_id` empty (the manual "Run
+  # workflow" button) sweeps every sample shop, exactly as the schedule does.
+  workflow_dispatch:
+    inputs:
+      merchant_id:
+        description: 'Capture this one shop only. Leave empty to sweep every sample shop.'
+        required: false
+        default: ''
 
 jobs:
   sweep:
+    # A schedule or a dispatch always runs; a deployment status runs only for a SUCCEEDED
+    # PRODUCTION deployment. `state` also carries 'pending', 'failure' and 'error', and
+    # capturing a storefront off a failed deploy would store screenshots of an error page.
+    if: >-
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment_status.environment == 'Production')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -24,3 +46,5 @@ jobs:
           FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
           SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET: ${{ secrets.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET }}
+          # Empty on a schedule and on a deployment status: sweep every sample shop.
+          MERCHANT_ID: ${{ inputs.merchant_id }}

@@ -37,6 +37,10 @@ export interface Merchant {
    *  not written one, which draws no line at all rather than an empty one. */
   description?: string | null
   description_zh?: string | null
+  /** The shop's one brand colour, `#RRGGBB` or null for the platform accent. Read it through
+   *  `brandTheme()`, never directly: the storefront needs nine derived values, not this one, and a
+   *  null here is a normal state (most shops), not a missing value. */
+  brand_color?: string | null
   /** The shop's menu sections, in display order (ADR 0013). Read through
    *  `menuCategoriesFromRow`, never directly — the drivers disagree about whether jsonb arrives
    *  parsed, and anything unreadable must fall back to "no categories", not throw. */

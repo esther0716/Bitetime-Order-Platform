@@ -1,0 +1,95 @@
+# Cuts a release every time work reaches `main` — which, in this repository, means every time
+# the dev → main pull request merges.
+#
+# Before this file, the sequence was manual and three steps long: merge dev into main, run
+# `gh release create <version> --generate-notes` by hand, then open /admin and press Pull. The
+# middle step is what made the whole chain optional, and a release that is never tagged is a
+# release no merchant is ever told about — the "what's new" bell has nothing to show.
+#
+# ONE REPO SECRET IS REQUIRED and is NOT set by this file:
+#   RELEASE_PULL_SECRET — must equal the backend's own env var of the same name (Railway)
+# `BACKEND_URL` is already set for the screenshot sweep and is reused here. Without either, the
+# pull step fails and the job goes red; the tag and the GitHub release still exist, so the
+# recovery is a superadmin pressing Pull in /admin.
+#
+# Nothing here publishes anything to merchants. The pull lands DRAFTS, and a superadmin still
+# reads what Claude wrote about the release before every shop does.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+# One release at a time. Two pushes landing together would otherwise both read the same "last
+# tag" and try to cut the same version, and the second would fail on an existing tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Creating the tag and the release. Nothing else here writes to the repository.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The version rule reads `git describe` and the whole commit range since the last
+          # tag. A shallow checkout has neither, and would silently start again from 0.0.1.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+
+      - name: Work out the next version
+        id: version
+        run: echo "value=$(pnpm --silent --filter @bitetime/backend release:version 2>/dev/null)" >> "$GITHUB_OUTPUT"
+
+      # A push carrying only merge commits (or only the tag) leaves nothing to release, and the
+      # script prints an empty line for it. An existing tag means this commit was already
+      # released — a re-run of the workflow, most often. Both skip rather than fail.
+      - name: Decide whether to release
+        id: decide
+        run: |
+          VERSION='${{ steps.version.outputs.value }}'
+          if [ -z "$VERSION" ]; then
+            echo "No releasable commits since the last tag." >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          elif git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "Tag $VERSION already exists — nothing to do." >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --generate-notes writes the same PR-title list every release in this repository already
+      # carries, which is exactly the raw body the Claude humanizer is written against. It also
+      # creates the tag, so there is no separate tag step.
+      - name: Cut the tag and the release
+        if: steps.decide.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          gh release create "$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --generate-notes
+          echo "Released [$VERSION](${{ github.server_url }}/${{ github.repository }}/releases/tag/$VERSION)" >> "$GITHUB_STEP_SUMMARY"
+
+      # Stores the release as a draft in the app and starts the Claude rewrite. The endpoint
+      # reads GitHub itself rather than taking a body from here, so it cannot be told about a
+      # release that does not exist.
+      - name: Pull it into the app as a draft
+        if: steps.decide.outputs.go == 'true'
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          RELEASE_PULL_SECRET: ${{ secrets.RELEASE_PULL_SECRET }}
+        run: |
+          if [ -z "$BACKEND_URL" ] || [ -z "$RELEASE_PULL_SECRET" ]; then
+            echo "BACKEND_URL or RELEASE_PULL_SECRET is not set — pull the release by hand from /admin." >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 60 \
+            -X POST "$BACKEND_URL/api/internal/releases-pull" \
+            -H "x-sweep-secret: $RELEASE_PULL_SECRET"

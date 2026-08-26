@@ -15,7 +15,8 @@
     "db:migrate": "supabase migration up",
     "db:push": "supabase db push",
     "db:seed:superadmin": "./scripts/seed-superadmin.sh",
-    "screenshot:sweep": "node --experimental-strip-types scripts/captureSampleShopScreenshots.ts"
+    "screenshot:sweep": "node --experimental-strip-types scripts/captureSampleShopScreenshots.ts",
+    "release:version": "node --import jiti/register scripts/nextVersion.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

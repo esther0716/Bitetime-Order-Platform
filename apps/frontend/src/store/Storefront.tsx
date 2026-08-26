@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
@@ -113,6 +113,18 @@ export default function Storefront() {
   const { merchant: merchantNullable, refresh: refreshMerchant } = useMerchant()
   const merchant = merchantNullable as NonNullable<typeof merchantNullable>
   const { lang, t, account, profile, refreshProfile } = useSession()
+  // ?preview=1 — the shop, without the order form. Read by the sample-shop screenshot sweep
+  // (apps/backend/scripts/captureSampleShopScreenshots.ts) so the card on /sample-shops shows a
+  // menu rather than sign-in links, a language picker and an empty date calendar, which is what
+  // a 390x844 capture of the real page is mostly made of.
+  //
+  // PRESENTATION ONLY, and it must stay that way. Nothing below branches on it: the cart still
+  // works, the totals still price, the submit still submits. It hides chrome through one CSS rule
+  // in index.css and hides nothing that decides anything, so a customer who somehow arrives with
+  // the parameter is looking at a shop, not at a different application. Making it a mode with its
+  // own code path is how a marketing screenshot ends up able to break a real checkout.
+  const [searchParams] = useSearchParams()
+  const preview = searchParams.get('preview') === '1'
   // Enter-only, and deliberately not inside an AnimatePresence: an exit-gated swap between the
   // form and the success view would never complete in a backgrounded tab — a customer who
   // switched to their banking app to pay would come back to a storefront frozen mid-order.
@@ -1055,7 +1067,12 @@ export default function Storefront() {
         </div>
       ) : (
         // ── Order form ──────────────────────────────────────────────────────
-        <div key="form" {...enterView} className={cn('form-wrap', enterView.className)}>
+        <div
+          key="form"
+          {...enterView}
+          className={cn('form-wrap', enterView.className)}
+          data-preview={preview ? '1' : undefined}
+        >
           {/* Header with lang switch */}
           <div className="flex items-start justify-between gap-4 mb-8 max-[480px]:flex-col max-[480px]:gap-2">
             <div>
@@ -1084,7 +1101,7 @@ export default function Storefront() {
                   {t('Privacy', '隐私政策')}
                 </a>
               </p>
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center gap-3 mt-1" data-preview-hide>
                 {account ? (
                   // History carries the courier and AWB inline, so it was already everything the
                   // old /track screen said and more — which is why that screen is gone. A signed-in
@@ -1113,7 +1130,7 @@ export default function Storefront() {
                 </Link>
               </div>
             </div>
-            <div className="flex justify-end flex-shrink-0 max-[480px]:justify-start">
+            <div className="flex justify-end flex-shrink-0 max-[480px]:justify-start" data-preview-hide>
               <LanguageSelect />
             </div>
           </div>
@@ -1136,7 +1153,11 @@ export default function Storefront() {
           />
 
           {/* Product list */}
-          <div className="mb-7">
+          {/* data-sample-capture: the marker the sample-shop screenshot sweep waits for
+              (apps/backend/scripts/captureSampleShopScreenshots.ts). The shop and its products
+              are read after mount, so `load` alone fires on a page with no shop on it yet.
+              Rename it and the sweep starts timing out. */}
+          <div className="mb-7" data-sample-capture="menu">
             <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-3">{t('Menu', '菜单')}</div>
             {activeProducts.length === 0 ? (
               <p className="text-[14px] text-muted-foreground italic py-6 text-center">

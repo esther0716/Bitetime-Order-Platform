@@ -29,7 +29,9 @@ import { isOurEvent } from './webhookOwnership.js'
 import { resendSend } from './email.js'
 import { notifyOrderPlaced, telegramSend } from './notify.js'
 import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
-import { signUpCustomer, isDuplicateEmailError } from './customerSignup.js'
+import { signUpAccount, isDuplicateEmailError } from './accountSignup.js'
+import { makeEmailVerifyToken, readEmailVerifyToken } from './emailVerifyToken.js'
+import { buildEmailVerifyMail } from './emailVerifyMail.js'
 import { createSlidingWindow } from './rateLimit.js'
 import { clientIp } from './clientIp.js'
 import { invoiceFileName, renderInvoicePdf } from './invoice.js'
@@ -45,7 +47,10 @@ import { writeProductOrder } from './productOrderDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT } from './quotaWindows.js'
+import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT, MERCHANT_DEVICE_LIMIT } from './quotaWindows.js'
+import { chooseEvictions, sessionIdFromToken, lastSeen } from './deviceLimit.js'
+import { listSessions, deleteSessions } from './deviceLimitDb.js'
+import { deviceIdentity } from './deviceLabel.js'
 import { usagePeriod, nextResetDate, LIFETIME_PERIOD, type AiFeature } from './aiUsage.js'
 import { consumeAiCall } from './aiUsageDb.js'
 import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
@@ -63,8 +68,10 @@ import {
 import { buildTrialFeedbackEmail } from './trialFeedbackEmail.js'
 import {
   createGithubIssue, closeGithubIssue, reopenGithubIssue, listGithubReleases,
+  dispatchSampleScreenshot,
   buildIssueTitle, buildIssueBody, categoryToLabel,
   type CreateGithubIssue, type GithubIssueAction, type ListGithubReleases,
+  type DispatchSampleScreenshot,
 } from './github.js'
 import { humanizeRelease, type HumanizeRelease } from './releases.js'
 import { extractMenu, MAX_MENU_IMAGE_BYTES, type ExtractMenu } from './menuImport.js'
@@ -74,7 +81,7 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
+import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES, pendingShopFromBody, pendingShopMetadata } from '@bitetime/shared'
 import type { CartLine, Granularity } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename, type ReportWindow } from './report.js'
 import { resolveRevenueRange, type ResolvedRevenueRange } from './revenueWindow.js'
@@ -756,6 +763,99 @@ app.get('/api/me/merchant', requireUser, async (c) => {
   const user = c.get('user')
   const { data } = await admin.from('merchants').select('*').eq('owner_id', user.id).maybeSingle()
   return c.json(data ?? null)
+})
+
+// ── Device limit ──────────────────────────────────────────────────────────────
+//
+// A merchant account holds at most MERCHANT_DEVICE_LIMIT signed-in devices, and one device is one
+// GoTrue session. See docs/superpowers/specs/2026-08-25-merchant-device-limit-design.md.
+//
+// THE SESSION ID COMES FROM THE JWT, never from a body or a path. `requireUser` has already handed
+// the token to GoTrue, which rejects a bad signature, a stale expiry or a deleted session, so the
+// claim below is read from a string that is already proven. A body-supplied id would let any
+// merchant sign out any device by guessing a uuid.
+//
+// These sit under /api/me/ beside the two routes above, and carry no merchant id: a path with one
+// in it would invite a handler that trusts it.
+
+/** The caller's own user id and session id, or null when the token carries no session claim. */
+function callerSession(c: Context<AppEnv>): { userId: string; sessionId: string } | null {
+  const sessionId = sessionIdFromToken(bearer(c))
+  return sessionId ? { userId: c.get('user').id, sessionId } : null
+}
+
+/** True when this account owns a shop. The limit is a merchant rule and applies to nobody else. */
+async function ownsAShop(userId: string): Promise<boolean> {
+  const { data } = await admin.from('merchants').select('id').eq('owner_id', userId).limit(1)
+  return (data?.length ?? 0) > 0
+}
+
+// Called by the browser right after a sign-in succeeds.
+//
+// It answers 200 for a customer rather than 403, unlike the two routes below: every sign-in calls
+// this, and a customer signing in must not see an error in their console for a rule that is not
+// about them.
+app.post('/api/me/devices/enforce', requireUser, async (c) => {
+  const caller = callerSession(c)
+  if (!caller) return c.json({ evicted: 0 })
+  if (!(await ownsAShop(caller.userId))) return c.json({ evicted: 0 })
+
+  const sessions = await listSessions(caller.userId)
+  const doomed = chooseEvictions({
+    sessions,
+    currentSessionId: caller.sessionId,
+    limit: MERCHANT_DEVICE_LIMIT,
+  })
+  const evicted = await deleteSessions(caller.userId, doomed)
+  return c.json({ evicted })
+})
+
+app.get('/api/me/devices', requireUser, async (c) => {
+  const caller = callerSession(c)
+  if (!caller) return c.json({ error: 'no_session_claim' }, 401)
+  if (!(await ownsAShop(caller.userId))) return c.json({ error: 'Forbidden' }, 403)
+
+  const sessions = await listSessions(caller.userId)
+  // The browser and platform go out as PARTS. The sentence joining them is prose, and prose is
+  // t(en, zh)'s job in the browser — a finished "Chrome on macOS" from here is untranslatable.
+  //
+  // `lastSeen` comes from deviceLimit.ts rather than being re-coalesced here: the ranking rule the
+  // eviction turns on has one home, so the list cannot drift out of step with what gets evicted.
+  // Most recently used first, so the merchant reads the list in the order they expect.
+  const devices = sessions
+    .map(s => ({
+      id: s.id,
+      ...deviceIdentity(s.userAgent),
+      current: s.id === caller.sessionId,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+      // The eviction RANK, which is not the same field as `updatedAt` and is the one the limit
+      // actually turns on. Sent so the order of this list is the order devices will go in.
+      lastSeen: new Date(lastSeen(s)).toISOString(),
+    }))
+    .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
+  return c.json({ devices, limit: MERCHANT_DEVICE_LIMIT })
+})
+
+app.delete('/api/me/devices/:sessionId', requireUser, async (c) => {
+  const caller = callerSession(c)
+  if (!caller) return c.json({ error: 'no_session_claim' }, 401)
+  if (!(await ownsAShop(caller.userId))) return c.json({ error: 'Forbidden' }, 403)
+
+  const id = c.req.param('sessionId')
+  // Checked here rather than left to Postgres: `id = any('{not-a-uuid}'::uuid[])` is a 22P02 and
+  // would reach the merchant as a 500 for what is an ordinary bad request.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return c.json({ error: 'bad_session_id' }, 400)
+  }
+
+  // ONE statement, and its own `user_id` predicate is the whole tenancy guard: `db.ts` runs no
+  // policy, so a stranger's session id matches nothing and comes back as a 404. Reading the
+  // caller's sessions first and checking membership in TypeScript would be a second round trip
+  // for a decision Postgres already makes — and a wider window between the check and the delete.
+  const removed = await deleteSessions(caller.userId, [id])
+  if (removed === 0) return c.json({ error: 'not_found' }, 404)
+  return c.json({ ok: true })
 })
 
 // Any signed-in customer's own history at a shop. NOT requireMerchantOwns — the uid filter,
@@ -1561,6 +1661,12 @@ app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
 // ── Superadmin: flag/unflag a merchant for the landing-page sample-shops carousel (#107) ──────
 // Pure flag flip — no billing/status side effects, unlike comp/uncomp. GET /api/merchants/samples
 // is what actually reads it.
+//
+// Flagging ON also asks GitHub Actions to screenshot that one storefront now. The carousel shows
+// only shops that HAVE a screenshot, and capture is a weekly cron, so without this a shop flagged
+// on a Tuesday stays invisible until the following Monday. The request is best-effort in the
+// strongest sense: `captureQueued: false` is reported to the admin, the flag stands either way,
+// and the cron remains the thing that guarantees a shot eventually exists.
 app.post('/api/admin/set-merchant-sample', requireSuperadmin, async (c) => {
   const { merchantId, isSample } = await c.req.json().catch(() => ({}))
   if (!merchantId || typeof isSample !== 'boolean') {
@@ -1576,7 +1682,27 @@ app.post('/api/admin/set-merchant-sample', requireSuperadmin, async (c) => {
     console.error('set-merchant-sample failed:', error.message)
     return c.json({ error: 'Update failed' }, 500)
   }
-  return c.json({ ok: true, isSample })
+
+  let captureQueued = false
+  if (isSample) {
+    captureQueued = await githubDeps
+      .dispatchSampleScreenshot(env.githubToken, merchantId)
+      .catch(() => false)
+  }
+  return c.json({ ok: true, isSample, captureQueued })
+})
+
+// ── Superadmin: re-shoot every sample shop's storefront now ───────────────────────────────────
+// A storefront redesign makes every stored screenshot stale at the same moment, and no shop has
+// changed — so there is no per-shop toggle to flip, and until this existed the carousel showed
+// the previous design until the following Monday. Production deploys now trigger the same sweep
+// on their own (the workflow's `deployment_status` trigger); this is the manual path, for a shot
+// that came out wrong or a design change that shipped without a frontend deploy.
+app.post('/api/admin/recapture-samples', requireSuperadmin, async (c) => {
+  const captureQueued = await githubDeps
+    .dispatchSampleScreenshot(env.githubToken)
+    .catch(() => false)
+  return c.json({ ok: true, captureQueued })
 })
 
 // ── Superadmin: comp a merchant (billing does not apply) ───────────────────────
@@ -1787,7 +1913,7 @@ app.post('/api/billing/resume', requireOwnMerchant, async (c) => {
 // Email confirmation stays ON project-wide (it is shared with merchants, who own shops
 // and Stripe billing), so a client-side signUp returns no session and strands a customer
 // in their inbox holding a cart. Created here with the service role instead, pre-confirmed,
-// and the client signs in normally. See src/customerSignup.ts for what that costs.
+// and the client signs in normally. See src/accountSignup.ts for what that costs.
 //
 // RATE LIMITING — read before touching the deploy shape:
 // The window below lives in this process's memory. That works only because the backend is
@@ -1804,6 +1930,18 @@ app.post('/api/billing/resume', requireOwnMerchant, async (c) => {
 // a captcha widget in the checkout path costs orders.
 const signupIpWindow = createSlidingWindow({ limit: 10, windowMs: 60 * 60_000, now: () => Date.now() })
 const signupEmailWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000, now: () => Date.now() })
+
+// The merchant door's own pair, and SEPARATE from the customer pair above on purpose. The two
+// doors serve different people through the same building: a busy shop's customers signing up
+// behind one carrier-grade NAT address must not be able to spend the budget a merchant needs to
+// open a shop from that same address, and neither must the reverse. Same figures, because the
+// argument for them has not changed — what changes is whose bucket gets emptied.
+const merchantSignupIpWindow = createSlidingWindow({ limit: 10, windowMs: 60 * 60_000, now: () => Date.now() })
+const merchantSignupEmailWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000, now: () => Date.now() })
+
+// Resends of the address-check link, per ACCOUNT per hour. Three is a merchant who mistyped,
+// fixed it, and mistyped again; anything past that is a signed-in caller using us to post mail.
+const verifyResendWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000, now: () => Date.now() })
 
 // quoteIpWindow and quoteMerchantWindow moved to quotaWindows.ts — order intake shares
 // quoteMerchantWindow, see that module's header.
@@ -1859,10 +1997,12 @@ export const githubDeps: {
   createIssue: CreateGithubIssue
   closeIssue: GithubIssueAction
   reopenIssue: GithubIssueAction
+  dispatchSampleScreenshot: DispatchSampleScreenshot
 } = {
   createIssue: createGithubIssue,
   closeIssue: closeGithubIssue,
   reopenIssue: reopenGithubIssue,
+  dispatchSampleScreenshot,
 }
 
 // ── Merchant platform feedback (#89) ────────────────────────────────────────────
@@ -2072,9 +2212,15 @@ async function humanizeAndStore(row: { id: string; tag: string; name: string; ra
 // the rest. Reassigned per pull, so awaiting it awaits the most recent pull's work.
 export let releaseHumanization: Promise<unknown> = Promise.resolve()
 
-app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
+// The pull itself, shared by the two doors onto it: the superadmin button in /admin and the
+// release workflow's own call the moment it cuts a tag. One function, so an automatic pull and
+// a hand pull cannot drift apart.
+//
+// Returns the number of NEW releases stored. Throws only what the DB throws; a GitHub that
+// cannot be reached is reported as null, which each caller turns into its own status.
+async function pullReleases(): Promise<number | null> {
   const fetched = await releaseDeps.listReleases(env.githubToken, 10)
-  if (fetched === null) return c.json({ error: 'Could not reach GitHub' }, 502)
+  if (fetched === null) return null
 
   const existingTags = new Set(await listReleaseTags())
   const toPull = fetched.filter((r) => !existingTags.has(r.tag_name))
@@ -2106,7 +2252,13 @@ app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
   // no humanize_error — indistinguishable from still-in-progress. That is what the per-row
   // Regenerate action is for; the dashboard stops waiting after a bounded spell and leaves
   // the row sat there rather than pretending the work is still coming.
-  return c.json({ pulled: rows.length })
+  return rows.length
+}
+
+app.post('/api/admin/releases/pull', requireSuperadmin, async (c) => {
+  const pulled = await pullReleases()
+  if (pulled === null) return c.json({ error: 'Could not reach GitHub' }, 502)
+  return c.json({ pulled })
 })
 
 app.get('/api/admin/releases', requireSuperadmin, async (c) => {
@@ -2140,6 +2292,27 @@ app.get('/api/releases/:tag', async (c) => {
   const row = await getPublishedReleaseByTag(c.req.param('tag'))
   if (!row) return c.json({ error: 'Release not found' }, 404)
   return c.json(row)
+})
+
+// Not user-authenticated — called by .github/workflows/release.yml the moment it cuts a tag,
+// gated by a shared secret header instead. `requireSuperadmin` cannot serve that caller: it
+// wants a GoTrue access token, and an access token expires, so there is nothing to put in a
+// repository secret that would still work next month.
+//
+// Fails CLOSED (503) when the secret is unset, matching the other internal routes. What that
+// costs is small and worth stating: the tag and the GitHub release still exist, so a
+// superadmin pulls them by hand from /admin exactly as they did before this was automated.
+//
+// This lands DRAFTS. Nothing here publishes, and nothing here should: the publish gate is a
+// human reading what Claude wrote about the release before every merchant does.
+app.post('/api/internal/releases-pull', async (c) => {
+  if (!env.releasePullSecret) return c.json({ error: 'Release pull disabled' }, 503)
+  const provided = c.req.header('x-sweep-secret') || ''
+  if (!safeEqualSecret(provided, env.releasePullSecret)) return c.json({ error: 'Forbidden' }, 403)
+
+  const pulled = await pullReleases()
+  if (pulled === null) return c.json({ error: 'Could not reach GitHub' }, 502)
+  return c.json({ pulled })
 })
 
 // ── Trial feedback (#155) ───────────────────────────────────────────────────────
@@ -2258,16 +2431,33 @@ app.post('/api/internal/sample-shop-screenshot/:merchantId', async (c) => {
   const { data: merchant } = await admin.from('merchants').select('id').eq('id', merchantId).maybeSingle()
   if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
 
-  const path = `${merchantId}.png`
+  // `{merchant}/{ms}.png`, NOT a fixed `{merchant}.png` overwritten in place. The bucket is
+  // public and Storage serves these with a max-age, so a stable path meant a recaptured
+  // screenshot could not reach a browser that already held the previous one — the carousel went
+  // on showing a storefront design that had been replaced weeks earlier, and re-shooting on every
+  // deploy did nothing about it. A new name per capture is a new URL, which is the only thing a
+  // cache respects. It also lets the bytes be cached hard rather than revalidated hourly.
+  const { data: previous } = await admin
+    .from('merchants').select('sample_screenshot_path').eq('id', merchantId).maybeSingle()
+  const path = `${merchantId}/${Date.now()}.png`
   const { error } = await admin.storage
     .from(SAMPLE_SCREENSHOT_BUCKET)
-    .upload(path, buffer, { contentType: 'image/png', upsert: true })
+    .upload(path, buffer, { contentType: 'image/png', cacheControl: '31536000', upsert: true })
   if (error) {
     console.error('Sample shot upload failed:', error.message)
     return c.json({ error: 'upload_failed' }, 500)
   }
 
   await admin.from('merchants').update({ sample_screenshot_path: path }).eq('id', merchantId)
+
+  // Only AFTER the row points at the new file: a delete that ran first would leave the carousel
+  // with a dead URL if the update failed. Weekly captures otherwise accumulate one PNG per shop
+  // per week for ever. Best-effort — an orphan costs storage, never correctness.
+  const stale = previous?.sample_screenshot_path
+  if (stale && stale !== path) {
+    const { error: rmErr } = await admin.storage.from(SAMPLE_SCREENSHOT_BUCKET).remove([stale])
+    if (rmErr) console.error('Stale sample shot delete failed:', rmErr.message)
+  }
   return c.json({ ok: true })
 })
 
@@ -2284,7 +2474,7 @@ app.post('/api/customer/signup', async (c) => {
     incoming?.socket?.remoteAddress,
   )
 
-  const result = await signUpCustomer(
+  const result = await signUpAccount(
     {
       allow: (kind, value) => (kind === 'ip' ? signupIpWindow : signupEmailWindow).allow(value),
       logError: (message) => console.error(message),
@@ -2332,6 +2522,201 @@ app.post('/api/customer/signup', async (c) => {
 
   if (!result.ok) return c.json({ error: result.error }, result.status)
   return c.json({ ok: true })
+})
+
+// The address check that follows a merchant signup, and the one thing in this file that is
+// allowed to do nothing at all.
+//
+// `EMAIL_VERIFY_SECRET` unset means the feature is OFF: no mail, and the dashboard shows no
+// banner because nothing ever set the column. That is the whole failure mode, and it is the
+// correct one — signup itself must never depend on this. A merchant is already looking at their
+// dashboard by the time this runs.
+//
+// Best-effort in every direction: a Resend outage, a bad address, a thrown adapter. None of them
+// may reach the caller, because the account and the shop both exist by then and there is nothing
+// useful to tell them.
+export const emailVerifyDeps: { email: typeof resendSend } = { email: resendSend }
+
+//
+// `origin` is the BACKEND's own, not the frontend's: the link is a server route that flips the
+// column and then redirects. Routing it through the app first would mean shipping the token to a
+// page and having that page post it back. It is taken from the REQUEST rather than from a new
+// environment variable, because the request already knows the answer and a variable is one more
+// thing that can be set wrong — set wrong, it would mint links to a host nobody can reach, and
+// nothing would notice until a merchant said the button did nothing.
+async function sendEmailVerification(userId: string, email: string, shopName: string, origin: string): Promise<void> {
+  if (!env.emailVerifySecret) return
+  try {
+    const token = makeEmailVerifyToken({ userId, email }, env.emailVerifySecret, Date.now())
+    const verifyUrl = `${origin}/api/merchant/verify-email?token=${encodeURIComponent(token)}`
+    const { subject, text } = buildEmailVerifyMail({ shopName, verifyUrl })
+    await emailVerifyDeps.email(email, subject, { text })
+  } catch (err) {
+    console.error(`Verification mail not sent for ${userId}:`, err instanceof Error ? err.message : String(err))
+  }
+}
+
+// The merchant door. Same policy as the customer one above, different adapters — see
+// accountSignup.ts for why one policy serves both.
+//
+// It exists because merchant signup used to be a client-side `auth.signUp`, and with email
+// confirmation on project-wide that returns no session: the sign-in the browser makes next
+// failed, `createMerchant` never ran, and the merchant was told to go and confirm before the
+// platform would build anything. The shop details survived that round trip (they ride along in
+// `user_metadata`, and FinishSignupScreen still reads them for accounts parked that way), but
+// the MERCHANT largely did not — most arrive from an ad inside a webview, where leaving for the
+// mail app is leaving for good. Created pre-confirmed here, the whole signup finishes in one
+// submit.
+app.post('/api/merchant/signup', async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  const { email, password, name, shop } = (body ?? {}) as Record<string, unknown>
+
+  // The shop is parsed BEFORE the account is created, and a bad one refuses the whole request.
+  // The alternative is an auth user with no shop and no way to reach the form that would make
+  // one — the exact orphan this endpoint exists to stop creating.
+  const parsed = pendingShopFromBody(shop)
+  if (!parsed) return c.json({ error: 'invalid_shop' }, 400)
+
+  // Same as the customer door: @hono/node-server hangs the raw Node request off `c.env` but
+  // types it as {}, and the socket address is the fallback when no proxy header is present.
+  const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming
+  const ip = clientIp(
+    { 'x-forwarded-for': c.req.header('x-forwarded-for'), 'cf-connecting-ip': c.req.header('cf-connecting-ip') },
+    incoming?.socket?.remoteAddress,
+  )
+
+  // The display name for the profile row. Falls back to the shop's name rather than to the
+  // email's local part: a merchant told us what to call their business one field earlier.
+  const displayName = typeof name === 'string' && name.trim() ? name.trim() : parsed.name
+
+  const result = await signUpAccount(
+    {
+      allow: (kind, value) => (kind === 'ip' ? merchantSignupIpWindow : merchantSignupEmailWindow).allow(value),
+      logError: (message) => console.error(message),
+      createUser: async ({ email, password }) => {
+        const { data, error } = await admin.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true, // pre-confirmed — regressing this reintroduces the inbox dead end
+          // The shop's answers, in the ONE spelling @bitetime/shared defines. Not load-bearing
+          // for this request, which hands the browser a working session and lets it call
+          // POST /api/merchants directly — it is the fallback that lets a shop still be built
+          // if the browser dies between the two calls.
+          user_metadata: { name: displayName, ...pendingShopMetadata(parsed) },
+        })
+        if (error || !data?.user) {
+          if (isDuplicateEmailError(error)) return { ok: false, reason: 'duplicate_email' }
+          console.error('Merchant createUser failed:', error?.message ?? 'no user returned')
+          return { ok: false, reason: 'error' }
+        }
+        return { ok: true, userId: data.user.id }
+      },
+      writeProfile: async ({ userId, email }) => {
+        // Mirrors the customer door's write, and `app_role` is 'customer' here too — that is
+        // not a mistake and must not be "fixed". A merchant is someone who OWNS A MERCHANTS
+        // ROW (SessionContext derives the role from exactly that), so writing 'merchant' here
+        // would hand out the role before any shop exists, on a request whose body a stranger
+        // controls. The shop is created afterwards, by POST /api/merchants, under its own rules.
+        const { data: existing } = await admin
+          .from('profiles').select('id').eq('user_id', userId).is('merchant_id', null).maybeSingle()
+        if (existing) return
+        const { error } = await admin.from('profiles').insert({
+          user_id: userId,
+          name: displayName,
+          email,
+          email_confirmed: true,
+          app_role: 'customer',
+          created_at: new Date().toISOString(),
+        })
+        if (error) throw new Error(error.message)
+      },
+    },
+    { email, password, ip },
+  )
+
+  if (!result.ok) return c.json({ error: result.error }, result.status)
+  // AWAITED, but incapable of failing the request — see sendEmailVerification. Awaited rather
+  // than floated so a serverless runtime cannot freeze the process with the send in flight.
+  await sendEmailVerification(result.userId, String(email).trim().toLowerCase(), parsed.name, new URL(c.req.url).origin)
+  return c.json({ ok: true })
+})
+
+// The other end of that link. NOT behind requireUser: it is clicked from a mail app, which is
+// routinely a different device from the one that signed up, and demanding a session there would
+// refuse exactly the merchant this exists to reach.
+//
+// It answers with a REDIRECT rather than JSON, because a human is looking at it. /merchant/login
+// is the landing spot for both outcomes: RedirectSignedInMerchant bounces an already-signed-in
+// merchant straight to their dashboard, where the banner is now gone — which is the confirmation
+// — and a signed-out one reads the notice above the login form.
+app.get('/api/merchant/verify-email', async (c) => {
+  const land = (ok: boolean) => c.redirect(`${env.frontendUrl}/merchant/login?email_verified=${ok ? '1' : '0'}`, 302)
+  if (!env.emailVerifySecret) return land(false)
+
+  const read = readEmailVerifyToken(c.req.query('token'), env.emailVerifySecret, Date.now())
+  if (!read.ok) return land(false)
+
+  // The address is re-read from the account rather than trusted from the token. A merchant who
+  // corrected a typo has a NEW address, and a link minted for the old one must not mark the new
+  // one proved — which is the one case this whole feature exists for.
+  const { data, error } = await admin.auth.admin.getUserById(read.claims.userId)
+  if (error || !data?.user) return land(false)
+  if ((data.user.email ?? '').toLowerCase() !== read.claims.email.toLowerCase()) return land(false)
+
+  const { error: writeErr } = await admin
+    .from('profiles')
+    .update({ email_verified_at: new Date().toISOString() })
+    .eq('user_id', read.claims.userId)
+    .is('merchant_id', null)
+  if (writeErr) {
+    console.error('Marking email verified failed:', writeErr.message)
+    return land(false)
+  }
+  return land(true)
+})
+
+// What the dashboard banner asks before it decides to exist.
+//
+// `configured` is here because the alternative is a banner that cannot tell "we are waiting for
+// you to click" from "this platform never sends that mail". With EMAIL_VERIFY_SECRET unset no
+// link is ever minted, so every merchant's column stays null for ever — and a banner reading the
+// column alone would nag all of them, offering a button that can only answer 503.
+//
+// `verified` rather than the raw timestamp: the banner asks a yes/no question, and a date it
+// does not render is a date it should not receive.
+app.get('/api/me/verify-email', requireUser, async (c) => {
+  const user = c.get('user')
+  const { data } = await admin
+    .from('profiles').select('email_verified_at').eq('user_id', user.id).is('merchant_id', null).maybeSingle()
+  return c.json({
+    configured: !!env.emailVerifySecret,
+    verified: !!data?.email_verified_at,
+    email: user.email ?? '',
+  })
+})
+
+// Another copy of the link, for the merchant whose first one expired or never arrived — which is
+// the typo case: they change the address in their account, then ask for this.
+app.post('/api/me/verify-email/resend', requireUser, async (c) => {
+  const user = c.get('user')
+  if (!env.emailVerifySecret) return c.json({ error: 'not_configured' }, 503)
+  const email = (user.email ?? '').trim().toLowerCase()
+  if (!email) return c.json({ error: 'no_email' }, 400)
+
+  // Keyed by the ACCOUNT, not by IP: the caller is authenticated, so there is a better key than
+  // an address shared by everyone behind one NAT. It bounds mail sent in someone's name.
+  if (!verifyResendWindow.allow(user.id)) return c.json({ error: 'rate_limited' }, 429)
+
+  const { data: profile } = await admin
+    .from('profiles').select('email_verified_at').eq('user_id', user.id).is('merchant_id', null).maybeSingle()
+  // Already proved. Answered as success rather than as an error: the merchant asked for their
+  // address to be confirmed and it is, so there is nothing to fix and nothing to send.
+  if (profile?.email_verified_at) return c.json({ ok: true, alreadyVerified: true })
+
+  const { data: shop } = await admin
+    .from('merchants').select('name').eq('owner_id', user.id).limit(1).maybeSingle()
+  await sendEmailVerification(user.id, email, shop?.name ?? 'your shop', new URL(c.req.url).origin)
+  return c.json({ ok: true, alreadyVerified: false })
 })
 
 // ── Order intake — counter, voucher, PRICE and order in ONE transaction ───────

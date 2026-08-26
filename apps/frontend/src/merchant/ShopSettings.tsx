@@ -17,12 +17,14 @@ import { useSaved } from './useSaved'
 import ReferralTab from './ReferralTab'
 import FulfilmentTab from './FulfilmentTab'
 import SubscriptionTab from './SubscriptionTab'
+import BrandColourCard from './BrandColourCard'
 import { useDashboardSubsection } from '../useDashboardSection'
 import AddressAutocomplete from '../store/AddressAutocomplete'
 import PaymentQrPicker from './PaymentQrPicker'
 import SettingsMenu from './SettingsMenu'
+import DevicesTab from './DevicesTab'
 
-type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'marketing' | 'notifications' | 'subscription' | 'referral'
+type TabKey = 'shipping' | 'fulfilment' | 'payment' | 'brand' | 'marketing' | 'notifications' | 'subscription' | 'referral' | 'devices'
 
 // Shop Settings (issue #19). A container renders a submenu column and the active
 // tab's form; each tab is its own form with its own Save. Only the active tab can
@@ -42,10 +44,12 @@ export default function ShopSettings() {
     { key: 'shipping', label: t('Shipping', '运费') },
     { key: 'fulfilment', label: t('Fulfilment', '取货') },
     { key: 'payment', label: t('Payment', '付款') },
+    { key: 'brand', label: t('Brand', '品牌') },
     { key: 'marketing', label: t('Marketing', '营销') },
     { key: 'notifications', label: t('Notifications', '通知') },
     { key: 'subscription', label: t('Subscription', '订阅') },
     { key: 'referral', label: t('Referral', '推荐') },
+    { key: 'devices', label: t('Devices', '设备') },
   ]
 
   // The sub-tab lives in the URL hash (`#settings/payment`), so it survives a refresh and a Pro
@@ -110,10 +114,13 @@ export default function ShopSettings() {
         {tab === 'shipping' && <ShippingTab onDirtyChange={setDirty} />}
         {tab === 'fulfilment' && <FulfilmentTab onDirtyChange={setDirty} />}
         {tab === 'payment' && <PaymentTab onDirtyChange={setDirty} />}
+        {tab === 'brand' && <BrandColourCard onDirtyChange={setDirty} />}
         {tab === 'marketing' && <MarketingTab onDirtyChange={setDirty} />}
         {tab === 'notifications' && <NotificationsTab onDirtyChange={setDirty} />}
         {tab === 'subscription' && <SubscriptionTab />}
         {tab === 'referral' && <ReferralTab />}
+        {/* No Save and no dirty state, so unlike its neighbours it takes no onDirtyChange. */}
+        {tab === 'devices' && <DevicesTab />}
       </div>
     </div>
   )
@@ -812,7 +819,7 @@ function GetUpdatesMockup() {
 function TelegramSetupGuide({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t } = useSession()
   const stepClass = 'flex gap-3'
-  const numClass = 'shrink-0 w-5 h-5 rounded-pill bg-primary text-background text-[11px] font-medium flex items-center justify-center'
+  const numClass = 'shrink-0 w-5 h-5 rounded-pill bg-primary text-primary-foreground text-[11px] font-medium flex items-center justify-center'
   const textClass = 'text-[13px] text-foreground leading-[1.5]'
   const mockupWrapClass = 'ml-8 rounded-lg overflow-hidden border-[0.5px] border-border -mt-1'
 

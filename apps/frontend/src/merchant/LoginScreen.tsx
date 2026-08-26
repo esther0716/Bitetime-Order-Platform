@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
-import { signIn, requestPasswordReset } from '../store'
+import { signIn, requestPasswordReset, SIGNED_OUT_ELSEWHERE_KEY } from '../store'
 import { authErrorCode } from '../authError'
 import { trackEvent } from '../analytics/events'
 import { useSession } from '../SessionContext'
@@ -21,6 +21,49 @@ export default function LoginScreen() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [notice, setNotice] = useState('')
+
+  // Set by onAuthChange when a SIGNED_OUT arrives that the tab did not ask for — the session row
+  // is gone. Either another device took the last slot, or the merchant signed this one out from
+  // another device. Both are the same news to the person reading it.
+  //
+  // Read as INITIAL STATE rather than in an effect: an effect that calls setState synchronously
+  // is a cascading render, and this value is known before the first paint. A boolean and not the
+  // sentence, so the sentence still follows a language switch.
+  const [signedOutElsewhere] = useState(() => {
+    try { return sessionStorage.getItem(SIGNED_OUT_ELSEWHERE_KEY) === 'yes' } catch { return false }
+  })
+
+  // Where GET /api/merchant/verify-email lands a merchant who clicked the address-check link.
+  // This screen, rather than the dashboard, because the link is routinely opened on a phone that
+  // never signed in — and RedirectSignedInMerchant sends an already-signed-in one straight past
+  // this to their dashboard, where the banner being gone is the same news.
+  const [params] = useSearchParams()
+  const verified = params.get('email_verified')
+  const verifyNotice = verified === '1'
+    ? t('Email confirmed. Sign in to carry on.', '邮箱已确认。请登录以继续。')
+    : verified === '0'
+      // Deliberately vague about WHICH, because the merchant can act on all of them the same way,
+      // and the three cases (expired, tampered, address since changed) are not worth three
+      // sentences on a login screen.
+      ? t('That link did not work — it may have expired. Sign in and ask for a new one.',
+          '该链接无效，可能已过期。请登录后重新获取。')
+      : ''
+
+  // Cleared separately, so a later visit to this screen does not repeat old news. Clearing is an
+  // external write and not state, which is exactly what an effect is for.
+  useEffect(() => {
+    try { sessionStorage.removeItem(SIGNED_OUT_ELSEWHERE_KEY) } catch { /* private mode */ }
+  }, [])
+
+  // Quotes NO figure. This screen is unauthenticated, so it cannot ask the server how many devices
+  // an account allows, and a "2" typed in here would go on saying 2 the day that number changes.
+  // The sentence is true without it; Settings → Devices quotes the real ceiling.
+  const deviceNotice = signedOutElsewhere
+    ? t(
+      'You were signed out because your account was signed in on another device. Signing in on a new device signs out the one used longest ago.',
+      '您已被登出，因为您的账号在另一台设备上登录了。在新设备登录后，最久未使用的设备会被登出。',
+    )
+    : ''
 
   // Never surface a raw supabase message — a server-side failure (a 500) carries an English DB
   // string, or none, which is how a raw error once rendered as "{}". Map to the handful of
@@ -84,6 +127,19 @@ export default function LoginScreen() {
             ? t("Enter your email and we'll send you a link to set a new password.", '输入你的邮箱，我们会发送重设密码的链接。')
             : t('Sign in to manage your shop.', '登录以管理您的店铺。')}
         </p>
+        {/* Rendered separately, not `notice || deviceNotice`: they answer different questions, and
+            `||` meant a merchant who asked for a reset link stopped being told why they were
+            signed out. This one explains the arrival, so it sits first. */}
+        {verifyNotice && (
+          <div role="status" className="text-[13px] text-primary bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+            {verifyNotice}
+          </div>
+        )}
+        {deviceNotice && (
+          <div role="status" className="text-[13px] text-primary bg-danger-100 border border-danger-100 rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+            {deviceNotice}
+          </div>
+        )}
         {notice && (
           <div role="status" className="text-[13px] text-primary bg-danger-100 border border-danger-100 rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
             {notice}

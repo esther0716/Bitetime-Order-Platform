@@ -28,12 +28,28 @@ pnpm --filter @bitetime/backend test:db     # DB-backed tests: RLS + API (needs 
 pnpm --filter @bitetime/backend db:migrate   # apply pending SQL migrations to the LOCAL Supabase DB
 pnpm --filter @bitetime/backend db:push      # HUMAN ONLY — writes to PRODUCTION. Never run this yourself.
 
-stripe listen --forward-to http://localhost:8787/api/stripe/webhook   # REQUIRED for any local billing work
+stripe listen --project-name bitetimeco --forward-to http://localhost:8787/api/stripe/webhook   # REQUIRED for any local billing work
+
+# Re-shoot the /sample-shops carousel's storefront photographs against your OWN stack. Needs both
+# dev servers up. Nothing does this locally on its own, so a local shot stays whatever it was on
+# the day it was taken — which is how the carousel came to show a three-week-old storefront design.
+FRONTEND_URL=http://localhost:5173 BACKEND_URL=http://localhost:8787 \
+  SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET=$(grep SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET apps/backend/.env | cut -d= -f2) \
+  pnpm --filter @bitetime/backend screenshot:sweep
 ```
 
 **Anything that involves paying must have `stripe listen` running before the payment.** Stripe cannot reach `localhost`, and every post-payment effect is webhook-driven — `merchant_billing` (subscription id, status), the `merchants.billing_cycle` reconciliation and the pending→active flip all happen in `POST /api/stripe/webhook` and nowhere else. Without the forwarder, Checkout completes, Stripe charges the card, and the app changes **nothing**: the shop stays shut, and the only trace is the `stripe_customer_id` that `/api/checkout` wrote before redirecting. It looks exactly like a broken feature.
 
-The CLI prints its own signing secret on startup; it must equal `STRIPE_WEBHOOK_SECRET` in `apps/backend/.env` or every event is rejected as an invalid signature (a `<-- [400]` in the listener's own output). Started late? `stripe events resend <evt_id>` replays one — the handlers upsert, so a replay is safe. And check the listener is actually still up (`ps -eo command | grep stripe`) before concluding the code is at fault: a dead forwarder and a broken handler look identical from the app.
+**`--project-name bitetimeco` is not optional**, even though every earlier note here omitted it. `~/.config/stripe/config.toml` on this machine holds THREE profiles on three different Stripe accounts, and a bare `stripe listen` takes `default` — a different account from the one this project's keys belong to.
+
+The CLI prints its own signing secret on startup; it must equal `STRIPE_WEBHOOK_SECRET` in `apps/backend/.env` or every event is rejected as an invalid signature (a `<-- [400]` in the listener's own output). That secret is **per (Stripe account, device)** and is fetched from Stripe on each run rather than cached in the config file, so Stripe never rotates it on you: the same account on the same machine prints the same secret for ever. A secret that does not match therefore means the PAIRING changed, and on this machine that is almost always the wrong profile — check that before editing `.env`, because editing it to match `default` breaks the listener that was already correct. Compare without printing either secret — `tr -d '\n'` on BOTH lines, or the CLI's trailing newline hashes into a mismatch that looks exactly like the real fault:
+
+```bash
+stripe listen --print-secret --project-name bitetimeco | tr -d '\n' | shasum
+grep '^STRIPE_WEBHOOK_SECRET=' apps/backend/.env | cut -d= -f2- | tr -d '\n' | shasum
+```
+
+Started late? `stripe events resend <evt_id>` replays one — the handlers upsert, so a replay is safe. And check the listener is actually still up (`ps -eo command | grep stripe`) before concluding the code is at fault: a dead forwarder and a broken handler look identical from the app.
 
 Migrations live in `apps/backend/supabase/migrations/`. Adding a migration file does **not** apply it — run `db:migrate` (local) so the running app (and PostgREST's schema cache) sees the new columns; otherwise queries fail with `Could not find the 'X' column … in the schema cache`.
 
@@ -98,6 +114,7 @@ Multi-merchant ordering SaaS. React 19 + Vite + React Router (`react-router-dom`
 - Supabase Auth handles login/registration (`src/supabase.ts`, `src/store.ts`)
 - `SessionContext` derives `role`: `superadmin` if `profiles.app_role === 'superadmin'` (transitional email fallback to `bitetime@praxor.dev`), else `merchant` if the user owns a `merchants` row, else `customer`
 - `MerchantContext` resolves the active shop for `/s/:slug` storefronts
+- A **merchant** account holds at most `MERCHANT_DEVICE_LIMIT` (2) signed-in devices, and one device is one GoTrue session. `POST /api/me/devices/enforce`, which the browser calls after every sign-in, deletes the surplus rows from `auth.sessions` — least recently used first, and never the caller's own session. That delete is the whole mechanism: GoTrue then rejects the removed device's still-unexpired access token with `403 session_not_found`, on this API, Storage and PostgREST alike, so eviction is instant rather than one `jwt_expiry` late. The rule is `deviceLimit.ts` (pure) over `deviceLimitDb.ts` (two statements against the `auth` schema — reads and deletes only, never a trigger or a column); the session id is read from the JWT's `session_id` claim and never from a body. Customers and superadmins are not bounded. `store.ts`'s `signOut` MUST keep `{ scope: 'local' }` — `@supabase/auth-js` defaults to `global`, which revokes every session and makes the limit behave as one device. See `docs/superpowers/specs/2026-08-25-merchant-device-limit-design.md`.
 
 ### Merchant onboarding & slugs (`src/slug.ts`)
 
@@ -206,6 +223,41 @@ A shop's **shipping policy** is `merchants.shipping_mode` (`region` | `distance`
 
 No i18n library. Every string is passed as `t(englishString, chineseString)` where `t = (en, zh) => lang === 'zh' ? zh : en`. `t` and the `lang` (`'en'` | `'zh'`) state live in `SessionContext`.
 
+### Per-shop brand colour
+
+A shop's accent is `merchants.brand_color` (a hex, null for the platform oxblood). One pure module,
+`src/brandTheme.ts`, derives nine values from it — the whole `--brand-*` ramp plus the fill, its
+hover, the text ON a fill and the accent AS text — walking lightness in HSL until each clears AA.
+The three pale washes are then **warmed toward the cream page** in OKLab (`src/oklab.ts`), because
+they measure toward WHITE and the page is not white: a blue wash bled to white lands on a warm page
+as a second, colder ground. **The pull is capped at half the tint's own chroma**, and that cap is
+the whole design — an uncapped pull moves a blue tint straight through neutral, since cream is the
+far end of the a/b plane from blue, and it hands a grey-picking shop beige washes. `--brand-400` is
+excluded: it is the dark-theme accent, not a wash. See ADR 0021.
+`src/brandTheme.test.ts` sweeps ~8,400 colours to prove no choice can be illegible, sweeps the cap
+itself, and pins `#7A1028` to the ramp `tokens.css` already ships — which means **`tokens.css`
+follows this module**: changing the derivation moves `--brand-50/100/200`, and those literals move
+with it or the pin fails. `normalizeBrandColor` in `@bitetime/shared` is the
+one rule for which strings are colours; the picker and `pickMerchantConfig` both run it.
+
+`components/BrandTheme.tsx` applies it, and **it must restate every token that carries the accent,
+not just `--color-accent`**: `index.css` declares `--primary: var(--color-accent)` on `:root`, and
+`var()` substitutes where the declaration lives, so a descendant override of `--color-accent` leaves
+`--primary`, `--ring` and `--focus-ring` oxblood. The ramp is set as **`--brand-*` primitives, not
+the `--color-brand-*` bridge**: both `@theme` blocks are `inline`, so `bg-brand-600` compiles to
+`var(--brand-600)` and the bridge is never read at runtime.
+
+`--primary` backs both `bg-primary` and `text-primary`, which the fill and text roles cannot share,
+so `[data-brand] .text-primary` in `index.css` redefines the text role inside a branded subtree
+only. `src/brandScope.test.ts` pins what makes that sound: no element carries both classes, none
+pairs `bg-primary` with `text-background` (a fill labelled with the page colour — the bug that made
+the computed on-fill colour unreachable), nothing reaches the accent through an arbitrary
+`[var(--…)]`, and the override set still covers the stylesheets' accent closure.
+
+Mounted in exactly two places — `StorefrontShell` in `AppRouter.tsx` and `Dashboard.tsx`. Marketing,
+`/admin` and the auth screens stay platform-coloured because no wrapper is above them. The invoice
+page and the invoice PDF are deliberately out of scope.
+
 ### Deployment
 
 Deployed via Vercel; set the project **Root Directory** to `apps/frontend`. `pnpm deploy` runs the frontend `vite build`. Vite `base` is `/`.
@@ -231,6 +283,32 @@ Head tags follow the same split. Anything true of **every** route is static in `
 The `FAQPage` JSON-LD lives on **`/faq` and each `/for/<slug>`**, never on `/` and never in `index.html` (`src/marketing/structuredData.ts`). A static block would claim that every storefront and every legal page is that FAQ. Each page bakes its own via the prerender's `head` field and then **adopts** the baked block at runtime rather than appending a second — `useFaqStructuredData` / `useUseCaseStructuredData` rewrite it in place, which is what lets a Chinese reader get Chinese markup instead of a page whose visible text and structured data disagree. Every `/for/<slug>` carries its own `@id`, so the four are four pages to a crawler and not one duplicated.
 
 `index.html`'s static title and description are therefore the site's ONE default. Multiple pages with their own titles is what makes Google's **sitelinks** possible at all (#169) — a sitelink's label is the target page's `<title>` and its snippet is that page's meta description. Sitelinks stay algorithmic: no markup requests them, `SiteNavigationElement` is not used by Google, and they also need the site to rank first for its brand query.
+
+### Releases
+
+**Every push to `main` cuts a release** — `.github/workflows/release.yml`, so in practice every
+dev → main merge. It works out the version, creates the tag and the GitHub release with
+`--generate-notes`, then calls the backend so the release lands in the app as a draft. Nothing
+about it publishes: a superadmin still reads the Claude-written copy in `/admin` and presses
+Publish before merchants see it. The old `release: vX.Y.Z` pull request title is dead — the
+version is no longer something a human types.
+
+The version rule is `apps/backend/src/releaseVersion.ts` (pure, unit-tested): any `feat` in the
+range bumps the minor, a `!` or a `BREAKING CHANGE:` footer bumps the major, anything else bumps
+the patch. Only the commit SUBJECT decides `feat` versus `fix`, so a body that quotes another
+commit cannot move the version; merge commits are excluded, because their subject describes
+nothing and every commit they bring in is already in the range. Tags carry **no `v` prefix**, and
+the rule reads the two-part `0.2` as `0.2.0`. `pnpm --filter @bitetime/backend release:version`
+prints what the next tag would be, and nothing else — run it before a merge to see it.
+
+The workflow needs **`RELEASE_PULL_SECRET`** as a repo secret AND as the backend's own env var
+(`BACKEND_URL` it reuses from the screenshot sweep). It gates
+`POST /api/internal/releases-pull`, which is the same `pullReleases()` the superadmin button
+calls — one function, so an automatic pull and a hand pull cannot drift apart. `requireSuperadmin`
+could not serve this caller: that guard wants a GoTrue access token, and an access token expires,
+so there is nothing to put in a repo secret that still works next month. Unset, the endpoint fails
+closed with a 503 and the recovery is a superadmin pressing Pull — the tag and the GitHub release
+exist either way.
 
 ## Agent skills
 

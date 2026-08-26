@@ -38,6 +38,15 @@ const STRIPE_STUBS: Record<string, string> = {
   STRIPE_PRICE_PRO_YEARLY: 'price_stub_pro_yearly',
 }
 
+// The merchant address-check link (emailVerifyToken.ts). Unlike the stubs above this is not a
+// stand-in for a credential we refuse to use — it is the real mechanism, and setting it is what
+// turns the feature ON for these suites. Its value is the key: tests/api/verify-email.test.ts
+// mints tokens with this exact string, so it must be a shared constant and not a per-run secret.
+//
+// No mail leaves the process regardless: RESEND_API_KEY is unset here, and resendSend logs and
+// returns rather than calling Resend.
+export const EMAIL_VERIFY_TEST_SECRET = 'email-verify-secret-for-tests'
+
 function supabaseStatusEnv(): Map<string, string> {
   // `supabase` resolves the project from the config in ./supabase, so this must run
   // with apps/backend as cwd — which it does, being the workspace vitest runs in.
@@ -57,6 +66,7 @@ function loadSupabaseEnv() {
   for (const [name, value] of Object.entries(STRIPE_STUBS)) {
     if (!process.env[name]) process.env[name] = value
   }
+  if (!process.env.EMAIL_VERIFY_SECRET) process.env.EMAIL_VERIFY_SECRET = EMAIL_VERIFY_TEST_SECRET
 
   // FORCED EMPTY, not merely defaulted: these suites must never reach Google. A developer with
   // a real key in their shell would otherwise turn the cache-miss cases below into live,
@@ -92,6 +102,10 @@ function loadSupabaseEnv() {
   if (!process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET) {
     process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET = 'test-screenshot-sweep-secret-stub'
   }
+
+  // Same reasoning once more: it only gates POST /api/internal/releases-pull, whose GitHub and
+  // Claude calls both go through `releaseDeps`, which the suite swaps.
+  if (!process.env.RELEASE_PULL_SECRET) process.env.RELEASE_PULL_SECRET = 'test-release-pull-secret-stub'
 
   const missing = Object.keys(FROM_CLI).filter(name => !process.env[name])
   if (missing.length === 0) return

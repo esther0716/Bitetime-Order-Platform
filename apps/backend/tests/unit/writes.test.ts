@@ -319,3 +319,34 @@ describe('pickProductFields — the arrangement columns', () => {
       .toEqual({ name: 'Cookie', price: 5, category_id: 'c1' })
   })
 })
+
+describe('pickMerchantConfig — brand colour', () => {
+  it('accepts a hex and stores it uppercased', () => {
+    expect(pickMerchantConfig({ brand_color: '#1f5c3d' }, SHOP))
+      .toEqual({ ok: true, patch: { brand_color: '#1F5C3D' } })
+  })
+
+  it('accepts the three-digit form, expanded', () => {
+    expect(pickMerchantConfig({ brand_color: '#f0a' }, SHOP))
+      .toEqual({ ok: true, patch: { brand_color: '#FF00AA' } })
+  })
+
+  // The only way back to the platform colour. Both spellings store null, so the column never
+  // holds a blank string that the derivation would then have to treat as a colour.
+  it('reads null and empty as "use the platform colour"', () => {
+    expect(pickMerchantConfig({ brand_color: null }, SHOP))
+      .toEqual({ ok: true, patch: { brand_color: null } })
+    expect(pickMerchantConfig({ brand_color: '' }, SHOP))
+      .toEqual({ ok: true, patch: { brand_color: null } })
+  })
+
+  it('refuses a value that is not a colour rather than dropping it', () => {
+    expect(pickMerchantConfig({ brand_color: 'rebeccapurple' }, SHOP))
+      .toEqual({ ok: false, error: 'brand_color must be a hex colour like #7A1028' })
+  })
+
+  it('leaves the column alone when the body does not mention it', () => {
+    expect(pickMerchantConfig({ timezone: 'Asia/Kuala_Lumpur' }, SHOP))
+      .toEqual({ ok: true, patch: { timezone: 'Asia/Kuala_Lumpur' } })
+  })
+})

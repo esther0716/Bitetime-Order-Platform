@@ -1,6 +1,6 @@
 import type { User } from '@supabase/auth-js';
 import { voucherFromRow, QUOTE_REFUSALS, validateFeedbackImages } from '@bitetime/shared';
-import type { FeedbackDraft, FeedbackStatus, Granularity, MerchantStats, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
+import type { FeedbackDraft, FeedbackStatus, Granularity, MerchantStats, OrderRefusal, PendingShop, QuoteRefusal } from '@bitetime/shared';
 import { revenueQuery, type RevenueSelection } from './merchant/revenueRange';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
@@ -8,8 +8,6 @@ import { SignupError, signupErrorCode } from './signupError'
 import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
-import { pendingShopMetadata } from './merchant/pendingShop';
-import type { PendingShop } from './merchant/pendingShop';
 import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForFile, apiSendForm, mapOk, toVoid } from './api'
 import type { Result } from './api'
 import type { CartLine } from '@bitetime/shared'
@@ -19,31 +17,67 @@ import type { CartLine } from '@bitetime/shared'
 export async function signIn(email: string, password: string) {
   const { data, error } = await auth.signInWithPassword({ email, password });
   if (error) throw error;
+  // The device limit, enforced by the backend against the session this sign-in just created.
+  // Deliberately NOT awaited for its result and never thrown from: a merchant whose sign-in
+  // worked must reach their dashboard even if this call did not land. The worst outcome of a
+  // missed call is a third live session until the next sign-in, and the worst outcome of a
+  // throw here is a merchant who cannot get in at all.
+  void enforceDeviceLimit();
   return data.user;
 }
 
-// Merchant sign-up. `shop` is what the form collected about the SHOP, parked on the auth user
-// so it outlives the confirmation round trip: with confirmations on, the sign-in that follows
-// this call fails and the shop is never created here. See pendingShop.ts.
+/** Whether this account's email address still needs proving, and whether the platform even asks.
+ *  See the route in app.ts for why `configured` travels with the answer. */
+export function fetchEmailVerification() {
+  return apiGet<{ configured: boolean; verified: boolean; email: string }>('/api/me/verify-email', { auth: 'required' })
+}
+
+/** Send the address-check link again. `alreadyVerified` is a success, not a failure — the
+ *  merchant asked for a confirmed address and it already is one. */
+export function resendEmailVerification() {
+  return apiSend<{ ok: true; alreadyVerified: boolean }>('/api/me/verify-email/resend', 'POST', undefined, { auth: 'required' })
+}
+
+/** Ask the backend to trim this account to its device limit. Failures are swallowed by design. */
+async function enforceDeviceLimit() {
+  const r = await apiSend<{ evicted: number }>('/api/me/devices/enforce', 'POST', undefined, { auth: 'required' });
+  if (!r.ok) console.error('Device limit not enforced:', r.error.message);
+}
+
+// Merchant sign-up. Goes through the backend for the SAME reason signUpCustomer below does, and
+// through an endpoint of the same shape: email confirmation is on project-wide, so a client-side
+// `auth.signUp` returns NO SESSION. The sign-in that follows it then fails, `createMerchant`
+// never runs, and the merchant is left in their inbox holding a shop that does not exist — they
+// had to confirm, come back and log in before the platform would build anything. Every one of
+// those hops loses merchants, and most arrive from an ad inside a webview, where leaving for the
+// mail app is leaving for good.
+//
+// The backend creates the account PRE-CONFIRMED with the service role, so the sign-in right
+// after this call succeeds and the whole signup finishes in one submit.
+//
+// What that knowingly costs: a merchant's email is never verified here. Unlike a customer's, it
+// is an address the platform really does write to — Stripe receipts, the trial-ending notice,
+// password resets — so a typo is a merchant who hears nothing and cannot reset it. Catching that
+// is its own piece of work; nothing in this path depends on the address being real.
+//
+// `shop` is what the form collected about the SHOP. It still rides along on the auth user's
+// metadata: no longer load-bearing for a NEW signup, but it is what lets FinishSignupScreen
+// build a shop for an account parked in an inbox before this shipped.
 export async function signUp(name: string, email: string, password: string, shop?: PendingShop) {
-  const { data, error } = await auth.signUp({
-    email,
-    password,
-    options: { data: { name, ...(shop ? pendingShopMetadata(shop) : {}) } },
-  });
-  if (error) throw error;
-  if (data.user) {
-    // If email confirmation is required, there is no session yet and RLS will
-    // block this write — it succeeds once the user confirms and signs in, which
-    // is handled in onAuthChange below.
-    await ensureGlobalProfile({
-      user_id: data.user.id,
-      name,
-      email,
-      email_confirmed: !!data.user.email_confirmed_at,
-    });
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}/api/merchant/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name, shop }),
+    })
+  } catch {
+    throw new SignupError('network')
   }
-  return data.user;
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new SignupError(signupErrorCode(res.status, body))
+  }
 }
 
 // Customer sign-up. Goes through the backend rather than auth.signUp because
@@ -80,10 +114,10 @@ export async function signUpCustomer(email: string, password: string) {
 // Upserts the caller's GLOBAL profile (merchant_id null) via the backend, which forces
 // user_id/merchant_id server-side and allowlists the rest (pickProfileFields in
 // apps/backend/src/writes.ts) — see Global Constraint 1. Best-effort: returns the failure as a
-// Result rather than throwing, because both callers below treat a failure as "try again later",
-// not as a hard stop. In particular, during merchant signup there is no session yet (email
-// confirmation is on project-wide) — the fetch 401s exactly as RLS used to block the equivalent
-// browser write, and it's retried from onAuthChange once a session exists.
+// Result rather than throwing, because its caller treats a failure as "try again later", not as
+// a hard stop. Both signup endpoints write this row server-side already; the repeat from
+// onAuthChange is what fills `referral_code` and what closes the gap when that server-side write
+// failed.
 async function ensureGlobalProfile(fields: {
   user_id: string
   name: string
@@ -247,6 +281,16 @@ export interface SampleShop {
   products: SampleShopProduct[]
 }
 
+/** Re-shoot every sample shop's storefront. Superadmin only. Answers `captureQueued: false`
+ *  rather than an error when GitHub refused the request — the weekly cron still covers it. */
+export async function recaptureSampleShops(): Promise<Result<any>> {
+  return apiSend<any>('/api/admin/recapture-samples', 'POST', {}, { auth: 'required' })
+}
+
+/** A sample shop that HAS a captured storefront screenshot — the only kind the carousel renders.
+ *  `useSampleShops` narrows to this; see SampleShopsCarousel for why there is no second layout. */
+export type CapturedSampleShop = SampleShop & { screenshotPath: string }
+
 export async function fetchSampleShops(): Promise<Result<SampleShop[]>> {
   return apiGet<SampleShop[]>('/api/merchants/samples')
 }
@@ -379,8 +423,66 @@ export async function updatePassword(password: string) {
   if (error) throw error
 }
 
+/**
+ * Set by `signOut` and CONSUMED by the `SIGNED_OUT` handler below — never read anywhere else.
+ *
+ * Without it, an intentional sign-out and an eviction are the same `SIGNED_OUT` event, and the
+ * login screen would explain the device limit to someone who simply clicked Sign out.
+ */
+const SIGN_OUT_INTENT_KEY = 'bt.sign_out_intent';
+
+/** Set when a sign-out was NOT this tab's doing. Read once and cleared by the login screen. */
+export const SIGNED_OUT_ELSEWHERE_KEY = 'bt.signed_out_elsewhere';
+
 export async function signOut() {
-  await auth.signOut();
+  // `scope: 'local'`, and the default is NOT that. `@supabase/auth-js` defaults `signOut()` to
+  // `scope: 'global'`, which revokes EVERY session the account holds — so a merchant who signed
+  // out on their phone lost the laptop too, and a two-device account behaved as a one-device
+  // account. This line is what makes the device limit mean two devices.
+  try { sessionStorage.setItem(SIGN_OUT_INTENT_KEY, '1'); } catch { /* private mode */ }
+  await auth.signOut({ scope: 'local' });
+}
+
+/** One signed-in device, as the Devices panel shows it. */
+export interface Device {
+  id: string;
+  /**
+   * The browser and platform as PARTS — "Chrome", "macOS" — never a joined sentence. The join is
+   * prose and belongs to `t(en, zh)`; both are null when the user agent could not be read. Read
+   * from the user agent, so it is a claim, not a fact.
+   */
+  browser: string | null;
+  platform: string | null;
+  current: boolean;
+  /** ISO 8601. When this device signed in. */
+  createdAt: string;
+  /** ISO 8601. When this session was last written to. */
+  updatedAt: string;
+  /**
+   * ISO 8601, and the eviction RANK — `refreshed_at` falling back to `createdAt`. Not the same
+   * field as `updatedAt`: this is the one the limit actually turns on, so the list's order is the
+   * order devices will be signed out in.
+   */
+  lastSeen: string;
+}
+
+/** The devices on this account, and how many the server allows. */
+export interface DeviceList {
+  devices: Device[];
+  /**
+   * The server's own ceiling, quoted rather than restated. The rule is enforced by
+   * MERCHANT_DEVICE_LIMIT in the backend's quotaWindows.ts and nowhere else, so a screen that
+   * hardcoded "2" would keep saying 2 the day that number changes.
+   */
+  limit: number;
+}
+
+export async function fetchMyDevices(): Promise<Result<DeviceList>> {
+  return apiGet<DeviceList>('/api/me/devices', { auth: 'required' });
+}
+
+export async function signOutDevice(sessionId: string): Promise<Result<void>> {
+  return toVoid(await apiSend(`/api/me/devices/${sessionId}`, 'DELETE', undefined, { auth: 'required' }));
 }
 
 export async function getCurrentUser() {
@@ -391,6 +493,19 @@ export async function getCurrentUser() {
 export function onAuthChange(callback: (user: User | null, event?: string) => void) {
   const { data: { subscription } } = auth.onAuthStateChange((event, session) => {
     const user = session?.user ?? null;
+    // A SIGNED_OUT that this tab did not ask for means the session row is gone: either a third
+    // device took the slot, or the merchant signed this device out from another one. Both read
+    // the same way to the person holding it, and the login screen says so.
+    if (event === 'SIGNED_OUT') {
+      try {
+        // The intent is CONSUMED here, whether or not it was set. Leaving it for the login screen
+        // to clear was a bug: signing out lands on the marketing page, not on that screen, so the
+        // flag survived — and silenced the notice for a genuine eviction later in the same tab.
+        const mine = sessionStorage.getItem(SIGN_OUT_INTENT_KEY) === '1';
+        sessionStorage.removeItem(SIGN_OUT_INTENT_KEY);
+        if (!mine) sessionStorage.setItem(SIGNED_OUT_ELSEWHERE_KEY, 'yes');
+      } catch { /* private mode: the login screen simply says nothing */ }
+    }
     if (user && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {
       // Ensure profile exists and email_confirmed is up to date.
       // This handles the case where email confirmation was required at signUp

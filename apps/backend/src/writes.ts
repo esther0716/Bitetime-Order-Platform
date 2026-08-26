@@ -1,4 +1,4 @@
-import { isTimezone, validateMenuCategories, validateShopDescription } from '@bitetime/shared'
+import { isTimezone, validateMenuCategories, validateShopDescription, normalizeBrandColor } from '@bitetime/shared'
 
 // Column allowlists for write endpoints. The service-role `admin` client bypasses RLS and the
 // guard_merchant_status / guard_profile_privileges triggers, so these picks are the ONLY thing
@@ -44,6 +44,10 @@ const MERCHANT_CONFIG_FIELDS = [
   // The line a customer reads under the shop's name. `description_zh` is optional and falls back
   // to the English one, matching every other pair of merchant-authored strings.
   'description', 'description_zh',
+  // The shop's one brand colour. The whole storefront palette derives from it in the browser
+  // (frontend `brandTheme.ts`); nothing here reads it, because nothing server-side renders a
+  // storefront. What this allowlist owns is the SHAPE.
+  'brand_color',
 ] as const
 
 // A Storage object path the given merchant owns: `{merchantId}/{filename}`, one segment deep,
@@ -135,6 +139,15 @@ export function pickMerchantConfig(body: any, merchantId: string): PickResult {
     } else if (!isOwnStoragePath(out.payment_qr, merchantId)) {
       return { ok: false, error: 'payment_qr must be an uploaded image path belonging to this shop' }
     }
+  }
+
+  // Refused, not dropped, for the reason the tax rate is: the merchant is standing in front of a
+  // colour picker, and a silent drop hands them a success toast and the colour they already had.
+  // The rule itself lives in @bitetime/shared, so the picker and this endpoint cannot disagree.
+  if (out.brand_color !== undefined) {
+    const brand = normalizeBrandColor(out.brand_color)
+    if (!brand.ok) return { ok: false, error: 'brand_color must be a hex colour like #7A1028' }
+    out.brand_color = brand.value
   }
 
   // Real booleans, not truthiness: these columns are `boolean not null`, and a coerced 'false'

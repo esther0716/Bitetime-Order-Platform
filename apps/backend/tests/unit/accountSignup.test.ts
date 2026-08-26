@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { MIN_PASSWORD_LENGTH } from '@bitetime/shared'
-import { signUpCustomer, isDuplicateEmailError, type SignupDeps } from '../../src/customerSignup.js'
+import { signUpAccount, isDuplicateEmailError, type SignupDeps } from '../../src/accountSignup.js'
 
 // Adapters are injected: the account-creation call and the profile write are the only
 // two things that touch the outside world, so the policy above them stays pure.
@@ -16,10 +16,10 @@ function deps(over: Partial<SignupDeps> = {}): SignupDeps {
 
 const GOOD = { email: 'sam@example.com', password: 'hunter2hunter', ip: '1.1.1.1' }
 
-describe('signUpCustomer', () => {
+describe('signUpAccount', () => {
   it('creates the account and its profile, and reports the new user', async () => {
     const d = deps()
-    const result = await signUpCustomer(d, GOOD)
+    const result = await signUpAccount(d, GOOD)
 
     expect(result).toEqual({ ok: true, userId: 'user-1' })
     expect(d.createUser).toHaveBeenCalledWith({ email: 'sam@example.com', password: 'hunter2hunter' })
@@ -28,14 +28,14 @@ describe('signUpCustomer', () => {
 
   it('normalises the email before it reaches either adapter', async () => {
     const d = deps()
-    await signUpCustomer(d, { ...GOOD, email: '  Sam@Example.COM ' })
+    await signUpAccount(d, { ...GOOD, email: '  Sam@Example.COM ' })
 
     expect(d.createUser).toHaveBeenCalledWith({ email: 'sam@example.com', password: 'hunter2hunter' })
   })
 
   it('rejects a short password before any account is created', async () => {
     const d = deps()
-    const result = await signUpCustomer(d, { ...GOOD, password: 'a'.repeat(MIN_PASSWORD_LENGTH - 1) })
+    const result = await signUpAccount(d, { ...GOOD, password: 'a'.repeat(MIN_PASSWORD_LENGTH - 1) })
 
     expect(result).toEqual({ ok: false, error: 'weak_password', status: 400 })
     expect(d.createUser).not.toHaveBeenCalled()
@@ -43,7 +43,7 @@ describe('signUpCustomer', () => {
 
   it('rejects a malformed email before any account is created', async () => {
     const d = deps()
-    const result = await signUpCustomer(d, { ...GOOD, email: 'not-an-email' })
+    const result = await signUpAccount(d, { ...GOOD, email: 'not-an-email' })
 
     expect(result).toEqual({ ok: false, error: 'invalid_email', status: 400 })
     expect(d.createUser).not.toHaveBeenCalled()
@@ -51,7 +51,7 @@ describe('signUpCustomer', () => {
 
   it('discloses a duplicate email plainly, so the panel can flip to sign-in', async () => {
     const d = deps({ createUser: vi.fn(async () => ({ ok: false as const, reason: 'duplicate_email' as const })) })
-    const result = await signUpCustomer(d, GOOD)
+    const result = await signUpAccount(d, GOOD)
 
     expect(result).toEqual({ ok: false, error: 'duplicate_email', status: 409 })
     expect(d.writeProfile).not.toHaveBeenCalled()
@@ -59,7 +59,7 @@ describe('signUpCustomer', () => {
 
   it('never reaches the account-creation adapter when the request is rate limited', async () => {
     const d = deps({ allow: () => false })
-    const result = await signUpCustomer(d, GOOD)
+    const result = await signUpAccount(d, GOOD)
 
     expect(result).toEqual({ ok: false, error: 'rate_limited', status: 429 })
     expect(d.createUser).not.toHaveBeenCalled()
@@ -68,7 +68,7 @@ describe('signUpCustomer', () => {
   it('keys the rate limit by IP and by email independently', async () => {
     const seen: [string, string][] = []
     const d = deps({ allow: (kind, value) => { seen.push([kind, value]); return true } })
-    await signUpCustomer(d, GOOD)
+    await signUpAccount(d, GOOD)
 
     expect(seen).toEqual([['ip', '1.1.1.1'], ['email', 'sam@example.com']])
   })
@@ -76,7 +76,7 @@ describe('signUpCustomer', () => {
   it('spends no email budget when the IP is already blocked', async () => {
     const seen: [string, string][] = []
     const d = deps({ allow: (kind, value) => { seen.push([kind, value]); return false } })
-    await signUpCustomer(d, GOOD)
+    await signUpAccount(d, GOOD)
 
     expect(seen).toEqual([['ip', '1.1.1.1']])
   })
@@ -84,7 +84,7 @@ describe('signUpCustomer', () => {
   it('reports a failed account creation as a server error', async () => {
     const d = deps({ createUser: vi.fn(async () => ({ ok: false as const, reason: 'error' as const })) })
 
-    expect(await signUpCustomer(d, GOOD)).toEqual({ ok: false, error: 'server', status: 502 })
+    expect(await signUpAccount(d, GOOD)).toEqual({ ok: false, error: 'server', status: 502 })
   })
 
   it('still signs the customer in when only the profile write fails', async () => {
@@ -92,7 +92,7 @@ describe('signUpCustomer', () => {
     // email on the retry. The client's profile upsert on SIGNED_IN is the safety net.
     const logError = vi.fn()
     const d = deps({ writeProfile: vi.fn(async () => { throw new Error('db down') }), logError })
-    const result = await signUpCustomer(d, GOOD)
+    const result = await signUpAccount(d, GOOD)
 
     expect(result).toEqual({ ok: true, userId: 'user-1' })
     expect(logError).toHaveBeenCalled()

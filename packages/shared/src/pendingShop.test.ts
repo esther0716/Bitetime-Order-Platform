@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { pendingShopMetadata, pendingShopFromMetadata } from './pendingShop'
-import type { PendingShop } from './pendingShop'
+import { pendingShopMetadata, pendingShopFromMetadata, pendingShopFromBody } from './pendingShop.js'
+import { DEFAULT_CURRENCY } from './currency.js'
+import type { PendingShop } from './pendingShop.js'
 
 describe('pendingShopMetadata', () => {
   it('carries every field the signup form collected', () => {
@@ -67,5 +68,46 @@ describe('pendingShopFromMetadata', () => {
 
   it('ignores a non-string referral', () => {
     expect(pendingShopFromMetadata({ shop_name: 'S', shop_ref: 42 })?.ref).toBeUndefined()
+  })
+})
+
+describe('pendingShopFromBody', () => {
+  it('reads the five answers the signup form posts', () => {
+    expect(pendingShopFromBody({
+      name: '  Sunny Bakes  ',
+      businessNature: 'bakery',
+      currency: 'SGD',
+      billing: 'yearly',
+      ref: 'ABC123',
+    })).toEqual({
+      name: 'Sunny Bakes',
+      businessNature: 'bakery',
+      currency: 'SGD',
+      billing: 'yearly',
+      ref: 'ABC123',
+    })
+  })
+
+  it('is null without a usable shop name', () => {
+    expect(pendingShopFromBody({ name: '   ' })).toBeNull()
+    expect(pendingShopFromBody({})).toBeNull()
+    expect(pendingShopFromBody(null)).toBeNull()
+    expect(pendingShopFromBody('Sunny Bakes')).toBeNull()
+  })
+
+  it('falls back rather than trusting an unknown nature, currency or cycle', () => {
+    expect(pendingShopFromBody({
+      name: 'Sunny Bakes',
+      businessNature: 'money-laundering',
+      currency: 'XYZ',
+      billing: 'daily',
+      ref: '',
+    })).toEqual({
+      name: 'Sunny Bakes',
+      businessNature: '',
+      currency: DEFAULT_CURRENCY,
+      billing: 'monthly',
+      ref: undefined,
+    })
   })
 })

@@ -273,7 +273,7 @@ export async function makePhoneOnlyUser(phone: string, password: string): Promis
  * `auth.users` is not reachable through PostgREST (it is not in the exposed schemas), so this
  * goes through the same direct driver the backend uses for transactions.
  */
-async function findUserByEmail(email: string): Promise<string | null> {
+export async function findUserByEmail(email: string): Promise<string | null> {
   const rows = await authDb()<{ id: string }[]>`
     select id from auth.users where email = ${email} limit 1
   `

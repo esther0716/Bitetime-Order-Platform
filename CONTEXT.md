@@ -385,6 +385,19 @@ activates having already used its one trial started nothing.
 handler; `data-cta` on the link names which one. With no `VITE_PRAXOR_SITE_ID` set the client is
 never created — the inert state of dev, CI and the e2e run.
 
+## Device
+
+One GoTrue session, and nothing more. The platform stores no device identifier and runs no
+fingerprint, so two browsers on one computer are two devices, and clearing a browser's storage
+yields a new one — the abandoned session stays as an idle row until it is evicted.
+
+A merchant account holds two at a time. A third sign-in succeeds and signs out the device used
+longest ago, ranked on `coalesce(refreshed_at, created_at)`. The merchant sees both in
+Settings → Devices and can sign one out. Customers and superadmins are not bounded.
+
+Signing a device out IS deleting its `auth.sessions` row: GoTrue then refuses that session's
+still-unexpired access token, so the device stops working at once rather than at its next refresh.
+
 ## Password reset
 
 The way back into a customer account — and therefore back to the order history, which is precisely

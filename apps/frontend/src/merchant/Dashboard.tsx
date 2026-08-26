@@ -4,7 +4,9 @@ import { fetchOrderCount } from '../store'
 import { useEnterTransition } from '../motion'
 import { LayoutDashboard, ReceiptText, Cake, LayoutList, Ticket, Users, Settings } from 'lucide-react'
 import DashboardShell, { type NavItem } from '../components/DashboardShell'
+import BrandTheme from '../components/BrandTheme'
 import BillingBanner from './BillingBanner'
+import VerifyEmailBanner from './VerifyEmailBanner'
 import FulfilmentDatesBanner from './FulfilmentDatesBanner'
 import TrialFeedbackPrompt from './TrialFeedbackPrompt'
 import Overview from './Overview'
@@ -93,6 +95,10 @@ function DashboardInner() {
     // Pro locks anywhere below can ask for Settings → Subscription (#112); handing them the
     // GUARDED switch is what stops an upgrade CTA discarding a half-typed Shipping form.
     <UpgradeNavProvider navigate={goToSettingsTab}>
+    {/* The shop's own colour, on the merchant's own dashboard. `merchant` here is the ACTIVE shop
+        — the impersonated one where a superadmin is viewing as a shop, otherwise their own, which
+        is what an admin looking at a shop should see. */}
+    <BrandTheme color={merchant!.brand_color}>
     <DashboardShell
       title={merchant!.name}
       role={role === 'superadmin' ? t('Viewing as shop', '以店铺身份查看') : t('Merchant', '商家')}
@@ -103,6 +109,8 @@ function DashboardInner() {
       footerExtra={<SupportLinks />}
     >
       <BillingBanner />
+      {/* Below billing: a shop about to shut outranks an address we cannot yet reach. */}
+      <VerifyEmailBanner />
       {/* Same guarded move the Pro locks use, so a warning cannot discard a half-typed form. */}
       <FulfilmentDatesBanner onGoToFulfilment={() => goToSettingsTab('fulfilment')} />
       <TrialFeedbackPrompt />
@@ -118,6 +126,7 @@ function DashboardInner() {
       </div>
       <FeedbackFab />
     </DashboardShell>
+    </BrandTheme>
     </UpgradeNavProvider>
   )
 }

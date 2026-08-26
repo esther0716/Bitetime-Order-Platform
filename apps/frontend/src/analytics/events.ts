@@ -14,6 +14,7 @@
 
 import type { PraxorClient } from 'praxor'
 import type { OnboardingStep } from '../merchant/onboardingSteps'
+import type { SignupErrorCode } from '../signupError'
 
 /** The two billing cycles. One plan remains, so there is no `plan` property anywhere here. */
 export type Billing = 'monthly' | 'yearly'
@@ -31,7 +32,23 @@ export function toBilling(value: string): Billing {
   return value === 'yearly' ? 'yearly' : 'monthly'
 }
 
+/**
+ * Why a merchant signup did not finish.
+ *
+ * The backend's own refusal codes, plus the one failure that happens AFTER the account exists:
+ * `POST /api/merchants` refused, so there is an account with no shop. Reusing SignupErrorCode
+ * rather than restating it keeps this from drifting behind the endpoint it describes — a new
+ * refusal the backend learns to send is a compile error here until it is named.
+ */
+export type SignupFailure = SignupErrorCode | 'shop_create_failed'
+
 export type AnalyticsEvent =
+  /** The signup form was touched. Fires once per visit, on first focus of any field. */
+  | 'signup_started'
+  /** The form was submitted. Fires before the network call, so it counts intent, not success. */
+  | 'signup_submitted'
+  /** The submit did not end in a shop. */
+  | 'signup_failed'
   | 'merchant_signup'
   | 'trial_started'
   | 'merchant_login'
@@ -43,6 +60,18 @@ export type AnalyticsEvent =
 // not assignable to the SDK's EventProperties (Record<string, unknown>) and the track call below
 // fails to compile.
 type EventProps = {
+  /**
+   * The three signup events carry no more than the funnel needs to be readable:
+   *
+   *   pageview /merchant/signup → signup_started → signup_submitted → merchant_signup
+   *
+   * with signup_failed naming every gap. Without them the only measurable outcome is success,
+   * which cannot tell a visitor who bounced off the form from one who filled it in and was
+   * refused — and those two have opposite fixes.
+   */
+  signup_started: undefined
+  signup_submitted: { billing: Billing }
+  signup_failed: { reason: SignupFailure }
   merchant_signup: { billing: Billing }
   /** The shop was created AND Stripe provisioned the cardless trial. */
   trial_started: undefined

@@ -186,3 +186,54 @@ export const listGithubReleases: ListGithubReleases = async (token, perPage) => 
     return null
   }
 }
+
+/**
+ * Asks the sample-shop screenshot workflow to capture storefronts now
+ * (.github/workflows/sample-shop-screenshot-sweep.yml, `workflow_dispatch` with a
+ * `merchant_id` input). Two callers, and the difference is the argument:
+ *
+ * - with a merchant id, when a superadmin flags one shop as a sample — without it that shop
+ *   has no screenshot, and so no card, until the weekly cron runs;
+ * - with none, to re-shoot every sample shop at once, which is what a storefront redesign
+ *   needs: it makes every stored screenshot stale simultaneously and changes no shop.
+ *
+ * Returns whether GitHub accepted the request — the caller reports that to the admin and
+ * never fails on it. Two things this needs that issue filing does not: the token must carry
+ * `actions: write`, and the workflow file must exist on `ref` below, because GitHub resolves
+ * a dispatch against that ref's tree and 404s otherwise.
+ */
+export type DispatchSampleScreenshot = (token: string, merchantId?: string) => Promise<boolean>
+
+const SCREENSHOT_WORKFLOW = 'sample-shop-screenshot-sweep.yml'
+const SCREENSHOT_WORKFLOW_REF = 'main'
+
+export const dispatchSampleScreenshot: DispatchSampleScreenshot = async (token, merchantId) => {
+  if (!token) {
+    console.error('Sample screenshot capture skipped: no token configured')
+    return false
+  }
+  try {
+    const res = await fetch(
+      `${GITHUB_API}/repos/${GITHUB_REPO}/actions/workflows/${SCREENSHOT_WORKFLOW}/dispatches`,
+      {
+        method: 'POST',
+        headers: headers(token),
+        body: JSON.stringify({
+          ref: SCREENSHOT_WORKFLOW_REF,
+          // Empty string, never an absent key: the workflow's input has `default: ''` and the
+          // script reads the empty value as "sweep every sample shop".
+          inputs: { merchant_id: merchantId ?? '' },
+        }),
+      },
+    )
+    // 204 No Content on success — a dispatch returns no body.
+    if (!res.ok) {
+      console.error(`Sample screenshot dispatch failed: ${res.status} ${await res.text()}`)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error('Sample screenshot dispatch failed:', e instanceof Error ? e.message : String(e))
+    return false
+  }
+}

@@ -23,7 +23,7 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
         "group-has-disabled/field:opacity-50",
         "aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20",
         // checked: .cookie-card.selected .cookie-check-badge — oxblood fill
-        "data-checked:border-primary data-checked:bg-primary data-checked:text-background",
+        "data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground",
         className
       )}
       {...props}
