@@ -29,6 +29,13 @@ pnpm --filter @bitetime/backend db:migrate   # apply pending SQL migrations to t
 pnpm --filter @bitetime/backend db:push      # HUMAN ONLY — writes to PRODUCTION. Never run this yourself.
 
 stripe listen --forward-to http://localhost:8787/api/stripe/webhook   # REQUIRED for any local billing work
+
+# Re-shoot the /sample-shops carousel's storefront photographs against your OWN stack. Needs both
+# dev servers up. Nothing does this locally on its own, so a local shot stays whatever it was on
+# the day it was taken — which is how the carousel came to show a three-week-old storefront design.
+FRONTEND_URL=http://localhost:5173 BACKEND_URL=http://localhost:8787 \
+  SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET=$(grep SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET apps/backend/.env | cut -d= -f2) \
+  pnpm --filter @bitetime/backend screenshot:sweep
 ```
 
 **Anything that involves paying must have `stripe listen` running before the payment.** Stripe cannot reach `localhost`, and every post-payment effect is webhook-driven — `merchant_billing` (subscription id, status), the `merchants.billing_cycle` reconciliation and the pending→active flip all happen in `POST /api/stripe/webhook` and nowhere else. Without the forwarder, Checkout completes, Stripe charges the card, and the app changes **nothing**: the shop stays shut, and the only trace is the `stripe_customer_id` that `/api/checkout` wrote before redirecting. It looks exactly like a broken feature.

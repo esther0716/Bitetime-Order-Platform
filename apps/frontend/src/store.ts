@@ -259,6 +259,16 @@ export interface SampleShop {
   products: SampleShopProduct[]
 }
 
+/** Re-shoot every sample shop's storefront. Superadmin only. Answers `captureQueued: false`
+ *  rather than an error when GitHub refused the request — the weekly cron still covers it. */
+export async function recaptureSampleShops(): Promise<Result<any>> {
+  return apiSend<any>('/api/admin/recapture-samples', 'POST', {}, { auth: 'required' })
+}
+
+/** A sample shop that HAS a captured storefront screenshot — the only kind the carousel renders.
+ *  `useSampleShops` narrows to this; see SampleShopsCarousel for why there is no second layout. */
+export type CapturedSampleShop = SampleShop & { screenshotPath: string }
+
 export async function fetchSampleShops(): Promise<Result<SampleShop[]>> {
   return apiGet<SampleShop[]>('/api/merchants/samples')
 }

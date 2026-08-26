@@ -66,8 +66,10 @@ import {
 import { buildTrialFeedbackEmail } from './trialFeedbackEmail.js'
 import {
   createGithubIssue, closeGithubIssue, reopenGithubIssue, listGithubReleases,
+  dispatchSampleScreenshot,
   buildIssueTitle, buildIssueBody, categoryToLabel,
   type CreateGithubIssue, type GithubIssueAction, type ListGithubReleases,
+  type DispatchSampleScreenshot,
 } from './github.js'
 import { humanizeRelease, type HumanizeRelease } from './releases.js'
 import { extractMenu, MAX_MENU_IMAGE_BYTES, type ExtractMenu } from './menuImport.js'
@@ -1657,6 +1659,12 @@ app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
 // ── Superadmin: flag/unflag a merchant for the landing-page sample-shops carousel (#107) ──────
 // Pure flag flip — no billing/status side effects, unlike comp/uncomp. GET /api/merchants/samples
 // is what actually reads it.
+//
+// Flagging ON also asks GitHub Actions to screenshot that one storefront now. The carousel shows
+// only shops that HAVE a screenshot, and capture is a weekly cron, so without this a shop flagged
+// on a Tuesday stays invisible until the following Monday. The request is best-effort in the
+// strongest sense: `captureQueued: false` is reported to the admin, the flag stands either way,
+// and the cron remains the thing that guarantees a shot eventually exists.
 app.post('/api/admin/set-merchant-sample', requireSuperadmin, async (c) => {
   const { merchantId, isSample } = await c.req.json().catch(() => ({}))
   if (!merchantId || typeof isSample !== 'boolean') {
@@ -1672,7 +1680,27 @@ app.post('/api/admin/set-merchant-sample', requireSuperadmin, async (c) => {
     console.error('set-merchant-sample failed:', error.message)
     return c.json({ error: 'Update failed' }, 500)
   }
-  return c.json({ ok: true, isSample })
+
+  let captureQueued = false
+  if (isSample) {
+    captureQueued = await githubDeps
+      .dispatchSampleScreenshot(env.githubToken, merchantId)
+      .catch(() => false)
+  }
+  return c.json({ ok: true, isSample, captureQueued })
+})
+
+// ── Superadmin: re-shoot every sample shop's storefront now ───────────────────────────────────
+// A storefront redesign makes every stored screenshot stale at the same moment, and no shop has
+// changed — so there is no per-shop toggle to flip, and until this existed the carousel showed
+// the previous design until the following Monday. Production deploys now trigger the same sweep
+// on their own (the workflow's `deployment_status` trigger); this is the manual path, for a shot
+// that came out wrong or a design change that shipped without a frontend deploy.
+app.post('/api/admin/recapture-samples', requireSuperadmin, async (c) => {
+  const captureQueued = await githubDeps
+    .dispatchSampleScreenshot(env.githubToken)
+    .catch(() => false)
+  return c.json({ ok: true, captureQueued })
 })
 
 // ── Superadmin: comp a merchant (billing does not apply) ───────────────────────
@@ -1955,10 +1983,12 @@ export const githubDeps: {
   createIssue: CreateGithubIssue
   closeIssue: GithubIssueAction
   reopenIssue: GithubIssueAction
+  dispatchSampleScreenshot: DispatchSampleScreenshot
 } = {
   createIssue: createGithubIssue,
   closeIssue: closeGithubIssue,
   reopenIssue: reopenGithubIssue,
+  dispatchSampleScreenshot,
 }
 
 // ── Merchant platform feedback (#89) ────────────────────────────────────────────
@@ -2354,16 +2384,33 @@ app.post('/api/internal/sample-shop-screenshot/:merchantId', async (c) => {
   const { data: merchant } = await admin.from('merchants').select('id').eq('id', merchantId).maybeSingle()
   if (!merchant) return c.json({ error: 'Merchant not found' }, 404)
 
-  const path = `${merchantId}.png`
+  // `{merchant}/{ms}.png`, NOT a fixed `{merchant}.png` overwritten in place. The bucket is
+  // public and Storage serves these with a max-age, so a stable path meant a recaptured
+  // screenshot could not reach a browser that already held the previous one — the carousel went
+  // on showing a storefront design that had been replaced weeks earlier, and re-shooting on every
+  // deploy did nothing about it. A new name per capture is a new URL, which is the only thing a
+  // cache respects. It also lets the bytes be cached hard rather than revalidated hourly.
+  const { data: previous } = await admin
+    .from('merchants').select('sample_screenshot_path').eq('id', merchantId).maybeSingle()
+  const path = `${merchantId}/${Date.now()}.png`
   const { error } = await admin.storage
     .from(SAMPLE_SCREENSHOT_BUCKET)
-    .upload(path, buffer, { contentType: 'image/png', upsert: true })
+    .upload(path, buffer, { contentType: 'image/png', cacheControl: '31536000', upsert: true })
   if (error) {
     console.error('Sample shot upload failed:', error.message)
     return c.json({ error: 'upload_failed' }, 500)
   }
 
   await admin.from('merchants').update({ sample_screenshot_path: path }).eq('id', merchantId)
+
+  // Only AFTER the row points at the new file: a delete that ran first would leave the carousel
+  // with a dead URL if the update failed. Weekly captures otherwise accumulate one PNG per shop
+  // per week for ever. Best-effort — an orphan costs storage, never correctness.
+  const stale = previous?.sample_screenshot_path
+  if (stale && stale !== path) {
+    const { error: rmErr } = await admin.storage.from(SAMPLE_SCREENSHOT_BUCKET).remove([stale])
+    if (rmErr) console.error('Stale sample shot delete failed:', rmErr.message)
+  }
   return c.json({ ok: true })
 })
 

@@ -354,6 +354,18 @@ body:has([data-layout-flush]) :is(#root, .route-view) { align-items: stretch; }
    which is also what finally makes the `--wide` padding rule below do something. */
 .form-wrap { max-width: 600px; width: 100%; }
 .form-wrap--wide { max-width: 900px; }
+
+/* /s/:slug?preview=1 — the shop, without the order form.
+   The sample-shop screenshot sweep captures this so the card on /sample-shops shows a menu
+   rather than sign-in links, a language picker and an empty August calendar.
+
+   Two rules, and the sibling one is why the storefront needed no restructuring: everything the
+   customer fills in — the fulfilment buttons, the date picker, the contact fields, the totals,
+   the submit — is a FLAT sequence of siblings after the product list, so `~ *` from the menu
+   marker hides all of it at once. Rename `data-sample-capture="menu"` in Storefront.tsx and the
+   capture starts photographing the order form again. */
+[data-preview] [data-sample-capture="menu"] ~ *,
+[data-preview] [data-preview-hide] { display: none; }
 body:has(.form-wrap--wide) { padding-left: 0.5rem; padding-right: 0.5rem; }
 
 /* Flush full-height sidebar rail: no body padding, hugs the

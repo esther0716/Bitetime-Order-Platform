@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { MoreHorizontal } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { fetchAllMerchants, setMerchantStatus, approveMerchant, compMerchant, uncompMerchant, setMerchantSample, fetchAllBilling, type MerchantBilling } from '../store'
+import { fetchAllMerchants, setMerchantStatus, approveMerchant, compMerchant, uncompMerchant, setMerchantSample, recaptureSampleShops, fetchAllBilling, type MerchantBilling } from '../store'
 import { unwrap } from '../api'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
@@ -188,6 +188,7 @@ export default function AdminMerchants() {
   const [rows, setRows] = useState<Merchant[] | null>(null)
   const [billing, setBilling] = useState<Record<string, MerchantBilling>>({})
   const [busy, setBusy] = useState<string | null>(null)
+  const [recapturing, setRecapturing] = useState(false)
 
   // The admin list is a throw-preferring caller (no per-row error UI), so unwrap() surfaces a
   // could-not-ask as a throw — symmetric with fetchAllBilling, which still throws.
@@ -247,7 +248,18 @@ export default function AdminMerchants() {
     setBusy(id)
     const r = await setMerchantSample(id, isSample)
     if (r.ok) {
-      toast.success(isSample ? t('Marked as sample shop', '已设为示例店铺') : t('Removed from samples', '已取消示例店铺'))
+      // The carousel shows only shops that have a storefront screenshot, and the shop has none
+      // until GitHub Actions captures one. Say which of the two happened: a queued capture puts
+      // the shop on /sample-shops in a few minutes, a refused one leaves it off until Monday.
+      if (isSample) {
+        toast.success(
+          r.data?.captureQueued
+            ? t('Marked as sample shop — screenshot in a few minutes', '已设为示例店铺 — 截图将在几分钟后生成')
+            : t('Marked as sample shop — screenshot at the next weekly capture', '已设为示例店铺 — 截图将在下次每周抓取时生成'),
+        )
+      } else {
+        toast.success(t('Removed from samples', '已取消示例店铺'))
+      }
       await load()
     } else {
       toast.error(r.error.message || t('Could not update', '无法更新'))
@@ -275,12 +287,41 @@ export default function AdminMerchants() {
     onToggleSample: toggleSample,
   }
 
+  // The carousel on /sample-shops shows a photograph of each shop's storefront, taken by a
+  // GitHub Actions sweep. A production deploy re-shoots them all on its own; this is the manual
+  // path, for a shot that came out wrong or a design change that shipped without a deploy.
+  async function recapture() {
+    setRecapturing(true)
+    const r = await recaptureSampleShops()
+    if (r.ok && r.data?.captureQueued) {
+      toast.success(t('Recapturing every sample shop — a few minutes', '正在重新抓取所有示例店铺 — 需要几分钟'))
+    } else if (r.ok) {
+      toast.error(t('GitHub refused the request. The weekly capture still runs.',
+        'GitHub 拒绝了该请求。每周抓取仍会运行。'))
+    } else {
+      toast.error(r.error.message || t('Could not ask for a recapture', '无法请求重新抓取'))
+    }
+    setRecapturing(false)
+  }
+
   if (!rows) return (
     <p className="text-[13px] text-muted-foreground italic pt-4">{t('Loading…', '加载中…')}</p>
   )
 
   return (
     <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
+      <div className="flex justify-end pb-3">
+        <button
+          type="button"
+          onClick={recapture}
+          disabled={recapturing}
+          className="py-[6px] px-[12px] border border-border rounded-pill bg-transparent text-muted-foreground text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-all hover:bg-brand-100 hover:text-primary disabled:opacity-50 disabled:cursor-default"
+        >
+          {recapturing
+            ? t('Asking…', '请求中…')
+            : t('Recapture sample screenshots', '重新抓取示例店铺截图')}
+        </button>
+      </div>
       <DataTable
         columns={columns}
         data={data}
