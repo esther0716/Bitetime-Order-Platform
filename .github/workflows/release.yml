@@ -90,6 +90,26 @@ jobs:
             echo "BACKEND_URL or RELEASE_PULL_SECRET is not set — pull the release by hand from /admin." >&2
             exit 1
           fi
-          curl --fail --silent --show-error --max-time 60 \
-            -X POST "$BACKEND_URL/api/internal/releases-pull" \
-            -H "x-sweep-secret: $RELEASE_PULL_SECRET"
+          # This workflow and the backend's own deployment are triggered by the SAME push, and
+          # this job finishes in about twenty seconds while a deploy takes minutes. So the pull
+          # regularly lands on the PREVIOUS build — harmless while the endpoint already exists
+          # there, a 404 on the release that first ships it, and a 404 or a refused connection
+          # for as long as the service is restarting. Retry across that window.
+          #
+          # 403 is not that window: it means the two secrets disagree, and no amount of waiting
+          # fixes it. Fail on the first one rather than spending five minutes proving it.
+          for attempt in $(seq 1 10); do
+            status=$(curl --silent --show-error --max-time 60 \
+              -o /tmp/pull-body -w '%{http_code}' \
+              -X POST "$BACKEND_URL/api/internal/releases-pull" \
+              -H "x-sweep-secret: $RELEASE_PULL_SECRET") || status=000
+            cat /tmp/pull-body 2>/dev/null || true
+            case "$status" in
+              2??) echo "Pulled the release into the app as a draft." >> "$GITHUB_STEP_SUMMARY"; exit 0 ;;
+              401|403) echo "The backend rejected the secret ($status) — RELEASE_PULL_SECRET does not match the backend's own." >&2; exit 1 ;;
+            esac
+            echo "Attempt $attempt got HTTP $status — the backend is probably still deploying. Retrying in 30s." >&2
+            sleep 30
+          done
+          echo "The release was tagged but not pulled into the app — a superadmin can press Pull in /admin." >&2
+          exit 1
