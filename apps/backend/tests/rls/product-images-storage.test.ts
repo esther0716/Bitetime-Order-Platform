@@ -10,6 +10,14 @@
 // anyone else's. A fix that grants the browser SELECT on merchants would pass the first and reopen
 // the door the revoke closed; a helper that is definer-but-unscoped would pass the first and fail
 // the second.
+//
+// The THIRD role is asserted for a reason the first two do not cover. `current_merchant_id()`
+// answers "the shop the caller owns", and a superadmin owns none — so it returns NULL and the
+// folder comparison is NULL, not true. That denied a superadmin impersonating a shop
+// (merchant/Dashboard.tsx, "Viewing as shop") the one dashboard control the browser still writes
+// straight to Storage, with the bare "new row violates row-level security policy". Fixed by
+// 20260826130000, which adds the `or public.is_superadmin()` escape every table policy in
+// 20260627120100 already carried.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { anonClient, makeUser, seedMerchant, seedProduct, serviceClient } from './helpers.js'
 
@@ -29,6 +37,7 @@ function png() {
 
 describe('product-images storage policy', () => {
   let ownerA: Awaited<ReturnType<typeof makeUser>>
+  let superadmin: Awaited<ReturnType<typeof makeUser>>
   let merchantA: string
   let merchantB: string
   let productA: string
@@ -44,6 +53,19 @@ describe('product-images storage policy', () => {
     merchantB = await seedMerchant({ slug: 'product-images-shop-b', owner_id: sessionB.session!.user.id })
     productA = await seedProduct({ merchant_id: merchantA, price: 10 })
     productB = await seedProduct({ merchant_id: merchantB, price: 10 })
+
+    // A superadmin owns no shop — which is exactly the condition that broke the upload. The
+    // profile row is written by the service client because `guard_profile_privileges`
+    // (20260627120300) forces app_role to 'customer' for every other writer.
+    superadmin = await makeUser('product-images-superadmin@example.com', 'password123')
+    const { data: sessionS } = await superadmin.auth.getSession()
+    const superUid = sessionS.session!.user.id
+    const svc = serviceClient()
+    await svc.from('profiles').delete().eq('user_id', superUid)
+    const { error: profileErr } = await svc
+      .from('profiles')
+      .insert({ id: superUid, user_id: superUid, app_role: 'superadmin' })
+    if (profileErr) throw new Error(`seeding superadmin profile: ${profileErr.message}`)
   })
 
   afterAll(async () => {
@@ -69,6 +91,16 @@ describe('product-images storage policy', () => {
     if (!error) written.push(path)
 
     expect(error).not.toBeNull()
+  })
+
+  it("lets a superadmin upload into a shop's folder while impersonating it", async () => {
+    const path = `${merchantA}/${productA}/superadmin.png`
+    const { error } = await superadmin.storage
+      .from(BUCKET)
+      .upload(path, png(), { contentType: 'image/png', upsert: true })
+    if (!error) written.push(path)
+
+    expect(error).toBeNull()
   })
 
   it('denies an anonymous upload', async () => {
