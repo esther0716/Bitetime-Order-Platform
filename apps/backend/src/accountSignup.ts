@@ -1,17 +1,25 @@
-// Customer sign-up, server-side.
+// Account sign-up, server-side. ONE policy, two doors: /api/customer/signup and
+// /api/merchant/signup.
 //
-// The project-wide email-confirmation setting stays ON — it is shared with merchants,
-// and a merchant account controls a shop and its Stripe billing. So a customer cannot
-// be created by a plain client-side signUp: that returns no session, which strands them
-// in their inbox holding a cart. They are created pre-confirmed here instead, with the
-// service role, and the client signs in normally afterwards.
+// The project-wide email-confirmation setting stays ON, because Supabase has no per-role
+// switch and turning it off is a decision about every account at once. So NEITHER kind of
+// account can be created by a plain client-side signUp: that returns no session, and a
+// signup with no session is a dead end — a customer stranded in their inbox holding a cart,
+// or a merchant stranded holding a shop the platform never built. Both are created
+// pre-confirmed here instead, with the service role, and the client signs in normally
+// afterwards.
 //
-// What that knowingly costs: a customer's email is never verified. The blast radius is
-// small and self-correcting — whoever owns the address can reclaim it by password reset,
-// and we send customers no other mail.
+// What that knowingly costs: the email address is never verified. For a customer the blast
+// radius is small and self-correcting — whoever owns the address can reclaim it by password
+// reset, and we send customers no other mail. For a MERCHANT it is larger, because the
+// platform really does write to that address (Stripe receipts, the trial-ending notice), and
+// a typo is a merchant who hears nothing and cannot reset. Verifying after the fact, without
+// blocking the signup, is its own piece of work.
 //
-// The policy below is pure; the two things that touch the world (account creation, the
-// profile write) are injected adapters, as is the rate-limit check.
+// The policy below is pure and knows about neither kind: everything that differs between a
+// customer and a merchant — what metadata the auth user carries, what the profile row says —
+// lives in the injected adapters, as does the rate-limit check. That is what keeps "a signup
+// is rate-limited, validated, then created, then given a profile" one rule rather than two.
 
 import { isPasswordLongEnough } from '@bitetime/shared'
 
@@ -40,7 +48,7 @@ export type SignupResult =
 // malformed before a request is worth spending rate-limit budget on.
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-export async function signUpCustomer(
+export async function signUpAccount(
   deps: SignupDeps,
   input: { email?: unknown; password?: unknown; ip?: string },
 ): Promise<SignupResult> {
@@ -65,19 +73,20 @@ export async function signUpCustomer(
       // Stated plainly rather than hidden behind a generic "check your email". This does
       // make the endpoint an email-enumeration oracle — accepted knowingly: for a food-
       // ordering app the leak is low-harm, and the alternative strands a returning
-      // customer mid-checkout with no session and no error they can act on.
+      // customer mid-checkout, or a returning merchant mid-signup, with no session and no
+      // error they can act on.
       return { ok: false, error: 'duplicate_email', status: 409 }
     }
     return { ok: false, error: 'server', status: 502 }
   }
 
   // The account exists from here on. A failed profile write must not fail the request —
-  // the customer would meet their own duplicate email on the retry, with no session. The
+  // the caller would meet their own duplicate email on the retry, with no session. The
   // client's idempotent profile upsert on SIGNED_IN closes the gap.
   try {
     await deps.writeProfile({ userId: created.userId, email })
   } catch (err) {
-    deps.logError(`Profile write failed for new customer ${created.userId}: ${err instanceof Error ? err.message : String(err)}`)
+    deps.logError(`Profile write failed for new account ${created.userId}: ${err instanceof Error ? err.message : String(err)}`)
   }
 
   return { ok: true, userId: created.userId }

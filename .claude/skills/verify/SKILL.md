@@ -13,12 +13,12 @@ UI is verified by running the app (`CLAUDE.md`). There are no component tests �
 cd apps/backend && supabase start        # skip if `supabase status` already answers
 pnpm --filter @bitetime/frontend dev     # :5173, reads apps/frontend/.env.local
 pnpm --filter @bitetime/backend dev      # :8787 — only if the flow hits /api/* (notify, billing, signup)
-stripe listen --forward-to http://localhost:8787/api/stripe/webhook   # only for billing flows — see below
+stripe listen --project-name bitetimeco --forward-to http://localhost:8787/api/stripe/webhook   # only for billing flows — see below
 ```
 
 `apps/frontend/.env.local` already points at the local stack (`http://127.0.0.1:55321`). Pending migrations must be applied first (`pnpm --filter @bitetime/backend db:migrate`) or PostgREST 404s on new columns.
 
-**Verifying anything that pays? Start `stripe listen` FIRST, and confirm it is still alive when the result looks wrong.** Stripe cannot reach `localhost`, and every post-payment effect is webhook-driven — subscription id and status on `merchant_billing`, the `merchants.billing_cycle` reconciliation, the pending→active flip. With no forwarder the payment succeeds at Stripe and the app changes nothing, which is indistinguishable from a broken feature: the shop stays shut, and the only trace is the `stripe_customer_id` written before the redirect. Its printed secret must match `STRIPE_WEBHOOK_SECRET` in `apps/backend/.env`, or every event is a `<-- [400]`. Missed events replay with `stripe events resend <evt_id>`.
+**Verifying anything that pays? Start `stripe listen` FIRST, and confirm it is still alive when the result looks wrong.** Stripe cannot reach `localhost`, and every post-payment effect is webhook-driven — subscription id and status on `merchant_billing`, the `merchants.billing_cycle` reconciliation, the pending→active flip. With no forwarder the payment succeeds at Stripe and the app changes nothing, which is indistinguishable from a broken feature: the shop stays shut, and the only trace is the `stripe_customer_id` written before the redirect. **`--project-name bitetimeco` is required**: this machine's Stripe CLI config holds three profiles on three different accounts, and a bare `stripe listen` takes `default`, which is not this project's account. Its printed secret must match `STRIPE_WEBHOOK_SECRET` in `apps/backend/.env`, or every event is a `<-- [400]`. A mismatch means the wrong profile far more often than a wrong `.env` — Stripe does not rotate that secret, so the same account on the same machine prints the same one every time. See CLAUDE.md for the hash comparison that checks it without printing either. Missed events replay with `stripe events resend <evt_id>`.
 
 **Two traps that make correct code look broken**, both of which have cost real debugging time:
 

@@ -73,6 +73,23 @@ describe('PUT /api/me/profile', () => {
     await cleanupProfile(userId)
   })
 
+  it('ignores email_verified_at in the body — a caller cannot verify their own address', async () => {
+    const { token, userId } = await tokenOf(await makeUser('profile-verify@example.com', 'password123'))
+    await cleanupProfile(userId)
+
+    const res = await put('/api/me/profile', { name: 'x', email_verified_at: new Date().toISOString() }, token)
+    expect(res.status).toBe(200)
+
+    // The whole point of the address check is that only a clicked link sets this. It is absent
+    // from PROFILE_FIELDS, and this reads back through the service client for the same reason
+    // the privilege test above does: the write itself runs as service_role.
+    const { data } = await serviceClient()
+      .from('profiles').select('email_verified_at').eq('user_id', userId).is('merchant_id', null).single()
+    expect(data!.email_verified_at).toBeNull()
+
+    await cleanupProfile(userId)
+  })
+
   it('401 without a token', async () => {
     const res = await put('/api/me/profile', { name: 'x' })
     expect(res.status).toBe(401)

@@ -69,6 +69,15 @@ export const env = {
   // trialFeedbackSweepSecret: unset means the endpoint always refuses (503).
   sampleShopScreenshotSweepSecret: process.env.SAMPLE_SHOP_SCREENSHOT_SWEEP_SECRET || '',
 
+  // Signs the merchant email-verification link (emailVerifyToken.ts).
+  //
+  // OPTIONAL, same posture as GOOGLE_MAPS_API_KEY and ANTHROPIC_API_KEY: unset, the feature is
+  // simply off — no mail is sent and the dashboard shows no banner. That is deliberate and not
+  // laziness. Signup must not depend on it: the whole point of the merchant door is that nothing
+  // stands between the form and the dashboard, and a `required()` here would turn a missing
+  // variable into a backend that refuses to boot.
+  emailVerifySecret: process.env.EMAIL_VERIFY_SECRET || '',
+
   // Stripe Price IDs (MYR), keyed by billing cycle. One plan, charged in MYR to every
   // subscriber, so there is one pair and both are required. Point these at your MYR Prices.
   prices: {

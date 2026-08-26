@@ -6,6 +6,7 @@ import { LayoutDashboard, ReceiptText, Cake, LayoutList, Ticket, Users, Settings
 import DashboardShell, { type NavItem } from '../components/DashboardShell'
 import BrandTheme from '../components/BrandTheme'
 import BillingBanner from './BillingBanner'
+import VerifyEmailBanner from './VerifyEmailBanner'
 import FulfilmentDatesBanner from './FulfilmentDatesBanner'
 import TrialFeedbackPrompt from './TrialFeedbackPrompt'
 import Overview from './Overview'
@@ -108,6 +109,8 @@ function DashboardInner() {
       footerExtra={<SupportLinks />}
     >
       <BillingBanner />
+      {/* Below billing: a shop about to shut outranks an address we cannot yet reach. */}
+      <VerifyEmailBanner />
       {/* Same guarded move the Pro locks use, so a warning cannot discard a half-typed form. */}
       <FulfilmentDatesBanner onGoToFulfilment={() => goToSettingsTab('fulfilment')} />
       <TrialFeedbackPrompt />
