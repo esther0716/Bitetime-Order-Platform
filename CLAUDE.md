@@ -28,7 +28,7 @@ pnpm --filter @bitetime/backend test:db     # DB-backed tests: RLS + API (needs 
 pnpm --filter @bitetime/backend db:migrate   # apply pending SQL migrations to the LOCAL Supabase DB
 pnpm --filter @bitetime/backend db:push      # HUMAN ONLY — writes to PRODUCTION. Never run this yourself.
 
-stripe listen --forward-to http://localhost:8787/api/stripe/webhook   # REQUIRED for any local billing work
+stripe listen --project-name bitetimeco --forward-to http://localhost:8787/api/stripe/webhook   # REQUIRED for any local billing work
 
 # Re-shoot the /sample-shops carousel's storefront photographs against your OWN stack. Needs both
 # dev servers up. Nothing does this locally on its own, so a local shot stays whatever it was on
@@ -40,7 +40,16 @@ FRONTEND_URL=http://localhost:5173 BACKEND_URL=http://localhost:8787 \
 
 **Anything that involves paying must have `stripe listen` running before the payment.** Stripe cannot reach `localhost`, and every post-payment effect is webhook-driven — `merchant_billing` (subscription id, status), the `merchants.billing_cycle` reconciliation and the pending→active flip all happen in `POST /api/stripe/webhook` and nowhere else. Without the forwarder, Checkout completes, Stripe charges the card, and the app changes **nothing**: the shop stays shut, and the only trace is the `stripe_customer_id` that `/api/checkout` wrote before redirecting. It looks exactly like a broken feature.
 
-The CLI prints its own signing secret on startup; it must equal `STRIPE_WEBHOOK_SECRET` in `apps/backend/.env` or every event is rejected as an invalid signature (a `<-- [400]` in the listener's own output). Started late? `stripe events resend <evt_id>` replays one — the handlers upsert, so a replay is safe. And check the listener is actually still up (`ps -eo command | grep stripe`) before concluding the code is at fault: a dead forwarder and a broken handler look identical from the app.
+**`--project-name bitetimeco` is not optional**, even though every earlier note here omitted it. `~/.config/stripe/config.toml` on this machine holds THREE profiles on three different Stripe accounts, and a bare `stripe listen` takes `default` — a different account from the one this project's keys belong to.
+
+The CLI prints its own signing secret on startup; it must equal `STRIPE_WEBHOOK_SECRET` in `apps/backend/.env` or every event is rejected as an invalid signature (a `<-- [400]` in the listener's own output). That secret is **per (Stripe account, device)** and is fetched from Stripe on each run rather than cached in the config file, so Stripe never rotates it on you: the same account on the same machine prints the same secret for ever. A secret that does not match therefore means the PAIRING changed, and on this machine that is almost always the wrong profile — check that before editing `.env`, because editing it to match `default` breaks the listener that was already correct. Compare without printing either secret — `tr -d '\n'` on BOTH lines, or the CLI's trailing newline hashes into a mismatch that looks exactly like the real fault:
+
+```bash
+stripe listen --print-secret --project-name bitetimeco | tr -d '\n' | shasum
+grep '^STRIPE_WEBHOOK_SECRET=' apps/backend/.env | cut -d= -f2- | tr -d '\n' | shasum
+```
+
+Started late? `stripe events resend <evt_id>` replays one — the handlers upsert, so a replay is safe. And check the listener is actually still up (`ps -eo command | grep stripe`) before concluding the code is at fault: a dead forwarder and a broken handler look identical from the app.
 
 Migrations live in `apps/backend/supabase/migrations/`. Adding a migration file does **not** apply it — run `db:migrate` (local) so the running app (and PostgREST's schema cache) sees the new columns; otherwise queries fail with `Could not find the 'X' column … in the schema cache`.
 
