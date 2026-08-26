@@ -26,6 +26,18 @@ export async function signIn(email: string, password: string) {
   return data.user;
 }
 
+/** Whether this account's email address still needs proving, and whether the platform even asks.
+ *  See the route in app.ts for why `configured` travels with the answer. */
+export function fetchEmailVerification() {
+  return apiGet<{ configured: boolean; verified: boolean; email: string }>('/api/me/verify-email', { auth: 'required' })
+}
+
+/** Send the address-check link again. `alreadyVerified` is a success, not a failure — the
+ *  merchant asked for a confirmed address and it already is one. */
+export function resendEmailVerification() {
+  return apiSend<{ ok: true; alreadyVerified: boolean }>('/api/me/verify-email/resend', 'POST', undefined, { auth: 'required' })
+}
+
 /** Ask the backend to trim this account to its device limit. Failures are swallowed by design. */
 async function enforceDeviceLimit() {
   const r = await apiSend<{ evicted: number }>('/api/me/devices/enforce', 'POST', undefined, { auth: 'required' });

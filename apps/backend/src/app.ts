@@ -30,6 +30,8 @@ import { resendSend } from './email.js'
 import { notifyOrderPlaced, telegramSend } from './notify.js'
 import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
 import { signUpAccount, isDuplicateEmailError } from './accountSignup.js'
+import { makeEmailVerifyToken, readEmailVerifyToken } from './emailVerifyToken.js'
+import { buildEmailVerifyMail } from './emailVerifyMail.js'
 import { createSlidingWindow } from './rateLimit.js'
 import { clientIp } from './clientIp.js'
 import { invoiceFileName, renderInvoicePdf } from './invoice.js'
@@ -1937,6 +1939,10 @@ const signupEmailWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000,
 const merchantSignupIpWindow = createSlidingWindow({ limit: 10, windowMs: 60 * 60_000, now: () => Date.now() })
 const merchantSignupEmailWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000, now: () => Date.now() })
 
+// Resends of the address-check link, per ACCOUNT per hour. Three is a merchant who mistyped,
+// fixed it, and mistyped again; anything past that is a signed-in caller using us to post mail.
+const verifyResendWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000, now: () => Date.now() })
+
 // quoteIpWindow and quoteMerchantWindow moved to quotaWindows.ts — order intake shares
 // quoteMerchantWindow, see that module's header.
 
@@ -2485,6 +2491,38 @@ app.post('/api/customer/signup', async (c) => {
   return c.json({ ok: true })
 })
 
+// The address check that follows a merchant signup, and the one thing in this file that is
+// allowed to do nothing at all.
+//
+// `EMAIL_VERIFY_SECRET` unset means the feature is OFF: no mail, and the dashboard shows no
+// banner because nothing ever set the column. That is the whole failure mode, and it is the
+// correct one — signup itself must never depend on this. A merchant is already looking at their
+// dashboard by the time this runs.
+//
+// Best-effort in every direction: a Resend outage, a bad address, a thrown adapter. None of them
+// may reach the caller, because the account and the shop both exist by then and there is nothing
+// useful to tell them.
+export const emailVerifyDeps: { email: typeof resendSend } = { email: resendSend }
+
+//
+// `origin` is the BACKEND's own, not the frontend's: the link is a server route that flips the
+// column and then redirects. Routing it through the app first would mean shipping the token to a
+// page and having that page post it back. It is taken from the REQUEST rather than from a new
+// environment variable, because the request already knows the answer and a variable is one more
+// thing that can be set wrong — set wrong, it would mint links to a host nobody can reach, and
+// nothing would notice until a merchant said the button did nothing.
+async function sendEmailVerification(userId: string, email: string, shopName: string, origin: string): Promise<void> {
+  if (!env.emailVerifySecret) return
+  try {
+    const token = makeEmailVerifyToken({ userId, email }, env.emailVerifySecret, Date.now())
+    const verifyUrl = `${origin}/api/merchant/verify-email?token=${encodeURIComponent(token)}`
+    const { subject, text } = buildEmailVerifyMail({ shopName, verifyUrl })
+    await emailVerifyDeps.email(email, subject, { text })
+  } catch (err) {
+    console.error(`Verification mail not sent for ${userId}:`, err instanceof Error ? err.message : String(err))
+  }
+}
+
 // The merchant door. Same policy as the customer one above, different adapters — see
 // accountSignup.ts for why one policy serves both.
 //
@@ -2564,7 +2602,88 @@ app.post('/api/merchant/signup', async (c) => {
   )
 
   if (!result.ok) return c.json({ error: result.error }, result.status)
+  // AWAITED, but incapable of failing the request — see sendEmailVerification. Awaited rather
+  // than floated so a serverless runtime cannot freeze the process with the send in flight.
+  await sendEmailVerification(result.userId, String(email).trim().toLowerCase(), parsed.name, new URL(c.req.url).origin)
   return c.json({ ok: true })
+})
+
+// The other end of that link. NOT behind requireUser: it is clicked from a mail app, which is
+// routinely a different device from the one that signed up, and demanding a session there would
+// refuse exactly the merchant this exists to reach.
+//
+// It answers with a REDIRECT rather than JSON, because a human is looking at it. /merchant/login
+// is the landing spot for both outcomes: RedirectSignedInMerchant bounces an already-signed-in
+// merchant straight to their dashboard, where the banner is now gone — which is the confirmation
+// — and a signed-out one reads the notice above the login form.
+app.get('/api/merchant/verify-email', async (c) => {
+  const land = (ok: boolean) => c.redirect(`${env.frontendUrl}/merchant/login?email_verified=${ok ? '1' : '0'}`, 302)
+  if (!env.emailVerifySecret) return land(false)
+
+  const read = readEmailVerifyToken(c.req.query('token'), env.emailVerifySecret, Date.now())
+  if (!read.ok) return land(false)
+
+  // The address is re-read from the account rather than trusted from the token. A merchant who
+  // corrected a typo has a NEW address, and a link minted for the old one must not mark the new
+  // one proved — which is the one case this whole feature exists for.
+  const { data, error } = await admin.auth.admin.getUserById(read.claims.userId)
+  if (error || !data?.user) return land(false)
+  if ((data.user.email ?? '').toLowerCase() !== read.claims.email.toLowerCase()) return land(false)
+
+  const { error: writeErr } = await admin
+    .from('profiles')
+    .update({ email_verified_at: new Date().toISOString() })
+    .eq('user_id', read.claims.userId)
+    .is('merchant_id', null)
+  if (writeErr) {
+    console.error('Marking email verified failed:', writeErr.message)
+    return land(false)
+  }
+  return land(true)
+})
+
+// What the dashboard banner asks before it decides to exist.
+//
+// `configured` is here because the alternative is a banner that cannot tell "we are waiting for
+// you to click" from "this platform never sends that mail". With EMAIL_VERIFY_SECRET unset no
+// link is ever minted, so every merchant's column stays null for ever — and a banner reading the
+// column alone would nag all of them, offering a button that can only answer 503.
+//
+// `verified` rather than the raw timestamp: the banner asks a yes/no question, and a date it
+// does not render is a date it should not receive.
+app.get('/api/me/verify-email', requireUser, async (c) => {
+  const user = c.get('user')
+  const { data } = await admin
+    .from('profiles').select('email_verified_at').eq('user_id', user.id).is('merchant_id', null).maybeSingle()
+  return c.json({
+    configured: !!env.emailVerifySecret,
+    verified: !!data?.email_verified_at,
+    email: user.email ?? '',
+  })
+})
+
+// Another copy of the link, for the merchant whose first one expired or never arrived — which is
+// the typo case: they change the address in their account, then ask for this.
+app.post('/api/me/verify-email/resend', requireUser, async (c) => {
+  const user = c.get('user')
+  if (!env.emailVerifySecret) return c.json({ error: 'not_configured' }, 503)
+  const email = (user.email ?? '').trim().toLowerCase()
+  if (!email) return c.json({ error: 'no_email' }, 400)
+
+  // Keyed by the ACCOUNT, not by IP: the caller is authenticated, so there is a better key than
+  // an address shared by everyone behind one NAT. It bounds mail sent in someone's name.
+  if (!verifyResendWindow.allow(user.id)) return c.json({ error: 'rate_limited' }, 429)
+
+  const { data: profile } = await admin
+    .from('profiles').select('email_verified_at').eq('user_id', user.id).is('merchant_id', null).maybeSingle()
+  // Already proved. Answered as success rather than as an error: the merchant asked for their
+  // address to be confirmed and it is, so there is nothing to fix and nothing to send.
+  if (profile?.email_verified_at) return c.json({ ok: true, alreadyVerified: true })
+
+  const { data: shop } = await admin
+    .from('merchants').select('name').eq('owner_id', user.id).limit(1).maybeSingle()
+  await sendEmailVerification(user.id, email, shop?.name ?? 'your shop', new URL(c.req.url).origin)
+  return c.json({ ok: true, alreadyVerified: false })
 })
 
 // ── Order intake — counter, voucher, PRICE and order in ONE transaction ───────

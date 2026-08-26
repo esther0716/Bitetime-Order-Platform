@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { signIn, requestPasswordReset, SIGNED_OUT_ELSEWHERE_KEY } from '../store'
 import { authErrorCode } from '../authError'
@@ -32,6 +32,22 @@ export default function LoginScreen() {
   const [signedOutElsewhere] = useState(() => {
     try { return sessionStorage.getItem(SIGNED_OUT_ELSEWHERE_KEY) === 'yes' } catch { return false }
   })
+
+  // Where GET /api/merchant/verify-email lands a merchant who clicked the address-check link.
+  // This screen, rather than the dashboard, because the link is routinely opened on a phone that
+  // never signed in — and RedirectSignedInMerchant sends an already-signed-in one straight past
+  // this to their dashboard, where the banner being gone is the same news.
+  const [params] = useSearchParams()
+  const verified = params.get('email_verified')
+  const verifyNotice = verified === '1'
+    ? t('Email confirmed. Sign in to carry on.', '邮箱已确认。请登录以继续。')
+    : verified === '0'
+      // Deliberately vague about WHICH, because the merchant can act on all of them the same way,
+      // and the three cases (expired, tampered, address since changed) are not worth three
+      // sentences on a login screen.
+      ? t('That link did not work — it may have expired. Sign in and ask for a new one.',
+          '该链接无效，可能已过期。请登录后重新获取。')
+      : ''
 
   // Cleared separately, so a later visit to this screen does not repeat old news. Clearing is an
   // external write and not state, which is exactly what an effect is for.
@@ -114,6 +130,11 @@ export default function LoginScreen() {
         {/* Rendered separately, not `notice || deviceNotice`: they answer different questions, and
             `||` meant a merchant who asked for a reset link stopped being told why they were
             signed out. This one explains the arrival, so it sits first. */}
+        {verifyNotice && (
+          <div role="status" className="text-[13px] text-primary bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
+            {verifyNotice}
+          </div>
+        )}
         {deviceNotice && (
           <div role="status" className="text-[13px] text-primary bg-danger-100 border border-danger-100 rounded-sm px-[13px] py-[10px] mb-[10px] leading-[1.5]">
             {deviceNotice}
