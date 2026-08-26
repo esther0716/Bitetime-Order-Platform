@@ -1,6 +1,6 @@
 import type { User } from '@supabase/auth-js';
 import { voucherFromRow, QUOTE_REFUSALS, validateFeedbackImages } from '@bitetime/shared';
-import type { FeedbackDraft, FeedbackStatus, Granularity, MerchantStats, OrderRefusal, QuoteRefusal } from '@bitetime/shared';
+import type { FeedbackDraft, FeedbackStatus, Granularity, MerchantStats, OrderRefusal, PendingShop, QuoteRefusal } from '@bitetime/shared';
 import { revenueQuery, type RevenueSelection } from './merchant/revenueRange';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
@@ -8,8 +8,6 @@ import { SignupError, signupErrorCode } from './signupError'
 import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
-import { pendingShopMetadata } from './merchant/pendingShop';
-import type { PendingShop } from './merchant/pendingShop';
 import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForFile, apiSendForm, mapOk, toVoid } from './api'
 import type { Result } from './api'
 import type { CartLine } from '@bitetime/shared'
@@ -34,28 +32,40 @@ async function enforceDeviceLimit() {
   if (!r.ok) console.error('Device limit not enforced:', r.error.message);
 }
 
-// Merchant sign-up. `shop` is what the form collected about the SHOP, parked on the auth user
-// so it outlives the confirmation round trip: with confirmations on, the sign-in that follows
-// this call fails and the shop is never created here. See pendingShop.ts.
+// Merchant sign-up. Goes through the backend for the SAME reason signUpCustomer below does, and
+// through an endpoint of the same shape: email confirmation is on project-wide, so a client-side
+// `auth.signUp` returns NO SESSION. The sign-in that follows it then fails, `createMerchant`
+// never runs, and the merchant is left in their inbox holding a shop that does not exist — they
+// had to confirm, come back and log in before the platform would build anything. Every one of
+// those hops loses merchants, and most arrive from an ad inside a webview, where leaving for the
+// mail app is leaving for good.
+//
+// The backend creates the account PRE-CONFIRMED with the service role, so the sign-in right
+// after this call succeeds and the whole signup finishes in one submit.
+//
+// What that knowingly costs: a merchant's email is never verified here. Unlike a customer's, it
+// is an address the platform really does write to — Stripe receipts, the trial-ending notice,
+// password resets — so a typo is a merchant who hears nothing and cannot reset it. Catching that
+// is its own piece of work; nothing in this path depends on the address being real.
+//
+// `shop` is what the form collected about the SHOP. It still rides along on the auth user's
+// metadata: no longer load-bearing for a NEW signup, but it is what lets FinishSignupScreen
+// build a shop for an account parked in an inbox before this shipped.
 export async function signUp(name: string, email: string, password: string, shop?: PendingShop) {
-  const { data, error } = await auth.signUp({
-    email,
-    password,
-    options: { data: { name, ...(shop ? pendingShopMetadata(shop) : {}) } },
-  });
-  if (error) throw error;
-  if (data.user) {
-    // If email confirmation is required, there is no session yet and RLS will
-    // block this write — it succeeds once the user confirms and signs in, which
-    // is handled in onAuthChange below.
-    await ensureGlobalProfile({
-      user_id: data.user.id,
-      name,
-      email,
-      email_confirmed: !!data.user.email_confirmed_at,
-    });
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}/api/merchant/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name, shop }),
+    })
+  } catch {
+    throw new SignupError('network')
   }
-  return data.user;
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new SignupError(signupErrorCode(res.status, body))
+  }
 }
 
 // Customer sign-up. Goes through the backend rather than auth.signUp because
@@ -92,10 +102,10 @@ export async function signUpCustomer(email: string, password: string) {
 // Upserts the caller's GLOBAL profile (merchant_id null) via the backend, which forces
 // user_id/merchant_id server-side and allowlists the rest (pickProfileFields in
 // apps/backend/src/writes.ts) — see Global Constraint 1. Best-effort: returns the failure as a
-// Result rather than throwing, because both callers below treat a failure as "try again later",
-// not as a hard stop. In particular, during merchant signup there is no session yet (email
-// confirmation is on project-wide) — the fetch 401s exactly as RLS used to block the equivalent
-// browser write, and it's retried from onAuthChange once a session exists.
+// Result rather than throwing, because its caller treats a failure as "try again later", not as
+// a hard stop. Both signup endpoints write this row server-side already; the repeat from
+// onAuthChange is what fills `referral_code` and what closes the gap when that server-side write
+// failed.
 async function ensureGlobalProfile(fields: {
   user_id: string
   name: string

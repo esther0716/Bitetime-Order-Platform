@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useParams, Link } from 'react-router-dom'
 import { signUp, signIn, createMerchant } from '../store'
 import { pixelTrack } from '../pixels/track'
 // TinyOrder's OWN ids, deliberately — a shop signing up is our conversion, never a merchant's.
 import { platformPixelIds } from '../pixels/ids'
 import { trackEvent, toBilling } from '../analytics/events'
+import type { SignupFailure } from '../analytics/events'
+import { SignupError } from '../signupError'
 import { toSlugBase } from '../slug'
+import { MIN_PASSWORD_LENGTH } from '@bitetime/shared'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney, CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../currency'
@@ -62,6 +65,15 @@ export default function SignupScreen() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
+  // Fires once. A ref rather than state because nothing renders from it, and a re-render per
+  // keystroke to record a fact that never changes again is a re-render for nothing.
+  const started = useRef(false)
+  function onFirstTouch() {
+    if (started.current) return
+    started.current = true
+    trackEvent('signup_started')
+  }
+
   const [slugPreview, setSlugPreview] = useState('shop-…')
   useEffect(() => {
     let active = true
@@ -73,23 +85,67 @@ export default function SignupScreen() {
   const planPrices = pricing.prices.pro
   const perMoAmount = billing === 'yearly' ? planPrices.yearly / 12 : planPrices.monthly
 
+  /**
+   * What a failed signup says, and it is deliberately NOT shared with the customer panel's
+   * version of this map (store/AuthPanel.tsx). The codes are one union because they come off
+   * one endpoint shape; the WORDS are not, because a merchant and a customer are being told
+   * about different things — a shop that was not opened against an account that was not made —
+   * and the merchant screen has a "log in" link at the bottom to point a returning owner at.
+   */
+  function failureText(reason: SignupFailure): string {
+    switch (reason) {
+      case 'duplicate_email':
+        return t('That email already has an account. Log in instead — your shop is waiting.',
+                 '该邮箱已注册。请直接登录，你的店铺仍在。')
+      case 'weak_password':
+        return t(`Use at least ${MIN_PASSWORD_LENGTH} characters for your password.`,
+                 `密码至少需要 ${MIN_PASSWORD_LENGTH} 个字符。`)
+      case 'invalid_email':
+        return t('That email address does not look right.', '邮箱地址格式不正确。')
+      case 'rate_limited':
+        return t('Too many attempts. Please try again in a few minutes.', '尝试次数过多，请几分钟后再试。')
+      case 'network':
+        return t('Could not reach the server. Please try again.', '无法连接服务器，请重试。')
+      case 'signin_failed':
+        return t('Your account was created, but we could not sign you in. Please log in below.',
+                 '账号已创建，但自动登录失败。请在下方登录。')
+      default:
+        return t('Could not create your shop. Please try again.', '创建店铺失败，请重试。')
+    }
+  }
+
+  /** Show the merchant what happened AND report it, so the funnel names its own gaps. */
+  function fail(reason: SignupFailure, message?: string) {
+    trackEvent('signup_failed', { reason })
+    setMsg(message || failureText(reason))
+    setBusy(false)
+  }
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setBusy(true); setMsg('')
+    // Before the network call, deliberately: this counts a merchant who FILLED THE FORM IN.
+    // Fired on success instead, it would be a second name for `merchant_signup` and could never
+    // measure the gap it exists to measure.
+    trackEvent('signup_submitted', { billing: toBilling(billing) })
     try {
-      // The shop details ride along on the auth user. With email confirmation on, the sign-in
-      // below fails and `createMerchant` never runs — parked, the shop is created for them the
-      // moment they confirm and log in, instead of dying with this page. See pendingShop.ts.
+      // The backend creates the account pre-confirmed, so the sign-in below succeeds and the
+      // shop is created in this same submit. The shop details still ride along on the auth
+      // user's metadata as the fallback for a browser that dies between the two calls.
       await signUp(name, email, password, { name, businessNature, currency, billing: billing as 'monthly' | 'yearly', ref })
       try {
         await signIn(email, password)
       } catch {
-        setMsg(t('Account created. Check your email to confirm, then log in — we’ll finish setting up your shop for you.',
-                 '账号已创建。请查收邮件确认后登录，我们会为你完成店铺设置。'))
-        setBusy(false); return
+        // The account EXISTS from here on, so this is not a wrong password and must not be
+        // dressed up as one. Rare now that there is no confirmation gate in front of it —
+        // which is exactly why it is worth reporting when it happens.
+        fail('signin_failed'); return
       }
       const created = await createMerchant({ name, billing, referredByCode: ref, businessNature, currency })
-      if (!created.ok) { setMsg(created.error.message || t('Something went wrong.', '出错了。')); setBusy(false); return }
+      // An account with no shop. FinishSignupScreen picks this up from the parked metadata on
+      // the next visit, so the merchant is not stranded — but the funnel has to see it, or the
+      // drop looks like an abandoned form.
+      if (!created.ok) { fail('shop_create_failed', created.error.message); return }
       // The one conversion the marketing pixels report, and it has to be here rather than on the
       // page the merchant lands on: /merchant is outside the marketing scope. The shop exists at
       // this line. A no-op unless the visitor accepted the pixels — see pixels/track.ts.
@@ -109,9 +165,11 @@ export default function SignupScreen() {
       // `replace`, not `assign`: the shop now exists, so Back must not return to a signup form
       // that would try to create it a second time.
       window.location.replace('/merchant')
-    } catch (err: any) {
-      setMsg(err.message || t('Something went wrong.', '出错了。'))
-      setBusy(false)
+    } catch (err: unknown) {
+      // `signUp` throws SignupError and nothing else on a refusal, so the code carries the
+      // reason all the way from the endpoint. Anything else reaching here is a bug, and
+      // 'server' is the honest name for a failure we cannot describe.
+      fail(err instanceof SignupError ? err.code : 'server')
     }
   }
 
@@ -150,7 +208,10 @@ export default function SignupScreen() {
             {msg}
           </div>
         )}
-        <form onSubmit={onSubmit}>
+        {/* onFocus, not onChange: it fires on the first field a merchant lands in, whether or
+            not they ever type. Focus bubbles in React, so one handler on the form covers every
+            input without threading a prop through each. */}
+        <form onSubmit={onSubmit} onFocus={onFirstTouch}>
           <div className="flex flex-col gap-2.5 mb-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="signup-1">{t('Shop name', '店铺名称')}</Label>

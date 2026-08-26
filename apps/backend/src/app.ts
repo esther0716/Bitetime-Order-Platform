@@ -29,7 +29,7 @@ import { isOurEvent } from './webhookOwnership.js'
 import { resendSend } from './email.js'
 import { notifyOrderPlaced, telegramSend } from './notify.js'
 import { emailOrderConfirmation, emailMerchantOrder } from './orderEmails.js'
-import { signUpCustomer, isDuplicateEmailError } from './customerSignup.js'
+import { signUpAccount, isDuplicateEmailError } from './accountSignup.js'
 import { createSlidingWindow } from './rateLimit.js'
 import { clientIp } from './clientIp.js'
 import { invoiceFileName, renderInvoicePdf } from './invoice.js'
@@ -79,7 +79,7 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES } from '@bitetime/shared'
+import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES, pendingShopFromBody, pendingShopMetadata } from '@bitetime/shared'
 import type { CartLine, Granularity } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename, type ReportWindow } from './report.js'
 import { resolveRevenueRange, type ResolvedRevenueRange } from './revenueWindow.js'
@@ -1911,7 +1911,7 @@ app.post('/api/billing/resume', requireOwnMerchant, async (c) => {
 // Email confirmation stays ON project-wide (it is shared with merchants, who own shops
 // and Stripe billing), so a client-side signUp returns no session and strands a customer
 // in their inbox holding a cart. Created here with the service role instead, pre-confirmed,
-// and the client signs in normally. See src/customerSignup.ts for what that costs.
+// and the client signs in normally. See src/accountSignup.ts for what that costs.
 //
 // RATE LIMITING — read before touching the deploy shape:
 // The window below lives in this process's memory. That works only because the backend is
@@ -1928,6 +1928,14 @@ app.post('/api/billing/resume', requireOwnMerchant, async (c) => {
 // a captcha widget in the checkout path costs orders.
 const signupIpWindow = createSlidingWindow({ limit: 10, windowMs: 60 * 60_000, now: () => Date.now() })
 const signupEmailWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000, now: () => Date.now() })
+
+// The merchant door's own pair, and SEPARATE from the customer pair above on purpose. The two
+// doors serve different people through the same building: a busy shop's customers signing up
+// behind one carrier-grade NAT address must not be able to spend the budget a merchant needs to
+// open a shop from that same address, and neither must the reverse. Same figures, because the
+// argument for them has not changed — what changes is whose bucket gets emptied.
+const merchantSignupIpWindow = createSlidingWindow({ limit: 10, windowMs: 60 * 60_000, now: () => Date.now() })
+const merchantSignupEmailWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000, now: () => Date.now() })
 
 // quoteIpWindow and quoteMerchantWindow moved to quotaWindows.ts — order intake shares
 // quoteMerchantWindow, see that module's header.
@@ -2427,7 +2435,7 @@ app.post('/api/customer/signup', async (c) => {
     incoming?.socket?.remoteAddress,
   )
 
-  const result = await signUpCustomer(
+  const result = await signUpAccount(
     {
       allow: (kind, value) => (kind === 'ip' ? signupIpWindow : signupEmailWindow).allow(value),
       logError: (message) => console.error(message),
@@ -2462,6 +2470,88 @@ app.post('/api/customer/signup', async (c) => {
         const { error } = await admin.from('profiles').insert({
           user_id: userId,
           name: email.split('@')[0],
+          email,
+          email_confirmed: true,
+          app_role: 'customer',
+          created_at: new Date().toISOString(),
+        })
+        if (error) throw new Error(error.message)
+      },
+    },
+    { email, password, ip },
+  )
+
+  if (!result.ok) return c.json({ error: result.error }, result.status)
+  return c.json({ ok: true })
+})
+
+// The merchant door. Same policy as the customer one above, different adapters — see
+// accountSignup.ts for why one policy serves both.
+//
+// It exists because merchant signup used to be a client-side `auth.signUp`, and with email
+// confirmation on project-wide that returns no session: the sign-in the browser makes next
+// failed, `createMerchant` never ran, and the merchant was told to go and confirm before the
+// platform would build anything. The shop details survived that round trip (they ride along in
+// `user_metadata`, and FinishSignupScreen still reads them for accounts parked that way), but
+// the MERCHANT largely did not — most arrive from an ad inside a webview, where leaving for the
+// mail app is leaving for good. Created pre-confirmed here, the whole signup finishes in one
+// submit.
+app.post('/api/merchant/signup', async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  const { email, password, name, shop } = (body ?? {}) as Record<string, unknown>
+
+  // The shop is parsed BEFORE the account is created, and a bad one refuses the whole request.
+  // The alternative is an auth user with no shop and no way to reach the form that would make
+  // one — the exact orphan this endpoint exists to stop creating.
+  const parsed = pendingShopFromBody(shop)
+  if (!parsed) return c.json({ error: 'invalid_shop' }, 400)
+
+  // Same as the customer door: @hono/node-server hangs the raw Node request off `c.env` but
+  // types it as {}, and the socket address is the fallback when no proxy header is present.
+  const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming
+  const ip = clientIp(
+    { 'x-forwarded-for': c.req.header('x-forwarded-for'), 'cf-connecting-ip': c.req.header('cf-connecting-ip') },
+    incoming?.socket?.remoteAddress,
+  )
+
+  // The display name for the profile row. Falls back to the shop's name rather than to the
+  // email's local part: a merchant told us what to call their business one field earlier.
+  const displayName = typeof name === 'string' && name.trim() ? name.trim() : parsed.name
+
+  const result = await signUpAccount(
+    {
+      allow: (kind, value) => (kind === 'ip' ? merchantSignupIpWindow : merchantSignupEmailWindow).allow(value),
+      logError: (message) => console.error(message),
+      createUser: async ({ email, password }) => {
+        const { data, error } = await admin.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true, // pre-confirmed — regressing this reintroduces the inbox dead end
+          // The shop's answers, in the ONE spelling @bitetime/shared defines. Not load-bearing
+          // for this request, which hands the browser a working session and lets it call
+          // POST /api/merchants directly — it is the fallback that lets a shop still be built
+          // if the browser dies between the two calls.
+          user_metadata: { name: displayName, ...pendingShopMetadata(parsed) },
+        })
+        if (error || !data?.user) {
+          if (isDuplicateEmailError(error)) return { ok: false, reason: 'duplicate_email' }
+          console.error('Merchant createUser failed:', error?.message ?? 'no user returned')
+          return { ok: false, reason: 'error' }
+        }
+        return { ok: true, userId: data.user.id }
+      },
+      writeProfile: async ({ userId, email }) => {
+        // Mirrors the customer door's write, and `app_role` is 'customer' here too — that is
+        // not a mistake and must not be "fixed". A merchant is someone who OWNS A MERCHANTS
+        // ROW (SessionContext derives the role from exactly that), so writing 'merchant' here
+        // would hand out the role before any shop exists, on a request whose body a stranger
+        // controls. The shop is created afterwards, by POST /api/merchants, under its own rules.
+        const { data: existing } = await admin
+          .from('profiles').select('id').eq('user_id', userId).is('merchant_id', null).maybeSingle()
+        if (existing) return
+        const { error } = await admin.from('profiles').insert({
+          user_id: userId,
+          name: displayName,
           email,
           email_confirmed: true,
           app_role: 'customer',
