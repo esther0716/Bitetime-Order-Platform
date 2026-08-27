@@ -131,6 +131,11 @@ export default function Storefront() {
   const enterView = useEnterTransition()
 
   const [products, setProducts] = useState<Product[]>([])
+  // WHICH shop's menu request has answered — not "are there products", and a shop id rather
+  // than a flag so that switching shops un-answers it without a synchronous reset in the effect
+  // below. It gates the sample-shop capture marker and nothing else: an empty menu and a menu
+  // that has not arrived yet render identically, and the sweep was photographing the second one.
+  const [answeredFor, setAnsweredFor] = useState<string | null>(null)
   const [cart, setCart] = useState<CartLine[]>([])   // one entry per product+selections (ADR 0009)
   // See `adoptProducts`: the freshly-adopted menu, readable before the render that carries it.
   const latestProducts = useRef<Product[]>([])
@@ -390,8 +395,9 @@ export default function Storefront() {
   useEffect(() => {
     if (!merchantId) return
     // Adopt only a real answer: a could-not-ask must not prune the (empty, at mount) cart or
-    // blank the menu — same rule the recovery path below leans on.
-    lookupProducts(merchantId).then(r => { if (r.ok) adoptProducts(r.data) })
+    // blank the menu — same rule the recovery path below leans on. `answeredFor` follows the
+    // same rule for the same reason: a could-not-ask must not be photographed as an empty shop.
+    lookupProducts(merchantId).then(r => { if (r.ok) { adoptProducts(r.data); setAnsweredFor(merchantId) } })
     // adoptProducts is re-made every render, and depending on it would re-fetch the menu on each
     // one; the menu is a per-SHOP load. Its closure over `cart` is the mount's empty one, and
     // that is exactly right — nothing can be in the cart before the menu it is chosen from.
@@ -1156,8 +1162,15 @@ export default function Storefront() {
           {/* data-sample-capture: the marker the sample-shop screenshot sweep waits for
               (apps/backend/scripts/captureSampleShopScreenshots.ts). The shop and its products
               are read after mount, so `load` alone fires on a page with no shop on it yet.
-              Rename it and the sweep starts timing out. */}
-          <div className="mb-7" data-sample-capture="menu">
+              Rename it and the sweep starts timing out.
+
+              It is gated on this shop's menu having answered, NOT on this div existing: the div renders one round
+              trip before the menu does, holding "This shop has no products yet." — which is what
+              the sweep photographed on all three sample shops. The marker now means "the menu
+              request answered", so a genuinely empty shop is still captured, and a shop whose
+              menu could not be read is captured as nothing at all (the sweep times out, retries
+              once, and the carousel simply omits it) rather than as a shop with no food. */}
+          <div className="mb-7" data-sample-capture={answeredFor === merchantId ? 'menu' : undefined}>
             <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-3">{t('Menu', '菜单')}</div>
             {activeProducts.length === 0 ? (
               <p className="text-[14px] text-muted-foreground italic py-6 text-center">
