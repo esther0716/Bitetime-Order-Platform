@@ -24,7 +24,11 @@ interface SampleShop {
 
 // The storefront reads its shop and products AFTER mount, so `load` fires on a page that has no
 // shop on it yet — the marker is the proof a menu is actually on screen. Kept in sync with
-// `data-sample-capture="menu"` in apps/frontend/src/store/Storefront.tsx.
+// `data-sample-capture="menu"` in apps/frontend/src/store/Storefront.tsx, where it is written
+// only once the menu request has ANSWERED: the element holding it renders one round trip
+// earlier, saying "This shop has no products yet.", and waiting on the element alone captured
+// exactly that. A shop whose menu cannot be read never writes the marker, so it times out and
+// drops off the carousel instead of appearing there with an empty menu.
 const MENU_MARKER = '[data-sample-capture="menu"]'
 const NAV_TIMEOUT_MS = 30_000
 
