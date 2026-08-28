@@ -142,8 +142,12 @@ export default function CopyProductsDialog({
         {/* A filter input over a plain list, not a dropdown: the platform holds a couple of
             hundred shops, and a search box is the affordance that makes finding one possible. */}
         {source ? (
-          <div className="flex items-center justify-between gap-2 mb-3 rounded-lg border-[0.5px] border-border bg-background/50 px-3 py-2">
-            <span className="text-[13px] truncate">
+          <div className="min-w-0 flex items-center justify-between gap-2 mb-3 rounded-lg border-[0.5px] border-border bg-background/50 px-3 py-2">
+            {/* min-w-0 TWICE — on this banner and on the name span — and both are load-bearing:
+                DialogContent is a grid and the banner is a grid child (min-width:auto), the span
+                is a flex child; without either one a long shop name refuses to truncate and
+                grows the row past the dialog instead. */}
+            <span className="min-w-0 flex-1 text-[13px] truncate">
               {t('Copying from', '复制来源')}: <span className="font-medium">{source.name} ({source.slug})</span>
             </span>
             <Button
