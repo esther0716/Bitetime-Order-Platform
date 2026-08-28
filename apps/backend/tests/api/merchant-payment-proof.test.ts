@@ -243,6 +243,25 @@ describe('GET /api/merchants/:id/orders/:orderId/merchant-payment-proof', () => 
     await serviceClient().from('merchants').delete().eq('id', merchantId)
   })
 
+  // A row naming an object Storage no longer holds. The two are restored separately and objects
+  // can be removed by hand, so this is reachable in production — and it is a 404, not a 500: the
+  // image is gone, the backend is fine.
+  it('404s when the row names an object Storage no longer holds', async () => {
+    const { merchantId, token } = await shopWithToken('mpp-gone-shop')
+    const orderId = await seedOrder(merchantId)
+
+    await post(merchantId, orderId, token)
+    await serviceClient().storage.from(BUCKET).remove([`${merchantId}/${orderId}-merchant.png`])
+
+    const res = await app.request(url(merchantId, orderId), {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(404)
+    expect(((await res.json()) as { error: string }).error).toBe('not_found')
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
   it('404s when the shop filed nothing — a customer-side proof is not this slot', async () => {
     const { merchantId, token } = await shopWithToken('mpp-none-shop')
     const orderId = await seedOrder(merchantId)

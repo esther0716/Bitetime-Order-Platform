@@ -112,10 +112,28 @@ const ORDER_HISTORY_LIMIT = 20
  *
  * Callers do the AUTHORISATION. This function proves nothing about who may see the object; it is
  * only the transport, and it must never be handed a path that came from a request.
+ *
+ * A row can name an object Storage no longer holds — the two are restored separately, and objects
+ * can be removed by hand. That is a 404, not a 500: the caller asked for something that is gone,
+ * and reporting it as our failure sends a reader looking for a broken backend. Every OTHER
+ * download error stays a 500, so a genuine Storage outage is never dressed up as "no such image".
  */
+/**
+ * Storage's own "there is no such object". `statusCode` is the field to read and it is a STRING;
+ * the sibling `status` is 400 for this case, so a numeric check on `status` sees a bad request
+ * where Storage means not-found. Shape observed on storage-js: { status: 400, statusCode: '404' }.
+ */
+function isMissingObject(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { statusCode?: string }).statusCode === '404'
+}
+
 async function streamPrivateObject(bucket: string, path: string): Promise<Response> {
   const { data, error } = await admin.storage.from(bucket).download(path)
-  if (error || !data) return Response.json({ error: 'download_failed' }, { status: 500 })
+  if (isMissingObject(error)) return Response.json({ error: 'not_found' }, { status: 404 })
+  if (error || !data) {
+    console.error(`Private object download failed (${bucket}):`, error?.message ?? 'no data')
+    return Response.json({ error: 'download_failed' }, { status: 500 })
+  }
   return new Response(await data.arrayBuffer(), {
     status: 200,
     headers: { 'Content-Type': data.type || 'application/octet-stream' },

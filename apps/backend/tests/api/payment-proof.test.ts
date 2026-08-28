@@ -210,6 +210,26 @@ describe('GET /api/merchants/:id/orders/:orderId/payment-proof', () => {
     await serviceClient().from('merchants').delete().eq('id', merchantId)
   })
 
+  // A row naming an object Storage no longer holds — reachable in production, since the database
+  // and the bucket are restored separately and objects can be removed by hand. Gone is a 404, not
+  // a 500: the image is missing, the backend is not broken.
+  it('404s when the row names an object Storage no longer holds', async () => {
+    await resetMerchant('pp-gone-shop')
+    const owner = await makeUser('pp-gone-owner@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const merchantId = await seedMerchant({ slug: 'pp-gone-shop', owner_id: userId })
+    const orderId = await seedOrder(merchantId)
+
+    await post(orderId, PNG_1X1, 'image/png')
+    await serviceClient().storage.from(BUCKET).remove([`${merchantId}/${orderId}.png`])
+
+    const res = await get(`/api/merchants/${merchantId}/orders/${orderId}/payment-proof`, token)
+    expect(res.status).toBe(404)
+    expect(((await res.json()) as { error: string }).error).toBe('not_found')
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
   it('404s when the order has no proof uploaded', async () => {
     await resetMerchant('pp-none-shop')
     const owner = await makeUser('pp-none-owner@example.com', 'password123')
