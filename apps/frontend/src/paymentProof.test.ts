@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canUploadPaymentProof } from './paymentProof'
+import { canUploadPaymentProof, hasPaymentInstructions } from './paymentProof'
 import { ORDER_STATUSES } from './orderStatus'
 
 describe('canUploadPaymentProof', () => {
@@ -30,5 +30,22 @@ describe('canUploadPaymentProof', () => {
   it('decides every status the app knows about', () => {
     const decided = [...['pending_payment', 'new', 'preparing', 'ready'], 'completed', 'cancelled']
     expect([...ORDER_STATUSES].sort()).toEqual([...decided].sort())
+  })
+})
+
+describe('hasPaymentInstructions', () => {
+  it('accepts any one of the three on its own', () => {
+    expect(hasPaymentInstructions({ payment_bank: 'Maybank 1234' })).toBe(true)
+    expect(hasPaymentInstructions({ payment_note: 'Transfer, then send the slip' })).toBe(true)
+    expect(hasPaymentInstructions({ payment_qr: 'm1/qr.png' })).toBe(true)
+  })
+
+  // An empty titled box reads as a shop that forgot something. A shop with none of the three
+  // takes payment another way.
+  it('refuses a shop with nothing configured', () => {
+    expect(hasPaymentInstructions({})).toBe(false)
+    expect(hasPaymentInstructions({ payment_bank: '', payment_note: null, payment_qr: undefined })).toBe(false)
+    expect(hasPaymentInstructions(null)).toBe(false)
+    expect(hasPaymentInstructions(undefined)).toBe(false)
   })
 })

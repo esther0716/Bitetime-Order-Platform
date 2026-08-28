@@ -18,10 +18,11 @@ import AuthPanel from './AuthPanel'
 import MoneyLine from './MoneyLine'
 import OrderTimeline from './OrderTimeline'
 import PaymentProofUpload from './PaymentProofUpload'
+import PaymentInstructions from './PaymentInstructions'
 import { canUploadPaymentProof } from '../paymentProof'
 import LanguageSelect from '../components/LanguageSelect'
 import InvoiceButton from '../components/InvoiceButton'
-import type { Order, OrderItem, Product, Translate } from '../types'
+import type { Merchant, Order, OrderItem, Product, Translate } from '../types'
 
 type Loaded =
   | { state: 'orders'; userId: string; merchantId: string; rows: Order[] }
@@ -274,6 +275,7 @@ export default function OrderHistory() {
                       <PaymentProofSection
                         order={o}
                         t={t}
+                        merchant={merchant}
                         onUploaded={saved => patchLoadedOrder(o.id!, saved)}
                       />
                       <Tracking order={o} t={t} />
@@ -327,10 +329,12 @@ export default function OrderHistory() {
 function PaymentProofSection({
   order,
   t,
+  merchant,
   onUploaded,
 }: {
   order: Order
   t: Translate
+  merchant: Merchant
   onUploaded: (saved: PaymentProofSaved) => void
 }) {
   const [justUploaded, setJustUploaded] = useState(false)
@@ -354,6 +358,7 @@ function PaymentProofSection({
     if (!order.id || !canUploadPaymentProof(order.status)) return null
     return (
       <div className="mt-3">
+        <Instructions merchant={merchant} status={order.status} />
         <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-1.5">
           {t('Payment proof', '付款凭证')}
         </div>
@@ -370,6 +375,9 @@ function PaymentProofSection({
 
   return (
     <div className="mt-3">
+      {/* Above the slip, not instead of it: an order still awaiting the shop's word is one a
+          customer may need to pay the rest of, or pay again after a failed transfer. */}
+      <Instructions merchant={merchant} status={order.status} />
       <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-1.5">
         {t('Payment proof', '付款凭证')}
       </div>
@@ -386,6 +394,19 @@ function PaymentProofSection({
       )}
     </div>
   )
+}
+
+/**
+ * The shop's payment details inside a history row — the same block the order-placed screen
+ * showed, for the customer who closed that page before their banking app had finished.
+ *
+ * Bound to the same statuses as the upload, so "how to pay" and "send the slip" appear and
+ * disappear together. A settled order shows neither: bank details on a completed or cancelled
+ * order read as a request to pay again.
+ */
+function Instructions({ merchant, status }: { merchant: Merchant; status?: string | null }) {
+  if (!canUploadPaymentProof(status)) return null
+  return <PaymentInstructions merchant={merchant} className="mb-2.5" />
 }
 
 /**

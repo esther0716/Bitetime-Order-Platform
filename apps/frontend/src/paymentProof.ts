@@ -19,3 +19,17 @@ const UPLOADABLE_STATUSES = ['pending_payment', 'new', 'preparing', 'ready']
 export function canUploadPaymentProof(status: string | null | undefined): boolean {
   return status != null && UPLOADABLE_STATUSES.includes(status)
 }
+
+/**
+ * Whether this shop has anything to say about how to pay it — a bank line, a note, or a QR.
+ *
+ * The three are independent and any one is enough: plenty of shops give only a QR, and plenty
+ * give only an account number. A shop with none of them takes payment some other way, and
+ * showing it an empty "Payment Instructions" box states a problem that does not exist.
+ */
+export function hasPaymentInstructions(
+  merchant: { payment_bank?: string | null; payment_note?: string | null; payment_qr?: string | null } | null | undefined,
+): boolean {
+  if (!merchant) return false
+  return Boolean(merchant.payment_bank || merchant.payment_note || merchant.payment_qr)
+}

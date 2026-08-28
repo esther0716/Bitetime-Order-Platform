@@ -5,7 +5,7 @@ import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
 import { X } from 'lucide-react'
-import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, paymentQrUrl, saveCustomerDetails, fetchGuestInvoice, fetchMyInvoice } from '../store'
+import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, saveCustomerDetails, fetchGuestInvoice, fetchMyInvoice } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { noticeText, type Notice } from './notice'
 import { useDeliveryQuote } from './useDeliveryQuote'
@@ -40,6 +40,7 @@ import FulfilDatePicker from './FulfilDatePicker'
 import AddressAutocomplete from './AddressAutocomplete'
 import MoneyLine from './MoneyLine'
 import PaymentProofUpload from './PaymentProofUpload'
+import PaymentInstructions from './PaymentInstructions'
 import { checkoutStep, readGuestChoice, rememberGuestChoice } from '../checkoutGate'
 import { cn } from '@/lib/utils'
 import { formatCalendarDate } from '../orderDate'
@@ -984,53 +985,13 @@ export default function Storefront() {
               </div>
             </div>
 
-            {(merchant.payment_note || merchant.payment_bank || merchant.payment_qr) && (
-              <div className="max-w-[360px] mx-auto mb-4 text-left px-[14px] py-[10px] bg-card border-[0.5px] border-border rounded-md text-[13px] text-muted-foreground leading-[1.5]">
-                <div className="font-semibold text-primary mb-1">
-                  {t('Payment Instructions', '付款说明')}
-                </div>
-                {merchant.payment_bank && <p>{merchant.payment_bank}</p>}
-                {merchant.payment_note && (
-                  <p className={cn("whitespace-pre-line", merchant.payment_bank && "mt-[6px]")}>
-                    {merchant.payment_note}
-                  </p>
-                )}
-                {/* The shop's payment QR (#156). Last in the block on purpose: the words say who
-                    is being paid, the code is how.
-                    NO fixed aspect ratio, and no cropping: what merchants upload here is a phone
-                    SCREENSHOT of their banking app as often as a clean QR, and letterboxing a
-                    portrait screenshot into a square leaves the code itself a third of the width
-                    — a QR too small to scan is the one failure this whole feature cannot survive.
-                    It renders at its own aspect, as wide as the block allows, and links to the
-                    full-resolution original for a customer whose camera still will not read it. */}
-                {merchant.payment_qr && (
-                  <div className={cn(
-                    'flex flex-col items-center gap-1.5',
-                    (merchant.payment_bank || merchant.payment_note) && 'mt-3',
-                  )}>
-                    <a
-                      href={paymentQrUrl(merchant.payment_qr)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block w-full max-w-[240px] rounded-md bg-white p-2 border border-border"
-                    >
-                      <img
-                        src={paymentQrUrl(merchant.payment_qr)}
-                        alt={t('Payment QR code', '付款二维码')}
-                        className="w-full h-auto object-contain"
-                      />
-                    </a>
-                    <span className="text-[12px] text-muted-foreground">
-                      {t('Scan to pay · tap to enlarge', '扫码付款 · 点击放大')}
-                    </span>
-                  </div>
-                )}
-
-                {/* Optional, additive: same guard as the block itself — a shop with no payment
-                    info configured has nothing to prove payment of. */}
-                <PaymentProofUpload orderId={success.orderId} />
-              </div>
-            )}
+            {/* How to pay, and the reply to it — one component, mounted here and again in order
+                history, because a customer who left this page to open their banking app cannot
+                come back to it. The upload is the block's own last line: same guard, so a shop
+                with no payment info shows neither. */}
+            <PaymentInstructions merchant={merchant} className="max-w-[360px] mx-auto mb-4">
+              <PaymentProofUpload orderId={success.orderId} />
+            </PaymentInstructions>
 
             <div className="flex flex-col items-center gap-2 mt-5">
               {/* The invoice, at the moment of highest intent — this is what stops most of the
