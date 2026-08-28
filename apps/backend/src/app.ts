@@ -3138,7 +3138,7 @@ export const trialFeedbackDeps: { email: typeof resendSend } = { email: resendSe
 // is ever taken from the body — each is read from the order or the shop.
 app.post('/api/notify/order', async (c) => {
   const { merchantId, orderNumber, lang } = await c.req.json().catch(() => ({}))
-  const emailCfg = { frontendUrl: env.frontendUrl, emailFrom: env.emailFrom }
+  const emailCfg = { frontendUrl: env.frontendUrl, emailFrom: env.emailFrom, qrBaseUrl: env.supabaseUrl }
   // Concurrent, not sequential: the three are independent best-effort sends and a slow Telegram
   // call must not delay either email. Each returns its own result and never throws, so
   // Promise.all cannot reject — no channel blocks or suppresses another.

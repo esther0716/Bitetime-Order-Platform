@@ -213,6 +213,48 @@ describe('POST /api/notify/order — customer confirmation email fan-out', () =>
 
     await svc().from('merchant_secrets').delete().eq('merchant_id', merchantId)
   })
+
+  // The shop's payment instructions in the receipt. The pure builder is unit-tested; what this
+  // proves is the JOIN — that the three columns are actually read from `merchants` and that the
+  // QR path becomes a public URL. The unit test cannot see either, because both happen in the
+  // send path.
+  it("carries the shop's bank line, note and payment QR into the receipt", async () => {
+    await svc().from('merchants').update({
+      payment_bank: 'Maybank 5123 4567 8901',
+      payment_note: 'Transfer, then send us the slip.',
+      payment_qr: `${merchantId}/duitnow.png`,
+    }).eq('id', merchantId)
+
+    try {
+      const orderNumber = await placeOrderReturningNumber(orderBody(merchantId, productId), customerToken)
+      await postNotify({ merchantId, orderNumber, lang: 'en' })
+
+      const mail = mailTo(CUSTOMER_EMAIL)
+      expect(mail).toHaveLength(1)
+      for (const part of [mail[0].body.text, mail[0].body.html!]) {
+        expect(part).toContain('Payment Instructions')
+        expect(part).toContain('Maybank 5123 4567 8901')
+        expect(part).toContain('Transfer, then send us the slip.')
+        expect(part).toContain(`/storage/v1/object/public/payment-qr/${merchantId}/duitnow.png`)
+      }
+    } finally {
+      // The shop is shared with the tests above, and payment info is what makes an order be born
+      // `pending_payment` — leaving it set would make this suite order-dependent.
+      await svc().from('merchants').update({
+        payment_bank: null, payment_note: null, payment_qr: null,
+      }).eq('id', merchantId)
+    }
+  })
+
+  it('sends no payment block for a shop that set none of the three', async () => {
+    const orderNumber = await placeOrderReturningNumber(orderBody(merchantId, productId), customerToken)
+    await postNotify({ merchantId, orderNumber, lang: 'en' })
+
+    const mail = mailTo(CUSTOMER_EMAIL)
+    expect(mail).toHaveLength(1)
+    expect(mail[0].body.text).not.toContain('Payment Instructions')
+    expect(mail[0].body.html).not.toContain('Payment Instructions')
+  })
 })
 
 // ── The third arm ─────────────────────────────────────────────────────────────
