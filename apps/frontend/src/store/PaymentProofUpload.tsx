@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { uploadPaymentProof, PAYMENT_PROOF_TYPES } from '../store'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { uploadPaymentProof, PAYMENT_PROOF_TYPES, type PaymentProofSaved } from '../store'
+import ZoomableImage from '../components/ZoomableImage'
 
 type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error'
 
@@ -19,12 +19,22 @@ type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error'
  * never a re-fetch from the backend. The bucket is private and unauthenticated, so there is
  * nothing for a guest checkout to re-fetch from; the browser already holds the only copy that
  * matters to it.
+ *
+ * `onUploaded` carries what the write moved (the path, and a status that may have left
+ * `pending_payment`) to a caller that shows the order elsewhere on the page — order history,
+ * whose badge and timeline would otherwise sit stale until a reload. The order-placed screen
+ * has nothing to patch and passes nothing.
  */
-export default function PaymentProofUpload({ orderId }: { orderId: string }) {
+export default function PaymentProofUpload({
+  orderId,
+  onUploaded,
+}: {
+  orderId: string
+  onUploaded?: (saved: PaymentProofSaved) => void
+}) {
   const { t } = useSession()
   const [state, setState] = useState<UploadState>('idle')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [lightboxOpen, setLightboxOpen] = useState(false)
   const previewUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -48,6 +58,7 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
       })
       setState('uploaded')
       toast.success(t('Payment proof uploaded', '付款凭证已上传'))
+      onUploaded?.(r.data)
     } else {
       setState('error')
       toast.error(r.error.message || t('Could not upload — try again', '上传失败，请重试'))
@@ -59,17 +70,12 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
   return (
     <div className="mt-3 flex flex-col items-center gap-1.5">
       {state === 'uploaded' && previewUrl && (
-        <button
-          type="button"
-          onClick={() => setLightboxOpen(true)}
-          className="block w-full max-w-[160px] rounded-md bg-white p-1.5 border border-border cursor-pointer"
-        >
-          <img
-            src={previewUrl}
-            alt={t('Payment proof', '付款凭证')}
-            className="w-full h-auto object-contain"
-          />
-        </button>
+        <ZoomableImage
+          src={previewUrl}
+          alt={t('Payment proof', '付款凭证')}
+          triggerClassName="w-full max-w-[160px] rounded-md bg-white p-1.5 border border-border"
+          imgClassName="w-full h-auto object-contain"
+        />
       )}
       <label
         htmlFor={inputId}
@@ -97,21 +103,6 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
         <span className="text-[12px] text-muted-foreground">
           {t('Uploaded ✓ · tap to enlarge', '已上传 ✓ · 点击放大')}
         </span>
-      )}
-
-      {previewUrl && (
-        <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogTitle className="sr-only">{t('Payment proof', '付款凭证')}</DialogTitle>
-            <div className="flex items-center justify-center bg-background rounded-lg overflow-hidden">
-              <img
-                src={previewUrl}
-                alt={t('Payment proof', '付款凭证')}
-                className="max-h-[70vh] w-full object-contain"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
       )}
     </div>
   )

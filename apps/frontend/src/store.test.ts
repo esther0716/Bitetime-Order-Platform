@@ -107,6 +107,9 @@ import {
   uploadPaymentProof,
   fetchPaymentProof,
   fetchMyPaymentProof,
+  uploadMerchantPaymentProof,
+  fetchMerchantPaymentProof,
+  fetchMyMerchantPaymentProof,
   MAX_PAYMENT_PROOF_BYTES,
   fetchMerchantOrders,
   fetchOrderCount,
@@ -837,13 +840,18 @@ describe('uploadPaymentProof', () => {
   it('posts a valid file to /api/orders/:orderId/payment-proof', async () => {
     // No auth: unlike fetchPaymentProof, this is the guest checkout path — it never calls
     // getSession at all (apiSendFile is called with no `auth` option).
-    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, text: async () => '' })
+    const saved = { payment_proof: 'm1/order-1.png', status: 'new' }
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200, text: async () => JSON.stringify({ ok: true, ...saved }),
+    })
     vi.stubGlobal('fetch', fetchMock)
     const file = new File(['x'], 'proof.png', { type: 'image/png' })
 
     const r = await uploadPaymentProof('order-1', file)
 
     expect(r.ok).toBe(true)
+    // The row the write moved — order history patches its own list from this.
+    expect(r.ok && r.data).toMatchObject(saved)
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/orders\/order-1\/payment-proof$/)
     expect(init.body).toBe(file)
@@ -866,6 +874,79 @@ describe('fetchPaymentProof', () => {
     expect(r).toEqual({ ok: true, data: blob })
     const [url] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/orders\/order-1\/payment-proof$/)
+  })
+})
+
+describe('uploadMerchantPaymentProof', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('POSTs the file to the merchant slot with a bearer token and returns the saved row', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const saved = { payment_proof_merchant: 'm1/order-1-merchant.png', status: 'new' }
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200, text: async () => JSON.stringify({ ok: true, ...saved }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const file = new File(['x'], 'slip.png', { type: 'image/png' })
+
+    const r = await uploadMerchantPaymentProof('m1', 'order-1', file)
+
+    expect(r.ok).toBe(true)
+    expect(r.ok && r.data).toMatchObject(saved)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/merchants\/m1\/orders\/order-1\/merchant-payment-proof$/)
+    expect(init.body).toBe(file)
+    expect(init.headers.Authorization).toBe('Bearer tok')
+  })
+
+  it('rejects an oversized file without calling fetch', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const big = new Uint8Array(MAX_PAYMENT_PROOF_BYTES + 1)
+    const file = new File([big], 'slip.png', { type: 'image/png' })
+
+    const r = await uploadMerchantPaymentProof('m1', 'order-1', file)
+
+    expect(r.ok).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('fetchMyMerchantPaymentProof', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('GETs the customer-scoped merchant slot and unwraps to the blob', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200, headers: new Headers(), blob: async () => blob,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const r = await fetchMyMerchantPaymentProof('order-1')
+
+    expect(r).toEqual({ ok: true, data: blob })
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/orders\/order-1\/merchant-payment-proof$/)
+  })
+})
+
+describe('fetchMerchantPaymentProof', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('GETs the merchant slot and unwraps to the blob', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200, headers: new Headers(), blob: async () => blob,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const r = await fetchMerchantPaymentProof('m1', 'order-1')
+
+    expect(r).toEqual({ ok: true, data: blob })
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/merchants\/m1\/orders\/order-1\/merchant-payment-proof$/)
   })
 })
 

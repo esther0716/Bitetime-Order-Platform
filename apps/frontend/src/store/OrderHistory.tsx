@@ -4,7 +4,7 @@ import { Truck, ExternalLink, ChevronDown } from 'lucide-react'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { Button } from '../components/ui/button'
-import { fetchMyInvoice, fetchMyOrdersAtShop, fetchMyPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
+import { fetchMyInvoice, fetchMyOrdersAtShop, fetchMyPaymentProof, fetchMyMerchantPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT, type PaymentProofSaved } from '../store'
 import { StatusBadge } from '../orderStatus'
 import { ItemSelections } from '../ItemSelections'
 import { courierName, trackingUrl } from '../couriers'
@@ -17,9 +17,13 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import AuthPanel from './AuthPanel'
 import MoneyLine from './MoneyLine'
 import OrderTimeline from './OrderTimeline'
+import PaymentProofUpload from './PaymentProofUpload'
+import PaymentInstructions from './PaymentInstructions'
+import { canUploadPaymentProof } from '../paymentProof'
 import LanguageSelect from '../components/LanguageSelect'
 import InvoiceButton from '../components/InvoiceButton'
-import type { Order, OrderItem, Product, Translate } from '../types'
+import ZoomableImage from '../components/ZoomableImage'
+import type { Merchant, Order, OrderItem, Product, Translate } from '../types'
 
 type Loaded =
   | { state: 'orders'; userId: string; merchantId: string; rows: Order[] }
@@ -51,6 +55,22 @@ export default function OrderHistory() {
 
   const merchantId = merchant?.id
   const userId = account?.id
+
+  /**
+   * Patch ONE loaded row in place — used after a payment-proof upload, which sets the path and
+   * may move the order out of `pending_payment`. The whole list is not refetched: the write
+   * already returned what it changed, and a refetch would drop the accordion's open row.
+   *
+   * Guarded on `state === 'orders'` so it can never resurrect a failed or a foreign load; the
+   * ownership fields ride along untouched.
+   */
+  function patchLoadedOrder(orderId: string, patch: Partial<Order>) {
+    setLoaded(prev =>
+      prev && prev.state === 'orders'
+        ? { ...prev, rows: prev.rows.map(r => (r.id === orderId ? { ...r, ...patch } : r)) }
+        : prev,
+    )
+  }
 
   useEffect(() => {
     if (!merchantId || !userId) return
@@ -253,7 +273,12 @@ export default function OrderHistory() {
                         <span className="text-right">{formatMoney(o.total, currency)}</span>
                       </div>
                       <OrderTimeline status={o.status ?? 'new'} mode={o.mode} t={t} />
-                      <PaymentProofImage order={o} t={t} />
+                      <PaymentProofSection
+                        order={o}
+                        t={t}
+                        merchant={merchant}
+                        onUploaded={saved => patchLoadedOrder(o.id!, saved)}
+                      />
                       <Tracking order={o} t={t} />
                       {/* The document, for the customer who came here to get one. The same bytes
                           the merchant and a guest are handed — one order has one invoice. */}
@@ -284,21 +309,51 @@ export default function OrderHistory() {
 }
 
 /**
- * The customer's own payment-proof screenshot, if they uploaded one — same image the merchant
- * sees in `OrderDetailSheet`, fetched through the customer-scoped route instead.
+ * The order's proof of payment: the screenshot the customer uploaded, or the chance to upload
+ * one if they never did.
+ *
+ * The order-placed screen offers the upload once, on a page a customer often closes before their
+ * banking app is done. This is the second door — the same widget, the same route — and the only
+ * one that still exists a day later. `canUploadPaymentProof` decides where offering it is
+ * honest; a cancelled order is not it.
+ *
+ * Once uploaded, the widget STAYS (`justUploaded`), holding the local preview of the file the
+ * customer picked. Switching to the fetched image the moment the row gains a path would spend a
+ * round trip re-downloading bytes this browser already has, and show "Loading…" over a thumbnail
+ * that was on screen a second ago.
  *
  * Lazy by construction, not by a manual open/closed flag: this only ever mounts inside an
  * accordion panel that unmounts on collapse (`Accordion`'s default `keepMounted={false}`), so
  * the fetch starts when the row opens and `URL.revokeObjectURL` runs in this effect's own
  * cleanup when it closes — never fetched for orders the customer hasn't expanded.
  */
-function PaymentProofImage({ order, t }: { order: Order; t: Translate }) {
+function PaymentProofSection({
+  order,
+  t,
+  merchant,
+  onUploaded,
+}: {
+  order: Order
+  t: Translate
+  merchant: Merchant
+  onUploaded: (saved: PaymentProofSaved) => void
+}) {
+  const [justUploaded, setJustUploaded] = useState(false)
   const [url, setUrl] = useState<string | null>(null)
+
+  // Which slip this row shows, decided once: the customer's own first — it is theirs, and they
+  // know what they sent — then the shop's copy, for the customer who sent the slip over WhatsApp
+  // and would otherwise see an order that took their money with nothing on screen to show for it.
+  // Only when neither exists is there anything left to ask for.
+  const source = order.payment_proof ? 'mine' : order.payment_proof_merchant ? 'shop' : null
+  const hasProof = source !== null && !justUploaded
+
   useEffect(() => {
-    if (!order.payment_proof || !order.id) return
+    if (!source || !order.id) return
     let cancelled = false
     let objectUrl: string | null = null
-    fetchMyPaymentProof(order.id).then((r) => {
+    const load = source === 'shop' ? fetchMyMerchantPaymentProof : fetchMyPaymentProof
+    load(order.id).then((r) => {
       if (cancelled || !r.ok) return
       objectUrl = URL.createObjectURL(r.data)
       setUrl(objectUrl)
@@ -307,27 +362,69 @@ function PaymentProofImage({ order, t }: { order: Order; t: Translate }) {
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [order.id, order.payment_proof])
+  }, [order.id, source])
 
-  if (!order.payment_proof) return null
+  if (!hasProof) {
+    if (!order.id || !canUploadPaymentProof(order.status)) return null
+    return (
+      <div className="mt-3">
+        <Instructions merchant={merchant} status={order.status} />
+        <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-1.5">
+          {t('Payment proof', '付款凭证')}
+        </div>
+        <PaymentProofUpload
+          orderId={order.id}
+          onUploaded={saved => {
+            setJustUploaded(true)
+            onUploaded(saved)
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="mt-3">
+      {/* Above the slip, not instead of it: an order still awaiting the shop's word is one a
+          customer may need to pay the rest of, or pay again after a failed transfer. */}
+      <Instructions merchant={merchant} status={order.status} />
       <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-1.5">
         {t('Payment proof', '付款凭证')}
       </div>
       {url ? (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="block w-full max-w-[160px]">
-          <img
+        <div className="flex flex-col gap-1 w-full max-w-[160px]">
+          <ZoomableImage
             src={url}
             alt={t('Payment proof', '付款凭证')}
-            className="w-full h-auto object-contain rounded-md border border-border"
+            triggerClassName="w-full"
+            imgClassName="w-full h-auto object-contain rounded-md border border-border"
           />
-        </a>
+          {/* Said only for the shop's copy. A customer looking at a slip they never uploaded
+              needs to know where it came from; their own needs no label. */}
+          {source === 'shop' && (
+            <span className="text-[12px] text-muted-foreground">
+              {t('Filed by the shop', '店家上传')}
+            </span>
+          )}
+        </div>
       ) : (
         <span className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</span>
       )}
     </div>
   )
+}
+
+/**
+ * The shop's payment details inside a history row — the same block the order-placed screen
+ * showed, for the customer who closed that page before their banking app had finished.
+ *
+ * Bound to the same statuses as the upload, so "how to pay" and "send the slip" appear and
+ * disappear together. A settled order shows neither: bank details on a completed or cancelled
+ * order read as a request to pay again.
+ */
+function Instructions({ merchant, status }: { merchant: Merchant; status?: string | null }) {
+  if (!canUploadPaymentProof(status)) return null
+  return <PaymentInstructions merchant={merchant} className="mb-2.5" />
 }
 
 /**

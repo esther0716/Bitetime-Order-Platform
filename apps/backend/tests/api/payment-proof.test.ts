@@ -74,6 +74,12 @@ describe('POST /api/orders/:orderId/payment-proof', () => {
 
     const res = await post(orderId, PNG_1X1, 'image/png')
     expect(res.status).toBe(200)
+    // The row it wrote, which order history patches itself from rather than refetching.
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      payment_proof: `${merchantId}/${orderId}.png`,
+      status: 'new',
+    })
 
     const { data: order } = await serviceClient().from('orders').select('payment_proof').eq('id', orderId).single()
     expect(order!.payment_proof).toBe(`${merchantId}/${orderId}.png`)
@@ -109,6 +115,7 @@ describe('POST /api/orders/:orderId/payment-proof', () => {
 
     const res = await post(orderId, PNG_1X1, 'image/png')
     expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ status: 'new' })
 
     const { data: order } = await serviceClient().from('orders').select('status').eq('id', orderId).single()
     expect(order!.status).toBe('new')
@@ -206,6 +213,26 @@ describe('GET /api/merchants/:id/orders/:orderId/payment-proof', () => {
     expect(res.headers.get('Content-Type')).toBe('image/png')
     const bytes = new Uint8Array(await res.arrayBuffer())
     expect(bytes.length).toBe(PNG_1X1.byteLength)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  // A row naming an object Storage no longer holds — reachable in production, since the database
+  // and the bucket are restored separately and objects can be removed by hand. Gone is a 404, not
+  // a 500: the image is missing, the backend is not broken.
+  it('404s when the row names an object Storage no longer holds', async () => {
+    await resetMerchant('pp-gone-shop')
+    const owner = await makeUser('pp-gone-owner@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const merchantId = await seedMerchant({ slug: 'pp-gone-shop', owner_id: userId })
+    const orderId = await seedOrder(merchantId)
+
+    await post(orderId, PNG_1X1, 'image/png')
+    await serviceClient().storage.from(BUCKET).remove([`${merchantId}/${orderId}.png`])
+
+    const res = await get(`/api/merchants/${merchantId}/orders/${orderId}/payment-proof`, token)
+    expect(res.status).toBe(404)
+    expect(((await res.json()) as { error: string }).error).toBe('not_found')
 
     await serviceClient().from('merchants').delete().eq('id', merchantId)
   })

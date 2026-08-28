@@ -194,6 +194,10 @@ export interface Order {
    *  directly as a URL — fetch it through `fetchPaymentProof` (merchant) or `fetchMyPaymentProof`
    *  (customer), both auth-gated. */
   payment_proof?: string | null
+  /** Storage path in the same private bucket for the receipt the SHOP filed (the customer sent
+   *  it over WhatsApp). Separate from `payment_proof`, so neither side overwrites the other.
+   *  Fetch it through `fetchMerchantPaymentProof`. */
+  payment_proof_merchant?: string | null
   [key: string]: any
 }
 
