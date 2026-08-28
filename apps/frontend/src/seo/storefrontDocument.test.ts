@@ -120,6 +120,12 @@ describe('a shop that is not open', () => {
     expect(doc.status).toBe(200)
     expect(doc.body).toContain('<meta name="robots" content="noindex" />')
   })
+
+  it('leaves noindex OFF its subpaths — the canonical to the root is the one signal', () => {
+    const doc = buildStorefrontDocument(SHELL, req({ subpath: 'track/TO-1' }), shop({ status: 'suspended' }))
+    expect(doc.body).not.toContain('noindex')
+    expect(doc.body).toContain('<link rel="canonical" href="https://tinyorder.shop/s/uncle-lim" />')
+  })
 })
 
 describe('a retired slug', () => {
@@ -131,6 +137,11 @@ describe('a retired slug', () => {
     )
     expect(doc.status).toBe(301)
     expect(doc.headers.Location).toBe('https://tinyorder.shop/s/new-name/track/TO-1')
+  })
+
+  it('caches the redirect briefly, never stale — it pins a target, not a head', () => {
+    const doc = buildStorefrontDocument(SHELL, req({ slug: 'old' }), { kind: 'moved', movedTo: 'new' })
+    expect(doc.headers['Cache-Control']).toBe('public, s-maxage=300')
   })
 })
 

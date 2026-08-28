@@ -13,6 +13,7 @@ import {
   type StorefrontShop,
   type StorefrontProduct,
 } from '../src/seo/storefrontDocument'
+import { requestOrigin, backendUrl } from '../src/seo/edge'
 
 // One in-flight shell fetch per warm function instance; cleared on failure so a blip does not
 // pin an error for the instance's lifetime.
@@ -28,14 +29,9 @@ function getShell(origin: string): Promise<string> {
   })
 }
 
-function requestOrigin(request: Request): string {
-  const url = new URL(request.url)
-  const host = request.headers.get('x-forwarded-host') ?? url.host
-  const proto = request.headers.get('x-forwarded-proto') ?? 'https'
-  return `${proto}://${host}`
-}
-
-async function resolveSlug(api: string, slug: string): Promise<StorefrontResolution> {
+// Not the backend's resolveSlug (which INVENTS a slug for a new shop) — this one asks what an
+// existing slug currently names: a shop, a redirect, or nothing.
+async function resolveShop(api: string, slug: string): Promise<StorefrontResolution> {
   const res = await fetch(`${api}/api/merchants/${encodeURIComponent(slug)}`)
   if (!res.ok) throw new Error(`merchant lookup: ${res.status}`)
   const row = (await res.json()) as
@@ -78,11 +74,11 @@ export async function GET(request: Request): Promise<Response> {
       headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
     })
 
-  const api = process.env.VITE_API_URL
+  const api = backendUrl()
   if (!api || !slug) return failOpen()
 
   try {
-    const resolution = await resolveSlug(api, slug)
+    const resolution = await resolveShop(api, slug)
     const doc = buildStorefrontDocument(shell, { origin, slug, subpath }, resolution)
     return new Response(doc.body || null, { status: doc.status, headers: doc.headers })
   } catch {

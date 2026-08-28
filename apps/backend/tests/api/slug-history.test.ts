@@ -4,7 +4,7 @@
 // function turns that into a 301), and a live claim on a retired slug beats the dead redirect.
 import { describe, it, expect } from 'vitest'
 import { app } from '../../src/app.js'
-import { makeUser, seedMerchant, resetMerchant } from '../rls/helpers.js'
+import { makeUser, seedMerchant, resetMerchant, serviceClient } from '../rls/helpers.js'
 
 async function ownerOf(slug: string) {
   await resetMerchant(slug)
@@ -48,7 +48,7 @@ describe('slug rename history', () => {
   })
 
   it('still refuses another shop\'s CURRENT slug', async () => {
-    const a = await ownerOf('sh-taken')
+    await ownerOf('sh-taken')
     const b = await ownerOf('sh-claimer')
 
     const res = await patchSlug(b.id, 'sh-taken', b.token)
@@ -56,7 +56,6 @@ describe('slug rename history', () => {
 
     await resetMerchant('sh-taken')
     await resetMerchant('sh-claimer')
-    void a
   })
 
   it('claim-wins: a live claim on a retired slug kills the redirect', async () => {
@@ -92,6 +91,35 @@ describe('slug rename history', () => {
     }
 
     await resetMerchant('sh-three')
+  })
+
+  it('claim-wins at signup: a new shop takes a freed slug and kills its redirect', async () => {
+    await resetMerchant('sh-renamed-away')
+    const a = await ownerOf('sh-claimable')
+    await patchSlug(a.id, 'sh-renamed-away', a.token) // 'sh-claimable' now retired
+
+    // A brand-new merchant whose shop name resolves to the retired slug.
+    await resetMerchant('sh-claimable')
+    const owner = await makeUser('sh-claimable-owner@example.com', 'password123')
+    const { data } = await owner.auth.getSession()
+    const created = await app.request('/api/merchants', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${data.session!.access_token}`,
+      },
+      body: JSON.stringify({ name: 'Sh Claimable', businessNature: 'bakery', billing: 'monthly' }),
+    })
+    expect(created.status).toBe(200)
+    const shop = (await created.json()) as { slug: string }
+    expect(shop.slug).toBe('sh-claimable')
+
+    const { data: leftover } = await serviceClient()
+      .from('merchant_slug_history').select('old_slug').eq('old_slug', 'sh-claimable')
+    expect(leftover).toEqual([])
+
+    await resetMerchant('sh-renamed-away')
+    await resetMerchant('sh-claimable')
   })
 
   it('an unknown slug still answers null', async () => {

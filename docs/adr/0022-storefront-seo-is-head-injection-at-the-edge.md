@@ -44,3 +44,8 @@ shell**, and caches at the CDN (`s-maxage=300, stale-while-revalidate`). On any 
 - Statuses: unknown slug → 404; `suspended`/`pending` → 200 + noindex. Subpaths canonicalise to
   the shop root, never noindex (mixed signals).
 - Head language is English only; per-shop hreflang is out of scope.
+- The shop sitemap carries no `<lastmod>` — a deviation from the spec (#253), which asked for
+  the shop's updated timestamp. `merchants` has no updated-at column, and a fabricated date
+  (created-at, or "now") is worse than none: Google distrusts sitemaps whose lastmod lies.
+  Freshness is carried by the HTML's own five-minute CDN cache instead. Adding the column and
+  the timestamp is open if evidence ever shows recrawl lag.

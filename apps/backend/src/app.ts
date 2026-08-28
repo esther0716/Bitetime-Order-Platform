@@ -23,6 +23,7 @@ import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
 import { startCardlessTrial } from './trialSubscription.js'
+import { renameMerchantSlug } from './slugRename.js'
 import { runBillingSweep } from './billingSweep.js'
 import { syncMerchantBilling, liveSubscriptionBesides } from './billingSync.js'
 import { isOurEvent } from './webhookOwnership.js'
@@ -332,23 +333,23 @@ app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
 //
 // The rename records the outgoing slug in merchant_slug_history (#253, ADR 0022) so the
 // storefront edge function can 301 old links — printed QR codes and indexed URLs survive.
-// Claim-wins: claiming a slug that sits in ANY shop's history deletes that row first — a live
-// shop's claim beats a dead redirect. The three writes are not a transaction (admin REST cannot
-// open one); the order is chosen so a failure part-way loses at worst a redirect, never a shop.
+// The rename, the history row and the claim-wins delete are one transaction in slugRename.ts;
+// this handler keeps only the checks a refusal message needs.
 app.patch('/api/merchants/:id/slug', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const s = String((await c.req.json().catch(() => ({}))).slug ?? '').trim().toLowerCase()
   if (!s || RESERVED_SLUGS.includes(s)) return c.json({ error: 'Reserved or empty slug' }, 400)
   const { data: existing } = await admin.from('merchants').select('id').eq('slug', s).maybeSingle()
   if (existing && existing.id !== id) return c.json({ error: 'Slug already taken' }, 409)
-  const { data: current } = await admin.from('merchants').select('slug').eq('id', id).single()
-  await admin.from('merchant_slug_history').delete().eq('old_slug', s)
-  const { data, error } = await admin.from('merchants').update({ slug: s }).eq('id', id).select().single()
-  if (error) return c.json({ error: 'Update failed' }, 500)
-  if (current?.slug && current.slug !== s) {
-    await admin.from('merchant_slug_history').upsert({ old_slug: current.slug, merchant_id: id })
+  try {
+    const row = await renameMerchantSlug(id, s)
+    if (!row) return c.json({ error: 'Update failed' }, 500)
+    return c.json(row)
+  } catch {
+    // A concurrent claim on the same slug lands here via the unique constraint — the same
+    // answer the pre-check gives when it sees the conflict first.
+    return c.json({ error: 'Slug already taken' }, 409)
   }
-  return c.json(data)
 })
 
 // ── Owner-scoped reads (tenant enforced by requireMerchantOwns) ────────────────

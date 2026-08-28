@@ -74,7 +74,10 @@ export function buildStorefrontDocument(
       status: 301,
       headers: {
         Location: `${req.origin}/s/${encodeURIComponent(resolution.movedTo)}${sub}`,
-        'Cache-Control': CACHE,
+        // No stale-while-revalidate here, unlike the HTML: this header pins a REDIRECT TARGET,
+        // and a claim-wins reversal must not keep sending one shop's visitors to another for
+        // however long the CDN holds the stale copy.
+        'Cache-Control': 'public, s-maxage=300',
       },
       body: '',
     }
@@ -103,7 +106,10 @@ export function buildStorefrontDocument(
   const inject = [
     `<link rel="canonical" href="${escapeHtml(canonical)}" />`,
     `<meta property="og:url" content="${escapeHtml(canonical)}" />`,
-    ...(shop.status === 'active' ? [] : ['<meta name="robots" content="noindex" />']),
+    // noindex on the shop ROOT only. Subpaths carry a canonical to the root instead — a
+    // cross-page canonical and a noindex on the same document are conflicting signals, and the
+    // root's own noindex already covers the shop (spec decision 12).
+    ...(shop.status !== 'active' && !req.subpath ? ['<meta name="robots" content="noindex" />'] : []),
     `<script type="application/ld+json">${jsonForScriptTag(jsonLd(shop, products, canonical, description))}</script>`,
   ].join('\n    ')
   // A shell with no </head> is not a shell we understand — serve it untouched (fail open)
