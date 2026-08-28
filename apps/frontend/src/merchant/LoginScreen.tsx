@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { Eye, EyeOff } from 'lucide-react'
 import { signIn, requestPasswordReset, SIGNED_OUT_ELSEWHERE_KEY } from '../store'
 import { authErrorCode } from '../authError'
 import { trackEvent } from '../analytics/events'
@@ -9,6 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '../components/PasswordInput'
 import Wordmark from '../components/Wordmark'
 
 export default function LoginScreen() {
@@ -16,7 +16,6 @@ export default function LoginScreen() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
   const [forgot, setForgot] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -82,7 +81,8 @@ export default function LoginScreen() {
   function switchMode(next: boolean) {
     setForgot(next)
     setPassword('')
-    setShowPassword(false)
+    // The reveal toggle needs no reset: the field is unmounted while `forgot` is true,
+    // so coming back mounts a fresh PasswordInput with the password masked again.
     setMsg('')
     setNotice('')
   }
@@ -171,26 +171,13 @@ export default function LoginScreen() {
                     {t('Forgot password?', '忘记密码？')}
                   </Button>
                 </div>
-                <div className="relative">
-                  <Input
-                    id="login-2"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    required
-                    className="pr-11"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(v => !v)}
-                    aria-pressed={showPassword}
-                    aria-label={showPassword ? t('Hide password', '隐藏密码') : t('Show password', '显示密码')}
-                    className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-primary cursor-pointer"
-                  >
-                    {showPassword ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
-                  </button>
-                </div>
+                <PasswordInput
+                  id="login-2"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                />
               </div>
             )}
           </div>

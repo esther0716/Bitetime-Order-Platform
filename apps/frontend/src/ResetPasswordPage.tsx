@@ -6,8 +6,8 @@ import { updatePassword } from './store'
 import { authErrorCode } from './authError'
 import { resetDestination } from './resetPassword'
 import { Button } from './components/ui/button'
-import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
+import { PasswordInput } from './components/PasswordInput'
 import { Spinner } from './components/Loaders'
 
 /**
@@ -124,9 +124,8 @@ export default function ResetPasswordPage() {
           <form onSubmit={onSubmit}>
             <div className="flex flex-col gap-1.5 mb-5">
               <Label htmlFor="reset-password">{t('New password', '新密码')}</Label>
-              <Input
+              <PasswordInput
                 id="reset-password"
-                type="password"
                 autoComplete="new-password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}

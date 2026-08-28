@@ -8,6 +8,7 @@ import { SignupError, type SignupErrorCode } from '../signupError'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { PasswordInput } from '../components/PasswordInput'
 
 type AuthMode = 'signin' | 'signup' | 'forgot'
 
@@ -214,9 +215,8 @@ export default function AuthPanel({ heading, subheading, initialMode = 'signin',
                   </Button>
                 )}
               </div>
-              <Input
+              <PasswordInput
                 id="auth-password"
-                type="password"
                 autoComplete={signingUp ? 'new-password' : 'current-password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
