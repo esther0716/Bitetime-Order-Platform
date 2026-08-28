@@ -382,13 +382,18 @@ export async function orderMerchantId(orderId: string): Promise<string | null> {
  * pending_payment and never overwrites any other status, so a proof landing after a merchant
  * already cancelled (or completed) the order leaves that decision alone.
  */
-export async function setOrderPaymentProof(orderId: string, path: string): Promise<void> {
-  await sql`
+export async function setOrderPaymentProof(
+  orderId: string,
+  path: string,
+): Promise<{ payment_proof: string; status: string } | null> {
+  const rows = await sql<{ payment_proof: string; status: string }[]>`
     update orders
     set payment_proof = ${path},
         status = case when status = 'pending_payment' then 'new' else status end
     where id = ${orderId}
+    returning payment_proof, status
   `
+  return rows[0] ?? null
 }
 
 /**

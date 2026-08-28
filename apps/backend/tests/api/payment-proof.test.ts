@@ -74,6 +74,12 @@ describe('POST /api/orders/:orderId/payment-proof', () => {
 
     const res = await post(orderId, PNG_1X1, 'image/png')
     expect(res.status).toBe(200)
+    // The row it wrote, which order history patches itself from rather than refetching.
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      payment_proof: `${merchantId}/${orderId}.png`,
+      status: 'new',
+    })
 
     const { data: order } = await serviceClient().from('orders').select('payment_proof').eq('id', orderId).single()
     expect(order!.payment_proof).toBe(`${merchantId}/${orderId}.png`)
@@ -109,6 +115,7 @@ describe('POST /api/orders/:orderId/payment-proof', () => {
 
     const res = await post(orderId, PNG_1X1, 'image/png')
     expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ status: 'new' })
 
     const { data: order } = await serviceClient().from('orders').select('status').eq('id', orderId).single()
     expect(order!.status).toBe('new')

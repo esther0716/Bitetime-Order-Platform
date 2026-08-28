@@ -839,13 +839,18 @@ describe('uploadPaymentProof', () => {
   it('posts a valid file to /api/orders/:orderId/payment-proof', async () => {
     // No auth: unlike fetchPaymentProof, this is the guest checkout path — it never calls
     // getSession at all (apiSendFile is called with no `auth` option).
-    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, text: async () => '' })
+    const saved = { payment_proof: 'm1/order-1.png', status: 'new' }
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200, text: async () => JSON.stringify({ ok: true, ...saved }),
+    })
     vi.stubGlobal('fetch', fetchMock)
     const file = new File(['x'], 'proof.png', { type: 'image/png' })
 
     const r = await uploadPaymentProof('order-1', file)
 
     expect(r.ok).toBe(true)
+    // The row the write moved — order history patches its own list from this.
+    expect(r.ok && r.data).toMatchObject(saved)
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/orders\/order-1\/payment-proof$/)
     expect(init.body).toBe(file)

@@ -2967,8 +2967,11 @@ app.post('/api/orders/:orderId/payment-proof', async (c) => {
     return c.json({ error: 'upload_failed' }, 500)
   }
 
-  await setOrderPaymentProof(orderId, path)
-  return c.json({ ok: true })
+  // Returns the two fields the write moved — the path, and a status that may have left
+  // pending_payment. Order history patches its own row from them, so a customer uploading from
+  // there sees the timeline move without a reload. The merchant twin returns the same shape.
+  const row = await setOrderPaymentProof(orderId, path)
+  return c.json({ ok: true, ...row })
 })
 
 // The two outbound adapters, held in a mutable object so tests can capture what

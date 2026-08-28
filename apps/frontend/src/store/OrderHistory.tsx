@@ -4,7 +4,7 @@ import { Truck, ExternalLink, ChevronDown } from 'lucide-react'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { Button } from '../components/ui/button'
-import { fetchMyInvoice, fetchMyOrdersAtShop, fetchMyPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT } from '../store'
+import { fetchMyInvoice, fetchMyOrdersAtShop, fetchMyPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT, type PaymentProofSaved } from '../store'
 import { StatusBadge } from '../orderStatus'
 import { ItemSelections } from '../ItemSelections'
 import { courierName, trackingUrl } from '../couriers'
@@ -17,6 +17,8 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import AuthPanel from './AuthPanel'
 import MoneyLine from './MoneyLine'
 import OrderTimeline from './OrderTimeline'
+import PaymentProofUpload from './PaymentProofUpload'
+import { canUploadPaymentProof } from '../paymentProof'
 import LanguageSelect from '../components/LanguageSelect'
 import InvoiceButton from '../components/InvoiceButton'
 import type { Order, OrderItem, Product, Translate } from '../types'
@@ -51,6 +53,22 @@ export default function OrderHistory() {
 
   const merchantId = merchant?.id
   const userId = account?.id
+
+  /**
+   * Patch ONE loaded row in place — used after a payment-proof upload, which sets the path and
+   * may move the order out of `pending_payment`. The whole list is not refetched: the write
+   * already returned what it changed, and a refetch would drop the accordion's open row.
+   *
+   * Guarded on `state === 'orders'` so it can never resurrect a failed or a foreign load; the
+   * ownership fields ride along untouched.
+   */
+  function patchLoadedOrder(orderId: string, patch: Partial<Order>) {
+    setLoaded(prev =>
+      prev && prev.state === 'orders'
+        ? { ...prev, rows: prev.rows.map(r => (r.id === orderId ? { ...r, ...patch } : r)) }
+        : prev,
+    )
+  }
 
   useEffect(() => {
     if (!merchantId || !userId) return
@@ -253,7 +271,11 @@ export default function OrderHistory() {
                         <span className="text-right">{formatMoney(o.total, currency)}</span>
                       </div>
                       <OrderTimeline status={o.status ?? 'new'} mode={o.mode} t={t} />
-                      <PaymentProofImage order={o} t={t} />
+                      <PaymentProofSection
+                        order={o}
+                        t={t}
+                        onUploaded={saved => patchLoadedOrder(o.id!, saved)}
+                      />
                       <Tracking order={o} t={t} />
                       {/* The document, for the customer who came here to get one. The same bytes
                           the merchant and a guest are handed — one order has one invoice. */}
@@ -284,15 +306,34 @@ export default function OrderHistory() {
 }
 
 /**
- * The customer's own payment-proof screenshot, if they uploaded one — same image the merchant
- * sees in `OrderDetailSheet`, fetched through the customer-scoped route instead.
+ * The order's proof of payment: the screenshot the customer uploaded, or the chance to upload
+ * one if they never did.
+ *
+ * The order-placed screen offers the upload once, on a page a customer often closes before their
+ * banking app is done. This is the second door — the same widget, the same route — and the only
+ * one that still exists a day later. `canUploadPaymentProof` decides where offering it is
+ * honest; a cancelled order is not it.
+ *
+ * Once uploaded, the widget STAYS (`justUploaded`), holding the local preview of the file the
+ * customer picked. Switching to the fetched image the moment the row gains a path would spend a
+ * round trip re-downloading bytes this browser already has, and show "Loading…" over a thumbnail
+ * that was on screen a second ago.
  *
  * Lazy by construction, not by a manual open/closed flag: this only ever mounts inside an
  * accordion panel that unmounts on collapse (`Accordion`'s default `keepMounted={false}`), so
  * the fetch starts when the row opens and `URL.revokeObjectURL` runs in this effect's own
  * cleanup when it closes — never fetched for orders the customer hasn't expanded.
  */
-function PaymentProofImage({ order, t }: { order: Order; t: Translate }) {
+function PaymentProofSection({
+  order,
+  t,
+  onUploaded,
+}: {
+  order: Order
+  t: Translate
+  onUploaded: (saved: PaymentProofSaved) => void
+}) {
+  const [justUploaded, setJustUploaded] = useState(false)
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     if (!order.payment_proof || !order.id) return
@@ -309,7 +350,24 @@ function PaymentProofImage({ order, t }: { order: Order; t: Translate }) {
     }
   }, [order.id, order.payment_proof])
 
-  if (!order.payment_proof) return null
+  if (!order.payment_proof || justUploaded) {
+    if (!order.id || !canUploadPaymentProof(order.status)) return null
+    return (
+      <div className="mt-3">
+        <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-1.5">
+          {t('Payment proof', '付款凭证')}
+        </div>
+        <PaymentProofUpload
+          orderId={order.id}
+          onUploaded={saved => {
+            setJustUploaded(true)
+            onUploaded(saved)
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="mt-3">
       <div className="text-[11px] font-medium text-primary uppercase tracking-[0.09em] mb-1.5">

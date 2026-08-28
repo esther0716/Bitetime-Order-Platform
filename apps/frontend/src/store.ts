@@ -1169,15 +1169,19 @@ export async function deletePaymentQr(path: string): Promise<void> {
 export const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024
 export const PAYMENT_PROOF_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
+/** What the upload moved on the order row — the stored path, and a status that may have left
+ *  `pending_payment`. Order history patches its own row from it rather than refetching. */
+export type PaymentProofSaved = { payment_proof: string; status: string }
+
 /** Validates client-side (same limits the bucket itself enforces), then posts the raw file. */
-export async function uploadPaymentProof(orderId: string, file: File): Promise<Result<void>> {
+export async function uploadPaymentProof(orderId: string, file: File): Promise<Result<PaymentProofSaved>> {
   if (!PAYMENT_PROOF_TYPES.includes(file.type)) {
     return { ok: false, error: { message: `Unsupported image type: ${file.name}` } }
   }
   if (file.size > MAX_PAYMENT_PROOF_BYTES) {
     return { ok: false, error: { message: `Image too large (max 2MB): ${file.name}` } }
   }
-  return toVoid(await apiSendFile(`/api/orders/${orderId}/payment-proof`, file))
+  return apiSendFile<PaymentProofSaved>(`/api/orders/${orderId}/payment-proof`, file)
 }
 
 /** For the merchant dashboard only — `auth: 'required'`, a signed-out caller has no shop to view. */

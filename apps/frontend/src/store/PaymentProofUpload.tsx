@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { uploadPaymentProof, PAYMENT_PROOF_TYPES } from '../store'
+import { uploadPaymentProof, PAYMENT_PROOF_TYPES, type PaymentProofSaved } from '../store'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
 type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error'
@@ -19,8 +19,19 @@ type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error'
  * never a re-fetch from the backend. The bucket is private and unauthenticated, so there is
  * nothing for a guest checkout to re-fetch from; the browser already holds the only copy that
  * matters to it.
+ *
+ * `onUploaded` carries what the write moved (the path, and a status that may have left
+ * `pending_payment`) to a caller that shows the order elsewhere on the page — order history,
+ * whose badge and timeline would otherwise sit stale until a reload. The order-placed screen
+ * has nothing to patch and passes nothing.
  */
-export default function PaymentProofUpload({ orderId }: { orderId: string }) {
+export default function PaymentProofUpload({
+  orderId,
+  onUploaded,
+}: {
+  orderId: string
+  onUploaded?: (saved: PaymentProofSaved) => void
+}) {
   const { t } = useSession()
   const [state, setState] = useState<UploadState>('idle')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -48,6 +59,7 @@ export default function PaymentProofUpload({ orderId }: { orderId: string }) {
       })
       setState('uploaded')
       toast.success(t('Payment proof uploaded', '付款凭证已上传'))
+      onUploaded?.(r.data)
     } else {
       setState('error')
       toast.error(r.error.message || t('Could not upload — try again', '上传失败，请重试'))
