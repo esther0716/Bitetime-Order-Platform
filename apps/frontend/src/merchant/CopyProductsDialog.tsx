@@ -9,12 +9,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { copyProducts, fetchAllMerchants, lookupProducts } from '../store'
-import { copyPickerRows, type CopyPickerRow } from './copyPickerRows'
+import { copyPickerRows, filterShops, type CopyPickerRow } from './copyPickerRows'
 import { currencyDef } from '../currency'
 import { Button } from '../components/ui/button'
 import { Checkbox } from '../components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { Input } from '../components/ui/input'
 
 export default function CopyProductsDialog({
   open, onOpenChange, targetMerchantId, targetProducts, t, lang, onSaved,
@@ -29,6 +29,7 @@ export default function CopyProductsDialog({
   onSaved: () => void | Promise<void>
 }) {
   const [shops, setShops] = useState<any[] | null>(null)
+  const [query, setQuery] = useState('')
   const [sourceId, setSourceId] = useState('')
   const [rows, setRows] = useState<CopyPickerRow[] | null>(null)
   const [loading, setLoading] = useState(false)
@@ -66,7 +67,7 @@ export default function CopyProductsDialog({
   function reset() {
     // The bump orphans any in-flight product load, so it cannot land on a reopened dialog.
     loadSeq.current++
-    setSourceId(''); setRows(null); setMsg(''); setLoading(false); setCopying(false)
+    setQuery(''); setSourceId(''); setRows(null); setMsg(''); setLoading(false); setCopying(false)
   }
   function close(v: boolean) {
     if (copying) return
@@ -138,23 +139,58 @@ export default function CopyProductsDialog({
           )}
         </p>
 
-        <Select value={sourceId} onValueChange={pickSource}>
-          <SelectTrigger className="w-full mb-3">
-            {/* The children function is what renders the chosen shop's NAME — bare SelectValue
-                would print the raw merchant id, since the value here is the row's uuid. */}
-            <SelectValue>
-              {(v: string) => {
-                const s = shops?.find(m => m.id === v)
-                return s ? `${s.name} (${s.slug})` : t('Choose a shop to copy from', '选择要复制的店铺')
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {(shops ?? []).map(s => (
-              <SelectItem key={s.id} value={s.id}>{s.name} ({s.slug})</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* A filter input over a plain list, not a dropdown: the platform holds a couple of
+            hundred shops, and a search box is the affordance that makes finding one possible. */}
+        {source ? (
+          <div className="flex items-center justify-between gap-2 mb-3 rounded-lg border-[0.5px] border-border bg-background/50 px-3 py-2">
+            <span className="text-[13px] truncate">
+              {t('Copying from', '复制来源')}: <span className="font-medium">{source.name} ({source.slug})</span>
+            </span>
+            <Button
+              type="button" variant="soft" size="none"
+              className="rounded-lg py-1 px-3 text-[12px] shrink-0"
+              onClick={() => pickSource('')}
+              disabled={copying}
+            >
+              {t('Change shop', '更换店铺')}
+            </Button>
+          </div>
+        ) : (
+          <>
+            <Input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder={t('Search shops by name or slug…', '按名称或网址搜索店铺…')}
+              className="mb-2"
+              autoFocus
+            />
+            {shops === null ? (
+              <p className="text-[13px] text-muted-foreground mb-3 flex items-center gap-2">
+                <Loader2 className="size-4 animate-spin" />
+                {t('Loading shops…', '正在加载店铺…')}
+              </p>
+            ) : (
+              <ul className="divide-y divide-border border-[0.5px] border-border rounded-xl mb-3 max-h-56 overflow-y-auto">
+                {filterShops(shops, query).map(s => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-[13px] cursor-pointer hover:bg-accent"
+                      onClick={() => pickSource(s.id)}
+                    >
+                      {s.name} <span className="text-muted-foreground">({s.slug})</span>
+                    </button>
+                  </li>
+                ))}
+                {filterShops(shops, query).length === 0 && (
+                  <li className="px-3 py-2 text-[13px] text-muted-foreground">
+                    {t('No shop matches that search.', '没有匹配的店铺。')}
+                  </li>
+                )}
+              </ul>
+            )}
+          </>
+        )}
 
         {msg && <p className="text-[13px] text-destructive mb-3">{msg}</p>}
         {loading && (

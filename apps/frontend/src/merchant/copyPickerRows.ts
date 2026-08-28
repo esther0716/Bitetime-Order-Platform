@@ -24,6 +24,24 @@ export interface CopyPickerRow extends CopyCandidate {
   include: boolean
 }
 
+/** What the shop search needs off a merchants row. */
+export interface ShopCandidate {
+  id: string
+  name: string
+  slug: string
+  [key: string]: unknown
+}
+
+/**
+ * The dialog's shop search: name or slug contains the query, case- and space-blind. A blank
+ * query is every shop — the list scrolls, it does not hide.
+ */
+export function filterShops<S extends ShopCandidate>(shops: S[], query: string): S[] {
+  const q = norm(query)
+  if (!q) return shops
+  return shops.filter(s => norm(s.name).includes(q) || norm(s.slug).includes(q))
+}
+
 export function copyPickerRows(
   sourceProducts: CopyCandidate[],
   targetProducts: CopyCandidate[],
