@@ -295,6 +295,17 @@ A marketing page written for ONE trade, served at `/for/<slug>` — `home-bakers
 
 **Adding one touches six places**, three of them derived from `USE_CASES` and three by hand: `ROUTE_META` (spread), the router (`.map`), the prerender list (spread), plus `vercel.json`'s rewrite, `sitemap.xml` and `llms.txt`. Of the hand-written three, only the sitemap and the rewrite/llms.txt joins are test-pinned — see `vercelRewrites.test.ts`, `llmsTxt.test.ts`, `sitemap.test.ts`.
 
+## Storefront findability
+
+The SEO scope for merchant storefronts: a customer who searches the **shop's own name** finds `/s/<slug>` with the shop's title, description and menu facts in the result. Deliberately NOT local discovery ("nasi lemak delivery PJ") — that fight belongs to Google Business Profile and delivery marketplaces, not to a path on a shared domain — and NOT custom domains, which is a separate feature. Every active shop gets it; there is no plan gate.
+_Avoid_: "merchant SEO" (says nothing about which queries), "shop ranking".
+
+**Head injection** is the mechanism: a Vercel Function serves `/s/:slug` (and its subpaths) by injecting per-shop `<title>`, meta description, canonical and `LocalBusiness` JSON-LD into the same deploy's SPA shell. The **body stays the shell** — content parity for JS-less crawlers is out of scope, so the served snippet is the meta description, which packs category names for that reason. **Fail-open**: any error serves the untouched shell, which is exactly the pre-feature behaviour — hence a breakage is invisible in a browser, and only the canary and the pinning tests see it. Shop data comes from the backend's public API, never a direct database read: `pickMerchantConfig` stays the one authority on which columns are public. Merchant-controlled text lands in raw head HTML and inside the JSON-LD script block — escaping is a pinned rule, not a nicety. See ADR 0022.
+
+**Slug history** is what survives a rename: `PATCH /api/merchants/:id/slug` records the old slug, and the storefront function 301s it to the current one — printed QR codes and indexed URLs keep working. **Claim-wins**: a new shop claiming a slug in another shop's history takes it, and the redirect dies — a live shop's claim beats a dead redirect, and freed slugs stay reusable. Statuses map to crawler answers: unknown slug → 404, `suspended`/`pending` → 200 + noindex (reversible, as suspension is).
+
+**Shop sitemap** (`/sitemap-shops.xml`) is a second, function-served sitemap enumerating active shops only — the static `sitemap.xml` stays hand-maintained for platform pages; the two lists have different owners and change rates. On a database failure it answers **503, never an empty 200**: an empty 200 tells Google every shop page is gone.
+
 ## Customer signup
 
 How a customer account comes into being. Email confirmation is on **project-wide** and stays on — it is shared with merchants, and a merchant account controls a shop and its Stripe billing. A client-side `signUp` would therefore return no session, stranding a customer mid-checkout in their inbox holding a cart, so customers are minted **pre-confirmed** by the backend instead (`POST /api/customer/signup` → `admin.auth.admin.createUser({ email_confirm: true })`), and the client signs in normally. Pure seams: `customerSignup` (policy; the account-creation and profile writes are injected adapters), `rateLimit` (clock-injected sliding window), `clientIp` (backend), `signupError` (frontend).
