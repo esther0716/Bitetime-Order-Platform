@@ -1227,6 +1227,13 @@ export async function fetchMyPaymentProof(orderId: string): Promise<Result<Blob>
   return mapOk(r, d => d.blob)
 }
 
+/** The receipt the SHOP filed for this order, for the customer who sent it outside the app.
+ *  Same scoping as `fetchMyPaymentProof` — the order's own user_id, server-side. */
+export async function fetchMyMerchantPaymentProof(orderId: string): Promise<Result<Blob>> {
+  const r = await apiGetFile(`/api/orders/${orderId}/merchant-payment-proof`, { auth: 'required' })
+  return mapOk(r, d => d.blob)
+}
+
 // ── Invoice ───────────────────────────────────────────────────────────────────
 //
 // One document, three doors, the same bytes: a guest today is an account holder next month and

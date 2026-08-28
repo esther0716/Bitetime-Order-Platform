@@ -281,3 +281,106 @@ describe('GET /api/merchants/:id/orders/:orderId/merchant-payment-proof', () => 
     await serviceClient().from('merchants').delete().eq('id', merchantId)
   })
 })
+
+// The customer's own door to the same bytes — how a customer who sent their slip over WhatsApp
+// sees that the shop has it. Scoped by the order's user_id, never by merchant ownership.
+describe('GET /api/orders/:orderId/merchant-payment-proof (customer)', () => {
+  async function customerToken(email: string) {
+    const client = await makeUser(email, 'password123')
+    const { data } = await client.auth.getSession()
+    return { token: data.session!.access_token, userId: data.session!.user.id }
+  }
+
+  async function seedOwnedOrder(merchantId: string, userId: string) {
+    const { data, error } = await serviceClient()
+      .from('orders')
+      .insert({
+        merchant_id: merchantId,
+        order_number: `MPPC-${crypto.randomUUID().slice(0, 8)}`,
+        status: 'pending_payment',
+        customer_name: 'May Chan',
+        customer_wa: '60123456789',
+        user_id: userId,
+      })
+      .select('id')
+      .single()
+    if (error) throw new Error(`seeding order: ${error.message}`)
+    return data!.id as string
+  }
+
+  function getAs(orderId: string, token?: string) {
+    return app.request(`/api/orders/${orderId}/merchant-payment-proof`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+  }
+
+  it('streams the shop-filed receipt back to the customer who placed the order', async () => {
+    const { merchantId, token: ownerToken } = await shopWithToken('mppc-read-shop')
+    const { token, userId } = await customerToken('mppc-read-customer@example.com')
+    const orderId = await seedOwnedOrder(merchantId, userId)
+    written.push(`${merchantId}/${orderId}-merchant.png`)
+
+    expect((await post(merchantId, orderId, ownerToken)).status).toBe(200)
+
+    const res = await getAs(orderId, token)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('image/png')
+    expect(new Uint8Array(await res.arrayBuffer()).length).toBe(PNG_1X1.byteLength)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('404s for a stranger — the order exists but belongs to someone else', async () => {
+    const { merchantId, token: ownerToken } = await shopWithToken('mppc-stranger-shop')
+    const { userId } = await customerToken('mppc-owner-customer@example.com')
+    const orderId = await seedOwnedOrder(merchantId, userId)
+    written.push(`${merchantId}/${orderId}-merchant.png`)
+    await post(merchantId, orderId, ownerToken)
+
+    const { token: strangerToken } = await customerToken('mppc-stranger@example.com')
+    expect((await getAs(orderId, strangerToken)).status).toBe(404)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('404s for a guest order — no user_id to match against at all', async () => {
+    const { merchantId, token: ownerToken } = await shopWithToken('mppc-guest-shop')
+    const orderId = await seedOrder(merchantId)
+    written.push(`${merchantId}/${orderId}-merchant.png`)
+    await post(merchantId, orderId, ownerToken)
+
+    const { token } = await customerToken('mppc-guest-customer@example.com')
+    expect((await getAs(orderId, token)).status).toBe(404)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('404s when the shop filed nothing', async () => {
+    const { merchantId } = await shopWithToken('mppc-none-shop')
+    const { token, userId } = await customerToken('mppc-none-customer@example.com')
+    const orderId = await seedOwnedOrder(merchantId, userId)
+
+    expect((await getAs(orderId, token)).status).toBe(404)
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('404s when the row names an object Storage no longer holds', async () => {
+    const { merchantId, token: ownerToken } = await shopWithToken('mppc-gone-shop')
+    const { token, userId } = await customerToken('mppc-gone-customer@example.com')
+    const orderId = await seedOwnedOrder(merchantId, userId)
+
+    await post(merchantId, orderId, ownerToken)
+    await serviceClient().storage.from(BUCKET).remove([`${merchantId}/${orderId}-merchant.png`])
+
+    const res = await getAs(orderId, token)
+    expect(res.status).toBe(404)
+    expect(((await res.json()) as { error: string }).error).toBe('not_found')
+
+    await serviceClient().from('merchants').delete().eq('id', merchantId)
+  })
+
+  it('401 without a token', async () => {
+    expect((await getAs('00000000-0000-0000-0000-000000000000')).status).toBe(401)
+  })
+})

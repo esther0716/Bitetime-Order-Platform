@@ -4,7 +4,7 @@ import { Truck, ExternalLink, ChevronDown } from 'lucide-react'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { Button } from '../components/ui/button'
-import { fetchMyInvoice, fetchMyOrdersAtShop, fetchMyPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT, type PaymentProofSaved } from '../store'
+import { fetchMyInvoice, fetchMyOrdersAtShop, fetchMyPaymentProof, fetchMyMerchantPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT, type PaymentProofSaved } from '../store'
 import { StatusBadge } from '../orderStatus'
 import { ItemSelections } from '../ItemSelections'
 import { courierName, trackingUrl } from '../couriers'
@@ -340,11 +340,20 @@ function PaymentProofSection({
 }) {
   const [justUploaded, setJustUploaded] = useState(false)
   const [url, setUrl] = useState<string | null>(null)
+
+  // Which slip this row shows, decided once: the customer's own first — it is theirs, and they
+  // know what they sent — then the shop's copy, for the customer who sent the slip over WhatsApp
+  // and would otherwise see an order that took their money with nothing on screen to show for it.
+  // Only when neither exists is there anything left to ask for.
+  const source = order.payment_proof ? 'mine' : order.payment_proof_merchant ? 'shop' : null
+  const hasProof = source !== null && !justUploaded
+
   useEffect(() => {
-    if (!order.payment_proof || !order.id) return
+    if (!source || !order.id) return
     let cancelled = false
     let objectUrl: string | null = null
-    fetchMyPaymentProof(order.id).then((r) => {
+    const load = source === 'shop' ? fetchMyMerchantPaymentProof : fetchMyPaymentProof
+    load(order.id).then((r) => {
       if (cancelled || !r.ok) return
       objectUrl = URL.createObjectURL(r.data)
       setUrl(objectUrl)
@@ -353,9 +362,9 @@ function PaymentProofSection({
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [order.id, order.payment_proof])
+  }, [order.id, source])
 
-  if (!order.payment_proof || justUploaded) {
+  if (!hasProof) {
     if (!order.id || !canUploadPaymentProof(order.status)) return null
     return (
       <div className="mt-3">
@@ -383,12 +392,21 @@ function PaymentProofSection({
         {t('Payment proof', '付款凭证')}
       </div>
       {url ? (
-        <ZoomableImage
-          src={url}
-          alt={t('Payment proof', '付款凭证')}
-          triggerClassName="w-full max-w-[160px]"
-          imgClassName="w-full h-auto object-contain rounded-md border border-border"
-        />
+        <div className="flex flex-col gap-1 w-full max-w-[160px]">
+          <ZoomableImage
+            src={url}
+            alt={t('Payment proof', '付款凭证')}
+            triggerClassName="w-full"
+            imgClassName="w-full h-auto object-contain rounded-md border border-border"
+          />
+          {/* Said only for the shop's copy. A customer looking at a slip they never uploaded
+              needs to know where it came from; their own needs no label. */}
+          {source === 'shop' && (
+            <span className="text-[12px] text-muted-foreground">
+              {t('Filed by the shop', '店家上传')}
+            </span>
+          )}
+        </div>
       ) : (
         <span className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</span>
       )}

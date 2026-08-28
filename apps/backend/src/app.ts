@@ -1479,6 +1479,24 @@ app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
   return streamPrivateObject(PAYMENT_PROOF_BUCKET, path)
 })
 
+// The customer's door to the receipt the SHOP filed for their order. Same bytes the merchant
+// reads, scoped by the order's user_id — a customer who sent their slip over WhatsApp must be
+// able to see that the shop has it, or the order sits at "we have your money" with nothing on
+// screen to say so. Inline ownership check, same 404-for-everything shape as the twin above:
+// a stranger, a guest order and an empty column must be indistinguishable.
+app.get('/api/orders/:orderId/merchant-payment-proof', requireUser, async (c) => {
+  const user = c.get('user')
+  const orderId = c.req.param('orderId')
+  const { data: order, error } = await admin
+    .from('orders').select('user_id, payment_proof_merchant').eq('id', orderId).maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+  if (!order || order.user_id !== user.id) return c.json({ error: 'not_found' }, 404)
+  const path = order.payment_proof_merchant as string | null
+  if (!path) return c.json({ error: 'not_found' }, 404)
+
+  return streamPrivateObject(PAYMENT_PROOF_BUCKET, path)
+})
+
 // ── Invoice ───────────────────────────────────────────────────────────────────
 //
 // One document, three doors, and the SAME bytes through all three — a guest today is an account

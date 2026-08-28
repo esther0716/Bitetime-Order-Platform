@@ -109,6 +109,7 @@ import {
   fetchMyPaymentProof,
   uploadMerchantPaymentProof,
   fetchMerchantPaymentProof,
+  fetchMyMerchantPaymentProof,
   MAX_PAYMENT_PROOF_BYTES,
   fetchMerchantOrders,
   fetchOrderCount,
@@ -908,6 +909,25 @@ describe('uploadMerchantPaymentProof', () => {
 
     expect(r.ok).toBe(false)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('fetchMyMerchantPaymentProof', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('GETs the customer-scoped merchant slot and unwraps to the blob', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const blob = new Blob(['x'], { type: 'image/png' })
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200, headers: new Headers(), blob: async () => blob,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const r = await fetchMyMerchantPaymentProof('order-1')
+
+    expect(r).toEqual({ ok: true, data: blob })
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/orders\/order-1\/merchant-payment-proof$/)
   })
 })
 
