@@ -1079,7 +1079,7 @@ export async function copyProducts(
   sourceMerchantId: string,
   targetMerchantId: string,
   productIds: string[],
-): Promise<Result<{ copied: number }>> {
+): Promise<Result<{ copied: number; skippedImages: number }>> {
   return apiSend('/api/admin/copy-products', 'POST', { sourceMerchantId, targetMerchantId, productIds }, { auth: 'required' })
 }
 

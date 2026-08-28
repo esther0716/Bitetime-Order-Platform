@@ -22,6 +22,10 @@ let targetId = ''
 const written: string[] = []
 afterAll(async () => {
   if (written.length) await serviceClient().storage.from(BUCKET).remove(written)
+  // Drop the fixture shops too, not just the objects: rows left pointing at removed objects are
+  // exactly the dangling-image state, and a local dev DB full of them is how a "broken" copy got
+  // reported against what was really test debris.
+  for (const slug of ['copy-src', 'copy-tgt', 'copy-broken']) await resetMerchant(slug)
 })
 
 async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
@@ -117,7 +121,7 @@ describe('POST /api/admin/copy-products', () => {
       superToken,
     )
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, copied: 3 })
+    expect(await res.json()).toEqual({ ok: true, copied: 3, skippedImages: 0 })
 
     const rows = await targetProducts()
     expect(rows.map((r: any) => [r.name, r.sort])).toEqual([
@@ -190,14 +194,15 @@ describe('POST /api/admin/copy-products', () => {
     expect(await self.json()).toEqual({ error: 'same_shop' })
   })
 
-  it('lands nothing when an image object cannot be copied (whole or not at all)', async () => {
+  it('copies a product whose image object is gone, dropping the dangling image', async () => {
     await resetMerchant('copy-broken')
     const brokenOwner = await makeUser('copy-broken-owner@example.com', 'password123')
     const { data: bo } = await brokenOwner.auth.getSession()
     const brokenId = await seedMerchant({ slug: 'copy-broken', owner_id: bo.session!.user.id })
     const ok = await seedProduct({ merchant_id: brokenId, name: 'Fine', price: 1, sort: 0 })
     const broken = await seedProduct({ merchant_id: brokenId, name: 'Broken', price: 2, sort: 1 })
-    // The row claims an object the bucket does not hold — the copy must abort before any insert.
+    // The row claims an object the bucket does not hold — a dangle image deletes can leave behind
+    // for real. The copy proceeds; the row lands without the photo it no longer has anyway.
     await serviceClient().from('products')
       .update({ image_urls: [`${brokenId}/${broken}/missing.png`] }).eq('id', broken)
 
@@ -206,7 +211,11 @@ describe('POST /api/admin/copy-products', () => {
       { sourceMerchantId: brokenId, targetMerchantId: targetId, productIds: [ok, broken] },
       superToken,
     )
-    expect(res.status).toBe(500)
-    expect((await targetProducts()).length).toBe(before)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, copied: 2, skippedImages: 1 })
+    const rows = await targetProducts()
+    expect(rows.length).toBe(before + 2)
+    const landedBroken = rows.find((r: any) => r.name === 'Broken') as any
+    expect(landedBroken.image_urls).toEqual([])
   }, 30_000)
 })

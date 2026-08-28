@@ -110,7 +110,13 @@ export default function CopyProductsDialog({
       toast.error(refusalText(r.error.code))
       return
     }
-    toast.success(t(`Copied ${r.data.copied} products`, `已复制 ${r.data.copied} 个产品`))
+    // A skipped photo is a photo already gone at the source — worth a mention, not a failure.
+    toast.success(r.data.skippedImages > 0
+      ? t(
+          `Copied ${r.data.copied} products (${r.data.skippedImages} missing photos skipped)`,
+          `已复制 ${r.data.copied} 个产品（跳过 ${r.data.skippedImages} 张缺失的照片）`,
+        )
+      : t(`Copied ${r.data.copied} products`, `已复制 ${r.data.copied} 个产品`))
     await onSaved()
     reset()
     onOpenChange(false)

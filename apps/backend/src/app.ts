@@ -45,7 +45,7 @@ import { shopCustomerGroups, shopCustomerRecords, upsertShopCustomer } from './s
 import { statsOrders, distinctCustomerCount } from './ordersDb.js'
 import { parseProductOrder } from './productOrder.js'
 import { writeProductOrder } from './productOrderDb.js'
-import { parseProductCopy, planProductCopy, type CopySourceProduct } from './productCopy.js'
+import { parseProductCopy, planProductCopy, dropMissingImages, type CopySourceProduct } from './productCopy.js'
 import { applyProductCopy } from './productCopyDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
@@ -1746,17 +1746,27 @@ app.post('/api/admin/copy-products', requireSuperadmin, async (c) => {
   })
   if (!planned.ok) return c.json({ error: planned.error }, 400)
 
+  // A SOURCE object that no longer exists is skipped, not fatal: image deletes are best-effort,
+  // so a row can outlive its file, and the honest copy of a photo that is already gone at the
+  // source is no photo. Any other storage failure still aborts — whole or nothing.
+  const missing = new Set<string>()
   for (const { from, to } of planned.plan.imageCopies) {
     const { error } = await admin.storage.from('product-images').copy(from, to)
-    if (error) {
-      console.error('copy-products: image copy failed:', from, error.message)
-      return c.json({ error: 'copy_failed' }, 500)
+    if (!error) continue
+    // storage-js reports the missing-object case as "Object not found" (a 404 wearing various
+    // statusCode types across versions), so the message is the stable thing to match.
+    if (/not.?found/i.test(error.message)) {
+      missing.add(to)
+      continue
     }
+    console.error('copy-products: image copy failed:', from, error.message)
+    return c.json({ error: 'copy_failed' }, 500)
   }
 
   try {
-    const copied = await applyProductCopy(targetMerchantId, planned.plan)
-    return c.json({ ok: true, copied })
+    const rows = dropMissingImages(planned.plan.rows, missing)
+    const copied = await applyProductCopy(targetMerchantId, { ...planned.plan, rows })
+    return c.json({ ok: true, copied, skippedImages: missing.size })
   } catch (err) {
     console.error('copy-products failed:', err instanceof Error ? err.message : String(err))
     return c.json({ error: 'copy_failed' }, 500)

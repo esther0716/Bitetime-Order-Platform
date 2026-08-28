@@ -81,6 +81,18 @@ export type CopyPlanError =
 /** The most products one copy may carry — same argument as MAX_PRODUCT_ORDER_ITEMS. */
 export const MAX_COPY_PRODUCTS = 500
 
+/**
+ * Drop the image paths whose SOURCE object turned out not to exist, so the row lands without
+ * them instead of pointing at nothing. A dangling `image_urls` entry on the source (its object
+ * deleted, the row kept — image deletes are best-effort) must not abort the whole copy: the
+ * honest reading of "this photo is already gone at the source" is a copy without the photo.
+ * Any other storage failure still aborts — that is the whole-or-nothing rule.
+ */
+export function dropMissingImages(rows: CopyProductRow[], missing: ReadonlySet<string>): CopyProductRow[] {
+  if (missing.size === 0) return rows
+  return rows.map(r => ({ ...r, image_urls: r.image_urls.filter(p => !missing.has(p)) }))
+}
+
 export type CopyRequestError = 'malformed_body' | 'same_shop' | 'no_products' | 'too_many_products'
 
 // Postgres casts the ids to uuid. A value that is not a uuid raises there — a 500 for what is a

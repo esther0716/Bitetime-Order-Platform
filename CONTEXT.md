@@ -149,7 +149,7 @@ How a shop's menu is ordered, and the fact that the merchant — not the creatio
 
 ## Product copy
 
-A **superadmin-only** bulk duplication of products from one shop into another, used to set up a new merchant's menu at their request. It is a dedicated backend write path (a `db.ts` transaction), not the product upsert: it carries `descr_zh` (real merchant data the form cannot edit), strips every promo field (a promo is one shop's time-bound campaign, not menu data), duplicates image **objects** into the target's own storage prefix (a cross-tenant path reference would break when the source shop deletes), and remaps `category_id` by category **name**, appending sections the target lacks. Copies land whole or not at all; the picker — not the write path — is where duplicate-name judgement lives.
+A **superadmin-only** bulk duplication of products from one shop into another, used to set up a new merchant's menu at their request. It is a dedicated backend write path (a `db.ts` transaction), not the product upsert: it carries `descr_zh` (real merchant data the form cannot edit), strips every promo field (a promo is one shop's time-bound campaign, not menu data), duplicates image **objects** into the target's own storage prefix (a cross-tenant path reference would break when the source shop deletes), and remaps `category_id` by category **name**, appending sections the target lacks. Copies land whole or not at all — with one carve-out: a source image whose object is already gone (image deletes are best-effort, so a row can outlive its file) is skipped and reported, never fatal, because the honest copy of a photo that no longer exists is no photo. The picker — not the write path — is where duplicate-name judgement lives.
 
 ## Order intake
 

@@ -3,7 +3,7 @@
 // the target shop's rows, what exactly lands. Combinatorial cases live here so the DB-backed
 // API suite only has to prove the plan is applied, not re-derive it.
 import { describe, it, expect } from 'vitest'
-import { planProductCopy, parseProductCopy, type CopySourceProduct } from '../../src/productCopy.js'
+import { planProductCopy, parseProductCopy, dropMissingImages, type CopySourceProduct } from '../../src/productCopy.js'
 import type { MenuCategory } from '@bitetime/shared'
 
 const TARGET = 'aaaaaaaa-0000-0000-0000-000000000001'
@@ -210,6 +210,35 @@ describe('planProductCopy', () => {
       targetCategories,
     })
     expect(r).toEqual({ ok: false, error: 'too_many_categories' })
+  })
+})
+
+describe('dropMissingImages', () => {
+  it('strips only the named target paths, leaving other rows and images alone', () => {
+    const r = plan({
+      sourceProducts: [
+        srcProduct({
+          id: 'bbbbbbbb-0000-0000-0000-000000000001',
+          image_urls: ['src/p1/a.png', 'src/p1/b.png'],
+        }),
+        srcProduct({
+          id: 'bbbbbbbb-0000-0000-0000-000000000002',
+          name: 'Kopi',
+          image_urls: ['src/p2/c.png'],
+        }),
+      ],
+    })
+    expect(r).toMatchObject({ ok: true })
+    if (!r.ok) return
+    const rows = dropMissingImages(r.plan.rows, new Set([`${TARGET}/new-1/a.png`]))
+    expect(rows[0].image_urls).toEqual([`${TARGET}/new-1/b.png`])
+    expect(rows[1].image_urls).toEqual([`${TARGET}/new-2/c.png`])
+  })
+
+  it('returns the rows untouched for an empty skip set', () => {
+    const r = plan({ sourceProducts: [srcProduct({ image_urls: ['src/p1/a.png'] })] })
+    if (!r.ok) throw new Error('plan failed')
+    expect(dropMissingImages(r.plan.rows, new Set())).toEqual(r.plan.rows)
   })
 })
 
