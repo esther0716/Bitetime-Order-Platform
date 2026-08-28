@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { lookupMerchantBySlug } from './store'
 import type { MerchantState } from './types'
 
@@ -13,6 +13,7 @@ type FetchedState = Omit<MerchantState, 'refresh'>
 
 export function MerchantProvider({ children }: { children: ReactNode }) {
   const { slug } = useParams()
+  const navigate = useNavigate()
   const [state, setState] = useState<FetchedState>({ slug: null, merchant: null, loading: true, notFound: false })
   useEffect(() => {
     let on = true
@@ -20,10 +21,18 @@ export function MerchantProvider({ children }: { children: ReactNode }) {
       // Initial load: collapse could-not-ask to "not found" here (parity with the old
       // fetchMerchantBySlug). The recovery path below is the one that must NOT collapse.
       const m = r.ok ? r.data : null
+      // A retired slug answers { moved_to } (#253). Full-page loads are 301'd by the edge
+      // function before React ever boots; this branch covers the paths that skip it — local
+      // dev, and a stale in-app link. The answer is a pointer, not a merchant row: adopting it
+      // would hand Storefront an object with no name to render.
+      if (m?.moved_to) {
+        if (on) navigate(`/s/${m.moved_to}`, { replace: true })
+        return
+      }
       if (on) setState({ slug, merchant: m, loading: false, notFound: !m })
     })
     return () => { on = false }
-  }, [slug])
+  }, [slug, navigate])
 
   // Re-read the CURRENT slug's merchant row without touching `loading`/`notFound` — the recovery
   // path for a `price_changed` refusal, called alongside the products/voucher/clock refresh in
@@ -43,7 +52,9 @@ export function MerchantProvider({ children }: { children: ReactNode }) {
   // clobber it.
   const refresh = useCallback(async () => {
     const found = await lookupMerchantBySlug(slug)
-    if (found.ok && found.data) {
+    // `moved_to` (#253) is excluded for the same reason as null: it is not a merchant row, and
+    // adopting it mid-session would crash every consumer that reads merchant.name.
+    if (found.ok && found.data && !found.data.moved_to) {
       setState(s => (s.slug === slug ? { ...s, merchant: found.data, notFound: false } : s))
     }
   }, [slug])

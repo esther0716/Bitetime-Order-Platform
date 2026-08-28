@@ -72,4 +72,29 @@ describe('vercel.json rewrites', () => {
     const rules = config.rewrites ?? []
     expect(rules[rules.length - 1]).toEqual({ source: '/(.*)', destination: '/app.html' })
   })
+
+  // Storefront findability (#253, ADR 0022). Same failure class as the prerendered routes above:
+  // lose these rules (or let the catch-all outrank them) and every /s/<slug> quietly serves the
+  // empty shell again — the storefront still works in a browser, and only the crawler-facing
+  // bytes are gone. Fail-open in the function makes this invisible at runtime, so this pin and
+  // the seo-canary script are the detection.
+  it('sends storefronts and the shop sitemap to their functions, above the catch-all', () => {
+    const rules = config.rewrites ?? []
+    const catchAll = rules.findIndex(r => r.source === '/(.*)')
+    const expected: [string, string][] = [
+      ['/sitemap-shops.xml', '/api/sitemap-shops'],
+      ['/s/([^/]+)/(.*)', '/api/storefront?slug=$1&subpath=$2'],
+      ['/s/([^/]+)', '/api/storefront?slug=$1'],
+    ]
+    for (const [source, destination] of expected) {
+      const at = rules.findIndex(r => r.source === source)
+      expect(at, `${source} has no rewrite — served app.html, the empty shell`).toBeGreaterThanOrEqual(0)
+      expect(rules[at].destination).toBe(destination)
+      expect(at, `${source} is below the catch-all, which matches first`).toBeLessThan(catchAll)
+    }
+    // The subpath rule must outrank the bare-slug rule so `subpath` is actually captured.
+    const sub = rules.findIndex(r => r.source === '/s/([^/]+)/(.*)')
+    const bare = rules.findIndex(r => r.source === '/s/([^/]+)')
+    expect(sub).toBeLessThan(bare)
+  })
 })

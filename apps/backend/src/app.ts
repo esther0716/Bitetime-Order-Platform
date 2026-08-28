@@ -23,6 +23,7 @@ import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
 import { startCardlessTrial } from './trialSubscription.js'
+import { renameMerchantSlug } from './slugRename.js'
 import { runBillingSweep } from './billingSweep.js'
 import { syncMerchantBilling, liveSubscriptionBesides } from './billingSync.js'
 import { isOurEvent } from './webhookOwnership.js'
@@ -209,6 +210,9 @@ app.post('/api/merchants', requireUser, async (c) => {
 
   const { data: rows } = await admin.from('merchants').select('slug')
   const slug = await resolveSlug(name, { taken: (rows ?? []).map((r) => r.slug), id: user.id })
+  // Claim-wins (#253): resolveSlug checks CURRENT slugs only, so a freed slug is claimable even
+  // while it sits in another shop's rename history — the new shop's claim kills that redirect.
+  await admin.from('merchant_slug_history').delete().eq('old_slug', slug)
 
   const { data, error } = await admin
     .from('merchants')
@@ -326,15 +330,26 @@ app.patch('/api/merchants/:id', requireMerchantOwns, async (c) => {
 
 // Slug rename. Uniqueness resolution moves here now that the browser can no longer SELECT
 // merchants.slug directly — the last browser read of merchants.
+//
+// The rename records the outgoing slug in merchant_slug_history (#253, ADR 0022) so the
+// storefront edge function can 301 old links — printed QR codes and indexed URLs survive.
+// The rename, the history row and the claim-wins delete are one transaction in slugRename.ts;
+// this handler keeps only the checks a refusal message needs.
 app.patch('/api/merchants/:id/slug', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const s = String((await c.req.json().catch(() => ({}))).slug ?? '').trim().toLowerCase()
   if (!s || RESERVED_SLUGS.includes(s)) return c.json({ error: 'Reserved or empty slug' }, 400)
   const { data: existing } = await admin.from('merchants').select('id').eq('slug', s).maybeSingle()
   if (existing && existing.id !== id) return c.json({ error: 'Slug already taken' }, 409)
-  const { data, error } = await admin.from('merchants').update({ slug: s }).eq('id', id).select().single()
-  if (error) return c.json({ error: 'Update failed' }, 500)
-  return c.json(data)
+  try {
+    const row = await renameMerchantSlug(id, s)
+    if (!row) return c.json({ error: 'Update failed' }, 500)
+    return c.json(row)
+  } catch {
+    // A concurrent claim on the same slug lands here via the unique constraint — the same
+    // answer the pre-check gives when it sees the conflict first.
+    return c.json({ error: 'Slug already taken' }, 409)
+  }
 })
 
 // ── Owner-scoped reads (tenant enforced by requireMerchantOwns) ────────────────
@@ -919,12 +934,36 @@ app.get('/api/merchants/samples', async (c) => {
 })
 
 // ── Public reads (no auth — storefront) ───────────────────────────────────────
+
+// The shop sitemap's source (#253): active shops' slugs, nothing else. Public by definition —
+// this is exactly the list /sitemap-shops.xml publishes to every crawler. A database error is a
+// 500, never an empty list: the sitemap function must answer 503 rather than tell Google every
+// shop page is gone.
+app.get('/api/storefront-index', async (c) => {
+  const { data, error } = await admin
+    .from('merchants').select('slug').eq('status', 'active').order('slug')
+  if (error) return c.json({ error: 'Lookup failed' }, 500)
+  return c.json({ shops: data ?? [] })
+})
+
 // Shaped: strip internal columns before returning to an unauthenticated caller.
 app.get('/api/merchants/:slug', async (c) => {
   const s = (c.req.param('slug') || '').trim().toLowerCase()
   if (!s) return c.json(null)
   const { data, error } = await admin.from('merchants').select('*').eq('slug', s).maybeSingle()
-  if (error || !data) return c.json(null)
+  if (error) return c.json(null)
+  if (!data) {
+    // A retired slug answers with the shop's CURRENT one (#253): the storefront edge function
+    // turns this into a 301, and MerchantContext client-navigates. History stores the merchant
+    // id, not a target slug, so a chain of renames always resolves to the current slug in one
+    // hop. `null` stays the answer for a slug that never existed — callers pin that contract.
+    const { data: moved } = await admin
+      .from('merchant_slug_history').select('merchant_id').eq('old_slug', s).maybeSingle()
+    if (!moved) return c.json(null)
+    const { data: target } = await admin
+      .from('merchants').select('slug').eq('id', moved.merchant_id).maybeSingle()
+    return c.json(target ? { moved_to: target.slug } : null)
+  }
   const { owner_id: _owner_id, referred_by_code: _referred_by_code, ...pub } = data
   return c.json(pub)
 })
