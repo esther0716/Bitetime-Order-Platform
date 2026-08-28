@@ -38,7 +38,12 @@ export default tseslint.config(
   // Build tooling. `scripts/` runs in Node at build time (the landing-page prerender), so it reads
   // the filesystem and writes to the console — neither of which exists in the browser config above.
   {
-    files: ['scripts/**/*.{ts,tsx}'],
+    files: ['scripts/**/*.{ts,tsx,mjs}'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  // The storefront edge functions (#253) run in Vercel's Node runtime, not the browser.
+  {
+    files: ['api/**/*.ts'],
     languageOptions: { globals: { ...globals.node } },
   },
   { ignores: ['dist', 'dist-ssr'] },

@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "seo:canary": "node scripts/seo-canary.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {
