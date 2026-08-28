@@ -147,6 +147,10 @@ How a shop's menu is ordered, and the fact that the merchant — not the creatio
 
 **Dragging an item out of a deleted section is what clears the dangling id.** The saved patch takes each product's section from the block it now sits in, not from the id stored on the row.
 
+## Product copy
+
+A **superadmin-only** bulk duplication of products from one shop into another, used to set up a new merchant's menu at their request. It is a dedicated backend write path (a `db.ts` transaction), not the product upsert: it carries `descr_zh` (real merchant data the form cannot edit), strips every promo field (a promo is one shop's time-bound campaign, not menu data), duplicates image **objects** into the target's own storage prefix (a cross-tenant path reference would break when the source shop deletes), and remaps `category_id` by category **name**, appending sections the target lacks. Copies land whole or not at all; the picker — not the write path — is where duplicate-name judgement lives.
+
 ## Order intake
 
 The flow that collects a cart and customer details and commits an order: `collect → priceOrder → placeOrder → notifyOrder`. The multi-tenant **Storefront** (`store/Storefront.tsx`) is the only intake path; the legacy single-tenant order form has been deleted. `notifyOrder` is a single post-commit call that fans out to three recipients — see *Order notifications*. Every way this flow can say no is named — see *Refusal* below.

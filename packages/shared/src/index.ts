@@ -67,7 +67,7 @@ export type {
   SelectionError, GroupConfigError,
 } from './options.js'
 export {
-  validateMenuCategories, menuCategoriesFromRow,
+  validateMenuCategories, menuCategoriesFromRow, categoryMatchKey,
   MAX_MENU_CATEGORIES, MENU_CATEGORY_NAME_MAX,
 } from './menuCategories.js'
 export type { MenuCategory, CategoryConfigError } from './menuCategories.js'

@@ -45,6 +45,8 @@ import { shopCustomerGroups, shopCustomerRecords, upsertShopCustomer } from './s
 import { statsOrders, distinctCustomerCount } from './ordersDb.js'
 import { parseProductOrder } from './productOrder.js'
 import { writeProductOrder } from './productOrderDb.js'
+import { parseProductCopy, planProductCopy, type CopySourceProduct } from './productCopy.js'
+import { applyProductCopy } from './productCopyDb.js'
 import { parseOrderList } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
@@ -82,7 +84,7 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES, pendingShopFromBody, pendingShopMetadata } from '@bitetime/shared'
+import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES, pendingShopFromBody, pendingShopMetadata, menuCategoriesFromRow } from '@bitetime/shared'
 import type { CartLine, Granularity } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename, type ReportWindow } from './report.js'
 import { resolveRevenueRange, type ResolvedRevenueRange } from './revenueWindow.js'
@@ -1695,6 +1697,70 @@ app.post('/api/admin/set-merchant-status', requireSuperadmin, async (c) => {
     return c.json({ error: 'Status update failed' }, 500)
   }
   return c.json({ ok: true, status })
+})
+
+/**
+ * Product copy (CONTEXT.md → Product copy): superadmin-only bulk duplication of products from one
+ * shop into another, for setting up a new merchant's menu at their request. A dedicated write
+ * path, NOT the product upsert — it carries `descr_zh` (real merchant data the product form
+ * cannot edit) and stamps `sort` itself, both of which `PRODUCT_FIELDS` deliberately refuses.
+ *
+ * The order of the three steps is the failure semantics: plan (pure, refuses bad requests with
+ * nothing spent), then image OBJECTS (a storage failure aborts with nothing in the database),
+ * then ONE transaction for rows + categories. Orphaned files from an aborted run are tolerated;
+ * orphaned ROWS would be broken products on a live storefront, which is why the files go first.
+ */
+app.post('/api/admin/copy-products', requireSuperadmin, async (c) => {
+  const parsed = parseProductCopy(await c.req.json().catch(() => null))
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  const { sourceMerchantId, targetMerchantId, productIds } = parsed
+
+  const { data: shops } = await admin
+    .from('merchants').select('id, product_categories')
+    .in('id', [sourceMerchantId, targetMerchantId])
+  const source = shops?.find(s => s.id === sourceMerchantId)
+  const target = shops?.find(s => s.id === targetMerchantId)
+  if (!source || !target) return c.json({ error: 'merchant_not_found' }, 404)
+
+  // The source's own render order (sort, then age), so the copy reads like the source menu.
+  const { data: sourceRows, error: readErr } = await admin
+    .from('products').select('*')
+    .eq('merchant_id', sourceMerchantId).in('id', productIds)
+    .order('sort', { ascending: true }).order('created_at', { ascending: true })
+  if (readErr) return c.json({ error: 'copy_failed' }, 500)
+
+  // Where the target menu currently ends. head:true count would not carry max(sort).
+  const { data: lastRow } = await admin
+    .from('products').select('sort')
+    .eq('merchant_id', targetMerchantId)
+    .order('sort', { ascending: false }).limit(1).maybeSingle()
+
+  const planned = planProductCopy({
+    requestedIds: productIds,
+    sourceProducts: (sourceRows ?? []) as CopySourceProduct[],
+    sourceCategories: menuCategoriesFromRow(source.product_categories),
+    targetCategories: menuCategoriesFromRow(target.product_categories),
+    targetMerchantId,
+    targetMaxSort: lastRow ? lastRow.sort : null,
+    newId: () => crypto.randomUUID(),
+  })
+  if (!planned.ok) return c.json({ error: planned.error }, 400)
+
+  for (const { from, to } of planned.plan.imageCopies) {
+    const { error } = await admin.storage.from('product-images').copy(from, to)
+    if (error) {
+      console.error('copy-products: image copy failed:', from, error.message)
+      return c.json({ error: 'copy_failed' }, 500)
+    }
+  }
+
+  try {
+    const copied = await applyProductCopy(targetMerchantId, planned.plan)
+    return c.json({ ok: true, copied })
+  } catch (err) {
+    console.error('copy-products failed:', err instanceof Error ? err.message : String(err))
+    return c.json({ error: 'copy_failed' }, 500)
+  }
 })
 
 // ── Superadmin: flag/unflag a merchant for the landing-page sample-shops carousel (#107) ──────
