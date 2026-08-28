@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { copyProducts, fetchAllMerchants, lookupProducts } from '../store'
-import { copyPickerRows, filterShops, type CopyPickerRow } from './copyPickerRows'
+import { copyPickerRows, filterShops, optionGroupSummary, type CopyPickerRow } from './copyPickerRows'
 import { currencyDef } from '../currency'
 import { Button } from '../components/ui/button'
 import { Checkbox } from '../components/ui/checkbox'
@@ -228,14 +228,21 @@ export default function CopyProductsDialog({
                     onCheckedChange={v => setInclude(r.id, v === true)}
                     aria-label={label(r)}
                   />
-                  <span className="flex-1 min-w-0 truncate text-[13px]">
-                    {label(r)}
-                    {!r.active && (
-                      <span className="ml-2 text-[11px] text-muted-foreground">{t('Hidden', '已隐藏')}</span>
-                    )}
-                    {r.duplicate && (
-                      <span className="ml-2 text-[11px] rounded-md bg-muted px-1.5 py-0.5 text-muted-foreground">
-                        {t('Already in shop', '本店已有')}
+                  <span className="flex-1 min-w-0">
+                    <span className="block truncate text-[13px]">
+                      {label(r)}
+                      {!r.active && (
+                        <span className="ml-2 text-[11px] text-muted-foreground">{t('Hidden', '已隐藏')}</span>
+                      )}
+                      {r.duplicate && (
+                        <span className="ml-2 text-[11px] rounded-md bg-muted px-1.5 py-0.5 text-muted-foreground">
+                          {t('Already in shop', '本店已有')}
+                        </span>
+                      )}
+                    </span>
+                    {optionGroupSummary(r.option_groups, lang).length > 0 && (
+                      <span className="block truncate text-[11px] text-muted-foreground">
+                        {t('Options', '选项')}: {optionGroupSummary(r.option_groups, lang).join(' · ')}
                       </span>
                     )}
                   </span>

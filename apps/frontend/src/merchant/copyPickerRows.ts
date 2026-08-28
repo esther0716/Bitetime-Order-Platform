@@ -5,6 +5,7 @@
 // Pure and split out of the dialog for the same reason menuImportRows.ts is: a dialog cannot be
 // unit tested in this repo (UI is verified by running the app), and this is the decision a
 // superadmin is least likely to re-check row by row.
+import { optionGroupsFromRow } from '@bitetime/shared'
 import { norm } from './menuImportRows'
 
 /** What the picker needs off a product row, source or target. */
@@ -22,6 +23,19 @@ export interface CopyPickerRow extends CopyCandidate {
   duplicate: boolean
   /** Ticked by default — except duplicates, which the superadmin must opt back in. */
   include: boolean
+}
+
+/**
+ * The picker's per-row option summary: each group's name with how many choices it holds, e.g.
+ * `Size (2)`. So a superadmin can see a product carries options — and which — without opening
+ * it after the copy. Hidden groups are listed too: they copy, and a summary that dropped them
+ * would under-report what lands.
+ */
+export function optionGroupSummary(rawGroups: unknown, lang: 'en' | 'zh'): string[] {
+  return optionGroupsFromRow(rawGroups).map(g => {
+    const name = (lang === 'zh' && g.name_zh) ? g.name_zh : g.name
+    return `${name} (${g.options.length})`
+  })
 }
 
 /** What the shop search needs off a merchants row. */

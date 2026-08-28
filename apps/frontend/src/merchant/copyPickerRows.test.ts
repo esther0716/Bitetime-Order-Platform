@@ -2,10 +2,38 @@
 // does dumb inserts, so these defaults are the only thing standing between a re-run and a doubled
 // menu. Pure and unit-tested for the same reason menuImportRows.ts is.
 import { describe, it, expect } from 'vitest'
-import { copyPickerRows, filterShops } from './copyPickerRows'
+import { copyPickerRows, filterShops, optionGroupSummary } from './copyPickerRows'
 
 const src = (id: string, name: string, over: Record<string, unknown> = {}) =>
   ({ id, name, price: 10, active: true, ...over })
+
+describe('optionGroupSummary', () => {
+  const groups = [
+    {
+      id: 'g1', name: 'Size', name_zh: '尺寸', minSelect: 1, maxSelect: 1, maxPerOption: null,
+      active: true,
+      options: [
+        { id: 'o1', name: 'Small', delta: 0, active: true },
+        { id: 'o2', name: 'Large', delta: 2, active: true },
+      ],
+    },
+    {
+      id: 'g2', name: 'Milk', minSelect: 0, maxSelect: 1, maxPerOption: null, active: false,
+      options: [{ id: 'o3', name: 'Oat', delta: 1, active: true }],
+    },
+  ]
+
+  it('names each group with its option count, in the reading language', () => {
+    expect(optionGroupSummary(groups, 'en')).toEqual(['Size (2)', 'Milk (1)'])
+    expect(optionGroupSummary(groups, 'zh')).toEqual(['尺寸 (2)', 'Milk (1)'])
+  })
+
+  it('reads a raw jsonb value and answers empty for a product without options', () => {
+    expect(optionGroupSummary([], 'en')).toEqual([])
+    expect(optionGroupSummary(undefined, 'en')).toEqual([])
+    expect(optionGroupSummary('not json', 'en')).toEqual([])
+  })
+})
 
 describe('filterShops', () => {
   const shops = [
