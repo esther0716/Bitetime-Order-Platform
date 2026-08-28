@@ -14,6 +14,7 @@ import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney, CURRENCIES, CURRENCY_CODES, DEFAULT_CURRENCY, currencyDef } from '../currency'
 import type { CurrencyCode } from '../currency'
 import BusinessNaturePicker from '../components/BusinessNaturePicker'
+import { PasswordInput } from '../components/PasswordInput'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -256,7 +257,7 @@ export default function SignupScreen() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="signup-3">{t('Password', '密码')}</Label>
-              <Input id="signup-3" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+              <PasswordInput id="signup-3" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} required minLength={MIN_PASSWORD_LENGTH} />
             </div>
           </div>
           {/* A Radix select carries no native `required`, so the button is the gate. */}
