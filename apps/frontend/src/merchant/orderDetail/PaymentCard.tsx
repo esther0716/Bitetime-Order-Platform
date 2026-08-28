@@ -12,6 +12,7 @@ import { formatMoney } from '../../currency'
 import { formatTaxRate } from '../../taxRate'
 import { Badge } from '@/components/ui/badge'
 import DrawerCard from './DrawerCard'
+import ZoomableImage from '../../components/ZoomableImage'
 
 /**
  * What is owed, and what either side sent to show it was paid.
@@ -65,18 +66,20 @@ function useProofUrl(
   return proof && proof.orderId === orderId ? proof.url : null
 }
 
-/** A thumbnail under its own caption. Opens the full image in a new tab. */
+/** A thumbnail under its own caption. Opens the full image over the sheet, not in a new tab —
+ *  a merchant checking a slip mid-order must not lose the order to look at it. */
 function ProofThumb({ url, caption, alt }: { url: string; caption: string; alt: string }) {
   return (
     <div className="flex flex-col items-center gap-1 w-[78px]">
-      <a href={url} target="_blank" rel="noopener noreferrer" className="block w-[78px]">
-        <img
-          src={url}
-          alt={alt}
-          className="w-[78px] h-[78px] object-cover rounded-lg border border-border"
-        />
-      </a>
-      <span className="text-[11px] text-muted-foreground text-center leading-tight">{caption}</span>
+      <ZoomableImage
+        src={url}
+        alt={alt}
+        triggerClassName="w-[78px]"
+        imgClassName="w-[78px] h-[78px] object-cover rounded-lg border border-border"
+        caption={
+          <span className="text-[11px] text-muted-foreground text-center leading-tight">{caption}</span>
+        }
+      />
     </div>
   )
 }

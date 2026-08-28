@@ -3,6 +3,7 @@ import { useSession } from '../SessionContext'
 import { paymentQrUrl } from '../store'
 import { hasPaymentInstructions } from '../paymentProof'
 import type { Merchant } from '../types'
+import ZoomableImage from '../components/ZoomableImage'
 import { cn } from '@/lib/utils'
 
 /**
@@ -61,18 +62,12 @@ export default function PaymentInstructions({
           'flex flex-col items-center gap-1.5',
           (merchant.payment_bank || merchant.payment_note) && 'mt-3',
         )}>
-          <a
-            href={paymentQrUrl(merchant.payment_qr)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block w-full max-w-[240px] rounded-md bg-white p-2 border border-border"
-          >
-            <img
-              src={paymentQrUrl(merchant.payment_qr)}
-              alt={t('Payment QR code', '付款二维码')}
-              className="w-full h-auto object-contain"
-            />
-          </a>
+          <ZoomableImage
+            src={paymentQrUrl(merchant.payment_qr)}
+            alt={t('Payment QR code', '付款二维码')}
+            triggerClassName="w-full max-w-[240px] rounded-md bg-white p-2 border border-border"
+            imgClassName="w-full h-auto object-contain"
+          />
           <span className="text-[12px] text-muted-foreground">
             {t('Scan to pay · tap to enlarge', '扫码付款 · 点击放大')}
           </span>

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
 import { uploadPaymentProof, PAYMENT_PROOF_TYPES, type PaymentProofSaved } from '../store'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import ZoomableImage from '../components/ZoomableImage'
 
 type UploadState = 'idle' | 'uploading' | 'uploaded' | 'error'
 
@@ -35,7 +35,6 @@ export default function PaymentProofUpload({
   const { t } = useSession()
   const [state, setState] = useState<UploadState>('idle')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [lightboxOpen, setLightboxOpen] = useState(false)
   const previewUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -71,17 +70,12 @@ export default function PaymentProofUpload({
   return (
     <div className="mt-3 flex flex-col items-center gap-1.5">
       {state === 'uploaded' && previewUrl && (
-        <button
-          type="button"
-          onClick={() => setLightboxOpen(true)}
-          className="block w-full max-w-[160px] rounded-md bg-white p-1.5 border border-border cursor-pointer"
-        >
-          <img
-            src={previewUrl}
-            alt={t('Payment proof', '付款凭证')}
-            className="w-full h-auto object-contain"
-          />
-        </button>
+        <ZoomableImage
+          src={previewUrl}
+          alt={t('Payment proof', '付款凭证')}
+          triggerClassName="w-full max-w-[160px] rounded-md bg-white p-1.5 border border-border"
+          imgClassName="w-full h-auto object-contain"
+        />
       )}
       <label
         htmlFor={inputId}
@@ -109,21 +103,6 @@ export default function PaymentProofUpload({
         <span className="text-[12px] text-muted-foreground">
           {t('Uploaded ✓ · tap to enlarge', '已上传 ✓ · 点击放大')}
         </span>
-      )}
-
-      {previewUrl && (
-        <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogTitle className="sr-only">{t('Payment proof', '付款凭证')}</DialogTitle>
-            <div className="flex items-center justify-center bg-background rounded-lg overflow-hidden">
-              <img
-                src={previewUrl}
-                alt={t('Payment proof', '付款凭证')}
-                className="max-h-[70vh] w-full object-contain"
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
       )}
     </div>
   )

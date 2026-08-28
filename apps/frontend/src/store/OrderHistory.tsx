@@ -22,6 +22,7 @@ import PaymentInstructions from './PaymentInstructions'
 import { canUploadPaymentProof } from '../paymentProof'
 import LanguageSelect from '../components/LanguageSelect'
 import InvoiceButton from '../components/InvoiceButton'
+import ZoomableImage from '../components/ZoomableImage'
 import type { Merchant, Order, OrderItem, Product, Translate } from '../types'
 
 type Loaded =
@@ -382,13 +383,12 @@ function PaymentProofSection({
         {t('Payment proof', '付款凭证')}
       </div>
       {url ? (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="block w-full max-w-[160px]">
-          <img
-            src={url}
-            alt={t('Payment proof', '付款凭证')}
-            className="w-full h-auto object-contain rounded-md border border-border"
-          />
-        </a>
+        <ZoomableImage
+          src={url}
+          alt={t('Payment proof', '付款凭证')}
+          triggerClassName="w-full max-w-[160px]"
+          imgClassName="w-full h-auto object-contain rounded-md border border-border"
+        />
       ) : (
         <span className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</span>
       )}
