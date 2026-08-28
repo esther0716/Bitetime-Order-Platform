@@ -1186,6 +1186,35 @@ export async function fetchPaymentProof(merchantId: string, orderId: string): Pr
   return mapOk(r, d => d.blob)
 }
 
+/**
+ * The SHOP's own copy of the receipt, filed from the order detail sheet when the customer sent
+ * the slip over WhatsApp instead of uploading it. A separate slot from the customer's, so filing
+ * one never replaces the other. `auth: 'required'` — the route is merchant-owned.
+ */
+export type MerchantProofSaved = { payment_proof_merchant: string; status: string }
+
+export async function uploadMerchantPaymentProof(
+  merchantId: string,
+  orderId: string,
+  file: File,
+): Promise<Result<MerchantProofSaved>> {
+  if (!PAYMENT_PROOF_TYPES.includes(file.type)) {
+    return { ok: false, error: { message: `Unsupported image type: ${file.name}` } }
+  }
+  if (file.size > MAX_PAYMENT_PROOF_BYTES) {
+    return { ok: false, error: { message: `Image too large (max 2MB): ${file.name}` } }
+  }
+  const path = `/api/merchants/${merchantId}/orders/${orderId}/merchant-payment-proof`
+  return apiSendFile<MerchantProofSaved>(path, file, { auth: 'required' })
+}
+
+/** Reads back what `uploadMerchantPaymentProof` filed — merchant dashboard only. */
+export async function fetchMerchantPaymentProof(merchantId: string, orderId: string): Promise<Result<Blob>> {
+  const path = `/api/merchants/${merchantId}/orders/${orderId}/merchant-payment-proof`
+  const r = await apiGetFile(path, { auth: 'required' })
+  return mapOk(r, d => d.blob)
+}
+
 /** For the customer's own order history — scoped server-side by the order's user_id, not a
  * merchant id. `auth: 'required'`, same reason as fetchPaymentProof: a signed-out caller has
  * no order to view. */

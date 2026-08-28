@@ -59,7 +59,7 @@ import { fetchBasePricing, createPricingCache, type PricingPayload } from './pri
 import { estimateFor } from './fx.js'
 import { listReferredShops, listEarnedRewards } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
-import { placeOrder, OrderError, orderMerchantId, setOrderPaymentProof } from './orders.js'
+import { placeOrder, OrderError, orderMerchantId, setOrderPaymentProof, setOrderMerchantPaymentProof } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue, updateFeedbackImages } from './feedback.js'
 import {
   findDueTrials, claimSend, releaseSend,
@@ -120,6 +120,44 @@ async function streamPrivateObject(bucket: string, path: string): Promise<Respon
     status: 200,
     headers: { 'Content-Type': data.type || 'application/octet-stream' },
   })
+}
+
+// ── Payment proof, shared by both upload doors ────────────────────────────────────────────────
+// One bucket, two slots on the order: the CUSTOMER's own screenshot (`payment_proof`, posted
+// unauthenticated from the order-placed screen) and the SHOP's copy (`payment_proof_merchant`,
+// posted by the signed-in owner when the customer sent the slip over WhatsApp instead). The
+// limits below are the bucket's own, and both doors must agree on them — hence one copy here
+// rather than one per route. See docs/superpowers/specs/2026-08-04-payment-proof-upload-design.md.
+const PAYMENT_PROOF_BUCKET = 'payment-proof'
+// Same ceiling as MAX_PAYMENT_PROOF_BYTES/PAYMENT_PROOF_TYPES in store.ts and the migration's
+// bucket config (20260804160000) — three copies by CLAUDE.md's rule (no shared build step across
+// browser/server), one number.
+const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024
+const PAYMENT_PROOF_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
+
+type ProofUpload =
+  | { ok: true; buffer: ArrayBuffer; contentType: string; ext: string }
+  | { ok: false; response: Response }
+
+/**
+ * Reads a raw image body and proves it is one this bucket accepts — type, non-empty, under the
+ * ceiling. Says nothing about WHO may upload it: each route does its own authorisation first.
+ */
+async function readProofUpload(c: Context): Promise<ProofUpload> {
+  const contentType = c.req.header('Content-Type') ?? ''
+  const ext = PAYMENT_PROOF_EXT[contentType]
+  if (!ext) return { ok: false, response: c.json({ error: 'unsupported_type' }, 400) }
+
+  const buffer = await c.req.arrayBuffer()
+  if (buffer.byteLength === 0) return { ok: false, response: c.json({ error: 'invalid_body' }, 400) }
+  if (buffer.byteLength > MAX_PAYMENT_PROOF_BYTES) {
+    return { ok: false, response: c.json({ error: 'too_large' }, 400) }
+  }
+  return { ok: true, buffer, contentType, ext }
 }
 
 app.get('/health', (c) => c.json({ ok: true }))
@@ -1348,7 +1386,60 @@ app.get(
     const path = order?.payment_proof as string | null | undefined
     if (!path) return c.json({ error: 'not_found' }, 404)
 
-    return streamPrivateObject('payment-proof', path)
+    return streamPrivateObject(PAYMENT_PROOF_BUCKET, path)
+  },
+)
+
+// ── The shop's own copy of the receipt ────────────────────────────────────────────────────────
+// A customer paying by transfer often closes the browser before uploading anything and sends the
+// slip over WhatsApp — the shop then holds the only copy. These two routes are where it goes.
+//
+// A SECOND column and a distinct object name (`{merchant_id}/{order_id}-merchant.{ext}`), never
+// the customer's slot: what the customer attached and what the shop filed are different claims,
+// and a merchant upload must not be able to replace the customer's own evidence.
+//
+// Same ownership chain as the PATCH and the customer-proof GET above — requireMerchantOwns proves
+// the caller owns :id, requireOwnsChild proves :orderId belongs to that shop.
+app.post(
+  '/api/merchants/:id/orders/:orderId/merchant-payment-proof',
+  requireMerchantOwns,
+  requireOwnsChild('orders', 'orderId'),
+  async (c) => {
+    const merchantId = c.req.param('id')
+    const orderId = c.req.param('orderId')
+    const upload = await readProofUpload(c)
+    if (!upload.ok) return upload.response
+
+    // The shop id comes from the authorised route param, never from the body — the same rule the
+    // customer door gets by looking the order's own merchant up.
+    const path = `${merchantId}/${orderId}-merchant.${upload.ext}`
+    const { error } = await admin.storage
+      .from(PAYMENT_PROOF_BUCKET)
+      .upload(path, upload.buffer, { contentType: upload.contentType, upsert: true })
+    if (error) {
+      console.error('Merchant payment proof upload failed:', error.message)
+      return c.json({ error: 'upload_failed' }, 500)
+    }
+
+    // Returns the two fields the write moved — the path, and a status that may have left
+    // pending_payment. The sheet patches its own list row from them rather than refetching, the
+    // same shape every other order write on this route file hands back.
+    const row = await setOrderMerchantPaymentProof(orderId, path)
+    return c.json({ ok: true, ...row })
+  },
+)
+
+// The image itself. `child` is the order row requireOwnsChild already loaded; no second query.
+app.get(
+  '/api/merchants/:id/orders/:orderId/merchant-payment-proof',
+  requireMerchantOwns,
+  requireOwnsChild('orders', 'orderId'),
+  async (c) => {
+    const order = c.get('child')
+    const path = order?.payment_proof_merchant as string | null | undefined
+    if (!path) return c.json({ error: 'not_found' }, 404)
+
+    return streamPrivateObject(PAYMENT_PROOF_BUCKET, path)
   },
 )
 
@@ -1367,7 +1458,7 @@ app.get('/api/orders/:orderId/payment-proof', requireUser, async (c) => {
   const path = order.payment_proof as string | null
   if (!path) return c.json({ error: 'not_found' }, 404)
 
-  return streamPrivateObject('payment-proof', path)
+  return streamPrivateObject(PAYMENT_PROOF_BUCKET, path)
 })
 
 // ── Invoice ───────────────────────────────────────────────────────────────────
@@ -2831,27 +2922,14 @@ app.post('/api/orders', async (c) => {
 // Unauthenticated, exactly like POST /api/orders itself: guest checkout has no token to scope an
 // RLS write against, and an order id is not a secret a client-side policy could gate on either —
 // so this goes through the service-role client, the same shape order intake already uses. See
-// docs/superpowers/specs/2026-08-04-payment-proof-upload-design.md.
-const PAYMENT_PROOF_BUCKET = 'payment-proof'
-// Same ceiling as MAX_PAYMENT_PROOF_BYTES/PAYMENT_PROOF_TYPES in store.ts and the migration's
-// bucket config (20260804160000) — three copies by CLAUDE.md's rule (no shared build step across
-// browser/server), one number.
-const MAX_PAYMENT_PROOF_BYTES = 2 * 1024 * 1024
-const PAYMENT_PROOF_EXT: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-}
+// docs/superpowers/specs/2026-08-04-payment-proof-upload-design.md. The bucket, its limits and
+// the body check live next to streamPrivateObject, shared with the merchant's own upload door.
 
 app.post('/api/orders/:orderId/payment-proof', async (c) => {
   const orderId = c.req.param('orderId')
-  const contentType = c.req.header('Content-Type') ?? ''
-  const ext = PAYMENT_PROOF_EXT[contentType]
-  if (!ext) return c.json({ error: 'unsupported_type' }, 400)
-
-  const buffer = await c.req.arrayBuffer()
-  if (buffer.byteLength === 0) return c.json({ error: 'invalid_body' }, 400)
-  if (buffer.byteLength > MAX_PAYMENT_PROOF_BYTES) return c.json({ error: 'too_large' }, 400)
+  const upload = await readProofUpload(c)
+  if (!upload.ok) return upload.response
+  const { buffer, contentType, ext } = upload
 
   let merchantId: string | null
   try {

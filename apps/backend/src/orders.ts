@@ -392,6 +392,29 @@ export async function setOrderPaymentProof(orderId: string, path: string): Promi
 }
 
 /**
+ * The merchant's own copy of the receipt (20260828120000), which the shop files when the
+ * customer sent the slip over WhatsApp instead of uploading it. Same status rule as the
+ * customer's upload above, and for the same reason: a receipt landing on the order IS the
+ * payment gate clearing, whichever side put it there. The CASE guard keeps every other status
+ * exactly as the merchant left it.
+ *
+ * A separate column, so filing this can never overwrite what the customer themselves attached.
+ */
+export async function setOrderMerchantPaymentProof(
+  orderId: string,
+  path: string,
+): Promise<{ payment_proof_merchant: string; status: string } | null> {
+  const rows = await sql<{ payment_proof_merchant: string; status: string }[]>`
+    update orders
+    set payment_proof_merchant = ${path},
+        status = case when status = 'pending_payment' then 'new' else status end
+    where id = ${orderId}
+    returning payment_proof_merchant, status
+  `
+  return rows[0] ?? null
+}
+
+/**
  * The routed distance for this order, or a refusal. `null` for any mode that is not `express`
  * — pickup and flat-rate delivery price by their own rules and never route.
  *

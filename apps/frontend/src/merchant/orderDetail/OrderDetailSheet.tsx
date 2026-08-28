@@ -104,7 +104,13 @@ export default function OrderDetailSheet({
 
             <div className="flex-1 min-h-0 overflow-y-auto bg-background flex flex-col gap-3 p-3 sm:p-4">
               <ItemsCard items={order.items ?? []} currency={orderCurrency} />
-              <PaymentCard order={order} currency={orderCurrency} merchantId={merchant!.id} />
+              <PaymentCard
+                order={order}
+                currency={orderCurrency}
+                merchantId={merchant!.id}
+                readOnly={readOnly}
+                onProofUploaded={saved => onOrderUpdated({ ...order, ...saved })}
+              />
               <InvoiceCard order={order} merchantId={merchant!.id} readOnly={readOnly} />
               <CustomerCard order={order} />
 
