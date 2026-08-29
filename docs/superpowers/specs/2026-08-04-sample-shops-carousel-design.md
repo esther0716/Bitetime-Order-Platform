@@ -158,3 +158,42 @@ export function useSampleShops() {
 - Any click-through from the carousel into the real storefront.
 - Analytics/impression tracking on the carousel.
 - Admin UI beyond the on/off toggle (e.g. picking a "spotlight" order for shops, custom carousel copy per shop).
+
+---
+
+## Amendment 2026-08-29 — the cards link into the live storefront
+
+The "no click-through" decision above is **reversed**. Every card in the carousel is now a
+`<Link to="/s/:slug">` into the shop's real storefront, and a visitor places an ordinary real
+order there. The relevant rows of the decision table now read:
+
+| Question | Decision (2026-08-29) |
+|---|---|
+| Do cards link to the real storefront? | Yes. Every card, to `/s/:slug`, same tab. |
+| What is an order placed from the carousel? | An ordinary order on an ordinary storefront. No demo mode, no suppressed notify, no separate counter. |
+
+### Why the original decision did not hold
+
+The original rule stopped the incident of `fcd0a57` by making the page unable to reach a
+checkout. It also made the page unable to show the product: a visitor deciding whether to open a
+shop is looking at a screenshot of an ordering flow they cannot try. A gallery of pictures of
+software is weaker evidence than the software.
+
+### Where the guard moved
+
+From the markup to the flag. `merchants.is_sample` no longer means "show my screenshot on the
+marketing page"; it means **this shop accepts real public orders from strangers**. That flag is
+set by a superadmin only, from `/admin/merchants`, and the menu there now states the consequence
+in full next to the toggle. Flagging a third-party merchant who has not agreed to it sends them
+real orders for food nobody will collect — that is the failure mode, and it is now a decision a
+human makes with the consequence written on screen, rather than a property of the markup.
+
+### Scope
+
+Frontend only: `SampleShopsCarousel.tsx` (the link, the shop name and a "Start ordering" call to
+action), `SampleShopsPage.tsx` (intro copy says the shops are live), `AdminMerchants.tsx` (the
+warning line). No migration, and no backend change — `GET /api/merchants/samples` already returns
+`slug`.
+
+Still out of scope: a demo or sandbox order mode, a browse-only storefront, and any per-shop
+distinction between shops that may and may not be ordered from.

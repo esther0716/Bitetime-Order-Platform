@@ -171,9 +171,22 @@ const columns: ColumnDef<MerchantRow>[] = [
                   {t('Remove from samples', '取消示例店铺')}
                 </DropdownMenuItem>
               ) : (
-                <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onToggleSample(m.id, true)}>
-                  {t('Mark as sample shop', '设为示例店铺')}
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onToggleSample(m.id, true)}>
+                    {t('Mark as sample shop', '设为示例店铺')}
+                  </DropdownMenuItem>
+                  {/* The carousel links each sample shop into its live storefront, so this flag is
+                      the ONLY thing standing between a shop and public strangers ordering from it.
+                      Say that here, where the flag is set.
+                      A plain div, not DropdownMenuLabel: that one is Base UI's Menu.GroupLabel and
+                      throws "MenuGroupContext is missing" outside a Menu.Group. */}
+                  <div className="max-w-[220px] px-2 pb-1.5 text-[12px] leading-[1.5] text-muted-foreground">
+                    {t(
+                      'Puts the shop on /sample-shops as a link to its live storefront. Visitors can place real orders on it.',
+                      '店铺会出现在 /sample-shops，并链接到营业中的店面。访客可以在上面真实下单。',
+                    )}
+                  </div>
+                </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
