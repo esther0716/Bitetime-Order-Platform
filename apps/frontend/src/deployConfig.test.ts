@@ -40,6 +40,11 @@ describe('vercel.json', () => {
     // to remove. Their names carry family, weight and subset but no content hash, so THE FILES ARE
     // IMMUTABLE BY CONVENTION: replacing a face means giving it a new file name, not overwriting
     // one that visitors have frozen for a year.
+    //
+    // `/images/` is the third of the same kind, and carries the same obligation. The landing
+    // page's three "How it works" screenshots live in `public/images/steps/` under plain names
+    // with no content hash, so RE-SHOOTING ONE MEANS RENAMING IT. They are lazy and below the
+    // fold, which is exactly the case a per-visit conditional request is pure waste for.
     expect(config.headers).toEqual([
       {
         source: '/assets/(.*)',
@@ -47,6 +52,10 @@ describe('vercel.json', () => {
       },
       {
         source: '/fonts/(.*)',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
+        source: '/images/(.*)',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
       },
     ])

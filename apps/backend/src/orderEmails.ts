@@ -109,6 +109,58 @@ function itemsTableHtml(
   </table>`
 }
 
+/**
+ * The shop's own payment instructions, as the receipt needs them: already-resolved strings, so
+ * this module keeps knowing nothing about Storage or `env.ts` (the QR's public URL is built by
+ * the caller, from `EmailOrderConfig.qrBaseUrl`).
+ *
+ * The three are independent and any one is enough — the same rule as `hasPaymentInstructions`
+ * on the storefront and `hasPaymentInfo` in `orders.ts`, which is what decides whether an order
+ * is born `pending_payment` at all. A shop that set none of them takes payment some other way,
+ * and a receipt carrying an empty "Payment Instructions" box states a problem it does not have.
+ */
+export interface PaymentInstructionsInput {
+  bank?: string | null
+  note?: string | null
+  qrUrl?: string | null
+}
+
+function hasPaymentInstructions(p: PaymentInstructionsInput | undefined): boolean {
+  return !!p && Boolean(p.bank || p.note || p.qrUrl)
+}
+
+/**
+ * How to pay this shop, in the receipt.
+ *
+ * The customer read the same three lines on the order-placed screen, then closed the tab to open
+ * their banking app — this is the copy that survives that. Order comes from
+ * `store/PaymentInstructions.tsx` and must not drift from it: the words say who is being paid,
+ * the code is how.
+ *
+ * The QR is a REMOTE image, which most mail clients hide until the reader allows images. That is
+ * why the receipt's "View your order" link stays below this block: it is the fallback, and there
+ * is deliberately no second link here competing with it.
+ */
+function paymentHtml(p: PaymentInstructionsInput, heading: string, qrAlt: string): string {
+  const bank = p.bank ? `<p style="margin:4px 0;">${esc(p.bank)}</p>` : ''
+  // `white-space:pre-line` rather than `<br>` injection: the note is merchant-entered free text,
+  // and the line breaks they typed are the ones that render.
+  const note = p.note
+    ? `<p style="margin:6px 0;white-space:pre-line;">${esc(p.note)}</p>`
+    : ''
+  // No fixed aspect and no crop, for the storefront's reason: what merchants upload here is as
+  // often a phone screenshot as a clean QR, and a letterboxed code is one too small to scan.
+  const qr = p.qrUrl
+    ? `<div style="text-align:center;margin-top:12px;">
+      <img src="${esc(p.qrUrl)}" alt="${esc(qrAlt)}" width="240" style="width:100%;max-width:240px;height:auto;background:#ffffff;padding:8px;border:1px solid #eee;border-radius:6px;" />
+    </div>`
+    : ''
+  return `<div style="margin:20px 0;padding:12px 14px;border:1px solid #eee;border-radius:6px;font-size:14px;color:#444;">
+    <p style="margin:0 0 6px;font-weight:bold;color:#111;">${esc(heading)}</p>
+    ${bank}${note}${qr}
+  </div>`
+}
+
 // Pure: build the customer-facing receipt from a stored order row, in the order's
 // own stamped currency (legacy null ⇒ MYR). A twin of buildOrderMessage — same
 // formatMoney / formatAddress / mode-label rules, different audience and channel.
@@ -119,6 +171,7 @@ export function buildOrderConfirmationEmail(
   slug: string,
   frontendUrl: string,
   lang: Lang,
+  payment?: PaymentInstructionsInput,
 ): OrderConfirmationEmail {
   const t = pick(lang)
   const cur = order.currency ?? 'MYR'
@@ -132,6 +185,9 @@ export function buildOrderConfirmationEmail(
   const shopLink = `${frontendUrl}/s/${slug}`
   const promoTag = t('(Promo)', '（优惠）')
   const name = order.customer_name ?? ''
+  const showPayment = hasPaymentInstructions(payment)
+  const paymentHeading = t('Payment Instructions', '付款说明')
+  const qrAlt = t('Payment QR code', '付款二维码')
 
   const subject = t(
     `${shopName} — Order ${order.order_number} confirmed`,
@@ -159,6 +215,15 @@ export function buildOrderConfirmationEmail(
   if (order.shipping_fee) textLines.push(`${t('Shipping', '运费')}: ${formatMoney(order.shipping_fee, cur)}`)
   textLines.push(`${t('Total', '总计')}: ${formatMoney(order.total ?? 0, cur)}`)
   textLines.push('')
+  if (showPayment && payment) {
+    textLines.push(`${paymentHeading}:`)
+    if (payment.bank) textLines.push(payment.bank)
+    if (payment.note) textLines.push(payment.note)
+    // The QR as a URL: the text part has no images, and a customer reading it still needs a way
+    // to reach the code.
+    if (payment.qrUrl) textLines.push(`${qrAlt}: ${payment.qrUrl}`)
+    textLines.push('')
+  }
   textLines.push(`${t('View your order', '查看您的订单')}: ${shopLink}`)
   const text = textLines.join('\n')
 
@@ -178,6 +243,7 @@ export function buildOrderConfirmationEmail(
     { items: t('Items', '商品'), shipping: t('Shipping', '运费'), total: t('Total', '总计'), promo: promoTag },
     order.shipping_fee, order.total ?? 0,
   )}
+  ${showPayment && payment ? paymentHtml(payment, paymentHeading, qrAlt) : ''}
   <p style="margin:20px 0;"><a href="${esc(shopLink)}" style="color:#2563eb;">${esc(t('View your order', '查看您的订单'))}</a></p>`)
 
   return { subject, text, html }
@@ -263,7 +329,18 @@ async function loadOrder(db: any, merchantId: string, orderNumber: string) {
 // storefront base URL (for the "view your order" link) and the platform sending
 // address (for the shop-name `from`). Passed in rather than read from env.ts here,
 // so this module stays importable by the pure unit tests without env validation.
-export interface EmailOrderConfig { frontendUrl: string; emailFrom: string }
+export interface EmailOrderConfig { frontendUrl: string; emailFrom: string; qrBaseUrl?: string }
+
+// The public bucket the shop's payment QR lives in. The column stores a PATH, never a URL
+// (`writes.ts`), so the receipt has to build the URL — and it is built HERE rather than in the
+// pure builder, which must stay free of both `env.ts` and any Storage knowledge.
+const PAYMENT_QR_BUCKET = 'payment-qr'
+
+/** `{supabaseUrl}/storage/v1/object/public/payment-qr/{path}` — the bucket is public (#156). */
+export function paymentQrUrl(qrBaseUrl: string, path: string): string {
+  const encoded = path.split('/').map(encodeURIComponent).join('/')
+  return `${qrBaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${PAYMENT_QR_BUCKET}/${encoded}`
+}
 
 // Load the order, exclude guests, claim the one-shot row, resolve the recipient
 // from the ACCOUNT (never the request body), build and send. Deps injected,
@@ -304,11 +381,24 @@ export async function emailOrderConfirmation(
   const to = userRes?.user?.email as string | undefined
   if (!to) return { ok: true, skipped: true } // account carries no address
 
-  const { data: merchant } = await db.from('merchants').select('name, slug').eq('id', merchantId).maybeSingle()
+  const { data: merchant } = await db
+    .from('merchants')
+    .select('name, slug, payment_bank, payment_note, payment_qr')
+    .eq('id', merchantId).maybeSingle()
   const shopName = merchant?.name ?? ''
   const slug = merchant?.slug ?? ''
 
-  const { subject, text, html } = buildOrderConfirmationEmail(order, shopName, slug, cfg.frontendUrl, lang)
+  // The QR is dropped when no base URL is configured rather than rendered as a broken image —
+  // the bank line and the note still reach the customer, which is the same partial block the
+  // storefront shows a shop that set only some of the three.
+  const qr = merchant?.payment_qr as string | null | undefined
+  const payment: PaymentInstructionsInput = {
+    bank: merchant?.payment_bank ?? null,
+    note: merchant?.payment_note ?? null,
+    qrUrl: qr && cfg.qrBaseUrl ? paymentQrUrl(cfg.qrBaseUrl, qr) : null,
+  }
+
+  const { subject, text, html } = buildOrderConfirmationEmail(order, shopName, slug, cfg.frontendUrl, lang, payment)
   try {
     await send(to, subject, { text, html, from: senderFrom(shopName, cfg.emailFrom) })
     return { ok: true }

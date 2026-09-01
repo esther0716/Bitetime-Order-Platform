@@ -17,6 +17,7 @@ import {
 import { DataTable, SortableHeader } from '../components/ui/data-table'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../components/ui/empty'
 import ProductFormSheet from './ProductFormSheet'
+import CopyProductsDialog from './CopyProductsDialog'
 import MenuCategoriesDialog from './MenuCategoriesDialog'
 import MenuImportDialog from './MenuImportDialog'
 import { Tooltip, TooltipTrigger, TooltipContent } from '../components/ui/tooltip'
@@ -147,7 +148,7 @@ const columns: ColumnDef<any>[] = [
 ]
 
 export default function ProductsManager() {
-  const { t, lang, merchant, refreshMerchant } = useSession()
+  const { t, lang, merchant, refreshMerchant, role } = useSession()
   const [rows, setRows] = useState<any[] | null>(null)
   // editingProduct = the row the form is open on (null → add mode).
   const [editingProduct, setEditingProduct] = useState<any | null>(null)
@@ -165,6 +166,9 @@ export default function ProductsManager() {
   // the add/edit form: that form saves ONE product on submit, and this one proposes many and
   // saves none until asked.
   const [importOpen, setImportOpen] = useState(false)
+  // Product copy (CONTEXT.md → Product copy) — superadmin-only, so the state is harmless for a
+  // merchant: the button that sets it is never rendered for them.
+  const [copyOpen, setCopyOpen] = useState(false)
   const [categoriesSaving, setCategoriesSaving] = useState(false)
   // The row a Delete action is asking about, held here rather than in the column def so the
   // columns stay stable (see ProductTableMeta). null → no confirm open.
@@ -266,6 +270,15 @@ export default function ProductsManager() {
           {t('Your products', '您的产品')}
         </h3>
         <div className="flex flex-wrap items-center gap-2">
+          {role === 'superadmin' && (
+            <Button
+              type="button" variant="soft" size="none"
+              className="rounded-lg py-[6px] px-[14px] text-[13px]"
+              onClick={() => setCopyOpen(true)}
+            >
+              {t('Copy from another shop', '从其他店铺复制')}
+            </Button>
+          )}
           <Button
             type="button" variant="soft" size="none"
             className="rounded-lg py-[6px] px-[14px] text-[13px]"
@@ -297,6 +310,19 @@ export default function ProductsManager() {
         onSaved={load}
         onCategoriesChanged={refreshMerchant}
       />
+
+      {role === 'superadmin' && (
+        <CopyProductsDialog
+          open={copyOpen}
+          onOpenChange={setCopyOpen}
+          targetMerchantId={merchant!.id}
+          targetProducts={rows}
+          t={t}
+          lang={lang}
+          // The copy can append categories too, so the merchant row is refreshed with the list.
+          onSaved={async () => { await refreshMerchant(); await load() }}
+        />
+      )}
 
       <MenuCategoriesDialog
         open={categoriesOpen}

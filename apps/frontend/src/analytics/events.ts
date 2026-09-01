@@ -55,6 +55,10 @@ export type AnalyticsEvent =
   | 'billing_checkout_started'
   | 'onboarding_step'
   | 'cta_click'
+  /** The end-of-page signup card came on screen. */
+  | 'scroll_cta_shown'
+  /** The reader closed it. */
+  | 'scroll_cta_dismissed'
 
 // `type`, NOT `interface`, and it matters: an interface has no implicit index signature, so it is
 // not assignable to the SDK's EventProperties (Record<string, unknown>) and the track call below
@@ -89,6 +93,19 @@ type EventProps = {
    */
   onboarding_step: { step: OnboardingStep }
   cta_click: { from: string; cta: string; billing?: Billing }
+  /**
+   * The end-of-page signup card (marketing/ScrollCta.tsx), which exists to turn a visit into a
+   * signup and can only be judged as a pair:
+   *
+   *   scroll_cta_shown → cta_click { cta: 'scroll-end' } → pageview /merchant/signup → merchant_signup
+   *
+   * with scroll_cta_dismissed naming the readers who refused it. `cta_click` alone counts the
+   * clicks and cannot say how many readers were asked, so it cannot tell a card nobody sees from a
+   * card nobody wants — and those two have opposite fixes. `from` is the marketing path the card
+   * appeared on, the same property and the same values `cta_click` reports.
+   */
+  scroll_cta_shown: { from: string }
+  scroll_cta_dismissed: { from: string }
 }
 
 let client: PraxorClient | null = null

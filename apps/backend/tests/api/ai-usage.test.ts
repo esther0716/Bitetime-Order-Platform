@@ -91,55 +91,60 @@ async function callsFor(
 }
 
 describe('consumeAiCall', () => {
+  // A fixed period, not the current one: these tests write and read the same bucket, and the
+  // bucket must not change under them when the calendar month turns over.
+  const PERIOD = '2026-08'
+  const NEXT_PERIOD = '2026-09'
+
   it('allows exactly the limit, then refuses', async () => {
     const { id } = await ownerOf('aiu-ceiling')
 
     for (let i = 0; i < 3; i++) {
-      expect(await consumeAiCall({ merchantId: id, feature: 'assistant', period: '2026-08', limit: 3 }),
+      expect(await consumeAiCall({ merchantId: id, feature: 'assistant', period: PERIOD, limit: 3 }),
         `call ${i + 1} should be allowed`).toBe(true)
     }
 
-    expect(await consumeAiCall({ merchantId: id, feature: 'assistant', period: '2026-08', limit: 3 })).toBe(false)
+    expect(await consumeAiCall({ merchantId: id, feature: 'assistant', period: PERIOD, limit: 3 })).toBe(false)
   })
 
   it('writes nothing when it refuses', async () => {
     const { id } = await ownerOf('aiu-norecord')
-    await consumeAiCall({ merchantId: id, feature: 'assistant', period: '2026-08', limit: 1 })
-    await consumeAiCall({ merchantId: id, feature: 'assistant', period: '2026-08', limit: 1 })
+    await consumeAiCall({ merchantId: id, feature: 'assistant', period: PERIOD, limit: 1 })
+    await consumeAiCall({ merchantId: id, feature: 'assistant', period: PERIOD, limit: 1 })
 
     // A refusal that still incremented would push the count past the ceiling, and the next month
     // would start from a number nobody spent.
-    expect(await callsFor(id, 'assistant')).toBe(1)
+    expect(await callsFor(id, 'assistant', PERIOD)).toBe(1)
   })
 
   it('gives each feature its own budget', async () => {
     const { id } = await ownerOf('aiu-features')
-    await consumeAiCall({ merchantId: id, feature: 'assistant', period: '2026-08', limit: 1 })
+    await consumeAiCall({ merchantId: id, feature: 'assistant', period: PERIOD, limit: 1 })
 
     // A menu photo costs several times a question, which is why they are two budgets and not one.
-    expect(await consumeAiCall({ merchantId: id, feature: 'menu_import', period: '2026-08', limit: 1 })).toBe(true)
+    expect(await consumeAiCall({ merchantId: id, feature: 'menu_import', period: PERIOD, limit: 1 })).toBe(true)
   })
 
   it('gives each shop its own budget', async () => {
     const { id: mine } = await ownerOf('aiu-mine')
     const { id: theirs } = await ownerOf('aiu-theirs')
-    await consumeAiCall({ merchantId: mine, feature: 'assistant', period: '2026-08', limit: 1 })
+    await consumeAiCall({ merchantId: mine, feature: 'assistant', period: PERIOD, limit: 1 })
 
-    expect(await consumeAiCall({ merchantId: theirs, feature: 'assistant', period: '2026-08', limit: 1 })).toBe(true)
+    expect(await consumeAiCall({ merchantId: theirs, feature: 'assistant', period: PERIOD, limit: 1 })).toBe(true)
   })
 
   it('gives back the allowance in the next month', async () => {
     const { id } = await ownerOf('aiu-rollover')
-    await consumeAiCall({ merchantId: id, feature: 'assistant', period: '2026-08', limit: 1 })
+    await consumeAiCall({ merchantId: id, feature: 'assistant', period: PERIOD, limit: 1 })
 
-    expect(await consumeAiCall({ merchantId: id, feature: 'assistant', period: '2026-09', limit: 1 })).toBe(true)
+    expect(await consumeAiCall({ merchantId: id, feature: 'assistant', period: NEXT_PERIOD, limit: 1 })).toBe(true)
   })
 
   it('refuses a limit of zero rather than letting the first call through', async () => {
     const { id } = await ownerOf('aiu-zero')
     // The insert arm has no row to compare against, so a zero limit is checked before the query.
-    expect(await consumeAiCall({ merchantId: id, feature: 'assistant', period: '2026-08', limit: 0 })).toBe(false)
-    expect(await callsFor(id, 'assistant')).toBe(0)
+    expect(await consumeAiCall({ merchantId: id, feature: 'assistant', period: PERIOD, limit: 0 })).toBe(false)
+    expect(await callsFor(id, 'assistant', PERIOD)).toBe(0)
   })
 
   it('holds concurrent calls to the ceiling', async () => {
@@ -148,11 +153,11 @@ describe('consumeAiCall', () => {
     // Ten at once against a ceiling of three. A read-then-write counter lets more than three
     // through here; the single conflicting insert does not.
     const results = await Promise.all(
-      Array.from({ length: 10 }, () => consumeAiCall({ merchantId: id, feature: 'assistant', period: '2026-08', limit: 3 })),
+      Array.from({ length: 10 }, () => consumeAiCall({ merchantId: id, feature: 'assistant', period: PERIOD, limit: 3 })),
     )
 
     expect(results.filter(Boolean)).toHaveLength(3)
-    expect(await callsFor(id, 'assistant')).toBe(3)
+    expect(await callsFor(id, 'assistant', PERIOD)).toBe(3)
   })
 })
 

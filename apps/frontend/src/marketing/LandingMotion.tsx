@@ -2,7 +2,7 @@
 /* Landing-page motion + craft pieces. Isolated + memoised so the perpetual
    storefront ping never re-renders the page. All effects honour
    prefers-reduced-motion via `useReducedMotion`. */
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence, useMotionValue, useSpring, useReducedMotion } from 'motion/react'
@@ -293,5 +293,73 @@ export const RotatingWord = memo(function RotatingWord({
         </motion.span>
       </AnimatePresence>
     </motion.span>
+  )
+})
+
+// ── Step clip: the "How it works" screen recording ──────────────────────────
+//
+// A muted, looping <video>, not a GIF. The same four seconds as GIF is 3-8MB of 8-bit palette —
+// which is the format least suited to what these actually are, thin anti-aliased text on flat
+// colour — against 60-190KB of h264 that the phone decodes in hardware. `<video autoplay muted
+// loop playsinline>` is what "GIF" means on the web now.
+//
+// Three things here are deliberate:
+//
+// NO `autoplay` ATTRIBUTE. Playback is started by the observer below, so with `preload="none"`
+// nothing but the poster is fetched until the clip is actually on screen — three autoplaying
+// loops would otherwise pull ~390KB before the reader has scrolled to them, and keep three video
+// decoders alive for the whole visit.
+//
+// THE POSTER IS FRAME ZERO of the clip it belongs to, so starting playback is not a cut. It is
+// also the whole picture for a reader who never gets the video: `prefers-reduced-motion`, a
+// blocked autoplay (iOS low-power mode), JavaScript off, or a crawler reading the prerendered
+// markup — which is why the poster stays in the markup rather than being attached in the effect.
+//
+// `muted` IS SET ON THE ELEMENT, not just as a prop. React does not reliably render the `muted`
+// attribute into server markup, and an unmuted video is refused autoplay outright.
+export const StepClip = memo(function StepClip({
+  src,
+  poster,
+  label,
+  className,
+}: {
+  src: string
+  poster: string
+  label: string
+  className?: string
+}) {
+  const reduced = useReducedMotion()
+  const ref = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || reduced) return
+    el.muted = true
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) void el.play().catch(() => {})
+        else el.pause()
+      },
+      { threshold: 0.4 },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [reduced])
+
+  return (
+    <video
+      ref={ref}
+      poster={poster}
+      aria-label={label}
+      muted
+      loop
+      playsInline
+      preload="none"
+      width={960}
+      height={720}
+      className={className}
+    >
+      <source src={src} type="video/mp4" />
+    </video>
   )
 })

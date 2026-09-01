@@ -36,8 +36,8 @@ export default function SampleShopsPage() {
           </h1>
           <p className="-mt-6 mb-10 text-[15px] leading-[1.7] text-ink-700 text-center max-w-[560px] mx-auto">
             {t(
-              'A few real shops built with TinyOrder, so you can see what yours could look like.',
-              '看看用 TinyOrder 开的真实店铺，了解你的店铺可以是什么样子。',
+              'A few real shops built with TinyOrder. Open one and place a real order — these are live storefronts, not pictures.',
+              '看看用 TinyOrder 开的真实店铺。打开任何一间就可以真实下单 — 这些是营业中的店铺，不是图片。',
             )}
           </p>
           {shops.length > 0 ? (

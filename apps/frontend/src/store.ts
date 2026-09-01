@@ -1070,6 +1070,19 @@ export async function upsertProduct(product: any): Promise<Result<any>> {
   return apiSend<any>(`/api/merchants/${product.merchant_id}/products/${product.id}`, 'PUT', product, { auth: true })
 }
 
+/**
+ * Product copy (CONTEXT.md → Product copy): superadmin-only bulk duplication of products from one
+ * shop into the shop whose dashboard is open. The backend does everything — rows, categories,
+ * sort, image objects — whole or not at all.
+ */
+export async function copyProducts(
+  sourceMerchantId: string,
+  targetMerchantId: string,
+  productIds: string[],
+): Promise<Result<{ copied: number; skippedImages: number }>> {
+  return apiSend('/api/admin/copy-products', 'POST', { sourceMerchantId, targetMerchantId, productIds }, { auth: 'required' })
+}
+
 // Signature change: `merchantId` now threads the URL's tenant segment — the backend nests
 // product deletes under /api/merchants/:id/products/:productId (see writes.ts /
 // requireMerchantOwns) so it can verify tenancy before deleting. Callers must pass it.

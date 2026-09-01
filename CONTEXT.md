@@ -147,6 +147,10 @@ How a shop's menu is ordered, and the fact that the merchant — not the creatio
 
 **Dragging an item out of a deleted section is what clears the dangling id.** The saved patch takes each product's section from the block it now sits in, not from the id stored on the row.
 
+## Product copy
+
+A **superadmin-only** bulk duplication of products from one shop into another, used to set up a new merchant's menu at their request. It is a dedicated backend write path (a `db.ts` transaction), not the product upsert: it carries `descr_zh` (real merchant data the form cannot edit), strips every promo field (a promo is one shop's time-bound campaign, not menu data), duplicates image **objects** into the target's own storage prefix (a cross-tenant path reference would break when the source shop deletes), and remaps `category_id` by category **name**, appending sections the target lacks. Copies land whole or not at all — with one carve-out: a source image whose object is already gone (image deletes are best-effort, so a row can outlive its file) is skipped and reported, never fatal, because the honest copy of a photo that no longer exists is no photo. The picker — not the write path — is where duplicate-name judgement lives.
+
 ## Order intake
 
 The flow that collects a cart and customer details and commits an order: `collect → priceOrder → placeOrder → notifyOrder`. The multi-tenant **Storefront** (`store/Storefront.tsx`) is the only intake path; the legacy single-tenant order form has been deleted. `notifyOrder` is a single post-commit call that fans out to three recipients — see *Order notifications*. Every way this flow can say no is named — see *Refusal* below.
@@ -294,6 +298,17 @@ A marketing page written for ONE trade, served at `/for/<slug>` — `home-bakers
 **They describe the same product, not a bundle.** No shop type is gated, priced or provisioned differently; the pages differ in which shipped behaviour they lead with. That is why every claim on them is checked against `public/llms.txt`, which is the authoritative feature list — a sentence there that the software does not do is a promise the software then has to keep.
 
 **Adding one touches six places**, three of them derived from `USE_CASES` and three by hand: `ROUTE_META` (spread), the router (`.map`), the prerender list (spread), plus `vercel.json`'s rewrite, `sitemap.xml` and `llms.txt`. Of the hand-written three, only the sitemap and the rewrite/llms.txt joins are test-pinned — see `vercelRewrites.test.ts`, `llmsTxt.test.ts`, `sitemap.test.ts`.
+
+## Storefront findability
+
+The SEO scope for merchant storefronts: a customer who searches the **shop's own name** finds `/s/<slug>` with the shop's title, description and menu facts in the result. Deliberately NOT local discovery ("nasi lemak delivery PJ") — that fight belongs to Google Business Profile and delivery marketplaces, not to a path on a shared domain — and NOT custom domains, which is a separate feature. Every active shop gets it; there is no plan gate.
+_Avoid_: "merchant SEO" (says nothing about which queries), "shop ranking".
+
+**Head injection** is the mechanism: a Vercel Function serves `/s/:slug` (and its subpaths) by injecting per-shop `<title>`, meta description, canonical and `LocalBusiness` JSON-LD into the same deploy's SPA shell. The **body stays the shell** — content parity for JS-less crawlers is out of scope, so the served snippet is the meta description, which packs category names for that reason. **Fail-open**: any error serves the untouched shell, which is exactly the pre-feature behaviour — hence a breakage is invisible in a browser, and only the canary and the pinning tests see it. Shop data comes from the backend's public API, never a direct database read: `pickMerchantConfig` stays the one authority on which columns are public. Merchant-controlled text lands in raw head HTML and inside the JSON-LD script block — escaping is a pinned rule, not a nicety. See ADR 0022.
+
+**Slug history** is what survives a rename: `PATCH /api/merchants/:id/slug` records the old slug, and the storefront function 301s it to the current one — printed QR codes and indexed URLs keep working. **Claim-wins**: a new shop claiming a slug in another shop's history takes it, and the redirect dies — a live shop's claim beats a dead redirect, and freed slugs stay reusable. Statuses map to crawler answers: unknown slug → 404, `suspended`/`pending` → 200 + noindex (reversible, as suspension is).
+
+**Shop sitemap** (`/sitemap-shops.xml`) is a second, function-served sitemap enumerating active shops only — the static `sitemap.xml` stays hand-maintained for platform pages; the two lists have different owners and change rates. On a database failure it answers **503, never an empty 200**: an empty 200 tells Google every shop page is gone.
 
 ## Customer signup
 

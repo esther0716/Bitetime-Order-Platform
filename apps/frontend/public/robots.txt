@@ -12,8 +12,13 @@ Disallow: /admin
 Disallow: /reset-password
 # The empty SPA shell every route is rewritten to. A real URL, but it has no content of its own.
 Disallow: /app.html
+# The storefront edge functions (#253). /s/<slug> is the crawlable address; these are the same
+# documents again under raw function URLs, which a crawler would file as duplicates.
+Disallow: /api/
 
 Sitemap: https://tinyorder.shop/sitemap.xml
+# Every active shop's storefront, enumerated at request time — see ADR 0022.
+Sitemap: https://tinyorder.shop/sitemap-shops.xml
 
 # No standard directive names it, but LLM crawlers and agents read this file first and some follow
 # the path from here: https://tinyorder.shop/llms.txt

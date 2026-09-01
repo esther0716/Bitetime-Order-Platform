@@ -1,0 +1,68 @@
+// The rows the Product copy picker shows, and the one decision made for the superadmin: which
+// boxes start ticked. The backend's write path does dumb inserts (CONTEXT.md → Product copy), so
+// these defaults are the only thing standing between a re-run and a doubled menu.
+//
+// Pure and split out of the dialog for the same reason menuImportRows.ts is: a dialog cannot be
+// unit tested in this repo (UI is verified by running the app), and this is the decision a
+// superadmin is least likely to re-check row by row.
+import { optionGroupsFromRow } from '@bitetime/shared'
+import { norm } from './menuImportRows'
+
+/** What the picker needs off a product row, source or target. */
+export interface CopyCandidate {
+  id: string
+  name: string
+  name_zh?: string | null
+  price?: unknown
+  active?: boolean
+  [key: string]: unknown
+}
+
+export interface CopyPickerRow extends CopyCandidate {
+  /** The target already holds a product by this name (case- and space-blind). */
+  duplicate: boolean
+  /** Ticked by default — except duplicates, which the superadmin must opt back in. */
+  include: boolean
+}
+
+/**
+ * The picker's per-row option summary: each group's name with how many choices it holds, e.g.
+ * `Size (2)`. So a superadmin can see a product carries options — and which — without opening
+ * it after the copy. Hidden groups are listed too: they copy, and a summary that dropped them
+ * would under-report what lands.
+ */
+export function optionGroupSummary(rawGroups: unknown, lang: 'en' | 'zh'): string[] {
+  return optionGroupsFromRow(rawGroups).map(g => {
+    const name = (lang === 'zh' && g.name_zh) ? g.name_zh : g.name
+    return `${name} (${g.options.length})`
+  })
+}
+
+/** What the shop search needs off a merchants row. */
+export interface ShopCandidate {
+  id: string
+  name: string
+  slug: string
+  [key: string]: unknown
+}
+
+/**
+ * The dialog's shop search: name or slug contains the query, case- and space-blind. A blank
+ * query is every shop — the list scrolls, it does not hide.
+ */
+export function filterShops<S extends ShopCandidate>(shops: S[], query: string): S[] {
+  const q = norm(query)
+  if (!q) return shops
+  return shops.filter(s => norm(s.name).includes(q) || norm(s.slug).includes(q))
+}
+
+export function copyPickerRows(
+  sourceProducts: CopyCandidate[],
+  targetProducts: CopyCandidate[],
+): CopyPickerRow[] {
+  const taken = new Set(targetProducts.map(p => norm(p.name)))
+  return sourceProducts.map(p => {
+    const duplicate = taken.has(norm(p.name))
+    return { ...p, duplicate, include: !duplicate }
+  })
+}
