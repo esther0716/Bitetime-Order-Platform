@@ -25,6 +25,7 @@ import Wordmark from '../components/Wordmark'
 import { Button } from '../components/ui/button'
 import { REFUNDS_ANCHOR } from '../legal/anchors'
 import { USE_CASES, pathForUseCase } from './useCases'
+import ScrollCta from './ScrollCta'
 import { cn } from '../lib/utils'
 
 // Shared nav-link style (Pricing + Merchant log in)
@@ -197,6 +198,13 @@ export function MarketingFooter() {
   const { t } = useSession()
 
   return (
+    <>
+    {/* The end-of-page signup card. Mounted HERE rather than in each page for the reason the nav
+        and the footer themselves live here: the footer is the one thing all six marketing pages
+        render, so no page can be given the card and no page can be forgotten. It is fixed-position
+        and renders null until a scroll says otherwise, so it changes neither this footer's layout
+        nor the prerendered markup. */}
+    <ScrollCta />
     <footer className="mt-auto border-t border-border">
       {/* Grouped columns, not a single wrapped row: same links as before, same crawler-visible
           structure (still Link/`<a>` in the prerendered markup), just organised so a visitor
@@ -276,5 +284,6 @@ export function MarketingFooter() {
         </a>
       </div>
     </footer>
+    </>
   )
 }
