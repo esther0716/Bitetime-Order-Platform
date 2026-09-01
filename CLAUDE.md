@@ -305,6 +305,14 @@ nothing and every commit they bring in is already in the range. Tags carry **no 
 the rule reads the two-part `0.2` as `0.2.0`. `pnpm --filter @bitetime/backend release:version`
 prints what the next tag would be, and nothing else — run it before a merge to see it.
 
+The pull **names the tag it just cut**, and that is load-bearing: GitHub serves the release
+LIST with `Cache-Control: max-age=60`, and the workflow calls about two seconds later — so a
+list read there regularly predates the release, and the pull answered `{"pulled":0}` with a
+green tick while storing nothing. Five releases shipped that way. `POST` with `{"tag":"X"}`
+reads `releases/tags/X`, a key nothing has asked for before, and a tag GitHub cannot show yet
+is a 502 the workflow's retry loop waits out. The list is still read alongside it, so a release
+an earlier pull missed is carried in by the next one.
+
 The workflow needs **`RELEASE_PULL_SECRET`** as a repo secret AND as the backend's own env var
 (`BACKEND_URL` it reuses from the screenshot sweep). It gates
 `POST /api/internal/releases-pull`, which is the same `pullReleases()` the superadmin button
