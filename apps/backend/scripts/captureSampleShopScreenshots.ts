@@ -31,6 +31,15 @@ interface SampleShop {
 // drops off the carousel instead of appearing there with an empty menu.
 const MENU_MARKER = '[data-sample-capture="menu"]'
 const NAV_TIMEOUT_MS = 30_000
+// The marker says a menu is on screen. It does NOT say the menu's photographs are: the rows
+// render the instant the products arrive, and their <img> elements have not started fetching
+// yet — measured against production, every image was `complete: false` with an empty
+// currentSrc at the marker and all of them were decoded three seconds later. Screenshotting at
+// the marker therefore stored a card of empty grey thumbnails, which is what the carousel showed.
+//
+// `complete` is the right test rather than a fixed wait: it also turns true for an image that
+// FAILED, so a shop with one dead photograph settles instead of hanging until the timeout.
+const IMAGES_TIMEOUT_MS = 15_000
 
 // `?preview=1` renders the shop without the order form — see the rule it drives in
 // apps/frontend/src/index.css. Without it a 390x844 capture is mostly sign-in links, a language
@@ -38,6 +47,14 @@ const NAV_TIMEOUT_MS = 30_000
 async function openStorefront(page: Page, slug: string): Promise<void> {
   await page.goto(`${FRONTEND_URL}/s/${slug}?preview=1`, { waitUntil: 'load', timeout: NAV_TIMEOUT_MS })
   await page.waitForSelector(MENU_MARKER, { timeout: NAV_TIMEOUT_MS })
+  // Deliberately allowed to throw, like the marker wait above: a shop whose photographs never
+  // settle drops off the carousel rather than appearing there with empty thumbnails. A shop that
+  // has no photographs at all has no <img> to wait for and passes here at once.
+  await page.waitForFunction(
+    () => [...document.images].every((img) => img.complete),
+    null,
+    { timeout: IMAGES_TIMEOUT_MS },
+  )
 }
 
 // One retry only. The failure this exists for is a cold start on the frontend or the backend,
