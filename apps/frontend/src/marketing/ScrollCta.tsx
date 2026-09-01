@@ -1,21 +1,30 @@
 // The signup card that appears once a reader reaches the end of a marketing page.
 //
 // One card, mounted by MarketingFooter, so every marketing page has it and no page can be
-// forgotten — the footer is the one thing all six of them render. How long a refusal lasts lives
-// next door as a pure function (scrollCtaState.ts); what is left here is the browser.
+// forgotten — the footer is the one thing all six of them render.
 //
-// THE TRIGGER IS AN INTERSECTION OBSERVER ON A SENTINEL ABOVE THE FOOTER, not a scroll listener
-// measuring how far down the page the reader is, and the difference is the bug it fixes. A scroll
-// listener only ever learns about scrolling that happens AFTER it is attached: a reader who
+// NOTHING IS REMEMBERED — no storage, no cookie, no flag. Closing the card closes it for the page
+// being read and no longer; the next marketing page mounts a new footer and asks again, and so does
+// the next visit. That is deliberate: the one thing that stops the card is having an account, which
+// is the thing it is asking for. A visitor who has not signed up has not answered it yet.
+//
+// THE TRIGGER IS A MEASUREMENT OF A SENTINEL ABOVE THE FOOTER, taken at three moments: at mount,
+// once more when the page has settled, and on scroll. Each covers a case the others miss, and the
+// effect below says which. What they have in common is that every one of them reads the SENTINEL'S
+// OWN BOX rather than scroll arithmetic, so the answer does not depend on having witnessed the
+// scrolling that got the reader there — which is the bug a bare scroll listener has: a reader who
 // scrolls while the route chunk is still arriving moves the page past the end, the events land on
-// nobody, and — since the page is not scrolled again — the card never appears at all. An observer
-// reports the sentinel's CURRENT state as soon as it starts observing, so where the reader already
-// is counts the same as where they scroll to.
+// nobody, and the card never appears on that visit at all.
 //
-// IT RENDERS NO CARD UNTIL THE OBSERVER FIRES, and that is what keeps it out of the prerendered
-// markup: scripts/prerender.tsx renders these routes with renderToStaticMarkup, which fires no
-// effects, so the card is absent from the HTML a crawler downloads and the pages it measures are
-// byte-identical to what they were. The sentinel itself is an empty, zero-height div.
+// An IntersectionObserver was tried here and reverted. It answers the same question more neatly,
+// but it delivers NOTHING while a tab is not being rendered and does not always deliver its first
+// record on the way back — so the card's arrival became dependent on how the tab had been used.
+// A measurement is a measurement whenever it is taken.
+//
+// IT RENDERS NO CARD UNTIL A CHECK PASSES, and that is what keeps it out of the prerendered markup:
+// scripts/prerender.tsx renders these routes with renderToStaticMarkup, which fires no effects, so
+// the card is absent from the HTML a crawler downloads and the pages it measures are byte-identical
+// to what they were. The sentinel itself is an empty, zero-height div.
 
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
@@ -26,7 +35,6 @@ import { platformPixelIds, hasAnyPixel } from '../pixels/ids'
 import { isMarketingPath } from '../pixels/marketingPaths'
 import { readConsent, PLATFORM_CONSENT_SCOPE } from '../pixels/consent'
 import { pixelDecision } from '../pixels/decision'
-import { dismissalHolds, readDismissedAt, writeDismissal } from './scrollCtaState'
 import { ctaPrimary } from './ctaStyles'
 import { cn } from '../lib/utils'
 
@@ -56,11 +64,16 @@ function consentBannerOpen(pathname: string): boolean {
 export default function ScrollCta() {
   const { t, account } = useSession()
   const { pathname } = useLocation()
-  const [visible, setVisible] = useState(false)
-  // Read during the FIRST render, not in an effect, so a reader who closed the card last week
-  // never sees it flash back. Safe here: readDismissedAt answers null without storage, which is
-  // what happens during the prerender.
-  const [dismissed, setDismissed] = useState(() => dismissalHolds(readDismissedAt(), Date.now()))
+  // The card's whole memory: whether it is up, whether it was closed, and WHICH PAGE that is about.
+  //
+  // The path is part of the state because an in-app navigation does not remount this component —
+  // React reconciles the footer in place, since every marketing page renders the same one in the
+  // same slot. Without the stamp, a card closed on /features stays closed on /pricing and on every
+  // page after it, which is the persistence this feature deliberately does not have wearing a
+  // different hat. State belonging to another path is ignored rather than reset in an effect,
+  // which would be a second render for nothing.
+  const [card, setCard] = useState({ path: pathname, shown: false, closed: false })
+  const { shown, closed } = card.path === pathname ? card : { shown: false, closed: false }
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   // SIGNED OUT ONLY. `account` is `undefined` while the session is still resolving and `null` when
@@ -71,43 +84,68 @@ export default function ScrollCta() {
   const signedOut = account === null
 
   useEffect(() => {
-    if (visible || dismissed || !signedOut) return
-    const sentinel = sentinelRef.current
-    if (!sentinel) return
-    const observer = new IntersectionObserver(entries => {
-      if (!entries.some(entry => entry.isIntersecting)) return
-      // Asked HERE rather than at mount, and the observer is deliberately left connected when the
-      // answer is yes: a reader who answers the banner and carries on scrolling crosses the
-      // sentinel again, and that second crossing is the one that shows the card.
-      if (consentBannerOpen(pathname)) return
-      setVisible(true)
-      trackEvent('scroll_cta_shown', { from: pathname })
-    // The sentinel sits directly above the footer, so it enters the viewport as the footer does —
-    // 120px early, so the card is on screen while the closing section is still being read rather
-    // than after the reader has stopped.
-    }, { rootMargin: '0px 0px 120px 0px' })
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [visible, dismissed, signedOut, pathname])
+    if (shown || closed || !signedOut) return
+    let settle: ReturnType<typeof setTimeout> | null = null
+    let throttle: ReturnType<typeof setTimeout> | null = null
 
-  // ONLY A CLOSE IS REMEMBERED. Closing the card is a refusal and is worth honouring for a month;
-  // clicking it is not, so a reader who follows the link and then comes back to read more is asked
-  // again. The click needs no handler at all — following the link unmounts this page's footer, and
-  // the card with it.
+    // Has the reader reached the sentinel? Measured off its own box rather than off scroll
+    // arithmetic: where the footer IS in the viewport is the question, and the element answers it
+    // whatever the page's height turns out to be. 120px early, so the card arrives while the
+    // closing section is still being read rather than after the reader has stopped.
+    function reachedEnd(): boolean {
+      const sentinel = sentinelRef.current
+      if (!sentinel) return false
+      return sentinel.getBoundingClientRect().top <= window.innerHeight + 120
+    }
+
+    function check(): void {
+      throttle = null
+      if (!reachedEnd()) return
+      // Asked at the moment the card would appear, not once at mount: a reader who answers the
+      // banner while reading leaves the corner free, and the next check is the one that finds it.
+      if (consentBannerOpen(pathname)) return
+      setCard({ path: pathname, shown: true, closed: false })
+      trackEvent('scroll_cta_shown', { from: pathname })
+    }
+
+    // Three ways in, and each covers a case the others miss.
+    //
+    // NOW, because the reader may already be at the end — the browser restores the scroll position
+    // of a page they are coming back to, and that arrival produces no event of its own.
+    check()
+    // AGAIN once the page has settled, because "now" can be too early to mean anything: a route
+    // chunk still arriving leaves the document its final height has not been decided from, and a
+    // reader who scrolls during that boot moves the page past the end while nothing is listening.
+    // Without this the card would never appear on that visit at all.
+    settle = setTimeout(check, 900)
+    // And on scroll, which is the ordinary path. Throttled to one measurement per 120ms, trailing
+    // edge, so the scroll that STOPS at the foot of the page is the one that counts.
+    function onScroll(): void {
+      if (!throttle) throttle = setTimeout(check, 120)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (settle) clearTimeout(settle)
+      if (throttle) clearTimeout(throttle)
+    }
+  }, [shown, closed, signedOut, pathname])
+
+  // The close is honoured for as long as this page is being read. `closed` and not merely "not
+  // shown", so the next check cannot put the card straight back when the reader scrolls on. The
+  // click needs no handler at all — following the link takes the reader off this page.
   function close(): void {
-    writeDismissal()
-    setDismissed(true)
-    setVisible(false)
+    setCard({ path: pathname, shown: false, closed: true })
     trackEvent('scroll_cta_dismissed', { from: pathname })
   }
 
   return (
     <>
-      {/* The mark the observer watches, in the page's own flow directly above the footer. Empty and
+      {/* The mark that gets measured, in the page's own flow directly above the footer. Empty and
           zero-height, so it changes no layout and adds nothing to the prerendered markup a crawler
           reads; it is rendered whether or not the card is, because it is what decides. */}
       <div ref={sentinelRef} aria-hidden="true" className="h-0" />
-      {visible && (
+      {shown && (
         <div
           role="complementary"
           aria-label={t('Start your shop', '开始建店')}
