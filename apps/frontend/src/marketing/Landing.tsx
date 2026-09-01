@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
 import { formatMoney } from '../currency'
+import { HandCoins, ListChecks, Languages } from 'lucide-react'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../components/ui/accordion'
+import { cn } from '../lib/utils'
 import { FAQ } from './faq'
-import { FEATURES } from './features'
+import { STEPS } from './steps'
 import { VERTICALS } from './verticals'
 import { PRICING_TIERS } from './pricingTiers'
 import { MarketingNav, MarketingFooter } from './MarketingChrome'
@@ -18,6 +20,7 @@ import {
   MagneticButton,
   RotatingWord,
   StorefrontPreview,
+  StepClip,
 } from './LandingMotion'
 
 export default function Landing() {
@@ -117,28 +120,46 @@ export default function Landing() {
         <h2 className={sectionTitle}>
           {t('Three steps to start your shop and take your first order', '三步开店，收到第一笔订单')}
         </h2>
-        <ol className="list-none max-w-[620px] mx-auto flex flex-col gap-6 p-0 m-0">
-          <li className="flex items-baseline gap-5 text-[15px] leading-[1.6] text-foreground">
-            <span className="font-heading text-[28px] font-medium text-border leading-none shrink-0 w-9">01</span>
-            <div>
-              <strong className="text-primary font-semibold">{t('Create your shop', '创建你的店铺')}</strong>
-              <span>{t(' — pick a name, describe what you make.', '——取个名字，介绍你的产品。')}</span>
-            </div>
-          </li>
-          <li className="flex items-baseline gap-5 text-[15px] leading-[1.6] text-foreground">
-            <span className="font-heading text-[28px] font-medium text-border leading-none shrink-0 w-9">02</span>
-            <div>
-              <strong className="text-primary font-semibold">{t('Add your products', '添加产品')}</strong>
-              <span>{t(' — set names, prices and delivery windows.', '——设置名称、价格与交货时间。')}</span>
-            </div>
-          </li>
-          <li className="flex items-baseline gap-5 text-[15px] leading-[1.6] text-foreground">
-            <span className="font-heading text-[28px] font-medium text-border leading-none shrink-0 w-9">03</span>
-            <div>
-              <strong className="text-primary font-semibold">{t('Share your link', '分享专属链接')}</strong>
-              <span>{t(' — send /s/yourshop to customers; orders come straight to you.', '——将 /s/yourshop 发给顾客，订单直达你。')}</span>
-            </div>
-          </li>
+        {/* One row per step, image beside text, sides alternating. NOT three columns: these are
+            screenshots of dense screens — a product table three-across is about 200px wide, which
+            is unreadable, and an unreadable screenshot is decoration rather than proof.
+            Below 820px the row stacks, text first, so a phone reads the step before it sees it.
+
+            The column template FLIPS with the row, it does not just reorder. `order` moves the
+            image across but leaves the track widths where they are, so on every second row the
+            image landed in the narrower text column and rendered visibly smaller than its
+            neighbours — three screenshots at two sizes, which reads as a mistake. The image keeps
+            the wider track in both directions. */}
+        <ol className="list-none max-w-[920px] mx-auto flex flex-col gap-14 p-0 m-0 max-[820px]:gap-10">
+          {STEPS.map((step, i) => (
+            <li
+              key={step.n}
+              className={cn(
+                'grid items-center gap-10 max-[820px]:grid-cols-1 max-[820px]:gap-5',
+                i % 2 === 1
+                  ? 'grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]'
+                  : 'grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)]',
+              )}
+            >
+              <div className={cn(i % 2 === 1 && 'min-[821px]:order-2')}>
+                <span className="font-heading text-[28px] font-medium text-border leading-none block mb-2">
+                  {step.n}
+                </span>
+                <h3 className="font-heading text-[19px] font-semibold text-primary leading-[1.3] m-0 mb-2">
+                  {t(step.title.en, step.title.zh)}
+                </h3>
+                <p className="text-[15px] leading-[1.6] text-ink-700 m-0">
+                  {t(step.body.en, step.body.zh)}
+                </p>
+              </div>
+              <StepClip
+                src={`/images/steps/${step.file}-${lang}.mp4`}
+                poster={`/images/steps/${step.file}-${lang}.webp`}
+                label={t(step.alt.en, step.alt.zh)}
+                className="block w-full h-auto rounded-2xl border-[0.5px] border-border shadow-elev-3"
+              />
+            </li>
+          ))}
         </ol>
         </Reveal>
       </section>
@@ -155,52 +176,34 @@ export default function Landing() {
             'TinyOrder 是为自己做、自己卖的人打造的——不需要网站、设计师或工程师，只要会分享链接，就能在线接单。',
           )}
         </p>
+        {/* The icons are decoration and every one is aria-hidden: the <dt> under it already says
+            what it says, and a screen reader announcing "hand coins" before the heading is noise. */}
         <dl className="grid [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] gap-x-12 gap-y-10 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-8">
           <div>
+            <HandCoins size={22} strokeWidth={1.5} className="text-primary mb-3" aria-hidden />
             <dt className="font-heading text-[19px] font-semibold text-primary leading-[1.3] mb-2.5">{t('Keep what you earn', '赚的钱，都是你的')}</dt>
             <dd className="text-sm leading-[1.65] text-ink-700 m-0">{t('Your own link, your own customers — no marketplace cut, no competitor beside your listing.', '专属链接，专属顾客——没有平台抽成，也没有人在你旁边抢单。')}</dd>
           </div>
           <div>
+            <ListChecks size={22} strokeWidth={1.5} className="text-primary mb-3" aria-hidden />
             <dt className="font-heading text-[19px] font-semibold text-primary leading-[1.3] mb-2.5">{t('Nothing slips through', '一单都不会漏')}</dt>
             <dd className="text-sm leading-[1.65] text-ink-700 m-0">{t('Every order in one list. Mark it done in one tap — no scrolling through chats.', '所有订单集中一处。一键标记完成，不必再翻聊天记录。')}</dd>
           </div>
           <div>
+            <Languages size={22} strokeWidth={1.5} className="text-primary mb-3" aria-hidden />
             <dt className="font-heading text-[19px] font-semibold text-primary leading-[1.3] mb-2.5">{t('Your customers read it in their own language', '顾客用自己的语言下单')}</dt>
             <dd className="text-sm leading-[1.65] text-ink-700 m-0">{t('Your shop shows in English or Chinese, whichever your customer prefers — write it once.', '店铺自动以中文或英文呈现，你只需写一次。')}</dd>
           </div>
         </dl>
-        </Reveal>
-      </section>
-
-      {/* ── What you get ── */}
-      {/* A SUMMARY, and the full list now lives on /features (#169) — same argument as the pricing
-          section below: two pages both listing every feature would be two URLs answering
-          "what does TinyOrder do", competing for the same authority. The first three entries of
-          FEATURES.ts stay here as the hook; the rest is one click away. Each uses its short
-          `teaser`, not the full `body` /features renders — the hook is meant to be read at a
-          glance, not to duplicate the detail page. */}
-      <section className="border-t border-border px-8 py-16 max-w-[900px] mx-auto w-full max-[600px]:px-5 max-[600px]:py-10">
-        <Reveal>
-          <h2 className={sectionTitle}>
-            {t('Everything you need to take orders online', '在线接单所需的一切')}
-          </h2>
-          <div className="grid [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))] gap-x-12 gap-y-9 max-[600px]:[grid-template-columns:1fr] max-[600px]:gap-7">
-            {FEATURES.slice(0, 3).map(f => (
-              <div key={f.id}>
-                <h3 className="font-heading text-[17px] font-semibold text-primary leading-[1.35] mb-2">
-                  {t(f.title.en, f.title.zh)}
-                </h3>
-                <p className="text-sm leading-[1.7] text-ink-700 m-0">
-                  {t(f.teaser!.en, f.teaser!.zh)}
-                </p>
-              </div>
-            ))}
-          </div>
-          <p className="mt-9 mb-0 text-center text-[13px] text-muted-foreground">
-            <Link to="/features" className="underline underline-offset-4 hover:text-primary">
-              {t('See all features', '查看全部功能')}
-            </Link>
-          </p>
+        {/* The link out to /features, which used to close a separate "What you get" section below
+            this one. That section re-argued what these three items already argue — it listed
+            FEATURES.slice(0, 3) under a heading meaning the same thing as this one — so it is
+            gone and its one load-bearing part, the internal link, moved here. */}
+        <p className="mt-10 mb-0 text-center text-[13px] text-muted-foreground">
+          <Link to="/features" className="underline underline-offset-4 hover:text-primary">
+            {t('See all features', '查看全部功能')}
+          </Link>
+        </p>
         </Reveal>
       </section>
 
