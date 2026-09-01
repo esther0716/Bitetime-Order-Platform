@@ -12,8 +12,8 @@ import {
   type StorefrontResolution,
   type StorefrontShop,
   type StorefrontProduct,
-} from '../src/seo/storefrontDocument'
-import { requestOrigin, backendUrl } from '../src/seo/edge'
+} from '../src/seo/storefrontDocument.js'
+import { requestOrigin, backendUrl } from '../src/seo/edge.js'
 
 // One in-flight shell fetch per warm function instance; cleared on failure so a blip does not
 // pin an error for the instance's lifetime.

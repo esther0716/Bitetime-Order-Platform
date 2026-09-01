@@ -21,3 +21,6 @@ apps/frontend/test-results
 apps/frontend/playwright-report
 apps/frontend/blob-report
 .superpowers/
+
+# Vercel CLI local link/build state
+.vercel

@@ -8,7 +8,14 @@
 //
 // The body stays the shell: humans get exactly the app they got before, and only the head
 // differs. That is the whole design — see the ADR for what was rejected and why.
-import { menuCategoriesFromRow } from '@bitetime/shared'
+// Reached by its path inside the shared package, not by the bare `@bitetime/shared`
+// specifier every other file uses, and the reason is the Vercel function runtime: @vercel/node
+// transpiles each .ts file on its own instead of bundling, so the emitted import string is what
+// Node resolves in the lambda. There is no node_modules there — the workspace symlink is gone —
+// and the package's `exports` names `./src/index.ts`, which the build never emits. Both make a
+// bare import a crash at invocation (FUNCTION_INVOCATION_FAILED), not a build error. The traced
+// file lands at packages/shared/src/, so this relative path is the one that resolves.
+import { menuCategoriesFromRow } from '../../../../packages/shared/src/menuCategories.js'
 
 export interface StorefrontShop {
   name: string
