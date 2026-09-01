@@ -50,8 +50,13 @@ async function openStorefront(page: Page, slug: string): Promise<void> {
   // Deliberately allowed to throw, like the marker wait above: a shop whose photographs never
   // settle drops off the carousel rather than appearing there with empty thumbnails. A shop that
   // has no photographs at all has no <img> to wait for and passes here at once.
+  //
+  // A STRING, not a function, and that is a compiler constraint rather than a style: this
+  // workspace is Node (`lib: ["ES2022"]`, no DOM), so a callback naming `document` fails
+  // `tsc --noEmit` with TS2584 even though it only ever runs in the browser. Playwright
+  // evaluates a string expression in the page exactly the same way.
   await page.waitForFunction(
-    () => [...document.images].every((img) => img.complete),
+    '[...document.images].every(img => img.complete)',
     null,
     { timeout: IMAGES_TIMEOUT_MS },
   )
