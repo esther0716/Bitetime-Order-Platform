@@ -74,6 +74,8 @@ interface BillingRow {
   stripe_customer_id: string | null
   stripe_subscription_id: string | null
   comped: boolean | null
+  /** Set when non-payment closed this shop. A payment may undo that; nothing else may. */
+  dunning_suspended_at: string | null
 }
 
 /**
@@ -98,7 +100,7 @@ export async function syncMerchantBilling(
 ): Promise<SyncResult> {
   const { data, error } = await admin
     .from('merchant_billing')
-    .select('status, stripe_customer_id, stripe_subscription_id, comped')
+    .select('status, stripe_customer_id, stripe_subscription_id, comped, dunning_suspended_at')
     .eq('merchant_id', merchantId)
     .maybeSingle()
   if (error) throw new Error(error.message)
@@ -124,7 +126,15 @@ export async function syncMerchantBilling(
   }
 
   // See the note above: only a shop closed for billing reasons is reopened by a payment.
-  const closedByHuman = merchantStatus === 'suspended' && LIVE_STATUSES.includes(row.status ?? '')
+  //
+  // `dunning_suspended_at` is what keeps that test honest now that non-payment closes a shop
+  // whose subscription Stripe still calls live. Without it, a merchant who paid an overdue
+  // invoice would be told `suspended_by_admin` and left shut — the stamp is the platform's own
+  // record that IT closed this shop, and for a reason money undoes.
+  const closedByHuman =
+    merchantStatus === 'suspended' &&
+    LIVE_STATUSES.includes(row.status ?? '') &&
+    !row.dunning_suspended_at
   if (closedByHuman) {
     return { merchantStatus, subscriptionStatus: sub.status, activated: false, reason: 'suspended_by_admin' }
   }
@@ -136,6 +146,11 @@ export async function syncMerchantBilling(
     return { merchantStatus, subscriptionStatus: sub.status, activated: false }
   }
   await setMerchantStatus(merchantId, 'active')
+  // Clears the dunning marks along with it, so this shop's next failed payment starts its three
+  // days from silence rather than from a stale stamp and a stale reminder clock.
+  if (row.dunning_suspended_at) {
+    await upsertBilling(merchantId, { dunning_suspended_at: null, past_due_notified_at: null })
+  }
   return { merchantStatus: 'active', subscriptionStatus: sub.status, activated: true }
 }
 

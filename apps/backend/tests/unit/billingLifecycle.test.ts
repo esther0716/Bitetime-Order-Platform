@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   canStartTrial, trialStartRefusal, buildTrialReminderEmail, isLapsed, needsReconcile,
-  dunningGraceExpired, PAST_DUE_GRACE_DAYS,
+  needsPastDueReminder, buildPastDueReminderEmail, buildShopClosedEmail, REMINDER_INTERVAL_MS,
 } from '../../src/billingLifecycle.js'
 
 describe('canStartTrial', () => {
@@ -60,41 +60,74 @@ describe('isLapsed', () => {
   })
 })
 
-describe('dunningGraceExpired', () => {
+describe('needsPastDueReminder', () => {
   const NOW = new Date('2026-09-02T12:00:00Z')
-  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000).toISOString()
 
-  // THE BUG THIS CLOSES. Stripe's default, after its last retry fails, is to leave the
-  // subscription `past_due` for ever — nothing in this repo configures otherwise for a renewal.
-  // So `isLapsed` waits for a status that never arrives and the shop sells indefinitely unpaid.
-  it('lapses a past_due subscription once the grace window has run out', () => {
-    expect(dunningGraceExpired('past_due', daysAgo(PAST_DUE_GRACE_DAYS), NOW)).toBe(true)
-    expect(dunningGraceExpired('past_due', daysAgo(40), NOW)).toBe(true)
+  // THE POINT. The sweep runs hourly, the reminder is daily. Without this the merchant gets
+  // twenty-four identical emails a day and learns to delete them — and the deletion habit is
+  // formed on the one warning that precedes their storefront closing.
+  it('holds off until a day has passed', () => {
+    expect(needsPastDueReminder(new Date(NOW.getTime() - 60_000).toISOString(), NOW)).toBe(false)
+    expect(needsPastDueReminder(new Date(NOW.getTime() - 12 * 3_600_000).toISOString(), NOW)).toBe(false)
   })
 
-  // The other half, and the reason for a window rather than closing on the first decline:
-  // Stripe's smart retries run for about two weeks, and a card that recovers on the last
-  // attempt must recover before the storefront ever goes dark.
-  it('leaves a shop alone while Stripe is still retrying', () => {
-    expect(dunningGraceExpired('past_due', daysAgo(1), NOW)).toBe(false)
-    expect(dunningGraceExpired('past_due', daysAgo(PAST_DUE_GRACE_DAYS - 1), NOW)).toBe(false)
+  it('sends again once the interval has elapsed', () => {
+    expect(needsPastDueReminder(new Date(NOW.getTime() - REMINDER_INTERVAL_MS).toISOString(), NOW)).toBe(true)
+    expect(needsPastDueReminder(new Date(NOW.getTime() - 3 * 24 * 3_600_000).toISOString(), NOW)).toBe(true)
   })
 
-  // Only dunning. A healthy shop's period start is weeks old by definition, so reading the
-  // status first is what stops this closing every shop on earth.
-  it('never fires on a status that is not past_due', () => {
-    expect(dunningGraceExpired('active', daysAgo(40), NOW)).toBe(false)
-    expect(dunningGraceExpired('trialing', daysAgo(40), NOW)).toBe(false)
-    expect(dunningGraceExpired('canceled', daysAgo(40), NOW)).toBe(false)
-    expect(dunningGraceExpired(null, daysAgo(40), NOW)).toBe(false)
+  // A shop nobody has told yet is always due: this is the email that says the payment failed at
+  // all, and withholding it is withholding the whole warning.
+  it('always sends the first one', () => {
+    expect(needsPastDueReminder(null, NOW)).toBe(true)
+    expect(needsPastDueReminder(undefined, NOW)).toBe(true)
+    expect(needsPastDueReminder('not-a-date', NOW)).toBe(true)
+  })
+})
+
+describe('buildPastDueReminderEmail', () => {
+  const base = {
+    shopName: 'Jess Cakes',
+    closesAt: new Date('2026-09-05T08:00:00Z'),
+    billingUrl: 'https://tinyorder.example/merchant#settings/subscription',
+  }
+
+  // The deadline is quoted as a DATE, not only as "3 days". The same email read a day later would
+  // otherwise be wrong, and the merchant has no way to tell.
+  it('names the shop, the closing date and where to pay', () => {
+    const { subject, text } = buildPastDueReminderEmail({ ...base, daysLeft: 3 })
+    expect(subject).toContain('Jess Cakes')
+    expect(subject).toContain('in 3 days')
+    expect(text).toContain('Sep 5, 2026')
+    expect(text).toContain(base.billingUrl)
   })
 
-  // No date, no lapse. A missing or unparseable timestamp measures nothing, and guessing
-  // "probably long enough" takes a paying merchant's storefront down.
-  it('refuses to lapse without a usable period start', () => {
-    expect(dunningGraceExpired('past_due', null, NOW)).toBe(false)
-    expect(dunningGraceExpired('past_due', undefined, NOW)).toBe(false)
-    expect(dunningGraceExpired('past_due', 'not-a-date', NOW)).toBe(false)
+  // "in 1 days" and "in 0 days" are what a merchant remembers about the platform that sent them.
+  it('words the last two days as a person would', () => {
+    expect(buildPastDueReminderEmail({ ...base, daysLeft: 1 }).subject).toContain('tomorrow')
+    expect(buildPastDueReminderEmail({ ...base, daysLeft: 0 }).subject).toContain('today')
+  })
+
+  // Nothing is deleted and the shop reopens by itself — a merchant who believes otherwise
+  // rebuilds a menu they still have, or does not come back at all.
+  it('says the shop reopens on payment', () => {
+    expect(buildPastDueReminderEmail({ ...base, daysLeft: 2 }).text).toMatch(/reopens? by itself|reopens/)
+  })
+})
+
+describe('buildShopClosedEmail', () => {
+  const built = buildShopClosedEmail({
+    shopName: 'Jess Cakes',
+    billingUrl: 'https://tinyorder.example/merchant#settings/subscription',
+  })
+
+  // A different fact from the reminders — customers can no longer order — so it must not read as
+  // the fourth copy of the same warning.
+  it('reports the closure and how to undo it', () => {
+    expect(built.subject).toContain('closed')
+    expect(built.text).toContain('cannot place orders')
+    expect(built.text).toContain('reopens automatically')
+    expect(built.text).toContain('do not need to sign up again')
   })
 })
 

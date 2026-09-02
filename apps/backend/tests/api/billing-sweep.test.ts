@@ -13,6 +13,16 @@ import { billingSweepDeps } from '../../src/billingSweep.js'
 import { makeUser, seedMerchant, serviceClient, resetMerchant } from '../rls/helpers.js'
 
 const REAL_FETCH = billingSweepDeps.fetchSubscription
+const REAL_SEND = billingSweepDeps.sendEmail
+
+/** Every notice this sweep sent, so the dunning cases can assert on what a merchant was told. */
+function captureEmail() {
+  const sent: { to: string; subject: string; text: string }[] = []
+  billingSweepDeps.sendEmail = async (to, subject, body) => {
+    sent.push({ to, subject, text: body.text })
+  }
+  return sent
+}
 
 function sweep(secret?: string) {
   return app.request('/api/internal/billing-sweep', {
@@ -88,17 +98,21 @@ async function shopOf(merchantId: string) {
 
 async function seedShop(slug: string, email: string, opts: {
   billing: Record<string, unknown>
+  status?: 'active' | 'suspended'
 }) {
   await resetMerchant(slug)
   const owner = await makeUser(email, 'password123')
   const { data } = await owner.auth.getSession()
-  const id = await seedMerchant({ slug, owner_id: data.session!.user.id })
+  const id = await seedMerchant({ slug, owner_id: data.session!.user.id, status: opts.status })
   await serviceClient().from('merchant_billing').upsert({ merchant_id: id, ...opts.billing })
   return id
 }
 
 describe('POST /api/internal/billing-sweep', () => {
-  afterEach(() => { billingSweepDeps.fetchSubscription = REAL_FETCH })
+  afterEach(() => {
+    billingSweepDeps.fetchSubscription = REAL_FETCH
+    billingSweepDeps.sendEmail = REAL_SEND
+  })
 
   it('refuses with no secret configured', async () => {
     const saved = env.billingSweepSecret
@@ -152,7 +166,7 @@ describe('POST /api/internal/billing-sweep', () => {
   // configures otherwise, unlike the trial's `missing_payment_method: 'cancel'`. So no status
   // ever moves, `isLapsed` never fires, and the shop sells indefinitely without paying. Note the
   // period end is in the FUTURE, as Stripe leaves it on a subscription in dunning.
-  it('closes a shop that has sat past_due beyond the grace window', async () => {
+  it('closes a shop that has sat past_due beyond the grace window, and says so', async () => {
     const id = await seedShop('sweep-dunning-shop', 'sweep-dunning@example.com', {
       billing: {
         status: 'past_due',
@@ -160,18 +174,87 @@ describe('POST /api/internal/billing-sweep', () => {
         current_period_end: ahead(20 * 24 * 60 * 60_000),
       },
     })
-    answerWith(subscription('sub_sweep_dunning', 'past_due', undefined, secondsAgoDays(30)))
+    answerWith(subscription('sub_sweep_dunning', 'past_due', undefined, secondsAgoDays(5)))
+    const sent = captureEmail()
 
     const res = await sweep(env.billingSweepSecret)
     expect((await res.json() as { lapsed: number }).lapsed).toBeGreaterThanOrEqual(1)
     expect((await shopOf(id)).status).toBe('suspended')
 
+    // The merchant is TOLD. A storefront that stops taking orders with no email is a merchant
+    // who finds out from a customer, and the closure is undoable only if they know about it.
+    const closed = sent.find(m => m.to === 'sweep-dunning@example.com')
+    expect(closed?.subject).toContain('closed')
+    expect(closed?.text).toContain('reopens automatically')
+
+    // Stamped as OUR closure — the record that lets a payment reopen it, and that keeps a
+    // moderation suspension from being reopened by one.
+    const { data: row } = await serviceClient()
+      .from('merchant_billing').select('dunning_suspended_at').eq('merchant_id', id).single()
+    expect(row!.dunning_suspended_at).toBeTruthy()
+
     await serviceClient().from('merchants').delete().eq('id', id)
   })
 
-  // The half that keeps that safe. Stripe's smart retries run about two weeks, so a shop three
-  // days into dunning may still be paid by the next attempt — closing it now would take a live
-  // storefront dark over one declined charge.
+  // The daily nag, and the whole point of a grace window: three days of warning, not a surprise.
+  it('reminds a merchant whose shop is still open on an unpaid invoice', async () => {
+    const id = await seedShop('sweep-dunning-warn', 'sweep-dunning-warn@example.com', {
+      billing: {
+        status: 'past_due',
+        stripe_subscription_id: 'sub_sweep_warn',
+        current_period_end: ahead(27 * 24 * 60 * 60_000),
+      },
+    })
+    answerWith(subscription('sub_sweep_warn', 'past_due', undefined, secondsAgoDays(1)))
+    const sent = captureEmail()
+
+    await sweep(env.billingSweepSecret)
+
+    const warned = sent.find(m => m.to === 'sweep-dunning-warn@example.com')
+    expect(warned?.subject).toContain('closes')
+    expect((await shopOf(id)).status).toBe('active')
+
+    // Stamped, so the next of the twenty-four hourly runs today sends nothing.
+    const { data: row } = await serviceClient()
+      .from('merchant_billing').select('past_due_notified_at').eq('merchant_id', id).single()
+    expect(row!.past_due_notified_at).toBeTruthy()
+
+    const again = captureEmail()
+    await sweep(env.billingSweepSecret)
+    expect(again.filter(m => m.to === 'sweep-dunning-warn@example.com')).toEqual([])
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  // The way back. A shop closed for non-payment reopens on the money arriving — here through the
+  // sweep, which is the backstop for the `customer.subscription.updated` that says so.
+  it('reopens a shop it closed once the invoice is paid', async () => {
+    const id = await seedShop('sweep-dunning-paid', 'sweep-dunning-paid@example.com', {
+      status: 'suspended',
+      billing: {
+        status: 'past_due',
+        stripe_subscription_id: 'sub_sweep_paid',
+        current_period_end: ahead(27 * 24 * 60 * 60_000),
+        dunning_suspended_at: ago(2 * 60 * 60_000),
+        past_due_notified_at: ago(2 * 60 * 60_000),
+      },
+    })
+    answerWith(subscription('sub_sweep_paid', 'active', undefined, secondsAgoDays(1)))
+
+    await sweep(env.billingSweepSecret)
+
+    expect((await shopOf(id)).status).toBe('active')
+    // Both marks cleared, so this shop's NEXT failed payment starts its three days from silence.
+    const { data: row } = await serviceClient()
+      .from('merchant_billing')
+      .select('dunning_suspended_at, past_due_notified_at').eq('merchant_id', id).single()
+    expect(row).toEqual({ dunning_suspended_at: null, past_due_notified_at: null })
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  // The half that keeps that safe. A card that fails on Monday is often paid on Tuesday, and
+  // closing the storefront on the first decline takes a live shop dark over a bank's whim.
   it('leaves a shop open while it is still inside the dunning grace window', async () => {
     const id = await seedShop('sweep-dunning-early', 'sweep-dunning-early@example.com', {
       billing: {
@@ -180,7 +263,7 @@ describe('POST /api/internal/billing-sweep', () => {
         current_period_end: ahead(27 * 24 * 60 * 60_000),
       },
     })
-    const asked = answerWith(subscription('sub_sweep_early', 'past_due', undefined, secondsAgoDays(3)))
+    const asked = answerWith(subscription('sub_sweep_early', 'past_due', undefined, secondsAgoDays(1)))
 
     await sweep(env.billingSweepSecret)
 

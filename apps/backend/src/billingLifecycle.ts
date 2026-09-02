@@ -7,6 +7,12 @@ export interface BillingRow {
   status?: string | null
   trial_ends_at?: string | null
   current_period_end?: string | null
+  /** Start of the period the shop has not paid for — the grace clock. See @bitetime/shared. */
+  current_period_start?: string | null
+  /** When the merchant was last told to settle. Null means never. */
+  past_due_notified_at?: string | null
+  /** Set when non-payment closed this shop; cleared when a payment reopens it. */
+  dunning_suspended_at?: string | null
   comped?: boolean | null
 }
 
@@ -20,55 +26,14 @@ export interface BillingRow {
  * service; a shop closed on a status we misread is a merchant's storefront dark with orders
  * coming in and no idea why.
  *
- * `past_due` is NOT here. It is Stripe still retrying the card, which is what dunning is; the
- * shop stays open until Stripe gives up — but Stripe reporting one of these three is NOT the only
- * way that happens. See `dunningGraceExpired`.
+ * `past_due` is NOT here. It is Stripe still retrying the card, which is what dunning is — but
+ * dunning does not reliably END, so a status is not the only thing that closes a shop. See
+ * `pastDueGraceExpired` in @bitetime/shared, and `reconcileOne` in billingSweep.ts.
  */
 export const LAPSED_STATUSES = ['canceled', 'incomplete_expired', 'unpaid']
 
 export function isLapsed(status: string | null | undefined): boolean {
   return !!status && LAPSED_STATUSES.includes(status)
-}
-
-/**
- * How long a `past_due` shop may stay open after the period it did not pay for began.
- *
- * 14 days covers Stripe's default smart-retry schedule, so a card that recovers on the last
- * attempt recovers before the storefront ever closes.
- */
-export const PAST_DUE_GRACE_DAYS = 14
-
-const DAY_MS = 24 * 60 * 60 * 1000
-
-/**
- * Has a `past_due` subscription sat unpaid long enough to close the shop?
- *
- * WHY THIS EXISTS, and why `isLapsed` alone was not enough. `LAPSED_STATUSES` assumes dunning
- * ENDS — that Stripe eventually reports `canceled` or `unpaid`. Whether it does is a Stripe
- * DASHBOARD setting, not anything this repo sets: the trial has an end behaviour
- * (`trial_settings.missing_payment_method: 'cancel'`, see trialSubscription.ts) but a failed
- * RENEWAL has none, and Stripe's default after the last retry is to leave the subscription
- * `past_due` for ever. So a shop whose card died stayed `active`, served orders, and was re-read
- * by the sweep every hour and called healthy every hour, because no status ever changed. That is
- * the state this closes.
- *
- * The clock is the unpaid period's START, not its end: Stripe advances the billing period when it
- * creates the renewal invoice, whether or not that invoice is paid, so `current_period_end` on a
- * `past_due` subscription is a month in the FUTURE and measures nothing.
- *
- * Pure and conservative: no timestamp, no lapse. A shop left open one sweep too long costs a few
- * hours of service; a shop closed on a date misread is a merchant dark with orders coming in.
- */
-export function dunningGraceExpired(
-  status: string | null | undefined,
-  periodStart: string | null | undefined,
-  now: Date,
-  graceDays: number = PAST_DUE_GRACE_DAYS,
-): boolean {
-  if (status !== 'past_due' || !periodStart) return false
-  const started = new Date(periodStart).getTime()
-  if (Number.isNaN(started)) return false
-  return now.getTime() - started >= graceDays * DAY_MS
 }
 
 /** The billing-row statuses this sweep considers still-running, and so worth re-checking. */
@@ -121,9 +86,16 @@ export function needsReconcile(billing: BillingRow, now: Date): boolean {
   // A `past_due` row is ALWAYS worth re-reading, whatever its stored deadline says. Stripe moves
   // the period forward when it issues the unpaid invoice, so a shop in dunning carries a
   // `current_period_end` a month in the future — the deadline test below drops it, and the shop
-  // then goes a whole month unexamined while `dunningGraceExpired` has nothing to run on. The
+  // then goes a whole month unexamined while the grace deadline has nothing to run on. The
   // cost of the exception is one Stripe call an hour per shop in dunning, which is a small set.
   if (billing.status === 'past_due') return true
+
+  // And so is a shop this sweep CLOSED for non-payment. Its status may already read `active`
+  // again — the merchant paid — while the storefront is still shut, waiting on a
+  // `customer.subscription.updated` that may never arrive. Dropping it here would leave a paying
+  // merchant closed indefinitely, which is the same lost-webhook failure pointed the expensive
+  // way round.
+  if (billing.dunning_suspended_at) return true
 
   const elapsed = (iso: string | null | undefined) =>
     !!iso && new Date(iso).getTime() <= now.getTime()
@@ -145,6 +117,88 @@ export function canStartTrial(billing: BillingRow | null | undefined): boolean {
 export function trialStartRefusal(m: { status?: string | null }): string | null {
   if (m.status !== 'pending') return 'Merchant is not pending'
   return null
+}
+
+/**
+ * Is the merchant due another "settle your invoice" reminder?
+ *
+ * The sweep runs HOURLY and the reminder is DAILY, so without this a shop in dunning gets
+ * twenty-four identical emails a day and the merchant learns to delete them — which defeats the
+ * only warning they get before the storefront closes.
+ *
+ * 20 hours, not 24: the sweep fires at a fixed minute past the hour, so a strict 24 would drift a
+ * whole day forward every time an hourly run was slow or skipped, and a three-day window has room
+ * for exactly three reminders. 20 keeps them landing at roughly the same hour each day.
+ *
+ * Never notified (null) is always due — that is the first failure, and it is the reminder that
+ * tells the merchant this is happening at all.
+ */
+export const REMINDER_INTERVAL_MS = 20 * 60 * 60 * 1000
+
+export function needsPastDueReminder(lastNotifiedAt: string | null | undefined, now: Date): boolean {
+  if (!lastNotifiedAt) return true
+  const last = new Date(lastNotifiedAt).getTime()
+  if (Number.isNaN(last)) return true
+  return now.getTime() - last >= REMINDER_INTERVAL_MS
+}
+
+export interface PastDueNoticeInput {
+  shopName: string
+  /** When the storefront closes (or closed) — the deadline both sides count to. */
+  closesAt: Date
+  /** Whole days left, as the banner words it. 0 means "today". */
+  daysLeft: number
+  billingUrl: string
+}
+
+const noticeDate = (d: Date) =>
+  d.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC'
+
+/**
+ * The daily reminder while a shop is still open on an unpaid invoice.
+ *
+ * Says the DATE, not just "soon". A merchant deciding whether to deal with this today needs to
+ * know what today costs them, and "3 days" in an email read on day two is a lie the reader cannot
+ * detect.
+ */
+export function buildPastDueReminderEmail({ shopName, closesAt, daysLeft, billingUrl }: PastDueNoticeInput) {
+  const when = daysLeft === 0 ? 'today' : daysLeft === 1 ? 'tomorrow' : `in ${daysLeft} days`
+  const subject = `Payment failed for ${shopName} — your shop closes ${when}`
+  const text = `Hi,
+
+We could not take the subscription payment for ${shopName}, so the invoice is unpaid.
+
+Your storefront stays open until ${noticeDate(closesAt)} (${when}). After that it closes to customers until the payment goes through.
+
+Update your card or pay the invoice here:
+${billingUrl}
+
+Your menu, orders and settings are untouched — a closed shop reopens by itself the moment the payment succeeds.
+
+— TinyOrder`
+  return { subject, text }
+}
+
+/**
+ * The notice that the storefront has actually closed.
+ *
+ * A separate email from the reminders, because it reports a different fact: customers can no
+ * longer order. It must also say how to undo it, since the undo is not "sign up again" — the
+ * subscription is still there and still being retried.
+ */
+export function buildShopClosedEmail({ shopName, billingUrl }: Omit<PastDueNoticeInput, 'closesAt' | 'daysLeft'>) {
+  const subject = `${shopName} is closed — unpaid subscription`
+  const text = `Hi,
+
+The subscription payment for ${shopName} is still unpaid, so the storefront is now closed. Customers cannot place orders.
+
+Pay the invoice or update your card here:
+${billingUrl}
+
+Your shop reopens automatically as soon as the payment succeeds — nothing is deleted, and you do not need to sign up again.
+
+— TinyOrder`
+  return { subject, text }
 }
 
 export interface TrialReminderInput {

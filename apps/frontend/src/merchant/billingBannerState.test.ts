@@ -49,7 +49,30 @@ describe('billingBannerState', () => {
   })
 
   it('flags past_due for the failed-renewal banner', () => {
-    expect(billingBannerState({ status: 'past_due' }, NOW)).toEqual({ kind: 'past-due' })
+    expect(billingBannerState({ status: 'past_due' }, NOW))
+      .toEqual({ kind: 'past-due', closesAt: null, daysLeft: 3 })
+  })
+
+  // The banner counts down to the deadline the SWEEP acts on, from the same field and the same
+  // rule (@bitetime/shared → pastDueDeadline). A merchant told "closes Friday" whose shop closed
+  // on Thursday was lied to by software; one rule with one copy is what rules that out.
+  it('counts down to the day the shop closes', () => {
+    const started = new Date(NOW.getTime() - 2 * 24 * 3_600_000).toISOString()
+    expect(billingBannerState({ status: 'past_due', current_period_start: started }, NOW))
+      .toEqual({
+        kind: 'past-due',
+        closesAt: new Date(NOW.getTime() + 24 * 3_600_000).toISOString(),
+        daysLeft: 1,
+      })
+  })
+
+  // Past the deadline the banner does not go negative or vanish: the sweep closes the shop within
+  // the hour, and until it does the merchant is looking at their last chance to prevent it.
+  it('floors the countdown at zero rather than going negative', () => {
+    const started = new Date(NOW.getTime() - 9 * 24 * 3_600_000).toISOString()
+    expect(billingBannerState({ status: 'past_due', current_period_start: started }, NOW).kind).toBe('past-due')
+    const state = billingBannerState({ status: 'past_due', current_period_start: started }, NOW)
+    expect(state.kind === 'past-due' && state.daysLeft).toBe(0)
   })
 })
 

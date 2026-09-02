@@ -22,11 +22,15 @@ import { stripe } from './stripe.js'
 import { admin } from './supabase.js'
 import {
   upsertBilling, billingFromSubscription, reconcileBillingCycle, lapseMerchant,
-  subscriptionPeriodStart,
+  markDunningSuspended, reopenAfterPayment, LIVE_STATUSES,
 } from './billing.js'
 import {
-  isLapsed, dunningGraceExpired, needsReconcile, PAST_DUE_GRACE_DAYS, type BillingRow,
+  isLapsed, needsReconcile, needsPastDueReminder,
+  buildPastDueReminderEmail, buildShopClosedEmail, type BillingRow,
 } from './billingLifecycle.js'
+import { pastDueDeadline, pastDueDaysLeft, pastDueGraceExpired } from '@bitetime/shared'
+import { resendSend } from './email.js'
+import { env } from './env.js'
 
 /**
  * The one outbound adapter, held in a mutable object so tests can drive every branch without a
@@ -35,6 +39,9 @@ import {
  */
 export const billingSweepDeps = {
   fetchSubscription: (id: string): Promise<Stripe.Subscription> => stripe.subscriptions.retrieve(id),
+  // The dunning notices. Held here for the same reason the lookup is: a suite that cannot choose
+  // what the outside world does cannot test what this file decides.
+  sendEmail: resendSend,
 }
 
 interface StaleRow extends BillingRow {
@@ -61,7 +68,8 @@ export async function findStaleBilling(now: Date): Promise<StaleRow[]> {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await admin
       .from('merchant_billing')
-      .select('merchant_id, status, stripe_subscription_id, trial_ends_at, current_period_end, comped')
+      // One string literal, long: a concatenation defeats supabase-js's column typing.
+      .select('merchant_id, status, stripe_subscription_id, trial_ends_at, current_period_end, current_period_start, past_due_notified_at, dunning_suspended_at, comped')
       .in('status', ['trialing', 'active', 'past_due'])
       .not('stripe_subscription_id', 'is', null)
       // `not comped is true` rather than `comped is false`: the column is nullable, and a null
@@ -69,8 +77,14 @@ export async function findStaleBilling(now: Date): Promise<StaleRow[]> {
       .not('comped', 'is', true)
       // `status.eq.past_due` is a third disjunct, not a deadline: a shop in dunning carries a
       // period end in the FUTURE (Stripe advances the period when it issues the unpaid invoice),
-      // so the two deadline tests alone would never select it. See `needsReconcile`.
-      .or(`trial_ends_at.lte.${iso},current_period_end.lte.${iso},status.eq.past_due`)
+      // so the two deadline tests alone would never select it. `dunning_suspended_at` is a
+      // fourth. A shop closed for non-payment carries a status Stripe may already call `active`
+      // again — it is in the list so the sweep can REOPEN it when the payment lands and the
+      // webhook that says so went missing.
+      .or(
+        `trial_ends_at.lte.${iso},current_period_end.lte.${iso},status.eq.past_due,` +
+        `dunning_suspended_at.not.is.null`,
+      )
       .order('merchant_id')
       .range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)
@@ -101,21 +115,28 @@ export interface SweepResult {
  */
 async function reconcileOne(row: StaleRow, now: Date): Promise<'lapsed' | 'refreshed'> {
   const sub = await billingSweepDeps.fetchSubscription(row.stripe_subscription_id!)
-  await upsertBilling(row.merchant_id, billingFromSubscription(sub))
+  const fields = billingFromSubscription(sub)
+  await upsertBilling(row.merchant_id, fields)
 
-  // TWO ways a subscription stops paying for the shop, and only the first is a status. The
-  // second is a `past_due` one that has been retried past the grace window: Stripe's default
-  // after its last retry is to leave the status `past_due` for ever, so waiting for `canceled`
-  // means waiting for something that never comes.
-  const exhausted = dunningGraceExpired(sub.status, subscriptionPeriodStart(sub), now)
-  if (isLapsed(sub.status) || exhausted) {
-    if (exhausted) {
-      console.log(
-        `billing sweep: subscription ${sub.id} for merchant ${row.merchant_id} has been ` +
-          `past_due for over ${PAST_DUE_GRACE_DAYS} days — suspending the shop.`,
-      )
-    }
+  // TWO ways a subscription stops paying for the shop, and only the first is a status. The second
+  // is a `past_due` one past its grace: Stripe's default after its final retry is to leave the
+  // status `past_due` for ever, so waiting for `canceled` is waiting for something that may never
+  // come — and meanwhile the shop sells on credit.
+  const graceExpired = pastDueGraceExpired(sub.status, fields.current_period_start, now)
+  if (isLapsed(sub.status) || graceExpired) {
     await lapseMerchant(row.merchant_id)
+    if (graceExpired) {
+      // Stamped before the email, so a send that throws cannot leave the shop closed with the
+      // reason unrecorded — the row is what tells a later payment this closure may be undone.
+      await markDunningSuspended(row.merchant_id, now)
+      // Only on the run that actually closes it: `dunning_suspended_at` already set means this
+      // shop was closed on an earlier sweep and the merchant has been told once already.
+      if (!row.dunning_suspended_at) {
+        await notify(row.merchant_id, shop => buildShopClosedEmail({
+          shopName: shop, billingUrl: `${env.frontendUrl}/merchant#settings/subscription`,
+        }))
+      }
+    }
     return 'lapsed'
   }
 
@@ -123,7 +144,68 @@ async function reconcileOne(row: StaleRow, now: Date): Promise<'lapsed' | 'refre
   // the same reason `customer.subscription.updated` does: the price on the subscription is what
   // the shop is actually paying for, and a missed portal swap leaves the column lying.
   await reconcileBillingCycle(row.merchant_id, sub)
+
+  if (sub.status === 'past_due') {
+    await remindPastDue(row, fields.current_period_start ?? null, now)
+  } else if (row.dunning_suspended_at && LIVE_STATUSES.includes(sub.status)) {
+    // The payment landed and the shop is still shut — the backstop for a
+    // `customer.subscription.updated` that never arrived, which is the same lost-webhook failure
+    // this whole file exists for, in the direction that costs the merchant money rather than us.
+    await reopenAfterPayment(row.merchant_id)
+    console.log(`billing sweep: merchant ${row.merchant_id} paid — storefront reopened.`)
+  }
+
   return 'refreshed'
+}
+
+/**
+ * Tell the merchant, once a day, that their shop closes on a date — and stamp that we did.
+ *
+ * Not fatal. A shop must not be left un-reconciled because Resend was down: the reconciliation is
+ * already written, and an unstamped row simply tries again on the next hourly run.
+ */
+async function remindPastDue(row: StaleRow, periodStart: string | null, now: Date) {
+  if (!needsPastDueReminder(row.past_due_notified_at, now)) return
+  const closesAt = pastDueDeadline(periodStart)
+  if (!closesAt) return // no deadline to quote, and quoting the wrong one is worse than silence
+
+  try {
+    const sent = await notify(row.merchant_id, shop => buildPastDueReminderEmail({
+      shopName: shop,
+      closesAt,
+      daysLeft: pastDueDaysLeft(periodStart, now),
+      billingUrl: `${env.frontendUrl}/merchant#settings/subscription`,
+    }))
+    if (sent) await upsertBilling(row.merchant_id, { past_due_notified_at: now.toISOString() })
+  } catch (err) {
+    console.error(
+      `billing sweep: past-due reminder failed for merchant ${row.merchant_id}:`,
+      err instanceof Error ? err.message : String(err),
+    )
+  }
+}
+
+/**
+ * Send one merchant-facing notice, addressed to the shop OWNER.
+ *
+ * The address comes from Auth rather than `profiles`, for the reason the trial reminder gives:
+ * the profile row may not exist. Returns false when there is nobody to write to, so the caller
+ * does not record a reminder that was never sent.
+ */
+async function notify(
+  merchantId: string,
+  build: (shopName: string) => { subject: string; text: string },
+): Promise<boolean> {
+  const { data: merchant } = await admin
+    .from('merchants').select('name, owner_id').eq('id', merchantId).maybeSingle()
+  if (!merchant?.owner_id) return false
+  const { data: ownerUser } = await admin.auth.admin.getUserById(merchant.owner_id)
+  const email = ownerUser?.user?.email
+  if (!email) return false
+
+  const { subject, text } = build(merchant.name || 'your shop')
+  await billingSweepDeps.sendEmail(email, subject, { text })
+  return true
 }
 
 /**
