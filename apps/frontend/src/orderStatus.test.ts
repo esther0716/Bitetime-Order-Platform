@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ORDER_STATUSES, STATUS_LABELS, STATUS_BADGE } from './orderStatus'
+import { ORDER_STATUSES, STATUS_LABELS, STATUS_BADGE, isStatusFinal } from './orderStatus'
 
 describe('order statuses', () => {
   it('still has all six members', () => {
@@ -63,5 +63,26 @@ describe('the four-tone vocabulary', () => {
      one becomes indistinguishable from that status instead of visibly untaught. */
   it('leaves the neutral tone to unrecognised statuses only', () => {
     for (const s of ORDER_STATUSES) expect(classOf(s), s).not.toMatch(/neutral/)
+  })
+})
+
+/* ADR 0024. `completed` is the one status the merchant cannot move off, because the move it
+   stops — completed → cancelled — hands back the voucher use on delivered goods (ADR 0023).
+   `cancelled` must stay changeable or ADR 0023's un-cancel dies with it. */
+describe('isStatusFinal', () => {
+  it('freezes completed', () => {
+    expect(isStatusFinal('completed')).toBe(true)
+  })
+
+  it('leaves every other status changeable, cancelled included', () => {
+    for (const s of ORDER_STATUSES.filter(s => s !== 'completed')) {
+      expect(isStatusFinal(s)).toBe(false)
+    }
+  })
+
+  it('treats an absent status as changeable', () => {
+    expect(isStatusFinal(null)).toBe(false)
+    expect(isStatusFinal(undefined)).toBe(false)
+    expect(isStatusFinal('')).toBe(false)
   })
 })

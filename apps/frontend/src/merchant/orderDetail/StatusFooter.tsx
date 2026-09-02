@@ -1,5 +1,5 @@
 import { useSession } from '../../SessionContext'
-import { ORDER_STATUSES, STATUS_LABELS } from '../../orderStatus'
+import { ORDER_STATUSES, STATUS_LABELS, isStatusFinal } from '../../orderStatus'
 import { nextStatus } from './nextStatus'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
  *
  * One `Select` serves both shapes. There is no `useMediaQuery` in this codebase and no reason
  * to add one: the only difference is how the trigger is dressed, which is a class.
+ *
+ * A COMPLETED order renders NOTHING — see `isStatusFinal`. Not a disabled `Select`, which still
+ * invites the merchant to open it and read six moves none of which are available; and not the
+ * badge on its own either, because `OrderHeader` is already showing that badge four inches above.
+ * A suspended shop's drawer has had no footer for the same reason: where there is no move to
+ * make, the bar is a strip of chrome saying what the header said.
  */
 export default function StatusFooter({
   status,
@@ -24,6 +30,9 @@ export default function StatusFooter({
   onChange: (status: string) => void
 }) {
   const { t } = useSession()
+
+  if (isStatusFinal(status)) return null
+
   const next = nextStatus(status)
   const statusItems = ORDER_STATUSES.map(s => ({
     value: s,

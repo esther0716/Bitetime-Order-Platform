@@ -1446,6 +1446,22 @@ app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, requireOwns
   if ('status' in patch && !ORDER_STATUSES.includes(patch.status as string)) {
     return c.json({ error: 'Invalid status' }, 400)
   }
+
+  // A completed order's status is FINAL (ADR 0024). This is the enforcement point, not the UI:
+  // the drawer hides the control, but the control is not a boundary, and the one move this
+  // refusal exists for — completed → cancelled — RELEASES the voucher redemption the order spent
+  // (ADR 0023), on goods the shop already handed over.
+  //
+  // A null status MEANS 'new' (the storefront wrote the column late), so the coalesce matches the
+  // rest of this file. Only a status that DIFFERS is refused: an identical value changes nothing,
+  // and a retried patch must stay a no-op rather than becoming an error. Note, courier and awb
+  // stay writable on a completed order — a shop files an AWB after the fact, and nothing about
+  // that is a status change.
+  const currentStatus = (c.get('child')?.status as string | null) ?? 'new'
+  if ('status' in patch && currentStatus === 'completed' && patch.status !== currentStatus) {
+    return c.json({ error: 'order_completed' }, 409)
+  }
+
   if (Object.keys(patch).length === 0) return c.json({ error: 'No updatable fields' }, 400)
   const { data, error } = await admin.from('orders').update(patch).eq('id', orderId).select().single()
   if (error) return c.json({ error: 'Update failed' }, 500)

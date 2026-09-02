@@ -11,6 +11,21 @@ export const STATUS_LABELS: Record<string, { en: string; zh: string }> = {
   cancelled: { en: 'Cancelled', zh: '已取消' },
 }
 
+/**
+ * A status no further status change is allowed from.
+ *
+ * `completed` alone. The order is done, and the one move that made this necessary is
+ * completed → cancelled: a cancellation RELEASES the voucher redemption the order spent
+ * (ADR 0023), which on an order the shop already handed over gives the use back for nothing.
+ * `cancelled` is deliberately NOT final — ADR 0023 needs un-cancelling to keep working.
+ *
+ * A duplicate of the backend rule in `app.ts`, on purpose: the backend is authoritative and
+ * refuses the patch with 409 `order_completed`. This copy only decides what the drawer draws.
+ */
+export function isStatusFinal(status: string | null | undefined): boolean {
+  return status === 'completed'
+}
+
 type BadgeConfig = { className: string }
 
 /* An unrecognised status is not a colour decision — it is a status this file has not been

@@ -181,6 +181,27 @@ describe('cancelling an order releases its voucher redemption', () => {
     expect((await redemptionsOfOrder(orderId))[0].voided_at).toEqual(once)
   })
 
+  it('cannot free a slot by cancelling a COMPLETED order', async () => {
+    // ADR 0024, asserted where it matters: against the cap, not the column. A shop that has
+    // already handed the goods over must not be able to give the voucher use back.
+    await seedVoucher(shop, 'DONE1', { max_uses: 1 })
+
+    const first = await placeOrder(shop, productId, 'DONE1', customerToken)
+    const { id: orderId } = (await first.json()) as { id: string }
+
+    expect((await patchOrder(shop, orderId, { status: 'completed' }, ownerToken)).status).toBe(200)
+
+    const refused = await patchOrder(shop, orderId, { status: 'cancelled' }, ownerToken)
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toEqual({ error: 'order_completed' })
+    expect((await redemptionsOfOrder(orderId))[0].voided_at).toBeNull()
+
+    // The slot never came back.
+    const blocked = await placeOrder(shop, productId, 'DONE1', strangerToken)
+    expect(blocked.status).toBe(409)
+    expect(await blocked.json()).toEqual({ error: 'voucher_fully_used' })
+  })
+
   it('leaves the redemption alone for a patch that is not a status change', async () => {
     await seedVoucher(shop, 'NOTE1', { max_uses: 1 })
 
