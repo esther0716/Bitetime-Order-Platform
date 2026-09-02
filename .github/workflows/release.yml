@@ -85,6 +85,7 @@ jobs:
         env:
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
           RELEASE_PULL_SECRET: ${{ secrets.RELEASE_PULL_SECRET }}
+          VERSION: ${{ steps.version.outputs.value }}
         run: |
           if [ -z "$BACKEND_URL" ] || [ -z "$RELEASE_PULL_SECRET" ]; then
             echo "BACKEND_URL or RELEASE_PULL_SECRET is not set — pull the release by hand from /admin." >&2
@@ -98,11 +99,19 @@ jobs:
           #
           # 403 is not that window: it means the two secrets disagree, and no amount of waiting
           # fixes it. Fail on the first one rather than spending five minutes proving it.
+          # The tag is NAMED, and that is what makes the retry loop mean something. GitHub serves
+          # the release LIST with `Cache-Control: max-age=60`, and this step runs about two
+          # seconds after the tag was cut — so a list read here regularly predates the release,
+          # and the pull answered 200 with `{"pulled":0}` while storing nothing. The release then
+          # sat unlisted until the NEXT one carried it in. Asking for this tag reads a key GitHub
+          # has never been asked for, and a tag it cannot show yet is a 502 the loop waits out.
           for attempt in $(seq 1 10); do
             status=$(curl --silent --show-error --max-time 60 \
               -o /tmp/pull-body -w '%{http_code}' \
               -X POST "$BACKEND_URL/api/internal/releases-pull" \
-              -H "x-sweep-secret: $RELEASE_PULL_SECRET") || status=000
+              -H "x-sweep-secret: $RELEASE_PULL_SECRET" \
+              -H 'Content-Type: application/json' \
+              -d "{\"tag\":\"$VERSION\"}") || status=000
             cat /tmp/pull-body 2>/dev/null || true
             case "$status" in
               2??) echo "Pulled the release into the app as a draft." >> "$GITHUB_STEP_SUMMARY"; exit 0 ;;

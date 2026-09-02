@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
 import { useSession } from '../SessionContext'
-import { startCheckout } from '../store'
+import { startCheckout, fetchMyBilling, openBillingPortal } from '../store'
 import { trackEvent, toBilling } from '../analytics/events'
 import { formatMoney } from '../currency'
 import { usePlatformPricing } from '../usePlatformPricing'
@@ -11,10 +11,16 @@ import OrdersView from './OrdersView'
 import TrialFeedbackPrompt from './TrialFeedbackPrompt'
 import { Button } from '@/components/ui/button'
 
-// Suspended = the subscription lapsed (trial ended unpaid, dunning exhausted)
-// or a superadmin action. The storefront is closed to customers; the merchant
-// keeps read-only access to their order history and one path back: pay.
-// Reactivation Checkout never grants a second trial (backend guarantees it).
+// Suspended = the subscription lapsed (trial ended unpaid, cancellation) or a superadmin action.
+// The storefront is closed to customers; the merchant keeps read-only access to their order
+// history and one path back: pay. Reactivation Checkout never grants a second trial (backend
+// guarantees it).
+//
+// UNPAID RENEWAL IS THE EXCEPTION, and it needs its own screen. That shop's subscription is not
+// gone — Stripe still holds it, still calls it live, and is still retrying the card — so
+// `POST /api/checkout` REFUSES it (`This shop already has an active subscription`) and the button
+// below is a dead end. What reopens it is paying the invoice that failed, which lives in the
+// Stripe portal; the backend then reopens the shop on its own. See `unpaidRenewal`.
 //
 // The one choice left is the billing cycle, offered on the same axis the signup flow does and
 // priced from the same live Stripe figures. What the subscription includes comes from
@@ -26,6 +32,38 @@ export default function SuspendedScreen() {
   const [cycle, setCycle] = useState<Cycle>(defaultReactivation(merchant).cycle)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  // `undefined` = not read yet, and it renders NOTHING rather than guessing. Guessing wrong shows
+  // a merchant whose card failed an offer to start a subscription they already have.
+  const [billing, setBilling] = useState<{
+    status?: string | null
+    dunning_suspended_at?: string | null
+  } | null | undefined>(undefined)
+  const merchantId = merchant?.id
+
+  useEffect(() => {
+    if (!merchantId) return
+    let on = true
+    fetchMyBilling(merchantId).then(r => { if (on) setBilling(r.ok ? r.data : null) })
+    return () => { on = false }
+  }, [merchantId])
+
+  // No shop to read a row for is a settled answer, not a pending one — derived rather than set in
+  // the effect, which would be a synchronous setState and a second render for nothing.
+  const row = merchantId ? billing : null
+
+  // The platform closed this shop for an unpaid invoice. `dunning_suspended_at` is the platform's
+  // own record of that; the status test carries a shop closed before the stamp existed.
+  const unpaidRenewal = !!row?.dunning_suspended_at || row?.status === 'past_due'
+
+  async function toPortal() {
+    setBusy(true); setErr('')
+    const r = await openBillingPortal()
+    if (r.ok) window.location.assign(r.data)
+    else {
+      setErr(r.error.message || t('Could not open the billing portal', '无法打开账单门户'))
+      setBusy(false)
+    }
+  }
 
   async function reactivate() {
     setBusy(true); setErr('')
@@ -42,6 +80,51 @@ export default function SuspendedScreen() {
       setErr(r.error.message || t('Could not start checkout', '无法开始结账'))
       setBusy(false)
     }
+  }
+
+  if (row === undefined) return null
+
+  if (unpaidRenewal) {
+    return (
+      <div className="w-full max-w-[720px] mx-auto pt-8 px-4 pb-12">
+        <div
+          role="status"
+          className="px-4 py-3 mb-6 rounded-md border-[0.5px] text-[13px] leading-[1.5] bg-danger-100 text-danger-fg border-danger-fg/25 font-medium"
+        >
+          {t('Your shop is closed — the subscription payment failed. Pay the outstanding invoice to reopen it.',
+             '您的店铺已关闭——订阅付款失败。请支付未结账单以恢复营业。')}
+        </div>
+
+        <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-6 w-full box-border max-sm:p-4">
+          <h2 className="font-heading text-[15px] font-medium text-primary mb-2">
+            {t('Reopen your shop', '重新开张')}
+          </h2>
+          {/* No cycle picker and no price card: this shop is not buying anything. It has a
+              subscription, on the plan it chose, with one invoice unpaid. */}
+          <p className="text-[13px] text-muted-foreground mb-4 leading-[1.5]">
+            {t('Your subscription is still active — only the last payment failed. Update your card or pay the invoice in the billing portal, and your shop reopens by itself within the hour.',
+               '您的订阅仍然有效——只是最后一次付款失败。请在账单门户更新银行卡或支付账单，您的店铺将在一小时内自动恢复营业。')}
+          </p>
+          <Button type="button" size="sm" disabled={busy} onClick={toPortal}>
+            {busy ? t('Opening…', '打开中…') : t('Pay now — reopen my shop', '立即付款——恢复营业')}
+          </Button>
+          <p className="text-[12px] text-muted-foreground mt-3">
+            {t('Nothing has been deleted. Your menu, orders and settings are exactly as you left them.',
+               '没有任何数据被删除。您的菜单、订单和设置均保持原样。')}
+          </p>
+        </div>
+
+        {err && (
+          <div className="text-[13px] text-ink-700 bg-brand-100 border border-border rounded-sm px-[13px] py-[10px] mb-4 leading-[1.5]">
+            {err}
+          </div>
+        )}
+        <h2 className="font-heading text-[18px] font-medium text-primary mb-3">
+          {t('Your orders', '您的订单')}
+        </h2>
+        <OrdersView readOnly />
+      </div>
+    )
   }
 
   const saving = yearlySavingPercent(pricing.prices.pro.monthly, pricing.prices.pro.yearly)

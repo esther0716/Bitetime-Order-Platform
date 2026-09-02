@@ -188,6 +188,50 @@ export const listGithubReleases: ListGithubReleases = async (token, perPage) => 
 }
 
 /**
+ * Reads ONE release by its tag, which is what the release workflow's own pull asks for.
+ *
+ * The list endpoint above cannot serve that caller. GitHub answers it with
+ * `Cache-Control: private, max-age=60`, and the workflow calls about two seconds after it cut
+ * the tag — so the list it reads is regularly the one from before the release existed, and the
+ * pull stores nothing while reporting success. The release then waits for the NEXT release to
+ * carry it in as a straggler. This endpoint is keyed by the tag itself, so a tag nobody has
+ * asked for before has nothing cached to serve.
+ *
+ * Returns null for BOTH "no such tag yet" and "GitHub could not be reached", because the caller
+ * does the same thing with either: answer non-2xx and let the workflow retry. Nothing here has
+ * to tell them apart.
+ */
+export type GetGithubReleaseByTag = (token: string, tag: string) => Promise<GithubRelease | null>
+
+export const getGithubReleaseByTag: GetGithubReleaseByTag = async (token, tag) => {
+  if (!token) {
+    console.error('GitHub release read skipped: no token configured')
+    return null
+  }
+  try {
+    const res = await fetch(
+      `${GITHUB_API}/repos/${GITHUB_REPO}/releases/tags/${encodeURIComponent(tag)}`,
+      { headers: headers(token) },
+    )
+    if (!res.ok) {
+      console.error(`GitHub release read failed for ${tag}: ${res.status}`)
+      return null
+    }
+    const r = (await res.json()) as GithubRelease
+    return {
+      tag_name: r.tag_name,
+      name: r.name,
+      body: r.body ?? '',
+      html_url: r.html_url,
+      published_at: r.published_at,
+    }
+  } catch (e) {
+    console.error(`GitHub release read failed for ${tag}:`, e instanceof Error ? e.message : String(e))
+    return null
+  }
+}
+
+/**
  * Asks the sample-shop screenshot workflow to capture storefronts now
  * (.github/workflows/sample-shop-screenshot-sweep.yml, `workflow_dispatch` with a
  * `merchant_id` input). Two callers, and the difference is the argument:

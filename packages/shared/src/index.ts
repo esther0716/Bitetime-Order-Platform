@@ -75,6 +75,9 @@ export { INVOICE_STATUSES, canIssueInvoice } from './invoice.js'
 export { validateShopDescription, SHOP_DESCRIPTION_MAX } from './shopDescription.js'
 export type { ShopDescriptionError } from './shopDescription.js'
 export { normalizeBrandColor, PLATFORM_BRAND_COLOR } from './brandColor.js'
+export {
+  PAST_DUE_GRACE_DAYS, pastDueDeadline, pastDueGraceExpired, pastDueDaysLeft,
+} from './dunning.js'
 export { pendingShopMetadata, pendingShopFromMetadata, pendingShopFromBody } from './pendingShop.js'
 export type { PendingShop } from './pendingShop.js'
 export type { BrandColorError, BrandColorResult } from './brandColor.js'

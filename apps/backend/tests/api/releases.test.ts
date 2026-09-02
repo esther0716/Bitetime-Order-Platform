@@ -23,10 +23,14 @@ function get(path: string, token?: string) {
 function post(path: string, token?: string) {
   return app.request(path, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {} })
 }
-function internalPull(secret?: string) {
+function internalPull(secret?: string, tag?: string) {
   return app.request('/api/internal/releases-pull', {
     method: 'POST',
-    headers: secret !== undefined ? { 'x-sweep-secret': secret } : {},
+    headers: {
+      ...(secret !== undefined ? { 'x-sweep-secret': secret } : {}),
+      ...(tag !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(tag !== undefined ? { body: JSON.stringify({ tag }) } : {}),
   })
 }
 function patch(path: string, body: unknown, token?: string) {
@@ -41,6 +45,7 @@ let superToken: string
 let memberToken: string
 
 const origListReleases = releaseDeps.listReleases
+const origReleaseByTag = releaseDeps.releaseByTag
 const origHumanize = releaseDeps.humanize
 
 describe('releases', () => {
@@ -61,6 +66,7 @@ describe('releases', () => {
 
   afterEach(() => {
     releaseDeps.listReleases = origListReleases
+    releaseDeps.releaseByTag = origReleaseByTag
     releaseDeps.humanize = origHumanize
   })
 
@@ -278,6 +284,87 @@ describe('releases', () => {
     it('answers 502 when GitHub cannot be reached', async () => {
       releaseDeps.listReleases = async () => null
       expect((await internalPull(env.releasePullSecret)).status).toBe(502)
+    })
+
+    // A named tag reads that ONE release instead of the list, and the list is why: GitHub caches
+    // it for 60 seconds, the workflow calls two seconds after cutting the tag, and the pull
+    // stored nothing while answering 200 — the release then waited for the next one to carry it
+    // in. These three pin the behaviour the workflow now depends on.
+    it('stores the named tag even when the cached list has not caught up', async () => {
+      // The list here is the stale one the cache serves: it does not carry the tag just cut.
+      // Storing it anyway is the whole fix.
+      releaseDeps.listReleases = async () => []
+      releaseDeps.releaseByTag = async (_token, tag) => ({
+        tag_name: tag, name: 'By tag', body: 'raw body by tag',
+        html_url: `https://github.com/x/y/releases/tag/${tag}`,
+        published_at: '2026-09-01T00:00:00Z',
+      })
+      releaseDeps.humanize = async () => ({ title: 'Named by the workflow', summary: 'A summary.' })
+
+      const res = await internalPull(env.releasePullSecret, 'releases-test-by-tag')
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ pulled: 1 })
+      await settleHumanization()
+
+      const rows = (await (await get('/api/admin/releases', superToken)).json()) as Array<{
+        tag: string; title: string | null; status: string
+      }>
+      const row = rows.find((r) => r.tag === 'releases-test-by-tag')
+      expect(row?.title).toBe('Named by the workflow')
+      expect(row?.status).toBe('draft')
+    })
+
+    it('carries in a release an earlier pull missed, alongside the named one', async () => {
+      releaseDeps.listReleases = async () => [
+        {
+          tag_name: 'releases-test-straggler', name: 'Straggler', body: 'raw body straggler',
+          html_url: 'https://github.com/x/y/releases/tag/releases-test-straggler',
+          published_at: '2026-08-31T00:00:00Z',
+        },
+      ]
+      releaseDeps.releaseByTag = async (_token, tag) => ({
+        tag_name: tag, name: 'Fresh', body: 'raw body fresh',
+        html_url: `https://github.com/x/y/releases/tag/${tag}`,
+        published_at: '2026-09-01T00:00:00Z',
+      })
+      releaseDeps.humanize = async () => ({ title: 'Two at once', summary: 'A summary.' })
+
+      const res = await internalPull(env.releasePullSecret, 'releases-test-fresh')
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ pulled: 2 })
+      await settleHumanization()
+
+      const rows = (await (await get('/api/admin/releases', superToken)).json()) as Array<{ tag: string }>
+      expect(rows.some((r) => r.tag === 'releases-test-straggler')).toBe(true)
+      expect(rows.some((r) => r.tag === 'releases-test-fresh')).toBe(true)
+    })
+
+    it('answers 502 for a tag GitHub does not show yet, so the workflow retries', async () => {
+      // The list answering is not enough: the caller asked about one tag, and a 200 here would
+      // report a pull that never stored it.
+      releaseDeps.listReleases = async () => []
+      releaseDeps.releaseByTag = async () => null
+      const res = await internalPull(env.releasePullSecret, 'releases-test-not-yet')
+      expect(res.status).toBe(502)
+
+      const rows = (await (await get('/api/admin/releases', superToken)).json()) as Array<{ tag: string }>
+      expect(rows.some((r) => r.tag === 'releases-test-not-yet')).toBe(false)
+    })
+
+    it('answers 200 and stores nothing when the named tag is already held', async () => {
+      releaseDeps.listReleases = async () => []
+      releaseDeps.releaseByTag = async (_token, tag) => ({
+        tag_name: tag, name: 'By tag', body: 'raw body by tag',
+        html_url: `https://github.com/x/y/releases/tag/${tag}`,
+        published_at: '2026-09-01T00:00:00Z',
+      })
+      releaseDeps.humanize = async () => ({ title: 'Named by the workflow', summary: 'A summary.' })
+
+      await internalPull(env.releasePullSecret, 'releases-test-twice')
+      await settleHumanization()
+      const res = await internalPull(env.releasePullSecret, 'releases-test-twice')
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ pulled: 0 })
     })
   })
 })

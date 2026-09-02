@@ -454,7 +454,38 @@ Trial end with no card → Stripe cancels the subscription
 (`missing_payment_method: 'cancel'`) → the `subscription.deleted` webhook
 suspends the shop. Suspended shops serve a closed storefront and reactivate
 through a fresh Checkout that never re-grants a trial (`canStartTrial`). Failed
-renewals go `past_due` (red banner) and ride Stripe dunning. Stripe is the
+renewals go `past_due` and the shop stays open for **3 days**
+(`PAST_DUE_GRACE_DAYS` in `@bitetime/shared/dunning.ts`), after which the hourly
+reconciliation sweep suspends it — even though Stripe still reports `past_due`.
+
+That deadline exists because dunning does not reliably END: the trial has an end
+behaviour (`trial_settings.missing_payment_method: 'cancel'`) but a failed
+renewal has none, and Stripe's default after its final retry is to leave the
+subscription `past_due` for ever — so a shop whose card died stayed `active` and
+kept selling, re-read hourly and called healthy every time. The clock runs from
+the unpaid period's START (`merchant_billing.current_period_start`), because
+Stripe advances the period when it issues the unpaid invoice and
+`current_period_end` is then a month away; for the same reason a `past_due` row
+is always in the sweep's worklist, whatever its stored deadline says. The rule is
+in `@bitetime/shared` because the backend CLOSES on it and the dashboard COUNTS
+DOWN to it, and those two dates may not disagree.
+
+Three days is a short window, so the merchant is told, every day of it. The sweep
+sends one reminder a day (`past_due_notified_at` is what stops it sending
+twenty-four, one per hourly run) naming the date the shop closes, and one further
+email when it actually closes. The dashboard banner counts the same days down.
+
+**Paying reopens the shop, by itself.** A dunning closure is stamped
+(`dunning_suspended_at`), and `customer.subscription.updated` — with the sweep as
+the hourly backstop — reopens the stamped shop the moment Stripe reports the
+subscription live again, clearing both dunning marks. The stamp is also what
+keeps that honest: without it a dunning closure is indistinguishable from a
+moderation suspension (both are `suspended` beside a live subscription), and
+`syncMerchantBilling` refuses to reopen the latter for a payment (its
+`suspended_by_admin` reason). A closed shop's owner sees a **different**
+`SuspendedScreen`: not the reactivation Checkout — `POST /api/checkout` refuses a
+shop whose subscription is still live, so that button is a dead end here — but
+the Stripe portal, where the outstanding invoice is. Stripe is the
 single source of billing truth; `merchant_billing` mirrors it. Pure seams:
 `billingLifecycle` (backend) and `billingBannerState` (frontend).
 

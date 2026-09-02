@@ -31,10 +31,18 @@ jobs:
     # A schedule or a dispatch always runs; a deployment status runs only for a SUCCEEDED
     # PRODUCTION deployment. `state` also carries 'pending', 'failure' and 'error', and
     # capturing a storefront off a failed deploy would store screenshots of an error page.
+    #
+    # The environment is matched by its ENDING, not by the exact word `Production`, because
+    # Vercel files TWO GitHub deployments for one push: a bare `Production` one that only ever
+    # receives `inactive`, and `<project> / production` — the one that actually goes
+    # in_progress → success. An exact match therefore skipped every real deploy, and the cards
+    # kept whatever the last matching run had captured. GitHub's string functions compare
+    # case-insensitively, so this one condition covers both names; a preview deployment ends in
+    # `preview` and is still excluded.
     if: >-
       github.event_name != 'deployment_status' ||
       (github.event.deployment_status.state == 'success' &&
-       github.event.deployment_status.environment == 'Production')
+       endsWith(github.event.deployment_status.environment, 'production'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

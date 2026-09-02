@@ -1,8 +1,8 @@
 // The shop sitemap function (#253): /sitemap-shops.xml, rewritten here by vercel.json. Active
 // shops come from the backend's storefront index; the whole response — the XML, the caching,
 // and the 503-never-empty-200 rule — is the pure builder's. This file only fetches.
-import { buildShopSitemap } from '../src/seo/shopSitemap'
-import { requestOrigin, backendUrl } from '../src/seo/edge'
+import { buildShopSitemap } from '../src/seo/shopSitemap.js'
+import { requestOrigin, backendUrl } from '../src/seo/edge.js'
 
 export async function GET(request: Request): Promise<Response> {
   const api = backendUrl()

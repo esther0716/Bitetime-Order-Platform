@@ -20,7 +20,7 @@ import { voucherPublicView, voucherMerchantView } from './voucherView.js'
 import { expiryInstant } from './voucherExpiry.js'
 import { redemptionCounts, myRedemptionCount } from './voucherRedemptionsDb.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
-import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
+import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, reopenAfterPayment, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
 import { startCardlessTrial } from './trialSubscription.js'
 import { renameMerchantSlug } from './slugRename.js'
@@ -71,10 +71,10 @@ import {
 import { buildTrialFeedbackEmail } from './trialFeedbackEmail.js'
 import {
   createGithubIssue, closeGithubIssue, reopenGithubIssue, listGithubReleases,
-  dispatchSampleScreenshot,
+  getGithubReleaseByTag, dispatchSampleScreenshot,
   buildIssueTitle, buildIssueBody, categoryToLabel,
   type CreateGithubIssue, type GithubIssueAction, type ListGithubReleases,
-  type DispatchSampleScreenshot,
+  type GetGithubReleaseByTag, type DispatchSampleScreenshot,
 } from './github.js'
 import { humanizeRelease, type HumanizeRelease } from './releases.js'
 import { extractMenu, MAX_MENU_IMAGE_BYTES, type ExtractMenu } from './menuImport.js'
@@ -2424,9 +2424,11 @@ app.patch('/api/admin/feedback/:feedbackId', requireSuperadmin, async (c) => {
 // and Claude without a live network call. Production uses the real fetch/SDK adapters.
 export const releaseDeps: {
   listReleases: ListGithubReleases
+  releaseByTag: GetGithubReleaseByTag
   humanize: HumanizeRelease
 } = {
   listReleases: listGithubReleases,
+  releaseByTag: getGithubReleaseByTag,
   humanize: humanizeRelease,
 }
 
@@ -2460,9 +2462,25 @@ export let releaseHumanization: Promise<unknown> = Promise.resolve()
 //
 // Returns the number of NEW releases stored. Throws only what the DB throws; a GitHub that
 // cannot be reached is reported as null, which each caller turns into its own status.
-async function pullReleases(): Promise<number | null> {
-  const fetched = await releaseDeps.listReleases(env.githubToken, 10)
-  if (fetched === null) return null
+async function pullReleases(tag?: string): Promise<number | null> {
+  // The list is served from a 60-second GitHub cache, and the release workflow calls about two
+  // seconds after cutting its tag — so the list it reads regularly predates that release and the
+  // pull stores nothing while answering 200. A named tag is read by tag instead (see
+  // getGithubReleaseByTag), which is a key nothing has asked for before.
+  //
+  // The list is STILL read alongside it, and that is not belt-and-braces: it is the recovery for
+  // every release the old behaviour missed. Those are old enough that no cache hides them, the
+  // two results are merged by tag, and a stale list can only ever fail to add — never subtract.
+  // A named tag that cannot be read is null even when the list came back, because that tag is
+  // what the caller asked about and what it retries for.
+  const named = tag ? await releaseDeps.releaseByTag(env.githubToken, tag) : null
+  if (tag && named === null) return null
+  const listed = await releaseDeps.listReleases(env.githubToken, 10)
+  if (listed === null && named === null) return null
+
+  const byTag = new Map((listed ?? []).map((r) => [r.tag_name, r]))
+  if (named) byTag.set(named.tag_name, named)
+  const fetched = [...byTag.values()]
 
   const existingTags = new Set(await listReleaseTags())
   const toPull = fetched.filter((r) => !existingTags.has(r.tag_name))
@@ -2552,7 +2570,13 @@ app.post('/api/internal/releases-pull', async (c) => {
   const provided = c.req.header('x-sweep-secret') || ''
   if (!safeEqualSecret(provided, env.releasePullSecret)) return c.json({ error: 'Forbidden' }, 403)
 
-  const pulled = await pullReleases()
+  // The workflow names the tag it just cut. A 502 for a tag GitHub does not show yet is the
+  // whole point: the caller retries across the cache window instead of reporting success on a
+  // pull that stored nothing. A body without a tag keeps the old behaviour — read the list.
+  const body = (await c.req.json().catch(() => ({}))) as { tag?: unknown }
+  const tag = typeof body.tag === 'string' && body.tag.trim() ? body.tag.trim() : undefined
+
+  const pulled = await pullReleases(tag)
   if (pulled === null) return c.json({ error: 'Could not reach GitHub' }, 502)
   return c.json({ pulled })
 })
@@ -3325,6 +3349,23 @@ app.post('/api/stripe/webhook', async (c) => {
           // this event, so the tier follows the money (#112). Also repairs `billing_cycle`,
           // which a monthly↔yearly switch in the portal used to leave stale.
           await reconcileBillingCycle(merchantId, sub)
+
+          // The fast path out of dunning. A shop the sweep closed for an unpaid invoice reopens
+          // the moment Stripe says the subscription is live again — this event is what carries
+          // `past_due` → `active`. Guarded on the stamp, so a shop a superadmin suspended is
+          // never reopened by a renewal going through; the hourly sweep repeats this if the
+          // event is lost.
+          if (sub.status !== 'past_due' && LIVE_STATUSES.includes(sub.status)) {
+            const { data: closed } = await admin
+              .from('merchant_billing')
+              .select('dunning_suspended_at')
+              .eq('merchant_id', merchantId)
+              .maybeSingle()
+            if (closed?.dunning_suspended_at) {
+              await reopenAfterPayment(merchantId)
+              console.log(`Merchant ${merchantId} paid an overdue invoice — storefront reopened.`)
+            }
+          }
         }
         break
       }
@@ -3376,7 +3417,20 @@ app.post('/api/stripe/webhook', async (c) => {
           (inv as { subscription_details?: { metadata?: Record<string, string> } }).subscription_details?.metadata?.merchant_id ||
           parent?.subscription_details?.metadata?.merchant_id ||
           inv.metadata?.merchant_id
-        if (merchantId) await upsertBilling(merchantId, { status: 'past_due' })
+        if (merchantId) {
+          // The period this invoice bills for is the period the shop has not paid for, and the
+          // grace clock counts from its start. Written HERE and not left to
+          // `customer.subscription.updated`, because the order of those two deliveries is not
+          // guaranteed: until the period advances on the row, the stored start is last month's
+          // and the dashboard would tell the merchant their shop closes today. (The sweep never
+          // reads it — it re-derives the date from Stripe before closing anything — so this is
+          // the merchant's view being right, not the decision.)
+          const periodStart = (inv as { period_start?: number }).period_start
+          await upsertBilling(merchantId, {
+            status: 'past_due',
+            ...(periodStart ? { current_period_start: new Date(periodStart * 1000).toISOString() } : {}),
+          })
+        }
         break
       }
       case 'invoice.paid': {

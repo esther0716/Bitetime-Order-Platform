@@ -333,6 +333,10 @@ export interface MerchantBilling {
   status?: string | null
   trial_ends_at?: string | null
   current_period_end?: string | null
+  /** Start of the period being billed for — the dunning grace clock (@bitetime/shared). */
+  current_period_start?: string | null
+  /** Set while this shop is closed for an unpaid invoice; cleared when the payment lands. */
+  dunning_suspended_at?: string | null
   /** Complimentary tier — no Stripe subscription behind this shop. */
   comped?: boolean | null
 }

@@ -87,6 +87,33 @@ export async function lapseMerchant(merchantId: string) {
   if (error) throw error
 }
 
+/**
+ * Record that THIS closure was non-payment, not moderation.
+ *
+ * Both look identical in the database — `merchants.status = 'suspended'` beside a subscription
+ * Stripe still calls live — and they must be undone by different things. A shop closed for an
+ * unpaid invoice reopens the moment the money arrives; a shop closed by a superadmin does not,
+ * and `syncMerchantBilling` refuses to reopen it for exactly that reason. Without this stamp,
+ * making payment reopen the first would hand every suspended merchant a self-service undo.
+ */
+export async function markDunningSuspended(merchantId: string, now: Date) {
+  await upsertBilling(merchantId, { dunning_suspended_at: now.toISOString() })
+}
+
+/**
+ * Reopen a shop the platform closed for non-payment, now that it is paid.
+ *
+ * Idempotent, and it has to be: the `customer.subscription.updated` webhook and the hourly sweep
+ * both reach this, and on a healthy day the sweep runs over a shop the webhook already reopened.
+ * Clears BOTH dunning marks — the stamp, so a later moderation suspension is not undone by a
+ * renewal, and the reminder clock, so a future failed payment starts its three days from silence
+ * rather than from a stale timestamp.
+ */
+export async function reopenAfterPayment(merchantId: string) {
+  await admin.from('merchants').update({ status: 'active' }).eq('id', merchantId)
+  await upsertBilling(merchantId, { dunning_suspended_at: null, past_due_notified_at: null })
+}
+
 // Flip the merchant's activation status (service role bypasses RLS).
 export async function setMerchantStatus(merchantId: string, status: string) {
   const { error } = await admin.from('merchants').update({ status }).eq('id', merchantId)
@@ -98,14 +125,22 @@ export function billingFromSubscription(sub: Stripe.Subscription) {
   // Stripe moved `current_period_end` from the subscription onto its items
   // (API version 2025-03-31+). Prefer the item-level value, falling back to the
   // legacy top-level field so older API versions keep working.
-  const item0 = sub.items?.data?.[0] as { current_period_end?: number } | undefined
+  const item0 = sub.items?.data?.[0] as
+    { current_period_end?: number; current_period_start?: number } | undefined
   const periodEnd = item0?.current_period_end ?? (sub as { current_period_end?: number }).current_period_end
+  const periodStart =
+    item0?.current_period_start ?? (sub as { current_period_start?: number }).current_period_start
   return {
     stripe_subscription_id: sub.id,
     stripe_customer_id: typeof sub.customer === 'string' ? sub.customer : sub.customer?.id,
     status: sub.status, // trialing | active | past_due | canceled | incomplete | ...
     trial_ends_at: toIso(sub.trial_end),
     current_period_end: toIso(periodEnd),
+    // The start of the period the shop is currently being billed for — and, when that period's
+    // invoice went unpaid, the moment the dunning grace clock starts. Persisted rather than
+    // re-read from Stripe because the merchant's own dashboard counts down to the same deadline
+    // (@bitetime/shared → pastDueDeadline), and it may not ask Stripe anything.
+    current_period_start: toIso(periodStart),
     // A subscription winding down looks EXACTLY like a healthy one from `status` alone —
     // Stripe leaves it 'active' until the period actually ends. Without this flag the
     // Subscription tab went on promising "Renews on 1 Sep" to a merchant who had cancelled,
