@@ -1,7 +1,9 @@
 # 19. Voucher redemptions are rows, not a list
 
 Date: 2026-08-21
-Status: Accepted; not yet implemented. Originates in #241.
+Status: Accepted. Originates in #241. Its *a cancellation returns nothing* consequence is reversed by
+[ADR 0023](0023-a-cancelled-order-returns-its-redemption.md), which is the question this ADR made
+answerable.
 
 ## Context
 

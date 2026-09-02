@@ -18,7 +18,7 @@ import { admin, getUserFromToken } from './supabase.js'
 import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, bearer, type AppEnv } from './mw.js'
 import { voucherPublicView, voucherMerchantView } from './voucherView.js'
 import { expiryInstant } from './voucherExpiry.js'
-import { redemptionCounts, myRedemptionCount } from './voucherRedemptionsDb.js'
+import { redemptionCounts, myRedemptionCount, syncOrderRedemptionVoid } from './voucherRedemptionsDb.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, reopenAfterPayment, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
@@ -1429,6 +1429,24 @@ app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, requireOwns
   if (Object.keys(patch).length === 0) return c.json({ error: 'No updatable fields' }, 400)
   const { data, error } = await admin.from('orders').update(patch).eq('id', orderId).select().single()
   if (error) return c.json({ error: 'Update failed' }, 500)
+
+  // Cancelling RELEASES the voucher redemption the order spent, and un-cancelling takes it back
+  // (ADR 0023). Driven off the status the order now HAS, not off the change — so a repeat is a
+  // no-op and a void that failed is repaired by the next patch, without this handler having to
+  // read what the status was.
+  //
+  // Deliberately NOT in one transaction with the update above: doing that means rewriting this
+  // whole patch (note, courier, awb, and the row shape the dashboard patches itself from) as raw
+  // SQL to close a failure that already errs the safe way — the order is cancelled and the use
+  // stays spent, which is exactly the behaviour before this existed. Logged, not swallowed: a
+  // merchant would otherwise never learn the slot did not come back.
+  if ('status' in patch) {
+    try {
+      await syncOrderRedemptionVoid(orderId, patch.status === 'cancelled')
+    } catch (err) {
+      console.error('Releasing the voucher redemption failed for order', orderId, err instanceof Error ? err.message : String(err))
+    }
+  }
   return c.json(data)
 })
 
