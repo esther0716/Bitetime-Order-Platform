@@ -46,6 +46,19 @@ export default function BillingBanner() {
         ? t(`${state.daysLeft} days ${state.hoursLeft}h`, `${state.daysLeft} 天 ${state.hoursLeft} 小时`)
         : t(`${state.hoursLeft} hours`, `${state.hoursLeft} 小时`))
     : ''
+  // The date the storefront closes, in the merchant's own language. Said out loud because
+  // "payment failed" alone does not tell a merchant that this one has a deadline attached.
+  const closesOn = state.kind === 'past-due' && state.closesAt
+    ? new Date(state.closesAt).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-GB',
+        { year: 'numeric', month: 'short', day: 'numeric' })
+    : ''
+  const closesIn = state.kind === 'past-due'
+    ? (state.daysLeft === 0
+        ? t('today', '今天')
+        : state.daysLeft === 1
+          ? t('tomorrow', '明天')
+          : t(`in ${state.daysLeft} days`, `${state.daysLeft} 天后`))
+    : ''
   const convertsOn = billing?.trial_ends_at
     ? new Date(billing.trial_ends_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-GB',
         { year: 'numeric', month: 'short', day: 'numeric' })
@@ -67,8 +80,11 @@ export default function BillingBanner() {
               : t('Your subscription ends when the current period does — your shop is suspended after that.',
                   '您的订阅将在本周期结束时终止——之后店铺将被停用。'))
           : state.kind === 'past-due'
-          ? t('Payment failed — update your card to keep your shop open.',
-              '付款失败——请更新银行卡以保持店铺营业。')
+          ? (closesOn
+              ? t(`Payment failed — your shop closes ${closesIn} (${closesOn}). Pay now to keep it open.`,
+                  `付款失败——您的店铺将于${closesOn}（${closesIn}）关闭。请立即付款以保持营业。`)
+              : t('Payment failed — update your card to keep your shop open.',
+                  '付款失败——请更新银行卡以保持店铺营业。'))
           : carded
             ? t(`Free trial — converts to a paid plan on ${convertsOn}.`,
                 `免费试用——将于 ${convertsOn} 转为付费方案。`)

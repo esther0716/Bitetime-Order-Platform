@@ -2,9 +2,17 @@
 // Mirrors the Order pricing discipline: the billing row and the clock are
 // passed in, no I/O. The component renders; this module decides.
 
+import { pastDueDeadline, pastDueDaysLeft } from '@bitetime/shared'
+
 export interface BillingSnapshot {
   status?: string | null
   trial_ends_at?: string | null
+  /**
+   * Start of the period the shop has not paid for. The countdown to closure runs from here — the
+   * SAME field and the same rule the backend closes on (@bitetime/shared → pastDueDeadline), so
+   * the date this banner promises is the date the sweep acts on.
+   */
+  current_period_start?: string | null
   has_payment_method?: boolean | null
   /** The merchant has cancelled; the subscription runs to `current_period_end` and stops. */
   cancel_at_period_end?: boolean | null
@@ -14,7 +22,8 @@ export interface BillingSnapshot {
 export type BannerState =
   | { kind: 'none' }
   | { kind: 'trial'; urgent: boolean; hasPaymentMethod: boolean; daysLeft: number; hoursLeft: number }
-  | { kind: 'past-due' }
+  /** A renewal failed. The shop closes at `closesAt` unless the invoice is paid first. */
+  | { kind: 'past-due'; closesAt: string | null; daysLeft: number }
   /** Cancelled and winding down. The shop is suspended when `endsAt` passes. */
   | { kind: 'ending'; endsAt: string | null }
 
@@ -34,7 +43,14 @@ export function billingBannerState(
   if (billing.cancel_at_period_end) {
     return { kind: 'ending', endsAt: billing.current_period_end ?? null }
   }
-  if (billing.status === 'past_due') return { kind: 'past-due' }
+  if (billing.status === 'past_due') {
+    const closesAt = pastDueDeadline(billing.current_period_start)
+    return {
+      kind: 'past-due',
+      closesAt: closesAt ? closesAt.toISOString() : null,
+      daysLeft: pastDueDaysLeft(billing.current_period_start, now),
+    }
+  }
   if (billing.status !== 'trialing' || !billing.trial_ends_at) return { kind: 'none' }
   const msLeft = Math.max(0, new Date(billing.trial_ends_at).getTime() - now.getTime())
   // A card on file means the trial converts on its own — never nag, never go urgent.

@@ -20,7 +20,7 @@ import { voucherPublicView, voucherMerchantView } from './voucherView.js'
 import { expiryInstant } from './voucherExpiry.js'
 import { redemptionCounts, myRedemptionCount } from './voucherRedemptionsDb.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
-import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, LIVE_STATUSES } from './billing.js'
+import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, reopenAfterPayment, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
 import { startCardlessTrial } from './trialSubscription.js'
 import { renameMerchantSlug } from './slugRename.js'
@@ -3349,6 +3349,23 @@ app.post('/api/stripe/webhook', async (c) => {
           // this event, so the tier follows the money (#112). Also repairs `billing_cycle`,
           // which a monthly↔yearly switch in the portal used to leave stale.
           await reconcileBillingCycle(merchantId, sub)
+
+          // The fast path out of dunning. A shop the sweep closed for an unpaid invoice reopens
+          // the moment Stripe says the subscription is live again — this event is what carries
+          // `past_due` → `active`. Guarded on the stamp, so a shop a superadmin suspended is
+          // never reopened by a renewal going through; the hourly sweep repeats this if the
+          // event is lost.
+          if (sub.status !== 'past_due' && LIVE_STATUSES.includes(sub.status)) {
+            const { data: closed } = await admin
+              .from('merchant_billing')
+              .select('dunning_suspended_at')
+              .eq('merchant_id', merchantId)
+              .maybeSingle()
+            if (closed?.dunning_suspended_at) {
+              await reopenAfterPayment(merchantId)
+              console.log(`Merchant ${merchantId} paid an overdue invoice — storefront reopened.`)
+            }
+          }
         }
         break
       }
@@ -3400,7 +3417,20 @@ app.post('/api/stripe/webhook', async (c) => {
           (inv as { subscription_details?: { metadata?: Record<string, string> } }).subscription_details?.metadata?.merchant_id ||
           parent?.subscription_details?.metadata?.merchant_id ||
           inv.metadata?.merchant_id
-        if (merchantId) await upsertBilling(merchantId, { status: 'past_due' })
+        if (merchantId) {
+          // The period this invoice bills for is the period the shop has not paid for, and the
+          // grace clock counts from its start. Written HERE and not left to
+          // `customer.subscription.updated`, because the order of those two deliveries is not
+          // guaranteed: until the period advances on the row, the stored start is last month's
+          // and the dashboard would tell the merchant their shop closes today. (The sweep never
+          // reads it — it re-derives the date from Stripe before closing anything — so this is
+          // the merchant's view being right, not the decision.)
+          const periodStart = (inv as { period_start?: number }).period_start
+          await upsertBilling(merchantId, {
+            status: 'past_due',
+            ...(periodStart ? { current_period_start: new Date(periodStart * 1000).toISOString() } : {}),
+          })
+        }
         break
       }
       case 'invoice.paid': {

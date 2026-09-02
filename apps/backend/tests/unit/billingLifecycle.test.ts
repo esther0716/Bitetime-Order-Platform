@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   canStartTrial, trialStartRefusal, buildTrialReminderEmail, isLapsed, needsReconcile,
+  needsPastDueReminder, buildPastDueReminderEmail, buildShopClosedEmail, REMINDER_INTERVAL_MS,
 } from '../../src/billingLifecycle.js'
 
 describe('canStartTrial', () => {
@@ -59,6 +60,77 @@ describe('isLapsed', () => {
   })
 })
 
+describe('needsPastDueReminder', () => {
+  const NOW = new Date('2026-09-02T12:00:00Z')
+
+  // THE POINT. The sweep runs hourly, the reminder is daily. Without this the merchant gets
+  // twenty-four identical emails a day and learns to delete them — and the deletion habit is
+  // formed on the one warning that precedes their storefront closing.
+  it('holds off until a day has passed', () => {
+    expect(needsPastDueReminder(new Date(NOW.getTime() - 60_000).toISOString(), NOW)).toBe(false)
+    expect(needsPastDueReminder(new Date(NOW.getTime() - 12 * 3_600_000).toISOString(), NOW)).toBe(false)
+  })
+
+  it('sends again once the interval has elapsed', () => {
+    expect(needsPastDueReminder(new Date(NOW.getTime() - REMINDER_INTERVAL_MS).toISOString(), NOW)).toBe(true)
+    expect(needsPastDueReminder(new Date(NOW.getTime() - 3 * 24 * 3_600_000).toISOString(), NOW)).toBe(true)
+  })
+
+  // A shop nobody has told yet is always due: this is the email that says the payment failed at
+  // all, and withholding it is withholding the whole warning.
+  it('always sends the first one', () => {
+    expect(needsPastDueReminder(null, NOW)).toBe(true)
+    expect(needsPastDueReminder(undefined, NOW)).toBe(true)
+    expect(needsPastDueReminder('not-a-date', NOW)).toBe(true)
+  })
+})
+
+describe('buildPastDueReminderEmail', () => {
+  const base = {
+    shopName: 'Jess Cakes',
+    closesAt: new Date('2026-09-05T08:00:00Z'),
+    billingUrl: 'https://tinyorder.example/merchant#settings/subscription',
+  }
+
+  // The deadline is quoted as a DATE, not only as "3 days". The same email read a day later would
+  // otherwise be wrong, and the merchant has no way to tell.
+  it('names the shop, the closing date and where to pay', () => {
+    const { subject, text } = buildPastDueReminderEmail({ ...base, daysLeft: 3 })
+    expect(subject).toContain('Jess Cakes')
+    expect(subject).toContain('in 3 days')
+    expect(text).toContain('Sep 5, 2026')
+    expect(text).toContain(base.billingUrl)
+  })
+
+  // "in 1 days" and "in 0 days" are what a merchant remembers about the platform that sent them.
+  it('words the last two days as a person would', () => {
+    expect(buildPastDueReminderEmail({ ...base, daysLeft: 1 }).subject).toContain('tomorrow')
+    expect(buildPastDueReminderEmail({ ...base, daysLeft: 0 }).subject).toContain('today')
+  })
+
+  // Nothing is deleted and the shop reopens by itself — a merchant who believes otherwise
+  // rebuilds a menu they still have, or does not come back at all.
+  it('says the shop reopens on payment', () => {
+    expect(buildPastDueReminderEmail({ ...base, daysLeft: 2 }).text).toMatch(/reopens? by itself|reopens/)
+  })
+})
+
+describe('buildShopClosedEmail', () => {
+  const built = buildShopClosedEmail({
+    shopName: 'Jess Cakes',
+    billingUrl: 'https://tinyorder.example/merchant#settings/subscription',
+  })
+
+  // A different fact from the reminders — customers can no longer order — so it must not read as
+  // the fourth copy of the same warning.
+  it('reports the closure and how to undo it', () => {
+    expect(built.subject).toContain('closed')
+    expect(built.text).toContain('cannot place orders')
+    expect(built.text).toContain('reopens automatically')
+    expect(built.text).toContain('do not need to sign up again')
+  })
+})
+
 describe('needsReconcile', () => {
   const NOW = new Date('2026-08-06T12:00:00Z')
   const past = '2026-08-06T09:00:00Z'
@@ -78,6 +150,14 @@ describe('needsReconcile', () => {
   // exactly the event this sweep exists to survive the loss of.
   it('picks a past_due row whose period has elapsed', () => {
     expect(needsReconcile({ status: 'past_due', current_period_end: past, stripe_subscription_id: 'sub_1' }, NOW)).toBe(true)
+  })
+
+  // A past_due row is selected whatever its deadline says. Stripe advances the billing period
+  // when it issues the unpaid invoice, so a shop in dunning carries a period end a MONTH away —
+  // the deadline tests drop it, and it then goes a month unexamined with the grace window never
+  // evaluated. This is what keeps the hourly sweep looking at it.
+  it('picks a past_due row whose period end is still in the future', () => {
+    expect(needsReconcile({ status: 'past_due', current_period_end: future, stripe_subscription_id: 'sub_1' }, NOW)).toBe(true)
   })
 
   it('leaves a shop still inside its trial or period alone', () => {
