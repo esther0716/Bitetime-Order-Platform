@@ -93,6 +93,21 @@ export async function setMerchantStatus(merchantId: string, status: string) {
   if (error) throw error
 }
 
+/**
+ * When the subscription's CURRENT billing period began, as an ISO timestamp (null if Stripe says
+ * nothing). Same item-level/legacy drift handling as `billingFromSubscription`.
+ *
+ * On a `past_due` subscription this is the day the unpaid invoice was issued and the card first
+ * failed — the only date on the object that measures how long dunning has run, which is why
+ * `dunningGraceExpired` counts from here and not from `current_period_end`. Not persisted: the
+ * one caller reads it off the Stripe object it already holds.
+ */
+export function subscriptionPeriodStart(sub: Stripe.Subscription): string | null {
+  const item0 = sub.items?.data?.[0] as { current_period_start?: number } | undefined
+  const start = item0?.current_period_start ?? (sub as { current_period_start?: number }).current_period_start
+  return toIso(start)
+}
+
 // Derive the billing fields we persist from a Stripe subscription object.
 export function billingFromSubscription(sub: Stripe.Subscription) {
   // Stripe moved `current_period_end` from the subscription onto its items

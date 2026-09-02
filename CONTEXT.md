@@ -454,7 +454,17 @@ Trial end with no card → Stripe cancels the subscription
 (`missing_payment_method: 'cancel'`) → the `subscription.deleted` webhook
 suspends the shop. Suspended shops serve a closed storefront and reactivate
 through a fresh Checkout that never re-grants a trial (`canStartTrial`). Failed
-renewals go `past_due` (red banner) and ride Stripe dunning. Stripe is the
+renewals go `past_due` (red banner) and ride Stripe dunning — for **14 days**
+(`PAST_DUE_GRACE_DAYS`), after which the reconciliation sweep suspends the shop
+even though Stripe still reports `past_due`. That grace exists because dunning
+does not reliably END: the trial has an end behaviour
+(`trial_settings.missing_payment_method: 'cancel'`) but a failed renewal has
+none, and Stripe's default after its final retry is to leave the subscription
+`past_due` for ever — so a shop whose card died stayed `active` and kept selling.
+The clock runs from the unpaid period's START, because Stripe advances the period
+when it issues the unpaid invoice and `current_period_end` is then a month away;
+for the same reason a `past_due` row is always in the sweep's worklist, whatever
+its stored deadline says. Stripe is the
 single source of billing truth; `merchant_billing` mirrors it. Pure seams:
 `billingLifecycle` (backend) and `billingBannerState` (frontend).
 

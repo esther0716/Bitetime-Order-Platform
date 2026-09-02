@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   canStartTrial, trialStartRefusal, buildTrialReminderEmail, isLapsed, needsReconcile,
+  dunningGraceExpired, PAST_DUE_GRACE_DAYS,
 } from '../../src/billingLifecycle.js'
 
 describe('canStartTrial', () => {
@@ -59,6 +60,44 @@ describe('isLapsed', () => {
   })
 })
 
+describe('dunningGraceExpired', () => {
+  const NOW = new Date('2026-09-02T12:00:00Z')
+  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000).toISOString()
+
+  // THE BUG THIS CLOSES. Stripe's default, after its last retry fails, is to leave the
+  // subscription `past_due` for ever — nothing in this repo configures otherwise for a renewal.
+  // So `isLapsed` waits for a status that never arrives and the shop sells indefinitely unpaid.
+  it('lapses a past_due subscription once the grace window has run out', () => {
+    expect(dunningGraceExpired('past_due', daysAgo(PAST_DUE_GRACE_DAYS), NOW)).toBe(true)
+    expect(dunningGraceExpired('past_due', daysAgo(40), NOW)).toBe(true)
+  })
+
+  // The other half, and the reason for a window rather than closing on the first decline:
+  // Stripe's smart retries run for about two weeks, and a card that recovers on the last
+  // attempt must recover before the storefront ever goes dark.
+  it('leaves a shop alone while Stripe is still retrying', () => {
+    expect(dunningGraceExpired('past_due', daysAgo(1), NOW)).toBe(false)
+    expect(dunningGraceExpired('past_due', daysAgo(PAST_DUE_GRACE_DAYS - 1), NOW)).toBe(false)
+  })
+
+  // Only dunning. A healthy shop's period start is weeks old by definition, so reading the
+  // status first is what stops this closing every shop on earth.
+  it('never fires on a status that is not past_due', () => {
+    expect(dunningGraceExpired('active', daysAgo(40), NOW)).toBe(false)
+    expect(dunningGraceExpired('trialing', daysAgo(40), NOW)).toBe(false)
+    expect(dunningGraceExpired('canceled', daysAgo(40), NOW)).toBe(false)
+    expect(dunningGraceExpired(null, daysAgo(40), NOW)).toBe(false)
+  })
+
+  // No date, no lapse. A missing or unparseable timestamp measures nothing, and guessing
+  // "probably long enough" takes a paying merchant's storefront down.
+  it('refuses to lapse without a usable period start', () => {
+    expect(dunningGraceExpired('past_due', null, NOW)).toBe(false)
+    expect(dunningGraceExpired('past_due', undefined, NOW)).toBe(false)
+    expect(dunningGraceExpired('past_due', 'not-a-date', NOW)).toBe(false)
+  })
+})
+
 describe('needsReconcile', () => {
   const NOW = new Date('2026-08-06T12:00:00Z')
   const past = '2026-08-06T09:00:00Z'
@@ -78,6 +117,14 @@ describe('needsReconcile', () => {
   // exactly the event this sweep exists to survive the loss of.
   it('picks a past_due row whose period has elapsed', () => {
     expect(needsReconcile({ status: 'past_due', current_period_end: past, stripe_subscription_id: 'sub_1' }, NOW)).toBe(true)
+  })
+
+  // A past_due row is selected whatever its deadline says. Stripe advances the billing period
+  // when it issues the unpaid invoice, so a shop in dunning carries a period end a MONTH away —
+  // the deadline tests drop it, and it then goes a month unexamined with the grace window never
+  // evaluated. This is what keeps the hourly sweep looking at it.
+  it('picks a past_due row whose period end is still in the future', () => {
+    expect(needsReconcile({ status: 'past_due', current_period_end: future, stripe_subscription_id: 'sub_1' }, NOW)).toBe(true)
   })
 
   it('leaves a shop still inside its trial or period alone', () => {

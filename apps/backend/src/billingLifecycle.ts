@@ -21,12 +21,54 @@ export interface BillingRow {
  * coming in and no idea why.
  *
  * `past_due` is NOT here. It is Stripe still retrying the card, which is what dunning is; the
- * shop stays open until Stripe gives up and reports one of these three.
+ * shop stays open until Stripe gives up — but Stripe reporting one of these three is NOT the only
+ * way that happens. See `dunningGraceExpired`.
  */
 export const LAPSED_STATUSES = ['canceled', 'incomplete_expired', 'unpaid']
 
 export function isLapsed(status: string | null | undefined): boolean {
   return !!status && LAPSED_STATUSES.includes(status)
+}
+
+/**
+ * How long a `past_due` shop may stay open after the period it did not pay for began.
+ *
+ * 14 days covers Stripe's default smart-retry schedule, so a card that recovers on the last
+ * attempt recovers before the storefront ever closes.
+ */
+export const PAST_DUE_GRACE_DAYS = 14
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Has a `past_due` subscription sat unpaid long enough to close the shop?
+ *
+ * WHY THIS EXISTS, and why `isLapsed` alone was not enough. `LAPSED_STATUSES` assumes dunning
+ * ENDS — that Stripe eventually reports `canceled` or `unpaid`. Whether it does is a Stripe
+ * DASHBOARD setting, not anything this repo sets: the trial has an end behaviour
+ * (`trial_settings.missing_payment_method: 'cancel'`, see trialSubscription.ts) but a failed
+ * RENEWAL has none, and Stripe's default after the last retry is to leave the subscription
+ * `past_due` for ever. So a shop whose card died stayed `active`, served orders, and was re-read
+ * by the sweep every hour and called healthy every hour, because no status ever changed. That is
+ * the state this closes.
+ *
+ * The clock is the unpaid period's START, not its end: Stripe advances the billing period when it
+ * creates the renewal invoice, whether or not that invoice is paid, so `current_period_end` on a
+ * `past_due` subscription is a month in the FUTURE and measures nothing.
+ *
+ * Pure and conservative: no timestamp, no lapse. A shop left open one sweep too long costs a few
+ * hours of service; a shop closed on a date misread is a merchant dark with orders coming in.
+ */
+export function dunningGraceExpired(
+  status: string | null | undefined,
+  periodStart: string | null | undefined,
+  now: Date,
+  graceDays: number = PAST_DUE_GRACE_DAYS,
+): boolean {
+  if (status !== 'past_due' || !periodStart) return false
+  const started = new Date(periodStart).getTime()
+  if (Number.isNaN(started)) return false
+  return now.getTime() - started >= graceDays * DAY_MS
 }
 
 /** The billing-row statuses this sweep considers still-running, and so worth re-checking. */
@@ -75,6 +117,13 @@ export function needsReconcile(billing: BillingRow, now: Date): boolean {
   if (billing.comped) return false // a comp has no Stripe object to read
   if (!billing.stripe_subscription_id) return false
   if (!billing.status || !RUNNING.includes(billing.status)) return false
+
+  // A `past_due` row is ALWAYS worth re-reading, whatever its stored deadline says. Stripe moves
+  // the period forward when it issues the unpaid invoice, so a shop in dunning carries a
+  // `current_period_end` a month in the future — the deadline test below drops it, and the shop
+  // then goes a whole month unexamined while `dunningGraceExpired` has nothing to run on. The
+  // cost of the exception is one Stripe call an hour per shop in dunning, which is a small set.
+  if (billing.status === 'past_due') return true
 
   const elapsed = (iso: string | null | undefined) =>
     !!iso && new Date(iso).getTime() <= now.getTime()

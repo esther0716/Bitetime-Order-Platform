@@ -29,7 +29,14 @@ const ahead = (ms: number) => new Date(Date.now() + ms).toISOString()
  * `reconcileMerchantPlan` touch — a full fixture would be a second, wronger copy of Stripe's
  * schema.
  */
-function subscription(id: string, status: string, priceId = 'price_stub_basic_monthly'): { id: string } {
+function subscription(
+  id: string,
+  status: string,
+  priceId = 'price_stub_basic_monthly',
+  // Seconds, Stripe's unit. Defaults to a period that opened an hour ago, which is a shop
+  // nothing is wrong with; the dunning cases pass an older one.
+  periodStart = Math.floor(Date.now() / 1000) - 3600,
+): { id: string } {
   return {
     id,
     object: 'subscription',
@@ -39,9 +46,20 @@ function subscription(id: string, status: string, priceId = 'price_stub_basic_mo
     cancel_at_period_end: false,
     default_payment_method: null,
     metadata: {},
-    items: { object: 'list', data: [{ id: 'si_sweep', price: { id: priceId }, current_period_end: 1893456000 }] },
+    items: {
+      object: 'list',
+      data: [{
+        id: 'si_sweep',
+        price: { id: priceId },
+        current_period_start: periodStart,
+        current_period_end: 1893456000,
+      }],
+    },
   } as never
 }
+
+/** `n` days before now, in Stripe's seconds. */
+const secondsAgoDays = (n: number) => Math.floor(Date.now() / 1000) - n * 24 * 60 * 60
 
 /**
  * Answer the lookup for ONE subscription id, recording every id the sweep asked about.
@@ -127,6 +145,51 @@ describe('POST /api/internal/billing-sweep', () => {
     expect(vouchers!.map(v => v.active)).toEqual([true])
 
     await svc.from('merchants').delete().eq('id', id)
+  })
+
+  // The renewal half of the same bug, and the one that shipped: a failed renewal goes `past_due`
+  // and Stripe's DEFAULT after its final retry is to leave it `past_due` for ever — nothing here
+  // configures otherwise, unlike the trial's `missing_payment_method: 'cancel'`. So no status
+  // ever moves, `isLapsed` never fires, and the shop sells indefinitely without paying. Note the
+  // period end is in the FUTURE, as Stripe leaves it on a subscription in dunning.
+  it('closes a shop that has sat past_due beyond the grace window', async () => {
+    const id = await seedShop('sweep-dunning-shop', 'sweep-dunning@example.com', {
+      billing: {
+        status: 'past_due',
+        stripe_subscription_id: 'sub_sweep_dunning',
+        current_period_end: ahead(20 * 24 * 60 * 60_000),
+      },
+    })
+    answerWith(subscription('sub_sweep_dunning', 'past_due', undefined, secondsAgoDays(30)))
+
+    const res = await sweep(env.billingSweepSecret)
+    expect((await res.json() as { lapsed: number }).lapsed).toBeGreaterThanOrEqual(1)
+    expect((await shopOf(id)).status).toBe('suspended')
+
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  // The half that keeps that safe. Stripe's smart retries run about two weeks, so a shop three
+  // days into dunning may still be paid by the next attempt — closing it now would take a live
+  // storefront dark over one declined charge.
+  it('leaves a shop open while it is still inside the dunning grace window', async () => {
+    const id = await seedShop('sweep-dunning-early', 'sweep-dunning-early@example.com', {
+      billing: {
+        status: 'past_due',
+        stripe_subscription_id: 'sub_sweep_early',
+        current_period_end: ahead(27 * 24 * 60 * 60_000),
+      },
+    })
+    const asked = answerWith(subscription('sub_sweep_early', 'past_due', undefined, secondsAgoDays(3)))
+
+    await sweep(env.billingSweepSecret)
+
+    // Asked about — a past_due row is always in the worklist, whatever its period end says —
+    // and left running.
+    expect(asked).toContain('sub_sweep_early')
+    expect((await shopOf(id)).status).toBe('active')
+
+    await serviceClient().from('merchants').delete().eq('id', id)
   })
 
   // The other half, and the one that makes the sweep safe to run hourly: a trial that CONVERTED

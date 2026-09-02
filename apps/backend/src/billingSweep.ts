@@ -22,8 +22,11 @@ import { stripe } from './stripe.js'
 import { admin } from './supabase.js'
 import {
   upsertBilling, billingFromSubscription, reconcileBillingCycle, lapseMerchant,
+  subscriptionPeriodStart,
 } from './billing.js'
-import { isLapsed, needsReconcile, type BillingRow } from './billingLifecycle.js'
+import {
+  isLapsed, dunningGraceExpired, needsReconcile, PAST_DUE_GRACE_DAYS, type BillingRow,
+} from './billingLifecycle.js'
 
 /**
  * The one outbound adapter, held in a mutable object so tests can drive every branch without a
@@ -64,7 +67,10 @@ export async function findStaleBilling(now: Date): Promise<StaleRow[]> {
       // `not comped is true` rather than `comped is false`: the column is nullable, and a null
       // there means an ordinary paying shop, which must stay in the worklist.
       .not('comped', 'is', true)
-      .or(`trial_ends_at.lte.${iso},current_period_end.lte.${iso}`)
+      // `status.eq.past_due` is a third disjunct, not a deadline: a shop in dunning carries a
+      // period end in the FUTURE (Stripe advances the period when it issues the unpaid invoice),
+      // so the two deadline tests alone would never select it. See `needsReconcile`.
+      .or(`trial_ends_at.lte.${iso},current_period_end.lte.${iso},status.eq.past_due`)
       .order('merchant_id')
       .range(from, from + PAGE - 1)
     if (error) throw new Error(error.message)
@@ -93,11 +99,22 @@ export interface SweepResult {
  * derivation the webhook uses and the row must end up identical either way — a shop reconciled
  * by the sweep and one reconciled by the webhook are not allowed to look different.
  */
-async function reconcileOne(row: StaleRow): Promise<'lapsed' | 'refreshed'> {
+async function reconcileOne(row: StaleRow, now: Date): Promise<'lapsed' | 'refreshed'> {
   const sub = await billingSweepDeps.fetchSubscription(row.stripe_subscription_id!)
   await upsertBilling(row.merchant_id, billingFromSubscription(sub))
 
-  if (isLapsed(sub.status)) {
+  // TWO ways a subscription stops paying for the shop, and only the first is a status. The
+  // second is a `past_due` one that has been retried past the grace window: Stripe's default
+  // after its last retry is to leave the status `past_due` for ever, so waiting for `canceled`
+  // means waiting for something that never comes.
+  const exhausted = dunningGraceExpired(sub.status, subscriptionPeriodStart(sub), now)
+  if (isLapsed(sub.status) || exhausted) {
+    if (exhausted) {
+      console.log(
+        `billing sweep: subscription ${sub.id} for merchant ${row.merchant_id} has been ` +
+          `past_due for over ${PAST_DUE_GRACE_DAYS} days — suspending the shop.`,
+      )
+    }
     await lapseMerchant(row.merchant_id)
     return 'lapsed'
   }
@@ -124,7 +141,7 @@ export async function runBillingSweep(now: Date): Promise<SweepResult> {
 
   for (const row of stale) {
     try {
-      const outcome = await reconcileOne(row)
+      const outcome = await reconcileOne(row, now)
       result[outcome]++
     } catch (err) {
       result.failed++
