@@ -380,15 +380,53 @@ describe('PATCH /api/merchants/:id/vouchers/:voucherId', () => {
     expect(Number(data!.amount)).toBe(5)
   })
 
-  it('404s a retired voucher rather than resurrecting it', async () => {
-    const voucherId = await seedVoucher({ merchant_id: id, code: 'RETIRED' })
-    await del(`/api/merchants/${id}/vouchers/${voucherId}`, token)
+  it('flips active on its own, leaving the rules untouched, and the list keeps the row', async () => {
+    const voucherId = await seedVoucher({ merchant_id: id, code: 'PAUSE', kind: 'percent', amount: 25 })
 
-    const res = await patch(`/api/merchants/${id}/vouchers/${voucherId}`, { kind: 'fixed', amount: 9 }, token)
-    expect(res.status).toBe(404)
-    const { data } = await serviceClient().from('vouchers').select('active, amount').eq('id', voucherId).single()
+    const off = await patch(`/api/merchants/${id}/vouchers/${voucherId}`, { active: false }, token)
+    expect(off.status).toBe(200)
+    const row = (await off.json()) as Record<string, unknown>
+    expect(row.active).toBe(false)
+    expect(row.kind).toBe('percent')
+    expect(Number(row.amount)).toBe(25)
+
+    // A PAUSE, not a delete: the merchant's list still shows it, so they can see it is off and
+    // turn it back on. This is the row that used to vanish and make "Turn off" read as delete.
+    const list = await app.request(`/api/merchants/${id}/vouchers`, { headers: { Authorization: `Bearer ${token}` } })
+    const rows = (await list.json()) as { id: string; active: boolean }[]
+    expect(rows.find(r => r.id === voucherId)?.active).toBe(false)
+
+    // Still editable while paused — it is the same campaign, waiting.
+    const edited = await patch(`/api/merchants/${id}/vouchers/${voucherId}`, { kind: 'percent', amount: 30 }, token)
+    expect(edited.status).toBe(200)
+    expect((await edited.json() as Record<string, unknown>).active).toBe(false)
+
+    const on = await patch(`/api/merchants/${id}/vouchers/${voucherId}`, { active: true }, token)
+    expect(on.status).toBe(200)
+    expect((await on.json() as Record<string, unknown>).active).toBe(true)
+  })
+
+  it('refuses to reactivate while another live voucher holds the code', async () => {
+    const first = await seedVoucher({ merchant_id: id, code: 'CLASH' })
+    await patch(`/api/merchants/${id}/vouchers/${first}`, { active: false }, token)
+    // The partial unique index freed the string, so a second live CLASH is legal…
+    const second = await seedVoucher({ merchant_id: id, code: 'CLASH' })
+
+    // …and now the first cannot come back until the second steps aside.
+    const res = await patch(`/api/merchants/${id}/vouchers/${first}`, { active: true }, token)
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'duplicate_code' })
+    const { data } = await serviceClient().from('vouchers').select('active').eq('id', first).single()
     expect(data!.active).toBe(false)
-    expect(Number(data!.amount)).toBe(5)
+
+    await patch(`/api/merchants/${id}/vouchers/${second}`, { active: false }, token)
+    expect((await patch(`/api/merchants/${id}/vouchers/${first}`, { active: true }, token)).status).toBe(200)
+  })
+
+  it('refuses an empty patch and a non-boolean active', async () => {
+    const voucherId = await seedVoucher({ merchant_id: id, code: 'NOOP' })
+    expect((await patch(`/api/merchants/${id}/vouchers/${voucherId}`, {}, token)).status).toBe(400)
+    expect((await patch(`/api/merchants/${id}/vouchers/${voucherId}`, { active: 'yes' }, token)).status).toBe(400)
   })
 
   // The same hole as DELETE: :id proves the caller's shop, not the voucher's.

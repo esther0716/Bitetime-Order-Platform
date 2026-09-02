@@ -125,7 +125,8 @@ import {
   voucherFullyUsed,
   fetchMerchantVouchers,
   createMerchantVoucher,
-  deleteMerchantVoucher,
+  updateMerchantVoucher,
+  setMerchantVoucherActive,
   quoteDelivery,
 } from './store'
 import * as supabaseModule from './supabase'
@@ -1538,7 +1539,7 @@ describe('lookupMerchantVoucher', () => {
 // inside placeOrder's transaction, and is proven against a real Postgres — including under
 // concurrent redemption — in apps/backend/tests/api/orders.test.ts.
 
-// ── createMerchantVoucher / deleteMerchantVoucher (Task 6) ────────────────────
+// ── createMerchantVoucher / updateMerchantVoucher / setMerchantVoucherActive ─────
 
 describe('createMerchantVoucher', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -1611,27 +1612,58 @@ describe('createMerchantVoucher', () => {
   })
 })
 
-describe('deleteMerchantVoucher', () => {
+describe('updateMerchantVoucher', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('DELETEs /api/merchants/:merchantId/vouchers/:id with a bearer token', async () => {
+  it('PATCHes the rules and the switch, never a code, and maps the row back', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }), text: async () => JSON.stringify({ ok: true }) })
+    const row = { id: 'v9', code: 'SAVE10', kind: 'fixed', amount: 5, max_uses: null, active: false }
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => row, text: async () => JSON.stringify(row) })
     vi.stubGlobal('fetch', fetchMock)
 
-    const r = await deleteMerchantVoucher('v9', 'm1')
-    expect(r).toEqual({ ok: true, data: undefined })
-
+    const r = await updateMerchantVoucher('v9', 'm1', { kind: 'fixed', amount: 5, perCustomerLimit: null, maxUses: 40, active: false })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toMatch(/\/api\/merchants\/m1\/vouchers\/v9$/)
-    expect(init.method).toBe('DELETE')
+    expect(init.method).toBe('PATCH')
     expect(init.headers.Authorization).toBe('Bearer tok')
+    expect(JSON.parse(init.body)).toEqual({
+      kind: 'fixed', amount: 5, maxUses: 40, perCustomerLimit: null, expiresOn: null, minOrder: null, active: false,
+    })
+    expect(r.ok && r.data.active).toBe(false)
   })
 
-  it('returns { ok:false } on a non-2xx response', async () => {
+  it('omits the switch when the caller did not say', async () => {
     __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ error: 'nope' }) }))
-    expect((await deleteMerchantVoucher('v9', 'm1')).ok).toBe(false)
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'v9', code: 'X' }), text: async () => '{}' })
+    vi.stubGlobal('fetch', fetchMock)
+    await updateMerchantVoucher('v9', 'm1', { kind: 'percent', amount: 10 })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty('active')
+  })
+})
+
+describe('setMerchantVoucherActive', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('PATCHes { active } alone — the list must not have to know the rules to flip a switch', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    const row = { id: 'v9', code: 'SAVE10', kind: 'percent', amount: 10, active: true }
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => row, text: async () => JSON.stringify(row) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const r = await setMerchantVoucherActive('v9', 'm1', true)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/merchants\/m1\/vouchers\/v9$/)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body)).toEqual({ active: true })
+    expect(r.ok && r.data.active).toBe(true)
+  })
+
+  it('surfaces the reactivation collision as its code', async () => {
+    __mocks.getSession.mockResolvedValueOnce({ data: { session: { access_token: 'tok' } } })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ error: 'duplicate_code' }) }))
+    const r = await setMerchantVoucherActive('v9', 'm1', true)
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.error.code).toBe('duplicate_code')
   })
 })
 

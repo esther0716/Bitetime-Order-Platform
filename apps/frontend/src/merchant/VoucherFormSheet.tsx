@@ -89,7 +89,7 @@ function Disclosure({ id, checked, onCheckedChange, label, children }: {
  *
  * In edit mode the code is READ-ONLY. It is what the merchant has printed and what customers
  * are holding, and the server ignores one in the body anyway; a merchant who needs a different
- * string turns this voucher off and creates the next, which is deliberately a new campaign.
+ * string deactivates this voucher and creates the next, which is deliberately a new campaign.
  */
 export default function VoucherFormSheet({
   open,
@@ -146,7 +146,7 @@ export default function VoucherFormSheet({
     e.preventDefault(); setBusy(true)
     const rules = formToRules(form)
     const r = voucher
-      ? await updateMerchantVoucher(voucher.id as string, merchant!.id, rules)
+      ? await updateMerchantVoucher(voucher.id as string, merchant!.id, { ...rules, active: form.active })
       : await createMerchantVoucher({ merchantId: merchant!.id, code: form.code, ...rules })
     setBusy(false)
     if (r.ok) {
@@ -162,7 +162,11 @@ export default function VoucherFormSheet({
         '当一位顾客可无限次使用优惠券时，必须设置总使用次数上限。',
       ))
     } else if (r.error?.code === 'duplicate_code') {
-      toast.error(t('That code is already in use.', '该优惠码已被使用。'))
+      // On edit this can only mean one thing: the merchant is switching this voucher back on while
+      // a second live voucher holds the same code. Say which one has to move.
+      toast.error(voucher
+        ? t('Another active voucher already uses this code. Deactivate it first.', '另一张启用中的优惠券已使用此优惠码。请先停用它。')
+        : t('That code is already in use.', '该优惠码已被使用。'))
     } else {
       toast.error(voucher ? t('Could not save voucher.', '无法保存优惠券。') : t('Could not create voucher.', '无法创建优惠券。'))
     }
@@ -195,7 +199,7 @@ export default function VoucherFormSheet({
                         <Input id="vm-code" variant="compact" value={form.code} readOnly className="font-medium" />
                         <p className="text-[12px] text-muted-foreground">
                           {t(
-                            'The code cannot change — customers are already holding it. Turn this voucher off and create a new one for a different code.',
+                            'The code cannot change — customers are already holding it. Deactivate this voucher and create a new one for a different code.',
                             '优惠码无法更改 — 顾客已持有该码。如需新码，请停用此优惠券并创建新的。',
                           )}
                         </p>
@@ -360,7 +364,27 @@ export default function VoucherFormSheet({
               </FormSection>
             </div>
 
-            <div className="shrink-0 flex items-center justify-end gap-3 border-t border-border bg-card px-4 py-3">
+            <div className={`shrink-0 flex items-center gap-3 border-t border-border bg-card px-4 py-3 ${editing ? 'justify-between' : 'justify-end'}`}>
+              {/* The same switch the product sheet pins to its footer, for the same state: on the
+                  storefront or not. Edit mode only — a brand-new code that starts paused is a code
+                  nobody asked for, and the create route does not take the field. */}
+              {editing && (
+                <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    id="vm-active"
+                    type="button"
+                    role="switch"
+                    aria-checked={form.active}
+                    onClick={() => setForm({ ...form, active: !form.active })}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-pill transition-colors cursor-pointer ${form.active ? 'bg-primary' : 'bg-border'}`}
+                  >
+                    <span className={`inline-block size-5 rounded-pill bg-white shadow-sm transition-transform ${form.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                  </button>
+                  <Label htmlFor="vm-active" className="min-w-0 truncate text-[13px]">
+                    {form.active ? t('Active at checkout', '结账时可用') : t('Paused — not redeemable', '已暂停 — 无法兑换')}
+                  </Label>
+                </div>
+              )}
               {/* `size="none"`, not `md`: every md button is `w-full`, which in a pinned footer
                   eats the row. */}
               <Button

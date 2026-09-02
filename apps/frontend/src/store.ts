@@ -636,13 +636,18 @@ export interface VoucherRulesInput {
 }
 
 /**
- * Edit a live voucher: the discount and every restriction, never the code.
+ * Edit a voucher: the discount, every restriction and whether it is active — never the code.
  *
  * The code is what the merchant has printed and what customers are holding, so the server ignores
  * one in the body and this signature does not offer one. A merchant who needs a different string
- * turns this voucher off and creates the next, which is deliberately a new campaign.
+ * deactivates this voucher and creates the next, which is deliberately a new campaign.
+ *
+ * Reactivating can be refused (`duplicate_code`, 409): the merchant may have created a second live
+ * voucher with the same code while this one was paused, and two live rows cannot share one.
  */
-export async function updateMerchantVoucher(id: string, merchantId: string, input: VoucherRulesInput): Promise<Result<Voucher>> {
+export async function updateMerchantVoucher(
+  id: string, merchantId: string, input: VoucherRulesInput & { active?: boolean },
+): Promise<Result<Voucher>> {
   const r = await apiSend<any>(`/api/merchants/${merchantId}/vouchers/${id}`, 'PATCH', {
     kind: input.kind,
     amount: input.amount,
@@ -650,12 +655,19 @@ export async function updateMerchantVoucher(id: string, merchantId: string, inpu
     perCustomerLimit: input.perCustomerLimit === undefined ? 1 : input.perCustomerLimit,
     expiresOn: input.expiresOn ?? null,
     minOrder: input.minOrder ?? null,
+    ...(input.active === undefined ? {} : { active: input.active }),
   }, { auth: true })
   return mapOk(r, voucherFromRow)
 }
 
-export async function deleteMerchantVoucher(id: string, merchantId: string): Promise<Result<void>> {
-  return toVoid(await apiSend(`/api/merchants/${merchantId}/vouchers/${id}`, 'DELETE', undefined, { auth: true }))
+/**
+ * Pause or resume a voucher without touching its rules — the list's own action, which must not
+ * have to know the discount to flip a switch. Deactivation is a PAUSE: the row keeps its code,
+ * its limits and its redemption count, and comes back exactly as it was.
+ */
+export async function setMerchantVoucherActive(id: string, merchantId: string, active: boolean): Promise<Result<Voucher>> {
+  const r = await apiSend<any>(`/api/merchants/${merchantId}/vouchers/${id}`, 'PATCH', { active }, { auth: true })
+  return mapOk(r, voucherFromRow)
 }
 
 // ── Referral program ─────────────────────────────────────────────────────────

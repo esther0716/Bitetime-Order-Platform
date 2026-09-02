@@ -7,7 +7,7 @@ const plain: Voucher = { id: 'v1', code: 'SAVE10', type: 'percent', value: 10, m
 describe('voucherToForm', () => {
   it('opens a plain voucher with every limit box unticked', () => {
     const f = voucherToForm(plain)
-    expect(f).toMatchObject({ code: 'SAVE10', kind: 'percent', amount: '10' })
+    expect(f).toMatchObject({ code: 'SAVE10', active: true, kind: 'percent', amount: '10' })
     expect([f.limitTotal, f.limitPerCustomer, f.limitExpiry, f.limitMinOrder]).toEqual([false, false, false, false])
     // The blank form's suggestion, so ticking "reusable" later does not offer "1".
     expect(f.perCustomerLimit).toBe(BLANK_VOUCHER.perCustomerLimit)
@@ -22,6 +22,10 @@ describe('voucherToForm', () => {
       limitExpiry: true, expiresOn: '2026-12-31',
       limitMinOrder: true, minOrder: '30',
     })
+  })
+
+  it('opens a paused voucher with its switch off', () => {
+    expect(voucherToForm({ ...plain, active: false }).active).toBe(false)
   })
 
   it('shows an unlimited per-customer voucher as reusable with a blank count', () => {
@@ -63,5 +67,6 @@ describe('voucherDraftChanged', () => {
     expect(voucherDraftChanged({ ...seeded, amount: '15' }, seeded)).toBe(true)
     expect(voucherDraftChanged({ ...seeded, limitExpiry: true, expiresOn: '2026-12-31' }, seeded)).toBe(true)
     expect(voucherDraftChanged({ ...seeded, code: 'OTHER' }, seeded)).toBe(true)
+    expect(voucherDraftChanged({ ...seeded, active: false }, seeded)).toBe(true)
   })
 })

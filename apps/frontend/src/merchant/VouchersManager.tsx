@@ -3,10 +3,9 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { MoreHorizontal, Ticket } from 'lucide-react'
 import { useSession } from '../SessionContext'
 import { toast } from 'sonner'
-import { fetchMerchantVouchers, deleteMerchantVoucher } from '../store'
+import { fetchMerchantVouchers, setMerchantVoucherActive } from '../store'
 import { formatMoney } from '../currency'
 import { SkeletonText } from '../components/Loaders'
-import ConfirmDialog from '../components/ConfirmDialog'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import {
@@ -24,7 +23,7 @@ interface VoucherTableMeta {
   t: (en: string, zh: string) => string
   currency?: string
   onEdit: (v: Voucher) => void
-  onTurnOff: (v: Voucher) => void
+  onSetActive: (v: Voucher, active: boolean) => void
 }
 
 function discountLabel(v: Voucher, currency: string | undefined, t: VoucherTableMeta['t']) {
@@ -58,15 +57,16 @@ const columns: ColumnDef<Voucher>[] = [
     cell: ({ row, table }) => {
       const { t } = table.options.meta as VoucherTableMeta
       const v = row.original
+      const paused = v.active === false
       return (
-        <div className="text-[14px] font-medium text-foreground flex items-center gap-2 flex-wrap">
+        <div className={`text-[14px] font-medium flex items-center gap-2 flex-wrap ${paused ? 'text-muted-foreground' : 'text-foreground'}`}>
           {v.code}
-          {/* A voucher a shop's customers already hold, which no longer redeems because the shop
-              stepped down from Pro. Shown rather than hidden: the merchant needs to know the
-              codes they have handed out are dead, and a silently missing row reads as a bug. */}
-          {v.active === false && (
-            <Badge variant="outline" className="uppercase tracking-[0.08em]">
-              {t('Inactive', '已停用')}
+          {/* A paused voucher stays on the list, marked. It used to vanish, which is what made
+              "Turn off" read as delete: the merchant needs to see that the code they handed out
+              is off, and to have somewhere to switch it back on. */}
+          {paused && (
+            <Badge variant="danger" className="uppercase tracking-[0.08em]">
+              {t('Paused', '已暂停')}
             </Badge>
           )}
         </div>
@@ -144,7 +144,13 @@ const columns: ColumnDef<Voucher>[] = [
             <DropdownMenuContent align="end">
               <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onEdit(v)}>{t('Edit', '编辑')}</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" className="cursor-pointer" onClick={() => meta.onTurnOff(v)}>{t('Turn off', '停用')}</DropdownMenuItem>
+              {/* Not destructive-styled and not confirmed: a pause is reversible from the same
+                  menu, and a red item with a dialog is what told merchants it was a delete. */}
+              {v.active === false ? (
+                <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onSetActive(v, true)}>{t('Activate', '启用')}</DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem className="cursor-pointer" onClick={() => meta.onSetActive(v, false)}>{t('Deactivate', '停用')}</DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -162,8 +168,6 @@ export default function VouchersManager() {
   // One id per opening of the form: what tells VoucherFormSheet a NEW opening has arrived, so the
   // same voucher opened twice still starts clean.
   const [formSession, setFormSession] = useState(() => crypto.randomUUID())
-  // The voucher a Turn off action is asking about; null → no confirm open.
-  const [pendingDelete, setPendingDelete] = useState<Voucher | null>(null)
   const currency = merchant?.currency
 
   // Parity with the old `[]`-on-failure behaviour: a dashboard list that could not load shows
@@ -186,20 +190,23 @@ export default function VouchersManager() {
     setFormOpen(true)
   }
 
-  async function remove(v: Voucher) {
-    const r = await deleteMerchantVoucher(v.id as string, merchant!.id)
+  async function setActive(v: Voucher, active: boolean) {
+    const r = await setMerchantVoucherActive(v.id as string, merchant!.id, active)
     if (r.ok) {
       await load()
-      toast.success(t('Voucher turned off', '优惠券已停用'))
+      toast.success(active ? t('Voucher activated', '优惠券已启用') : t('Voucher paused', '优惠券已暂停'))
+    } else if (r.error?.code === 'duplicate_code') {
+      // The merchant created a second live voucher with this code while this one was paused.
+      toast.error(t('Another active voucher already uses this code. Deactivate it first.', '另一张启用中的优惠券已使用此优惠码。请先停用它。'))
     } else {
-      toast.error(t('Could not turn off voucher', '无法停用优惠券'))
+      toast.error(active ? t('Could not activate voucher', '无法启用优惠券') : t('Could not pause voucher', '无法暂停优惠券'))
     }
   }
 
   const meta: VoucherTableMeta = {
     t, currency,
     onEdit: openEdit,
-    onTurnOff: setPendingDelete,
+    onSetActive: setActive,
   }
 
   if (!rows) return (
@@ -207,6 +214,10 @@ export default function VouchersManager() {
       <SkeletonText lines={4} />
     </div>
   )
+
+  // Live codes first, paused ones under them. The API already orders newest-first inside each
+  // group, and a stable sort keeps that.
+  const ordered = [...rows].sort((a, b) => Number(b.active !== false) - Number(a.active !== false))
 
   return (
     <div className="bg-card border-[0.5px] border-border rounded-2xl p-5 mb-8 w-full box-border">
@@ -239,7 +250,7 @@ export default function VouchersManager() {
       ) : (
         <DataTable
           columns={columns}
-          data={rows}
+          data={ordered}
           meta={meta}
           searchPlaceholder={t('Search vouchers…', '搜索优惠券…')}
           emptyText={t('No vouchers match your search.', '没有匹配的优惠券。')}
@@ -256,23 +267,6 @@ export default function VouchersManager() {
         onSaved={load}
       />
 
-      <ConfirmDialog
-        open={!!pendingDelete}
-        onOpenChange={o => { if (!o) setPendingDelete(null) }}
-        title={t('Turn off this voucher?', '停用此优惠券？')}
-        body={
-          <p>
-            {/* Not "cannot be undone": the row is deactivated, not deleted, so its redemption
-                history survives and the code string is free to use again. */}
-            {t(
-              `Code ${pendingDelete?.code ?? ''} stops working at checkout, and any customer already holding it can no longer redeem it. You can create the same code again later.`,
-              `优惠码 ${pendingDelete?.code ?? ''} 将在结账时失效，已持有该码的顾客也无法再使用。日后可重新创建相同的优惠码。`,
-            )}
-          </p>
-        }
-        confirmLabel={t('Turn off voucher', '停用优惠券')}
-        onConfirm={async () => { if (pendingDelete) await remove(pendingDelete) }}
-      />
     </div>
   )
 }

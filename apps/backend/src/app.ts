@@ -753,7 +753,11 @@ app.get('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const { data, error } = await admin
     .from('vouchers')
     .select('id, merchant_id, code, kind, amount, max_uses, per_customer_limit, expires_at, min_order, used_by, active, created_at')
-    .eq('merchant_id', m.id).eq('active', true)
+    // Inactive rows INCLUDED. A deactivated voucher is a paused campaign the merchant can resume,
+    // not a deleted one, and a row that vanishes from the list is what made "Turn off" read as
+    // delete. The customer-facing lookup and `claimVoucher` still filter `active` themselves.
+    .eq('merchant_id', m.id)
+    .order('created_at', { ascending: false })
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   const rows = data ?? []
   // One grouped count for the whole list, not one query per voucher. `used_by` is still selected
@@ -1344,32 +1348,51 @@ app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
 
 // Voucher edit: everything except the code. The code is the campaign's identity — printed on
 // flyers, held by customers, and what the partial unique index keys on — so an edit changes what
-// the code DOES and never what it IS. A merchant who needs a different string turns this one off
-// and creates the next; that is deliberately a new row, so the old campaign keeps its redemptions.
+// the code DOES and never what it IS. A merchant who needs a different string deactivates this
+// one and creates the next; that is deliberately a new row, so the old campaign keeps its
+// redemptions.
 //
-// A FULL replacement of the rules, not a merge: the form sends all six fields on every save, and
-// a merge would make "I unticked the expiry" indistinguishable from "I did not mention it". Rows
-// already redeemed are untouched — lowering `max_uses` under the count taken simply reads as
-// fully used from now on.
+// Two body shapes, and the presence of `kind` tells them apart:
+//   - the rules (`kind`, `amount`, the four limits), optionally with `active` — the sheet's save.
+//     A FULL replacement, not a merge: the form sends every field on every save, and a merge would
+//     make "I unticked the expiry" indistinguishable from "I did not mention it".
+//   - `{ active }` alone — the list's Activate/Deactivate action, which must not have to know the
+//     rules to flip a switch.
+// Rows already redeemed are untouched either way — lowering `max_uses` under the count taken
+// simply reads as fully used from now on.
 //
-// `requireOwnsChild` is the tenancy guard (the same hole as DELETE: `:id` proves the caller's
-// shop, not the voucher's), and its `active` filter is here rather than in the middleware
-// because a retired voucher is a row that still exists — editing it would be the resurrect-and-
-// reset that turning off exists to prevent.
+// `active` is a PAUSE, not a delete, and an inactive voucher is therefore still editable — it is
+// the same campaign, waiting. Reactivation is where the partial unique index bites: the merchant
+// may have created a second live voucher with the same code in the meantime, and two live rows
+// cannot share one. That is a 409 `duplicate_code`, the same answer create gives, and the
+// dashboard tells them to deactivate the other one first.
+//
+// `requireOwnsChild` is the tenancy guard — the same hole as DELETE: `:id` proves the caller's
+// shop, not the voucher's.
 app.patch('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
   const m = c.get('merchant')
   const existing = c.get('child')
-  if (!existing || existing.active === false) return c.json({ error: 'Not found' }, 404)
+  if (!existing) return c.json({ error: 'Not found' }, 404)
   const b = await c.req.json().catch(() => ({} as any))
 
-  const parsed = parseVoucherRules(b, m.timezone)
-  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  const patch: Record<string, unknown> = {}
+  if (b?.active !== undefined) {
+    if (typeof b.active !== 'boolean') return c.json({ error: 'Invalid active' }, 400)
+    patch.active = b.active
+  }
+  if (b?.kind !== undefined) {
+    const parsed = parseVoucherRules(b, m.timezone)
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+    Object.assign(patch, parsed.rules)
+  }
+  if (Object.keys(patch).length === 0) return c.json({ error: 'Nothing to update' }, 400)
 
   const { data, error } = await admin.from('vouchers')
-    .update(parsed.rules)
+    .update(patch)
     .eq('id', existing.id)
     .select()
     .single()
+  if (error?.code === '23505') return c.json({ error: 'duplicate_code' }, 409)
   if (error) return c.json({ error: 'Update failed' }, 500)
   const counts = await redemptionCounts([existing.id as string])
   return c.json(voucherMerchantView(data, m.timezone, counts[existing.id as string] ?? 0))
@@ -1380,13 +1403,14 @@ app.patch('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, require
 // it under :id = A. Loading the voucher and checking merchant_id === :id before deleting is
 // what closes that hole (Global Constraint 2), mirroring the product DELETE handler above.
 // DEACTIVATE, not delete. A hard delete would take the redemption history with it, and
-// delete-and-recreate was also how a merchant silently reset `used_by`. Every read filters
-// `active`, so the code disappears from the dashboard and stops redeeming — the customer-facing
-// behaviour is identical to what a delete did.
+// delete-and-recreate was also how a merchant silently reset `used_by`. The same write as
+// `PATCH { active: false }` above, which is what the dashboard now sends — this verb survives
+// for any caller still speaking it, and because a DELETE that deletes would be the one thing
+// this route must never become.
 //
-// The unique index is PARTIAL (`(merchant_id, code) where active`), so retiring a code frees its
-// string: recreating it makes a NEW row with a new id, and the old campaign's redemptions stay
-// attached to the old campaign and count against nobody.
+// The unique index is PARTIAL (`(merchant_id, code) where active`), so deactivating a code frees
+// its string: creating it again makes a NEW row with a new id, and the old campaign's redemptions
+// stay attached to the old campaign and count against nobody.
 app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
   const voucherId = c.req.param('voucherId')
   const { error } = await admin.from('vouchers').update({ active: false }).eq('id', voucherId)

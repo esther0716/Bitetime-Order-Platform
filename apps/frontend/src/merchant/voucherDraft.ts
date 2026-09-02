@@ -8,6 +8,8 @@ import type { Voucher } from '../types'
 
 export interface VoucherForm {
   code: string
+  /** Redeemable at checkout. Off is a PAUSE, never a delete — see CONTEXT.md → Voucher. */
+  active: boolean
   kind: 'percent' | 'fixed'
   amount: string
   /**
@@ -29,7 +31,7 @@ export interface VoucherForm {
 }
 
 export const BLANK_VOUCHER: VoucherForm = {
-  code: '', kind: 'percent', amount: '',
+  code: '', active: true, kind: 'percent', amount: '',
   limitTotal: false, maxUses: '',
   limitPerCustomer: false, perCustomerLimit: '2',
   limitExpiry: false, expiresOn: '',
@@ -42,6 +44,7 @@ export function voucherToForm(v: Voucher): VoucherForm {
   const reusable = v.perCustomerLimit !== 1
   return {
     code: v.code ?? '',
+    active: v.active !== false,
     kind,
     amount: v.value == null ? '' : String(v.value),
     limitTotal: v.maxUses != null,
@@ -92,6 +95,6 @@ export function formToRules(f: VoucherForm): VoucherRules {
  * about a change nobody made. The code is compared raw because it is sent raw.
  */
 export function voucherDraftChanged(current: VoucherForm, seeded: VoucherForm): boolean {
-  if (current.code !== seeded.code) return true
+  if (current.code !== seeded.code || current.active !== seeded.active) return true
   return JSON.stringify(formToRules(current)) !== JSON.stringify(formToRules(seeded))
 }
