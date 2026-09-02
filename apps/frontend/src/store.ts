@@ -5,7 +5,7 @@ import { revenueQuery, type RevenueSelection } from './merchant/revenueRange';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
-import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher } from './types';
+import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher, VoucherRedemption } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForFile, apiSendForm, mapOk, toVoid } from './api'
@@ -658,6 +658,22 @@ export async function updateMerchantVoucher(
     ...(input.active === undefined ? {} : { active: input.active }),
   }, { auth: true })
   return mapOk(r, voucherFromRow)
+}
+
+/** A voucher's history, newest first. See `VoucherRedemption`. */
+export async function fetchVoucherRedemptions(id: string, merchantId: string): Promise<Result<VoucherRedemption[]>> {
+  const r = await apiGet<any[]>(`/api/merchants/${merchantId}/vouchers/${id}/redemptions`, { auth: true })
+  return mapOk(r, rows => rows.map(row => ({
+    id: row.id,
+    redeemedAt: row.redeemed_at ?? null,
+    voidedAt: row.voided_at ?? null,
+    orderId: row.order_id ?? null,
+    orderNumber: row.order_number ?? null,
+    customerName: row.customer_name ?? null,
+    // postgres.js hands `numeric` back as a string.
+    discount: row.discount == null ? null : Number(row.discount),
+    orderStatus: row.order_status ?? null,
+  })))
 }
 
 /**

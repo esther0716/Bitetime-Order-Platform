@@ -75,3 +75,44 @@ export async function syncOrderRedemptionVoid(orderId: string, cancelled: boolea
     where order_id = ${orderId}
   `
 }
+
+/** One line of a voucher's history, as the merchant may see it. */
+export interface VoucherRedemptionRow {
+  id: string
+  /** null on a backfilled row — no timestamp exists for a historical entry (ADR 0019). */
+  redeemed_at: string | null
+  /** Set while the order is cancelled (ADR 0023). */
+  voided_at: string | null
+  /** null on a backfilled row, and on a row whose order was hard-deleted (`on delete set null`). */
+  order_id: string | null
+  order_number: string | null
+  customer_name: string | null
+  discount: string | null
+  order_status: string | null
+}
+
+/**
+ * A voucher's redemptions, newest first, each joined to the order it was spent on.
+ *
+ * `customer_key` is NOT selected, and must never be: it is the redeemer's platform account email,
+ * and CONTEXT.md → Shop customer draws that line — a shop sees shop-scoped facts and no account
+ * email. What it sees here is what the ORDER already shows it: the customer name they typed at
+ * checkout, the order number, the discount taken. `tests/api/reads-voucher-redemptions.test.ts`
+ * asserts the absence.
+ *
+ * Not a tenancy boundary: the caller has already proved it owns `voucherId` (`requireOwnsChild`).
+ * Capped because an unlimited-total voucher has no natural bound; the count the merchant sees
+ * elsewhere is `redemptionCounts`, so a cap here hides nothing about the total.
+ */
+export async function voucherRedemptions(voucherId: string, limit = 200): Promise<VoucherRedemptionRow[]> {
+  return await sql<VoucherRedemptionRow[]>`
+    select
+      r.id, r.redeemed_at, r.voided_at,
+      o.id as order_id, o.order_number, o.customer_name, o.discount, o.status as order_status
+    from voucher_redemptions r
+    left join orders o on o.id = r.order_id
+    where r.voucher_id = ${voucherId}
+    order by r.redeemed_at desc nulls last, r.id
+    limit ${limit}
+  `
+}

@@ -246,6 +246,25 @@ export interface ShopCustomerPage {
 /** The orderings the list offers. Everything but `recent` is Pro. */
 export type ShopCustomerSort = 'recent' | 'spend' | 'orders'
 
+/**
+ * One line of a voucher's history, as the merchant's own route returns it. Everything here is a
+ * fact about the ORDER the code was spent on — the account email behind the redemption never
+ * leaves the backend (CONTEXT.md → Shop customer).
+ */
+export interface VoucherRedemption {
+  id: string
+  /** null on a backfilled row — no timestamp exists for a historical entry. */
+  redeemedAt: string | null
+  /** Set while the order is cancelled: the use has been returned. */
+  voidedAt: string | null
+  /** null on a backfilled row, or when the order was deleted. */
+  orderId: string | null
+  orderNumber: string | null
+  customerName: string | null
+  discount: number | null
+  orderStatus: string | null
+}
+
 export interface Voucher {
   code: string
   used?: boolean

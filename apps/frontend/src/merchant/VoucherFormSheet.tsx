@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useSession } from '../SessionContext'
-import { createMerchantVoucher, updateMerchantVoucher } from '../store'
-import { currencyDef } from '../currency'
+import { createMerchantVoucher, updateMerchantVoucher, fetchVoucherRedemptions } from '../store'
+import { currencyDef, formatMoney } from '../currency'
+import { fmtDateTime } from '../merchantDate'
+import { SkeletonText } from '../components/Loaders'
+import { Badge } from '../components/ui/badge'
 import {
   BLANK_VOUCHER, voucherToForm, formToRules, voucherDraftChanged, type VoucherForm,
 } from './voucherDraft'
@@ -15,7 +18,7 @@ import { Checkbox } from '../components/ui/checkbox'
 import DateField from './DateField'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
-import type { Voucher } from '../types'
+import type { Voucher, VoucherRedemption } from '../types'
 
 // Unambiguous alphabet (no 0/O/1/I) so codes read cleanly aloud
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -114,6 +117,9 @@ export default function VoucherFormSheet({
   const [savedDraft, setSavedDraft] = useState<VoucherForm>(BLANK_VOUCHER)
   // Open when closing the sheet would throw typed work away.
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  // The history card's rows. null = not loaded yet for this opening; the effect below refetches
+  // per session id, so reopening the same voucher after a cancellation shows the return.
+  const [history, setHistory] = useState<VoucherRedemption[] | null>(null)
 
   const currency = merchant?.currency
   const symbol = currencyDef(currency).symbol
@@ -124,10 +130,26 @@ export default function VoucherFormSheet({
   if (open && sessionId !== seeded) {
     setSeeded(sessionId)
     setConfirmDiscard(false)
+    // A new opening starts with no history until the fetch below lands — cleared HERE, with the
+    // rest of the per-opening state, so the effect stays a pure fetch.
+    setHistory(null)
     const seededForm = voucher ? voucherToForm(voucher) : BLANK_VOUCHER
     setForm(seededForm)
     setSavedDraft(seededForm)
   }
+
+  // Fetched per opening rather than seeded from the row: the list endpoint carries a COUNT, not
+  // the rows, and this is the one screen that wants them.
+  const voucherId = voucher?.id as string | undefined
+  const merchantId = merchant?.id
+  useEffect(() => {
+    if (!open || !voucherId || !merchantId) return
+    let cancelled = false
+    fetchVoucherRedemptions(voucherId, merchantId).then(r => {
+      if (!cancelled) setHistory(r.ok ? r.data : [])
+    })
+    return () => { cancelled = true }
+  }, [open, sessionId, voucherId, merchantId])
 
   const dirty = voucherDraftChanged(form, savedDraft)
   function requestOpenChange(next: boolean) {
@@ -357,6 +379,65 @@ export default function VoucherFormSheet({
                   </Disclosure>
                 </div>
               </FormSection>
+
+              {/* The history — edit mode only, since a new voucher has none. Every line is a fact
+                  about the ORDER the code was spent on; the redeemer's account email is not on the
+                  wire (CONTEXT.md → Shop customer). A returned row is a cancelled order (ADR 0023),
+                  kept on the list so "was it ever used?" still has a true answer. */}
+              {editing && (
+                <FormSection title={t('Redemptions', '兑换记录')}>
+                  {history === null ? (
+                    <SkeletonText lines={2} />
+                  ) : history.length === 0 ? (
+                    <p className="text-[13px] text-muted-foreground">{t('No redemptions yet.', '尚无兑换记录。')}</p>
+                  ) : (
+                    <>
+                      <p className="text-[12px] text-muted-foreground mb-3">
+                        {(() => {
+                          const returned = history.filter(h => h.voidedAt).length
+                          const live = history.length - returned
+                          const used = t(`${live} used`, `已用 ${live} 次`)
+                          return returned ? `${used} · ${t(`${returned} returned`, `已退回 ${returned} 次`)}` : used
+                        })()}
+                      </p>
+                      <ul className="flex flex-col divide-y divide-border">
+                        {history.map(h => (
+                          <li key={h.id} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                            <div className="min-w-0">
+                              {h.orderId ? (
+                                <div className="text-[13px] font-medium text-foreground truncate">
+                                  {h.orderNumber}
+                                  {h.customerName && <span className="font-normal text-muted-foreground"> · {h.customerName}</span>}
+                                </div>
+                              ) : (
+                                // Backfilled from the old `used_by` list: no order, no time.
+                                <div className="text-[13px] text-muted-foreground italic">
+                                  {t('Earlier redemption · no order record', '早期兑换 · 无订单记录')}
+                                </div>
+                              )}
+                              {h.redeemedAt && (
+                                <div className="text-[12px] text-muted-foreground">{fmtDateTime(h.redeemedAt)}</div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {h.discount != null && (
+                                <span className={`text-[13px] whitespace-nowrap ${h.voidedAt ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                                  −{formatMoney(h.discount, currency)}
+                                </span>
+                              )}
+                              {h.voidedAt && (
+                                <Badge variant="outline" className="uppercase tracking-[0.08em]">
+                                  {t('Returned', '已退回')}
+                                </Badge>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </FormSection>
+              )}
             </div>
 
             <div className={`shrink-0 flex items-center gap-3 border-t border-border bg-card px-4 py-3 ${editing ? 'justify-between' : 'justify-end'}`}>

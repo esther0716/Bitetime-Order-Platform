@@ -18,7 +18,7 @@ import { admin, getUserFromToken } from './supabase.js'
 import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, bearer, type AppEnv } from './mw.js'
 import { voucherPublicView, voucherMerchantView } from './voucherView.js'
 import { parseVoucherRules } from './voucherInput.js'
-import { redemptionCounts, myRedemptionCount, syncOrderRedemptionVoid } from './voucherRedemptionsDb.js'
+import { redemptionCounts, myRedemptionCount, syncOrderRedemptionVoid, voucherRedemptions } from './voucherRedemptionsDb.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, reopenAfterPayment, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
@@ -1396,6 +1396,20 @@ app.patch('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, require
   if (error) return c.json({ error: 'Update failed' }, 500)
   const counts = await redemptionCounts([existing.id as string])
   return c.json(voucherMerchantView(data, m.timezone, counts[existing.id as string] ?? 0))
+})
+
+// A voucher's history: each redemption with the order it was spent on. The same tenancy guard
+// as PATCH and DELETE. What the rows may carry is decided in `voucherRedemptions` — the account
+// email behind a redemption never leaves the database on any route.
+app.get('/api/merchants/:id/vouchers/:voucherId/redemptions', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
+  const existing = c.get('child')
+  if (!existing) return c.json({ error: 'Not found' }, 404)
+  try {
+    return c.json(await voucherRedemptions(existing.id as string))
+  } catch (err) {
+    console.error('Voucher redemptions lookup failed', err instanceof Error ? err.message : String(err))
+    return c.json({ error: 'Lookup failed' }, 500)
+  }
 })
 
 // Voucher delete. requireMerchantOwns only proves the caller owns :id — it says nothing
