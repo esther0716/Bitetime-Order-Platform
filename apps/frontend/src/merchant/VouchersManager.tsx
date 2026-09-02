@@ -59,7 +59,7 @@ const columns: ColumnDef<Voucher>[] = [
       const v = row.original
       const paused = v.active === false
       return (
-        <div className={`text-[14px] font-medium flex items-center gap-2 flex-wrap ${paused ? 'text-muted-foreground' : 'text-foreground'}`}>
+        <div className={`font-heading text-[14px] font-medium flex items-center gap-2 flex-wrap ${paused ? 'text-muted-foreground' : 'text-primary'}`}>
           {v.code}
           {/* A paused voucher stays on the list, marked. It used to vanish, which is what made
               "Turn off" read as delete: the merchant needs to see that the code they handed out
@@ -127,7 +127,10 @@ const columns: ColumnDef<Voucher>[] = [
       const { t } = meta
       const v = row.original
       return (
-        <div className="text-right">
+        // The row itself opens the drawer. A press on the menu — or on an item inside it, which
+        // React bubbles through the portal — must not also count as a press on the row, or
+        // "Deactivate" would pause the voucher AND open it for editing.
+        <div className="text-right" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -252,6 +255,7 @@ export default function VouchersManager() {
           columns={columns}
           data={ordered}
           meta={meta}
+          onRowClick={openEdit}
           searchPlaceholder={t('Search vouchers…', '搜索优惠券…')}
           emptyText={t('No vouchers match your search.', '没有匹配的优惠券。')}
           prevLabel={t('Previous', '上一页')}
