@@ -5,7 +5,7 @@ import { revenueQuery, type RevenueSelection } from './merchant/revenueRange';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
-import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher } from './types';
+import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher, VoucherRedemption } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForFile, apiSendForm, mapOk, toVoid } from './api'
@@ -629,8 +629,61 @@ export async function createMerchantVoucher(input: {
   return mapOk(r, voucherFromRow)
 }
 
-export async function deleteMerchantVoucher(id: string, merchantId: string): Promise<Result<void>> {
-  return toVoid(await apiSend(`/api/merchants/${merchantId}/vouchers/${id}`, 'DELETE', undefined, { auth: true }))
+/** Everything `createMerchantVoucher` takes except the code — see `updateMerchantVoucher`. */
+export interface VoucherRulesInput {
+  kind: string; amount: number; maxUses?: number | null;
+  perCustomerLimit?: number | null; expiresOn?: string | null; minOrder?: number | null;
+}
+
+/**
+ * Edit a voucher: the discount, every restriction and whether it is active — never the code.
+ *
+ * The code is what the merchant has printed and what customers are holding, so the server ignores
+ * one in the body and this signature does not offer one. A merchant who needs a different string
+ * deactivates this voucher and creates the next, which is deliberately a new campaign.
+ *
+ * Reactivating can be refused (`duplicate_code`, 409): the merchant may have created a second live
+ * voucher with the same code while this one was paused, and two live rows cannot share one.
+ */
+export async function updateMerchantVoucher(
+  id: string, merchantId: string, input: VoucherRulesInput & { active?: boolean },
+): Promise<Result<Voucher>> {
+  const r = await apiSend<any>(`/api/merchants/${merchantId}/vouchers/${id}`, 'PATCH', {
+    kind: input.kind,
+    amount: input.amount,
+    maxUses: input.maxUses ?? null,
+    perCustomerLimit: input.perCustomerLimit === undefined ? 1 : input.perCustomerLimit,
+    expiresOn: input.expiresOn ?? null,
+    minOrder: input.minOrder ?? null,
+    ...(input.active === undefined ? {} : { active: input.active }),
+  }, { auth: true })
+  return mapOk(r, voucherFromRow)
+}
+
+/** A voucher's history, newest first. See `VoucherRedemption`. */
+export async function fetchVoucherRedemptions(id: string, merchantId: string): Promise<Result<VoucherRedemption[]>> {
+  const r = await apiGet<any[]>(`/api/merchants/${merchantId}/vouchers/${id}/redemptions`, { auth: true })
+  return mapOk(r, rows => rows.map(row => ({
+    id: row.id,
+    redeemedAt: row.redeemed_at ?? null,
+    voidedAt: row.voided_at ?? null,
+    orderId: row.order_id ?? null,
+    orderNumber: row.order_number ?? null,
+    customerName: row.customer_name ?? null,
+    // postgres.js hands `numeric` back as a string.
+    discount: row.discount == null ? null : Number(row.discount),
+    orderStatus: row.order_status ?? null,
+  })))
+}
+
+/**
+ * Pause or resume a voucher without touching its rules — the list's own action, which must not
+ * have to know the discount to flip a switch. Deactivation is a PAUSE: the row keeps its code,
+ * its limits and its redemption count, and comes back exactly as it was.
+ */
+export async function setMerchantVoucherActive(id: string, merchantId: string, active: boolean): Promise<Result<Voucher>> {
+  const r = await apiSend<any>(`/api/merchants/${merchantId}/vouchers/${id}`, 'PATCH', { active }, { auth: true })
+  return mapOk(r, voucherFromRow)
 }
 
 // ── Referral program ─────────────────────────────────────────────────────────
