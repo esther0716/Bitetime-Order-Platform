@@ -195,15 +195,10 @@ export default function VoucherFormSheet({
                   <div className="flex flex-col gap-[6px]">
                     <Label htmlFor="vm-code">{t('Code', '优惠码')}{!editing && <RequiredMark />}</Label>
                     {editing ? (
-                      <>
-                        <Input id="vm-code" variant="compact" value={form.code} readOnly className="font-medium" />
-                        <p className="text-[12px] text-muted-foreground">
-                          {t(
-                            'The code cannot change — customers are already holding it. Deactivate this voucher and create a new one for a different code.',
-                            '优惠码无法更改 — 顾客已持有该码。如需新码，请停用此优惠券并创建新的。',
-                          )}
-                        </p>
-                      </>
+                      // Disabled, not read-only, so the field itself says it cannot change — the
+                      // not-allowed cursor and the muted fill — rather than a sentence under it.
+                      // Why it cannot change is in the sheet's own doc comment.
+                      <Input id="vm-code" variant="compact" value={form.code} disabled className="font-medium disabled:pointer-events-auto disabled:cursor-not-allowed" />
                     ) : (
                       <div className="flex gap-2">
                         <Input
