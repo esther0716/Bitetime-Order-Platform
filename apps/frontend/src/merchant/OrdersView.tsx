@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import type { Lang, Translate } from '../types'
 import { useSession } from '../SessionContext'
-import { fetchMerchantOrders, type OrderListQuery } from '../store'
+import { fetchMerchantOrders, fetchOrderStatusCounts, type OrderListQuery } from '../store'
 import { formatMoney } from '../currency'
 import { formatCalendarDate } from '../orderDate'
 import { fmtDateTime } from '../merchantDate'
@@ -12,6 +12,7 @@ import { StatusBadge } from '../orderStatus'
 import { fulfilmentLabel } from '../fulfilmentLabel'
 import { usePoll } from '../usePoll'
 import OrderDetailSheet from './orderDetail/OrderDetailSheet'
+import OrderStatusFilter from './OrderStatusFilter'
 
 // Handlers + language + currency ride on table.options.meta so the column defs
 // stay stable (defined once) and never reset sorting when the data refetches.
@@ -123,11 +124,14 @@ export default function OrdersView(
   const { t, lang, merchant } = useSession()
   const [orders, setOrders] = useState<any[] | null>(null)
   const [total, setTotal] = useState(0)
+  const [counts, setCounts] = useState<Record<string, number> | null>(null)
   const [failed, setFailed] = useState(false)
   const [selected, setSelected] = useState<any | null>(null)
 
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  // '' is every status. The tallies above the table are the control that sets this.
+  const [status, setStatus] = useState('')
   const [sorting, setSorting] = useState<SortingState>([{ id: 'created_at', desc: true }])
 
   const merchantId = merchant!.id
@@ -138,13 +142,18 @@ export default function OrdersView(
   const dir = active?.desc === false ? 'asc' : 'desc'
 
   const load = useCallback(() => {
-    fetchMerchantOrders(merchantId, { page, pageSize: PAGE_SIZE, sort, dir, search }).then(r => {
+    fetchMerchantOrders(merchantId, { page, pageSize: PAGE_SIZE, sort, dir, search, status }).then(r => {
       if (!r.ok) { setFailed(true); return }
       setFailed(false)
       setOrders(r.data.orders)
       setTotal(r.data.total)
     })
-  }, [merchantId, page, sort, dir, search])
+    // The tallies follow the SEARCH but not the status filter — narrowed to one status they
+    // would all read zero but that one, and the merchant could no longer see what else is
+    // waiting, which is most of what the row is for. A failed count leaves the last figures
+    // standing rather than emptying the row the merchant is filtering with.
+    fetchOrderStatusCounts(merchantId, search).then(r => { if (r.ok) setCounts(r.data) })
+  }, [merchantId, page, sort, dir, search, status])
 
   // Debounced so typing a name is one request per pause, not one per keystroke — the same shape
   // the Customers tab uses for the same reason.
@@ -162,6 +171,9 @@ export default function OrdersView(
     setSelected((cur: any) => (cur && cur.id === updated.id ? updated : cur))
     // Status may have changed the "new" order count — let the shell refresh its badge.
     onOrdersChanged?.()
+    // And the tallies, and — under a status filter — which orders belong on this page at all.
+    // The local patch above is what keeps the drawer instant; this reconciles the list behind it.
+    load()
   }
 
   // Every narrowing returns to page 1: staying on page 4 of a list that now has one page shows
@@ -196,7 +208,17 @@ export default function OrdersView(
         onRowClick={setSelected}
         pageSize={PAGE_SIZE}
         searchPlaceholder={t('Search orders…', '搜索订单…')}
-        emptyText={t('No orders yet.', '暂无订单。')}
+        toolbar={
+          <OrderStatusFilter counts={counts} selected={status} onSelect={narrow(setStatus)} t={t} />
+        }
+        emptyText={
+          // "No orders yet" is a statement about the SHOP, and under a filter it is a false one —
+          // a merchant reading it over an empty Cancelled list would conclude they had never
+          // taken an order at all.
+          search.trim() || status
+            ? t('No orders match.', '没有匹配的订单。')
+            : t('No orders yet.', '暂无订单。')
+        }
         prevLabel={t('Previous', '上一页')}
         nextLabel={t('Next', '下一页')}
         server={{
@@ -214,7 +236,7 @@ export default function OrdersView(
           orders from the first fifteen of nine hundred — which the old unbounded list, cut off
           at a thousand without saying so, gave them no way to do. */}
       <p className="pt-3 text-[12px] text-muted-foreground">
-        {search.trim()
+        {search.trim() || status
           ? t(`${total} matching order${total === 1 ? '' : 's'}`, `${total} 笔匹配订单`)
           : t(`${total} order${total === 1 ? '' : 's'}`, `${total} 笔订单`)}
       </p>

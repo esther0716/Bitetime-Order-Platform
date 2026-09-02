@@ -53,6 +53,8 @@ interface DataTableProps<TData, TValue> {
   onRowClick?: (row: TData) => void
   /** When set, `data` is one server-side page — see ServerTable. */
   server?: ServerTable
+  /** Rendered on the toolbar's right, opposite the search box — filters, tallies, actions. */
+  toolbar?: React.ReactNode
 }
 
 // Generic TanStack-backed table: global search, sortable columns, client pagination.
@@ -69,6 +71,7 @@ export function DataTable<TData, TValue>({
   meta,
   onRowClick,
   server,
+  toolbar,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = React.useState('')
@@ -115,14 +118,19 @@ export function DataTable<TData, TValue>({
 
   return (
     <div>
-      {searchPlaceholder && (
-        <div className="pb-4">
-          <Input
-            placeholder={searchPlaceholder}
-            value={searchState}
-            onChange={(e) => setSearch(e.target.value)}
-            className="max-w-xs"
-          />
+      {(searchPlaceholder || toolbar) && (
+        <div className="pb-4 flex flex-wrap items-center justify-between gap-3">
+          {searchPlaceholder && (
+            <Input
+              placeholder={searchPlaceholder}
+              value={searchState}
+              onChange={(e) => setSearch(e.target.value)}
+              className="max-w-xs"
+            />
+          )}
+          {/* `ml-auto` and not `justify-end` alone: with no search box the toolbar still sits
+              right, and once the row wraps on a narrow screen it stays there. */}
+          {toolbar && <div className="ml-auto">{toolbar}</div>}
         </div>
       )}
       <Table className="text-[13px]">

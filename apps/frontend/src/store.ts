@@ -894,6 +894,8 @@ export interface OrderListQuery {
   sort?: 'created_at' | 'order_number' | 'fulfil_date' | 'total'
   dir?: 'asc' | 'desc'
   search?: string
+  /** One of ORDER_STATUSES, or blank/absent for every status. */
+  status?: string
 }
 
 /**
@@ -917,6 +919,7 @@ export async function fetchMerchantOrders(
   if (opts.sort) q.set('sort', opts.sort)
   if (opts.dir) q.set('dir', opts.dir)
   if (opts.search?.trim()) q.set('search', opts.search.trim())
+  if (opts.status) q.set('status', opts.status)
   const qs = q.toString()
   return apiGet<OrderPage>(`/api/merchants/${merchantId}/orders${qs ? `?${qs}` : ''}`, { auth: true })
 }
@@ -955,6 +958,24 @@ export async function fetchOrderCount(
   const qs = status ? `?status=${encodeURIComponent(status)}` : ''
   const r = await apiGet<{ count: number }>(`/api/merchants/${merchantId}/orders/count${qs}`, { auth: true })
   return mapOk(r, d => d.count)
+}
+
+/**
+ * How many orders this shop has in each status, counted by Postgres in one statement.
+ *
+ * `search` is the list's own search box, so the tally over a filter chip counts the same rows
+ * the list under it would show. A status the shop has no orders in is absent from the map.
+ */
+export async function fetchOrderStatusCounts(
+  merchantId: string,
+  search = '',
+): Promise<Result<Record<string, number>>> {
+  if (!merchantId) return { ok: true, data: {} }
+  const qs = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ''
+  const r = await apiGet<{ counts: Record<string, number> }>(
+    `/api/merchants/${merchantId}/orders/status-counts${qs}`, { auth: true },
+  )
+  return mapOk(r, d => d.counts)
 }
 
 /**

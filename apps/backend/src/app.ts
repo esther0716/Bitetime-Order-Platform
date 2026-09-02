@@ -42,12 +42,12 @@ import {
   shopCustomers, isShopCustomerSort, pickShopCustomerFields, DEFAULT_SHOP_CUSTOMER_SORT,
 } from './shopCustomers.js'
 import { shopCustomerGroups, shopCustomerRecords, upsertShopCustomer } from './shopCustomersDb.js'
-import { statsOrders, distinctCustomerCount } from './ordersDb.js'
+import { statsOrders, distinctCustomerCount, orderStatusCounts } from './ordersDb.js'
 import { parseProductOrder } from './productOrder.js'
 import { writeProductOrder } from './productOrderDb.js'
 import { parseProductCopy, planProductCopy, dropMissingImages, type CopySourceProduct } from './productCopy.js'
 import { applyProductCopy } from './productCopyDb.js'
-import { parseOrderList } from './orderList.js'
+import { parseOrderList, searchTerm } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
 import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT, MERCHANT_DEVICE_LIMIT } from './quotaWindows.js'
@@ -429,11 +429,26 @@ app.patch('/api/merchants/:id/slug', requireMerchantOwns, async (c) => {
  * the same shape as the row a status PATCH hands back through the same client. Only the
  * aggregates, which need the whole history and read four columns of it, go through the driver.
  */
+/**
+ * Narrow an orders query to ONE status.
+ *
+ * `status` is nullable and an absent status MEANS 'new' — the storefront writes the column, but
+ * rows predating it do not have one, and the dashboard has always read them as new. Stated once
+ * here so the list, the count and the per-status tallies cannot disagree about what "new" holds.
+ */
+interface StatusFilterable<T> {
+  or(filter: string): T
+  eq(column: string, value: string): T
+}
+function byStatus<T extends StatusFilterable<T>>(q: T, status: string): T {
+  return status === 'new' ? q.or('status.is.null,status.eq.new') : q.eq('status', status)
+}
+
 app.get('/api/merchants/:id/orders', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
   const parsed = parseOrderList(new URL(c.req.url).searchParams)
   if (!parsed.ok) return c.json({ error: parsed.error }, 400)
-  const { page, pageSize, sort, dir, search } = parsed.query
+  const { page, pageSize, sort, dir, search, status } = parsed.query
 
   let q = admin
     .from('orders').select('*', { count: 'exact' }).eq('merchant_id', m.id)
@@ -445,6 +460,8 @@ app.get('/api/merchants/:id/orders', requireMerchantOwns, async (c) => {
       `order_number.ilike.%${search}%,customer_name.ilike.%${search}%,customer_wa.ilike.%${search}%`,
     )
   }
+
+  if (status) q = byStatus(q, status)
 
   const from = (page - 1) * pageSize
   const { data, error, count } = await q
@@ -648,14 +665,28 @@ app.get('/api/merchants/:id/orders/count', requireMerchantOwns, async (c) => {
 
   let q = admin
     .from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', m.id)
-  // `status` is nullable and an absent status MEANS 'new' — the storefront writes the column, but
-  // rows predating it do not have one, and the dashboard has always read them as new.
-  if (status === 'new') q = q.or('status.is.null,status.eq.new')
-  else if (status !== undefined) q = q.eq('status', status)
+  if (status !== undefined) q = byStatus(q, status)
 
   const { count, error } = await q
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   return c.json({ count: count ?? 0 })
+})
+
+/**
+ * The shop's orders TALLIED BY STATUS — the figures over the order list's filter chips.
+ *
+ * One grouped statement rather than a count per status, and it takes the list's own `search` so
+ * a tally can never claim more orders than the list beneath it will show. A status the shop has
+ * no orders in is simply absent from the map; the caller decides whether a zero is worth drawing.
+ */
+app.get('/api/merchants/:id/orders/status-counts', requireMerchantOwns, async (c) => {
+  const m = c.get('merchant')
+  const search = searchTerm(c.req.query('search'))
+  try {
+    return c.json({ counts: await orderStatusCounts(m.id, search) })
+  } catch {
+    return c.json({ error: 'Lookup failed' }, 500)
+  }
 })
 
 // The revenue export.

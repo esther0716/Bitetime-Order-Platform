@@ -9,6 +9,8 @@
 // nothing on screen saying so. A page the caller asked for and can count is not that: `total`
 // comes back with every response, so the merchant is told what they are looking at a slice of.
 
+import { ORDER_STATUSES } from './writes.js'
+
 export const ORDER_SORTS = ['created_at', 'order_number', 'fulfil_date', 'total'] as const
 export type OrderSort = (typeof ORDER_SORTS)[number]
 
@@ -39,6 +41,8 @@ export interface OrderListQuery {
   dir: OrderDir
   /** Blank means "everything" — an absent filter, not a search for the empty string. */
   search: string
+  /** Blank means every status — an absent filter, not a status spelt ''. */
+  status: string
 }
 
 export type OrderListError =
@@ -46,6 +50,7 @@ export type OrderListError =
   | 'invalid_dir'
   | 'invalid_page'
   | 'invalid_page_size'
+  | 'invalid_status'
 
 const isOrderSort = (v: string): v is OrderSort => (ORDER_SORTS as readonly string[]).includes(v)
 
@@ -88,7 +93,16 @@ export function parseOrderList(
     return { ok: false, error: 'invalid_page_size' }
   }
 
-  return { ok: true, query: { page, pageSize, sort, dir, search: searchTerm(params.get('search')) } }
+  // Refused, not ignored — the same call `/orders/count` makes. A status filter we silently drop
+  // hands back every order the shop has under a heading that says one status, and the merchant
+  // has no way to tell that from a shop that really is all one status.
+  const status = params.get('status') ?? ''
+  if (status !== '' && !ORDER_STATUSES.includes(status)) return { ok: false, error: 'invalid_status' }
+
+  return {
+    ok: true,
+    query: { page, pageSize, sort, dir, search: searchTerm(params.get('search')), status },
+  }
 }
 
 /** Absent takes the default; present-but-not-a-whole-number is a caller bug, not a default. */

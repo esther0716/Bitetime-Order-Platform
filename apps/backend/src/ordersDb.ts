@@ -74,3 +74,36 @@ export async function distinctCustomerCount(merchantId: string): Promise<number>
   `
   return row?.n ?? 0
 }
+
+/**
+ * How many orders this shop has in EACH status, counted by Postgres in one statement.
+ *
+ * An aggregate, so it belongs here rather than on the REST client: PostgREST cannot group, and
+ * the alternative — one `head: true` count per status — is six round trips on every poll tick.
+ *
+ * `search` narrows the tally to the same rows the list itself is showing, so the figure over a
+ * chip and the list under it can never disagree. The three columns below are the three the list
+ * route searches; that pairing is the one thing stated twice in this feature, and
+ * `tests/api/orders-list.test.ts` asserts the two answers still match.
+ *
+ * A null status counts as `new` — the storefront writes the column, but rows predating it do not
+ * have one, and the dashboard has always read those as new.
+ */
+export async function orderStatusCounts(
+  merchantId: string,
+  search = '',
+): Promise<Record<string, number>> {
+  const like = `%${search}%`
+  const rows = await sql<{ status: string; count: number }[]>`
+    select coalesce(nullif(status, ''), 'new') as status, count(*)::int as count
+    from orders
+    where merchant_id = ${merchantId}
+      ${search
+        ? sql`and (order_number ilike ${like} or customer_name ilike ${like} or customer_wa ilike ${like})`
+        : sql``}
+    group by 1
+  `
+  const counts: Record<string, number> = {}
+  for (const r of rows) counts[r.status] = Number(r.count) || 0
+  return counts
+}
