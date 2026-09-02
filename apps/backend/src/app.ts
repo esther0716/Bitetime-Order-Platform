@@ -17,7 +17,7 @@ import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
 import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, bearer, type AppEnv } from './mw.js'
 import { voucherPublicView, voucherMerchantView } from './voucherView.js'
-import { expiryInstant } from './voucherExpiry.js'
+import { parseVoucherRules } from './voucherInput.js'
 import { redemptionCounts, myRedemptionCount, syncOrderRedemptionVoid } from './voucherRedemptionsDb.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, reopenAfterPayment, LIVE_STATUSES } from './billing.js'
@@ -1308,36 +1308,15 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
   return c.json(voucherPublicView(data, user?.email ?? null, mine))
 })
 
-/**
- * A refused value, distinct from `null` (which means "unbounded" for both of these).
- *
- * A sentinel rather than a thrown error because the two callers want to answer 400, and rather
- * than `undefined` because `undefined` is what an absent field already is.
- */
-const BAD = Symbol('invalid')
-
-/** An optional whole-number limit: absent/blank/null is unbounded, anything below 1 is refused. */
-function optionalCount(v: unknown): number | null | typeof BAD {
-  if (v == null || v === '') return null
-  const n = Number(v)
-  if (!Number.isInteger(n) || n < 1) return BAD
-  return n
-}
-
-/** An optional money threshold: absent/blank/null is no threshold, negative is refused. */
-function optionalMoney(v: unknown): number | null | typeof BAD {
-  if (v == null || v === '') return null
-  const n = Number(v)
-  if (!Number.isFinite(n) || n < 0) return BAD
-  return n
-}
-
 // Voucher create. The insert goes through `admin` (service_role), so forcing merchant_id
 // from :id (never read from the body) is what stops a crafted body from creating a voucher
 // under someone else's shop. This is an INSERT, not an upsert, so the product-PUT hijack
 // class (conflict-resolving onto a stranger's row) does not apply here — there is no
 // client-supplied id to collide on. `code` is uppercased/trimmed server-side, matching the
 // old client-side `input.code.trim().toUpperCase()`.
+//
+// The discount and its restrictions are read by `parseVoucherRules`, shared with the PATCH below,
+// so the unbounded refusal and the shop-clock expiry cannot hold on one route and not the other.
 app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const m = c.get('merchant')
@@ -1345,43 +1324,13 @@ app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const code = String(b?.code ?? '').trim().toUpperCase()
   if (!code) return c.json({ error: 'Missing code' }, 400)
 
-  const maxUses = optionalCount(b?.maxUses)
-  // ABSENT is one each; an explicit `null` is unlimited. The two are deliberately not the same
-  // answer: unlimited is the value that costs the merchant money, so it has to be said out loud
-  // rather than arrived at by leaving a field off. `undefined` also has to survive `optionalCount`,
-  // which folds absent onto null for every other limit.
-  const perCustomerLimit = b?.perCustomerLimit === undefined ? 1 : optionalCount(b.perCustomerLimit)
-  if (maxUses === BAD || perCustomerLimit === BAD) return c.json({ error: 'Invalid limit' }, 400)
-
-  // Both unbounded is an unlimited discount for one person — #72 reached through the dashboard
-  // rather than the request body. `vouchers_bounded` refuses it too; this answers with a message
-  // that names the rule instead of a bare 500 out of PostgREST.
-  if (maxUses === null && perCustomerLimit === null) {
-    return c.json({ error: 'unbounded_voucher' }, 400)
-  }
-
-  // The merchant picks a DATE; the column holds an INSTANT — 23:59:59.999 on the SHOP's clock, so
-  // the code covers the whole of the day they chose. The conversion happens HERE and nowhere else,
-  // which is what keeps `@bitetime/shared` ignorant of timezones. A present-but-unparseable date
-  // is refused rather than dropped: a voucher silently created with no expiry is a discount the
-  // merchant believes will stop and does not.
-  const expiresAt = b?.expiresOn == null || b.expiresOn === ''
-    ? null
-    : expiryInstant(b.expiresOn, m.timezone)
-  if (b?.expiresOn && !expiresAt) return c.json({ error: 'Invalid expiry date' }, 400)
-
-  const minOrder = optionalMoney(b?.minOrder)
-  if (minOrder === BAD) return c.json({ error: 'Invalid minimum order' }, 400)
+  const parsed = parseVoucherRules(b, m.timezone)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
 
   const { data, error } = await admin.from('vouchers').insert({
     merchant_id: id,
     code,
-    kind: b?.kind,
-    amount: b?.amount,
-    max_uses: maxUses,
-    per_customer_limit: perCustomerLimit,
-    expires_at: expiresAt,
-    min_order: minOrder,
+    ...parsed.rules,
   }).select().single()
   // A duplicate code is the merchant's own mistake and gets its own answer. The index is PARTIAL
   // (`where active`), so this can only collide with a LIVE voucher — a retired code's string is
@@ -1391,6 +1340,39 @@ app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   // Through the same view as the list, so the dashboard reads ONE voucher shape. A fresh row's
   // `used_by` is empty and leaks nothing today; the point is that it can never start to.
   return c.json(voucherMerchantView(data, m.timezone, 0))
+})
+
+// Voucher edit: everything except the code. The code is the campaign's identity — printed on
+// flyers, held by customers, and what the partial unique index keys on — so an edit changes what
+// the code DOES and never what it IS. A merchant who needs a different string turns this one off
+// and creates the next; that is deliberately a new row, so the old campaign keeps its redemptions.
+//
+// A FULL replacement of the rules, not a merge: the form sends all six fields on every save, and
+// a merge would make "I unticked the expiry" indistinguishable from "I did not mention it". Rows
+// already redeemed are untouched — lowering `max_uses` under the count taken simply reads as
+// fully used from now on.
+//
+// `requireOwnsChild` is the tenancy guard (the same hole as DELETE: `:id` proves the caller's
+// shop, not the voucher's), and its `active` filter is here rather than in the middleware
+// because a retired voucher is a row that still exists — editing it would be the resurrect-and-
+// reset that turning off exists to prevent.
+app.patch('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
+  const m = c.get('merchant')
+  const existing = c.get('child')
+  if (!existing || existing.active === false) return c.json({ error: 'Not found' }, 404)
+  const b = await c.req.json().catch(() => ({} as any))
+
+  const parsed = parseVoucherRules(b, m.timezone)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+
+  const { data, error } = await admin.from('vouchers')
+    .update(parsed.rules)
+    .eq('id', existing.id)
+    .select()
+    .single()
+  if (error) return c.json({ error: 'Update failed' }, 500)
+  const counts = await redemptionCounts([existing.id as string])
+  return c.json(voucherMerchantView(data, m.timezone, counts[existing.id as string] ?? 0))
 })
 
 // Voucher delete. requireMerchantOwns only proves the caller owns :id — it says nothing

@@ -629,6 +629,31 @@ export async function createMerchantVoucher(input: {
   return mapOk(r, voucherFromRow)
 }
 
+/** Everything `createMerchantVoucher` takes except the code — see `updateMerchantVoucher`. */
+export interface VoucherRulesInput {
+  kind: string; amount: number; maxUses?: number | null;
+  perCustomerLimit?: number | null; expiresOn?: string | null; minOrder?: number | null;
+}
+
+/**
+ * Edit a live voucher: the discount and every restriction, never the code.
+ *
+ * The code is what the merchant has printed and what customers are holding, so the server ignores
+ * one in the body and this signature does not offer one. A merchant who needs a different string
+ * turns this voucher off and creates the next, which is deliberately a new campaign.
+ */
+export async function updateMerchantVoucher(id: string, merchantId: string, input: VoucherRulesInput): Promise<Result<Voucher>> {
+  const r = await apiSend<any>(`/api/merchants/${merchantId}/vouchers/${id}`, 'PATCH', {
+    kind: input.kind,
+    amount: input.amount,
+    maxUses: input.maxUses ?? null,
+    perCustomerLimit: input.perCustomerLimit === undefined ? 1 : input.perCustomerLimit,
+    expiresOn: input.expiresOn ?? null,
+    minOrder: input.minOrder ?? null,
+  }, { auth: true })
+  return mapOk(r, voucherFromRow)
+}
+
 export async function deleteMerchantVoucher(id: string, merchantId: string): Promise<Result<void>> {
   return toVoid(await apiSend(`/api/merchants/${merchantId}/vouchers/${id}`, 'DELETE', undefined, { auth: true }))
 }

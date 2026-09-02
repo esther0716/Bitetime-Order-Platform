@@ -1,5 +1,5 @@
 // tests/api/writes-vouchers.test.ts
-// POST/DELETE /api/merchants/:id/vouchers[/:voucherId] — voucher create/delete. The
+// POST/PATCH/DELETE /api/merchants/:id/vouchers[/:voucherId] — voucher create/edit/delete. The
 // load-bearing assertion is tenancy on delete: requireMerchantOwns only proves the caller
 // owns :id — it says nothing about whether :voucherId actually belongs to that shop. An
 // owner of shop A nesting shop B's voucher under :id = A must be refused (404), not silently
@@ -16,6 +16,17 @@ async function tokenOf(client: Awaited<ReturnType<typeof makeUser>>) {
 function post(path: string, body: unknown, token?: string) {
   return app.request(path, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  })
+}
+
+function patch(path: string, body: unknown, token?: string) {
+  return app.request(path, {
+    method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -299,5 +310,113 @@ describe('DELETE /api/merchants/:id/vouchers/:voucherId', () => {
 
     await serviceClient().from('vouchers').delete().eq('id', voucherId)
     await serviceClient().from('merchants').delete().eq('id', id)
+  })
+})
+
+describe('PATCH /api/merchants/:id/vouchers/:voucherId', () => {
+  let id: string
+  let token: string
+
+  beforeAll(async () => {
+    await resetMerchant('voucher-edit-shop')
+    const owner = await makeUser('voucher-edit-owner@example.com', 'password123')
+    const t = await tokenOf(owner)
+    token = t.token
+    id = await seedMerchant({ slug: 'voucher-edit-shop', owner_id: t.userId, timezone: 'Asia/Kuala_Lumpur' })
+  })
+
+  it('replaces the discount and every restriction, and never the code', async () => {
+    const voucherId = await seedVoucher({ merchant_id: id, code: 'KEEPME', kind: 'fixed', amount: 5 })
+
+    const res = await patch(`/api/merchants/${id}/vouchers/${voucherId}`, {
+      // A crafted code in the body must not rename the campaign customers are holding.
+      code: 'RENAMED',
+      kind: 'percent', amount: 15, maxUses: 40, perCustomerLimit: 3, expiresOn: '2026-12-31', minOrder: 30,
+    }, token)
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as Record<string, unknown>
+    expect(row.code).toBe('KEEPME')
+    expect(row.kind).toBe('percent')
+    expect(Number(row.amount)).toBe(15)
+    expect(row.max_uses).toBe(40)
+    expect(row.per_customer_limit).toBe(3)
+    expect(row.min_order == null ? null : Number(row.min_order)).toBe(30)
+    // The same shop-clock conversion create does — the whole reason the two share a parser.
+    expect(new Date(row.expires_at as string).toISOString()).toBe('2026-12-31T15:59:59.999Z')
+    expect(row.expires_on).toBe('2026-12-31')
+
+    // A FULL replacement: unticking every limit clears it, rather than a merge that could not tell
+    // "removed" from "not mentioned".
+    const cleared = await patch(`/api/merchants/${id}/vouchers/${voucherId}`, {
+      kind: 'percent', amount: 15, maxUses: null, perCustomerLimit: 1, expiresOn: null, minOrder: null,
+    }, token)
+    expect(cleared.status).toBe(200)
+    const back = (await cleared.json()) as Record<string, unknown>
+    expect(back.max_uses).toBeNull()
+    expect(back.expires_at).toBeNull()
+    expect(back.min_order).toBeNull()
+    expect(back.per_customer_limit).toBe(1)
+  })
+
+  it('refuses the same rules create refuses', async () => {
+    const voucherId = await seedVoucher({ merchant_id: id, code: 'STRICT' })
+    const unbounded = await patch(`/api/merchants/${id}/vouchers/${voucherId}`, {
+      kind: 'percent', amount: 100, maxUses: null, perCustomerLimit: null,
+    }, token)
+    expect(unbounded.status).toBe(400)
+    expect(await unbounded.json()).toEqual({ error: 'unbounded_voucher' })
+
+    for (const body of [
+      { kind: 'bogo', amount: 5 },
+      { kind: 'fixed', amount: 5, perCustomerLimit: 0 },
+      { kind: 'fixed', amount: 5, expiresOn: '31/08/2026' },
+      { kind: 'fixed', amount: 5, minOrder: -1 },
+    ]) {
+      expect((await patch(`/api/merchants/${id}/vouchers/${voucherId}`, body, token)).status).toBe(400)
+    }
+    // Nothing above moved the row.
+    const { data } = await serviceClient().from('vouchers').select('kind, amount, per_customer_limit').eq('id', voucherId).single()
+    expect(data).toMatchObject({ kind: 'fixed', per_customer_limit: 1 })
+    expect(Number(data!.amount)).toBe(5)
+  })
+
+  it('404s a retired voucher rather than resurrecting it', async () => {
+    const voucherId = await seedVoucher({ merchant_id: id, code: 'RETIRED' })
+    await del(`/api/merchants/${id}/vouchers/${voucherId}`, token)
+
+    const res = await patch(`/api/merchants/${id}/vouchers/${voucherId}`, { kind: 'fixed', amount: 9 }, token)
+    expect(res.status).toBe(404)
+    const { data } = await serviceClient().from('vouchers').select('active, amount').eq('id', voucherId).single()
+    expect(data!.active).toBe(false)
+    expect(Number(data!.amount)).toBe(5)
+  })
+
+  // The same hole as DELETE: :id proves the caller's shop, not the voucher's.
+  it('404s and leaves the row intact when the voucher belongs to a different shop', async () => {
+    await resetMerchant('voucher-edit-b')
+    const ownerB = await makeUser('voucher-edit-b-owner@example.com', 'password123')
+    const { userId: ownerBId } = await tokenOf(ownerB)
+    const shopB = await seedMerchant({ slug: 'voucher-edit-b', owner_id: ownerBId })
+    const voucherB = await seedVoucher({ merchant_id: shopB, code: 'THEIRS', amount: 5 })
+
+    const res = await patch(`/api/merchants/${id}/vouchers/${voucherB}`, { kind: 'percent', amount: 100 }, token)
+    expect(res.status).toBe(404)
+
+    const { data } = await serviceClient().from('vouchers').select('merchant_id, kind, amount').eq('id', voucherB).single()
+    expect(data!.merchant_id).toBe(shopB)
+    expect(data!.kind).toBe('fixed')
+    expect(Number(data!.amount)).toBe(5)
+
+    await serviceClient().from('vouchers').delete().eq('id', voucherB)
+    await serviceClient().from('merchants').delete().eq('id', shopB)
+  })
+
+  it('403 for a non-owner and 401 without a token', async () => {
+    const voucherId = await seedVoucher({ merchant_id: id, code: 'GUARDED2' })
+    const other = await makeUser('voucher-edit-other@example.com', 'password123')
+    const { token: otherToken } = await tokenOf(other)
+
+    expect((await patch(`/api/merchants/${id}/vouchers/${voucherId}`, { kind: 'fixed', amount: 1 }, otherToken)).status).toBe(403)
+    expect((await patch(`/api/merchants/${id}/vouchers/${voucherId}`, { kind: 'fixed', amount: 1 })).status).toBe(401)
   })
 })
