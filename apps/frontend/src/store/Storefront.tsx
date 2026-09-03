@@ -5,7 +5,7 @@ import { useSession } from '../SessionContext'
 import { useEnterTransition } from '../motion'
 import { toast } from 'sonner'
 import { X } from 'lucide-react'
-import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, saveCustomerDetails, fetchGuestInvoice, fetchMyInvoice } from '../store'
+import { lookupProducts, placeOrder, lookupMerchantVoucher, voucherFullyUsed, notifyOrderPlacedRemote, saveCustomerDetails, fetchGuestInvoice, fetchMyInvoice, reviewMyOrder, reviewGuestOrder } from '../store'
 import { orderRefusalPlan, quoteRefusalPlan, type RefusalAction } from './orderRefusal'
 import { noticeText, type Notice } from './notice'
 import { useDeliveryQuote } from './useDeliveryQuote'
@@ -41,6 +41,7 @@ import AddressAutocomplete from './AddressAutocomplete'
 import MoneyLine from './MoneyLine'
 import PaymentProofUpload from './PaymentProofUpload'
 import PaymentInstructions from './PaymentInstructions'
+import OrderReviewCard from './OrderReviewCard'
 import { checkoutStep, readGuestChoice, rememberGuestChoice } from '../checkoutGate'
 import { cn } from '@/lib/utils'
 import { formatCalendarDate } from '../orderDate'
@@ -992,6 +993,19 @@ export default function Storefront() {
             <PaymentInstructions merchant={merchant} className="max-w-[360px] mx-auto mb-4">
               <PaymentProofUpload orderId={success.orderId} />
             </PaymentInstructions>
+
+            {/* The rating, asked at the one moment this customer is certainly still here. A guest
+                order is orphaned the moment this tab closes, so any later screen would reach the
+                signed-in customer only. It chooses its door exactly as the invoice button below
+                does: the account's own `user_id`, or the same (shop, order number, phone) triple
+                the guest already typed. */}
+            <OrderReviewCard
+              className="max-w-[360px] mx-auto mb-4"
+              initial={null}
+              submit={(rating, comment) => (account
+                ? reviewMyOrder(success.orderId, rating, comment)
+                : reviewGuestOrder(merchant.slug, success.orderNumber, wa, rating, comment))}
+            />
 
             <div className="flex flex-col items-center gap-2 mt-5">
               {/* The invoice, at the moment of highest intent — this is what stops most of the

@@ -1370,6 +1370,44 @@ export async function fetchGuestInvoice(
   return apiSendForFile('/api/orders/invoice', { shop, orderNumber, phone }, { auth: false })
 }
 
+/** The three fields either review door writes back. */
+export interface OrderReview {
+  review_rating: number
+  review_comment: string | null
+  review_at: string
+}
+
+/**
+ * The signed-in customer's review of their own order. The order's `user_id` is what scopes it,
+ * so the token is the whole proof and nothing about the order needs to be re-stated.
+ */
+export async function reviewMyOrder(
+  orderId: string,
+  rating: number,
+  comment: string | null,
+): Promise<Result<OrderReview>> {
+  return apiSend<OrderReview>(`/api/orders/${orderId}/review`, 'POST', { rating, comment }, { auth: true })
+}
+
+/**
+ * The guest's review, through the same door their invoice comes from: the shop, the order number
+ * and the phone they typed. A guest order carries no `user_id`, so there is nothing else to prove.
+ */
+export async function reviewGuestOrder(
+  shop: string,
+  orderNumber: string,
+  phone: string,
+  rating: number,
+  comment: string | null,
+): Promise<Result<OrderReview>> {
+  return apiSend<OrderReview>(
+    '/api/orders/review',
+    'POST',
+    { shop, orderNumber, phone, rating, comment },
+    { auth: false },
+  )
+}
+
 // ── Merchant config & secrets ─────────────────────────────────────────────────
 
 export async function updateMerchantConfig(id: string, patch: any): Promise<Result<any>> {

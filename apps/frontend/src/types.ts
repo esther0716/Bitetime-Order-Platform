@@ -198,6 +198,15 @@ export interface Order {
    *  it over WhatsApp). Separate from `payment_proof`, so neither side overwrites the other.
    *  Fetch it through `fetchMerchantPaymentProof`. */
   payment_proof_merchant?: string | null
+  /**
+   * The customer's own 1-5 star review of this order, and the optional text beside it. Null
+   * until they leave one. Written only through the two review doors; the merchant reads these
+   * and can never write them.
+   */
+  review_rating?: number | null
+  review_comment?: string | null
+  /** When the review was LAST written — a customer may change theirs. */
+  review_at?: string | null
   [key: string]: any
 }
 
