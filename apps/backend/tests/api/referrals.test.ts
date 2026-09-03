@@ -151,3 +151,129 @@ describe('GET /api/referrals/shops', () => {
     expect(await shopsIn(res)).toEqual([])
   })
 })
+
+// The signup form's typo check (#265). Public and unauthenticated on purpose — it answers a
+// caller who has no account yet — so what is worth testing is that it says only whether the code
+// is usable, and says it about a REAL merchants.referral_code rather than a shape.
+//
+// "Usable" is two questions, not one: the code must name a shop, AND that shop must be able to
+// earn the reward today (canShareReferral). A code whose owner is on trial, past due, cancelling
+// or comped validates green under the older rule and then forfeits in silence when the invited
+// shop's first invoice pays, which is the failure these cases pin shut.
+describe('GET /api/referrals/check', () => {
+  let ownerCode: string
+  let ownerMerchantId: string
+
+  /** Put the referrer's billing row in a given state. Every case here is one of these. */
+  const setBilling = async (fields: Record<string, unknown>) => {
+    const { error } = await serviceClient().from('merchant_billing').upsert({
+      merchant_id: ownerMerchantId,
+      comped: false,
+      cancel_at_period_end: false,
+      ...fields,
+    })
+    if (error) throw error
+  }
+
+  beforeAll(async () => {
+    const owner = await makeUser('check-owner@example.com', 'password123')
+    const { data } = await owner.auth.getUser()
+    ownerCode = referralCodeOf(data.user!.id)
+    ownerMerchantId = await seedMerchant({
+      slug: 'ref-check-owner', owner_id: data.user!.id, name: 'Check Owner Shop',
+    })
+    await setBilling({ status: 'active' })
+  })
+
+  afterAll(async () => {
+    await serviceClient().from('merchants').delete().eq('slug', 'ref-check-owner')
+  })
+
+  const check = (code: string) => app.request(`/api/referrals/check?code=${encodeURIComponent(code)}`)
+  const validOf = async (code: string) => (await (await check(code)).json() as { valid: boolean }).valid
+
+  it('reports a paying shop\'s code as valid', async () => {
+    await setBilling({ status: 'active' })
+    const res = await check(ownerCode)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ valid: true })
+  })
+
+  it('accepts the code in lower case, exactly as the stamp does', async () => {
+    await setBilling({ status: 'active' })
+
+    expect(await validOf(ownerCode.toLowerCase())).toBe(true)
+  })
+
+  it('reports a well-formed code that names no shop as invalid', async () => {
+    const res = await check('FFFFFFFF' === ownerCode ? 'EEEEEEEE' : 'FFFFFFFF')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ valid: false })
+  })
+
+  it('reports a malformed or missing code as invalid rather than erroring', async () => {
+    expect(await (await check('nope')).json()).toEqual({ valid: false })
+    expect(await (await app.request('/api/referrals/check')).json()).toEqual({ valid: false })
+  })
+
+  // Every state that is not a running paid subscription. The trial is the one that matters most
+  // in practice: a merchant on the 7-day cardless trial is exactly who shares a code on day one.
+  it('refuses a code whose owner is not paying', async () => {
+    for (const status of ['trialing', 'past_due', 'canceled', 'incomplete']) {
+      await setBilling({ status })
+
+      expect(await validOf(ownerCode)).toBe(false)
+    }
+  })
+
+  // Stripe keeps a cancelled subscription 'active' until the period ends, so the status alone
+  // says yes right up to the moment the shop closes.
+  it('refuses a code whose owner is cancelling at the period end', async () => {
+    await setBilling({ status: 'active', cancel_at_period_end: true })
+
+    expect(await validOf(ownerCode)).toBe(false)
+  })
+
+  // A comp writes status 'active' with no subscription behind it and clears the Stripe customer,
+  // so there is nothing the reward could ever be credited to.
+  it('refuses a comped shop despite its active status', async () => {
+    await setBilling({ status: 'active', comped: true })
+
+    expect(await validOf(ownerCode)).toBe(false)
+  })
+
+  // The left join must reach the rule rather than drop the row: no billing row is "cannot earn",
+  // not "no such code" — same answer, but for a reason the query should not decide by itself.
+  it('refuses a shop with no billing row at all', async () => {
+    const { error } = await serviceClient()
+      .from('merchant_billing').delete().eq('merchant_id', ownerMerchantId)
+    if (error) throw error
+
+    expect(await validOf(ownerCode)).toBe(false)
+
+    await setBilling({ status: 'active' })
+  })
+
+  // A suspended shop must not recruit. Its own storefront is shut.
+  it('refuses a suspended shop', async () => {
+    await setBilling({ status: 'active' })
+    await serviceClient().from('merchants').update({ status: 'suspended' }).eq('id', ownerMerchantId)
+
+    expect(await validOf(ownerCode)).toBe(false)
+
+    await serviceClient().from('merchants').update({ status: 'active' }).eq('id', ownerMerchantId)
+  })
+
+  // The whole reason the answer is a bare boolean: a code is 8 hex characters, so anything
+  // naming the referrer would make this a merchant directory anyone can walk. It carries no
+  // reason either — why a shop cannot refer is the referrer's business, not the caller's.
+  it('returns nothing about the shop behind the code', async () => {
+    await setBilling({ status: 'active' })
+    const body = (await (await check(ownerCode)).json()) as Record<string, unknown>
+
+    expect(Object.keys(body)).toEqual(['valid'])
+    expect(JSON.stringify(body)).not.toContain('Check Owner Shop')
+  })
+})

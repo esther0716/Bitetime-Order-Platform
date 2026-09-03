@@ -18,3 +18,21 @@ export function resolveReferredByCode(
   if (!code) return null
   return code === ownerCode ? null : code
 }
+
+/**
+ * What the signup field should show for whatever the merchant typed or pasted.
+ *
+ * A referrer shares their invite LINK at least as often as the bare code (that is what
+ * `referralSignupUrl` builds), so a pasted URL is read for its `ref` parameter instead of being
+ * rejected as a line of nonsense. Everything else is trimmed and uppercased — the stored code is
+ * uppercase hex, and a merchant typing lower case is not making a mistake.
+ *
+ * Nothing is truncated: a value of the wrong length must reach the format check and be SAID, not
+ * be quietly cut down to eight characters that look correct and match nobody.
+ */
+export function referralCodeFromInput(raw: string): string {
+  const text = (raw ?? '').trim()
+  const fromUrl = /[?&]ref=([^&\s]+)/i.exec(text)
+  const value = fromUrl ? decodeURIComponent(fromUrl[1]) : text
+  return value.trim().toUpperCase()
+}

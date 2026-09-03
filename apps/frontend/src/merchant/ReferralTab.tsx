@@ -1,25 +1,39 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Copy, QrCode } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { toast } from 'sonner'
+import { canShareReferral } from '@bitetime/shared'
 import { useSession } from '../SessionContext'
-import { referralCodeOf, fetchReferredShops, fetchEarnedRewards } from '../store'
+import { referralCodeOf, fetchReferredShops, fetchEarnedRewards, fetchMyBilling } from '../store'
 import { referralSignupUrl } from '../referralSignupUrl'
 import { currencyDef, formatMoney } from '../currency'
+import { fmtDate } from '../merchantDate'
 import type { EarnedReward, ReferredShop } from '../types'
+import type { SubscriptionSnapshot } from './subscriptionTabState'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { SkeletonText } from '../components/Loaders'
 
 // Display-only referral card (mirrors ShareStorefront). The code is derived from the
 // signed-in user's auth id so it matches profiles.referral_code written at signup.
+//
+// The code is shown only to a shop that could actually earn the reward — `canShareReferral`, the
+// same rule `GET /api/referrals/check` answers the signup form with, so a code shown here is a
+// code that validates there. Without it a merchant on trial, past due or winding down shares a
+// code that reads as good to the shop they invite and then pays nothing when that shop's first
+// invoice clears, which is a promise the platform never sees itself break.
 export default function ReferralTab() {
-  const { t, account } = useSession()
+  const { t, account, merchant } = useSession()
   const [qrOpen, setQrOpen] = useState(false)
   const [shops, setShops] = useState<ReferredShop[] | null>(null)
   const [loadError, setLoadError] = useState(false)
   const [rewards, setRewards] = useState<EarnedReward[] | null>(null)
   const [rewardsError, setRewardsError] = useState(false)
+  const [billing, setBilling] = useState<SubscriptionSnapshot | null>(null)
+  const [billingLoaded, setBillingLoaded] = useState(false)
+  const merchantId = merchant?.id
 
   useEffect(() => {
     let alive = true
@@ -29,6 +43,18 @@ export default function ReferralTab() {
       .then((r) => { if (!alive) return; if (r.ok) setRewards(r.data); else setRewardsError(true) })
     return () => { alive = false }
   }, [])
+
+  // Separate from the two above because it is keyed on the merchant id, and because a FAILED read
+  // must not be mistaken for "no subscription": `billingLoaded` gates the card either way, and a
+  // failure leaves `billing` null, which the rule refuses. Hiding the code on a failed read is
+  // the safe side to err on — the wrong direction hands out a code that cannot earn.
+  useEffect(() => {
+    if (!merchantId) return
+    let alive = true
+    fetchMyBilling(merchantId)
+      .then((r) => { if (!alive) return; setBilling(r.ok ? r.data : null); setBillingLoaded(true) })
+    return () => { alive = false }
+  }, [merchantId])
 
   if (!account) return null
 
@@ -58,6 +84,22 @@ export default function ReferralTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          {!billingLoaded ? (
+            <SkeletonText />
+          ) : !canShareReferral(billing) ? (
+            // No code, no link, no QR. A disabled Copy button would still leave the code on
+            // screen to be read out, and the code is the whole thing being withheld.
+            <div className="flex flex-col items-start gap-3">
+              <p className="text-[13px] text-muted-foreground">{blockedNotice(billing, t)}</p>
+              {/* The hash IS the tab (useDashboardSubsection), so this switches to Subscription
+                  without a reload. Safe past the NavGuard: only the active tab can be dirty and
+                  this one has no form. */}
+              <Link to="#settings/subscription" className="text-[13px] text-primary cursor-pointer underline underline-offset-2">
+                {t('Go to Subscription', '前往订阅')}
+              </Link>
+            </div>
+          ) : (
+          <>
           <div className="flex flex-col gap-1.5">
             <span className="text-[13px] text-muted-foreground">{t('Your referral code', '您的推荐码')}</span>
             <div className="rounded-lg border-[0.5px] border-border bg-muted px-3 py-2 font-mono text-[15px] tracking-wider break-all text-foreground">
@@ -81,6 +123,8 @@ export default function ReferralTab() {
               <QrCode /> {t('QR code', '二维码')}
             </Button>
           </div>
+          </>
+          )}
         </CardContent>
 
         <Dialog open={qrOpen} onOpenChange={setQrOpen}>
@@ -188,6 +232,47 @@ export default function ReferralTab() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+/**
+ * Why the code is withheld, in the merchant's own terms.
+ *
+ * Four different pieces of news, and collapsing them into one sentence is what makes a gate feel
+ * arbitrary: "your subscription ends on the 3rd" is a thing the merchant chose and can undo,
+ * while "invites open when your subscription starts" is a thing they are waiting for. The order
+ * follows billingBannerState's — a wind-down outranks a failed payment, because once a
+ * subscription is ending the failing card no longer decides anything.
+ *
+ * `canShareReferral` decides WHETHER; this only explains. It is never called for a shop that can
+ * share, so it has no "you can" branch.
+ */
+function blockedNotice(
+  billing: SubscriptionSnapshot | null,
+  t: (en: string, zh: string) => string,
+): string {
+  if (billing?.cancel_at_period_end) {
+    const on = fmtDate(billing.current_period_end)
+    return t(
+      `Your subscription ends on ${on}, so invites are paused. Resume it to share your code again.`,
+      `您的订阅将于 ${on} 结束，邀请已暂停。恢复订阅后即可继续分享推荐码。`,
+    )
+  }
+  if (billing?.comped) {
+    return t(
+      'Your shop runs on a complimentary plan, so there is no subscription for a free month to come off.',
+      '您的店铺使用赠送方案，没有可抵扣免费月份的订阅。',
+    )
+  }
+  if (billing?.status === 'past_due') {
+    return t(
+      'Invites resume once your payment goes through.',
+      '付款成功后即可继续邀请。',
+    )
+  }
+  return t(
+    'Invites open when your paid subscription starts. A free month is taken off your own invoice, so there has to be one.',
+    '开始付费订阅后即可邀请。免费月份会从您自己的账单中抵扣，因此需要先有订阅。',
   )
 }
 

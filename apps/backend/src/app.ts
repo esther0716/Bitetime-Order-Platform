@@ -17,8 +17,8 @@ import { env } from './env.js'
 import { admin, getUserFromToken } from './supabase.js'
 import { requireUser, requireSuperadmin, requireMerchantOwns, requireOwnsChild, requireOwnMerchant, bearer, type AppEnv } from './mw.js'
 import { voucherPublicView, voucherMerchantView } from './voucherView.js'
-import { expiryInstant } from './voucherExpiry.js'
-import { redemptionCounts, myRedemptionCount } from './voucherRedemptionsDb.js'
+import { parseVoucherRules } from './voucherInput.js'
+import { redemptionCounts, myRedemptionCount, syncOrderRedemptionVoid, voucherRedemptions } from './voucherRedemptionsDb.js'
 import { stripe, priceFor, isValidCycle, isStripeError } from './stripe.js'
 import { upsertBilling, setMerchantStatus, billingFromSubscription, reconcileBillingCycle, lapseMerchant, reopenAfterPayment, LIVE_STATUSES } from './billing.js'
 import { canStartTrial, trialStartRefusal, buildTrialReminderEmail } from './billingLifecycle.js'
@@ -42,15 +42,15 @@ import {
   shopCustomers, isShopCustomerSort, pickShopCustomerFields, DEFAULT_SHOP_CUSTOMER_SORT,
 } from './shopCustomers.js'
 import { shopCustomerGroups, shopCustomerRecords, upsertShopCustomer } from './shopCustomersDb.js'
-import { statsOrders, distinctCustomerCount } from './ordersDb.js'
+import { statsOrders, distinctCustomerCount, orderStatusCounts } from './ordersDb.js'
 import { parseProductOrder } from './productOrder.js'
 import { writeProductOrder } from './productOrderDb.js'
 import { parseProductCopy, planProductCopy, dropMissingImages, type CopySourceProduct } from './productCopy.js'
 import { applyProductCopy } from './productCopyDb.js'
-import { parseOrderList } from './orderList.js'
+import { parseOrderList, searchTerm } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT, MERCHANT_DEVICE_LIMIT } from './quotaWindows.js'
+import { invoiceLookupIpWindow, reviewSubmitIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT, MERCHANT_DEVICE_LIMIT } from './quotaWindows.js'
 import { chooseEvictions, sessionIdFromToken, lastSeen } from './deviceLimit.js'
 import { listSessions, deleteSessions } from './deviceLimitDb.js'
 import { deviceIdentity } from './deviceLabel.js'
@@ -60,7 +60,7 @@ import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
 import { detectCountry } from './region.js'
 import { fetchBasePricing, createPricingCache, type PricingPayload } from './pricing.js'
 import { estimateFor } from './fx.js'
-import { listReferredShops, listEarnedRewards } from './referrals.js'
+import { listReferredShops, listEarnedRewards, referralCodeIsShareable } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
 import { placeOrder, OrderError, orderMerchantId, setOrderPaymentProof, setOrderMerchantPaymentProof } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue, updateFeedbackImages } from './feedback.js'
@@ -84,11 +84,11 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES, pendingShopFromBody, pendingShopMetadata, menuCategoriesFromRow } from '@bitetime/shared'
+import { canIssueInvoice, validateOrderReview, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES, pendingShopFromBody, pendingShopMetadata, menuCategoriesFromRow } from '@bitetime/shared'
 import type { CartLine, Granularity } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename, type ReportWindow } from './report.js'
 import { resolveRevenueRange, type ResolvedRevenueRange } from './revenueWindow.js'
-import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
+import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, normalizeReferralCode, RESERVED_SLUGS } from './slug.js'
 import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
@@ -429,11 +429,26 @@ app.patch('/api/merchants/:id/slug', requireMerchantOwns, async (c) => {
  * the same shape as the row a status PATCH hands back through the same client. Only the
  * aggregates, which need the whole history and read four columns of it, go through the driver.
  */
+/**
+ * Narrow an orders query to ONE status.
+ *
+ * `status` is nullable and an absent status MEANS 'new' — the storefront writes the column, but
+ * rows predating it do not have one, and the dashboard has always read them as new. Stated once
+ * here so the list, the count and the per-status tallies cannot disagree about what "new" holds.
+ */
+interface StatusFilterable<T> {
+  or(filter: string): T
+  eq(column: string, value: string): T
+}
+function byStatus<T extends StatusFilterable<T>>(q: T, status: string): T {
+  return status === 'new' ? q.or('status.is.null,status.eq.new') : q.eq('status', status)
+}
+
 app.get('/api/merchants/:id/orders', requireMerchantOwns, async (c) => {
   const m = c.get('merchant')
   const parsed = parseOrderList(new URL(c.req.url).searchParams)
   if (!parsed.ok) return c.json({ error: parsed.error }, 400)
-  const { page, pageSize, sort, dir, search } = parsed.query
+  const { page, pageSize, sort, dir, search, status } = parsed.query
 
   let q = admin
     .from('orders').select('*', { count: 'exact' }).eq('merchant_id', m.id)
@@ -445,6 +460,8 @@ app.get('/api/merchants/:id/orders', requireMerchantOwns, async (c) => {
       `order_number.ilike.%${search}%,customer_name.ilike.%${search}%,customer_wa.ilike.%${search}%`,
     )
   }
+
+  if (status) q = byStatus(q, status)
 
   const from = (page - 1) * pageSize
   const { data, error, count } = await q
@@ -648,14 +665,28 @@ app.get('/api/merchants/:id/orders/count', requireMerchantOwns, async (c) => {
 
   let q = admin
     .from('orders').select('id', { count: 'exact', head: true }).eq('merchant_id', m.id)
-  // `status` is nullable and an absent status MEANS 'new' — the storefront writes the column, but
-  // rows predating it do not have one, and the dashboard has always read them as new.
-  if (status === 'new') q = q.or('status.is.null,status.eq.new')
-  else if (status !== undefined) q = q.eq('status', status)
+  if (status !== undefined) q = byStatus(q, status)
 
   const { count, error } = await q
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   return c.json({ count: count ?? 0 })
+})
+
+/**
+ * The shop's orders TALLIED BY STATUS — the figures over the order list's filter chips.
+ *
+ * One grouped statement rather than a count per status, and it takes the list's own `search` so
+ * a tally can never claim more orders than the list beneath it will show. A status the shop has
+ * no orders in is simply absent from the map; the caller decides whether a zero is worth drawing.
+ */
+app.get('/api/merchants/:id/orders/status-counts', requireMerchantOwns, async (c) => {
+  const m = c.get('merchant')
+  const search = searchTerm(c.req.query('search'))
+  try {
+    return c.json({ counts: await orderStatusCounts(m.id, search) })
+  } catch {
+    return c.json({ error: 'Lookup failed' }, 500)
+  }
 })
 
 // The revenue export.
@@ -753,7 +784,11 @@ app.get('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const { data, error } = await admin
     .from('vouchers')
     .select('id, merchant_id, code, kind, amount, max_uses, per_customer_limit, expires_at, min_order, used_by, active, created_at')
-    .eq('merchant_id', m.id).eq('active', true)
+    // Inactive rows INCLUDED. A deactivated voucher is a paused campaign the merchant can resume,
+    // not a deleted one, and a row that vanishes from the list is what made "Turn off" read as
+    // delete. The customer-facing lookup and `claimVoucher` still filter `active` themselves.
+    .eq('merchant_id', m.id)
+    .order('created_at', { ascending: false })
   if (error) return c.json({ error: 'Lookup failed' }, 500)
   const rows = data ?? []
   // One grouped count for the whole list, not one query per voucher. `used_by` is still selected
@@ -1308,36 +1343,15 @@ app.get('/api/merchants/:id/vouchers/:code', async (c) => {
   return c.json(voucherPublicView(data, user?.email ?? null, mine))
 })
 
-/**
- * A refused value, distinct from `null` (which means "unbounded" for both of these).
- *
- * A sentinel rather than a thrown error because the two callers want to answer 400, and rather
- * than `undefined` because `undefined` is what an absent field already is.
- */
-const BAD = Symbol('invalid')
-
-/** An optional whole-number limit: absent/blank/null is unbounded, anything below 1 is refused. */
-function optionalCount(v: unknown): number | null | typeof BAD {
-  if (v == null || v === '') return null
-  const n = Number(v)
-  if (!Number.isInteger(n) || n < 1) return BAD
-  return n
-}
-
-/** An optional money threshold: absent/blank/null is no threshold, negative is refused. */
-function optionalMoney(v: unknown): number | null | typeof BAD {
-  if (v == null || v === '') return null
-  const n = Number(v)
-  if (!Number.isFinite(n) || n < 0) return BAD
-  return n
-}
-
 // Voucher create. The insert goes through `admin` (service_role), so forcing merchant_id
 // from :id (never read from the body) is what stops a crafted body from creating a voucher
 // under someone else's shop. This is an INSERT, not an upsert, so the product-PUT hijack
 // class (conflict-resolving onto a stranger's row) does not apply here — there is no
 // client-supplied id to collide on. `code` is uppercased/trimmed server-side, matching the
 // old client-side `input.code.trim().toUpperCase()`.
+//
+// The discount and its restrictions are read by `parseVoucherRules`, shared with the PATCH below,
+// so the unbounded refusal and the shop-clock expiry cannot hold on one route and not the other.
 app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const id = c.req.param('id')
   const m = c.get('merchant')
@@ -1345,43 +1359,13 @@ app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   const code = String(b?.code ?? '').trim().toUpperCase()
   if (!code) return c.json({ error: 'Missing code' }, 400)
 
-  const maxUses = optionalCount(b?.maxUses)
-  // ABSENT is one each; an explicit `null` is unlimited. The two are deliberately not the same
-  // answer: unlimited is the value that costs the merchant money, so it has to be said out loud
-  // rather than arrived at by leaving a field off. `undefined` also has to survive `optionalCount`,
-  // which folds absent onto null for every other limit.
-  const perCustomerLimit = b?.perCustomerLimit === undefined ? 1 : optionalCount(b.perCustomerLimit)
-  if (maxUses === BAD || perCustomerLimit === BAD) return c.json({ error: 'Invalid limit' }, 400)
-
-  // Both unbounded is an unlimited discount for one person — #72 reached through the dashboard
-  // rather than the request body. `vouchers_bounded` refuses it too; this answers with a message
-  // that names the rule instead of a bare 500 out of PostgREST.
-  if (maxUses === null && perCustomerLimit === null) {
-    return c.json({ error: 'unbounded_voucher' }, 400)
-  }
-
-  // The merchant picks a DATE; the column holds an INSTANT — 23:59:59.999 on the SHOP's clock, so
-  // the code covers the whole of the day they chose. The conversion happens HERE and nowhere else,
-  // which is what keeps `@bitetime/shared` ignorant of timezones. A present-but-unparseable date
-  // is refused rather than dropped: a voucher silently created with no expiry is a discount the
-  // merchant believes will stop and does not.
-  const expiresAt = b?.expiresOn == null || b.expiresOn === ''
-    ? null
-    : expiryInstant(b.expiresOn, m.timezone)
-  if (b?.expiresOn && !expiresAt) return c.json({ error: 'Invalid expiry date' }, 400)
-
-  const minOrder = optionalMoney(b?.minOrder)
-  if (minOrder === BAD) return c.json({ error: 'Invalid minimum order' }, 400)
+  const parsed = parseVoucherRules(b, m.timezone)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
 
   const { data, error } = await admin.from('vouchers').insert({
     merchant_id: id,
     code,
-    kind: b?.kind,
-    amount: b?.amount,
-    max_uses: maxUses,
-    per_customer_limit: perCustomerLimit,
-    expires_at: expiresAt,
-    min_order: minOrder,
+    ...parsed.rules,
   }).select().single()
   // A duplicate code is the merchant's own mistake and gets its own answer. The index is PARTIAL
   // (`where active`), so this can only collide with a LIVE voucher — a retired code's string is
@@ -1393,18 +1377,85 @@ app.post('/api/merchants/:id/vouchers', requireMerchantOwns, async (c) => {
   return c.json(voucherMerchantView(data, m.timezone, 0))
 })
 
+// Voucher edit: everything except the code. The code is the campaign's identity — printed on
+// flyers, held by customers, and what the partial unique index keys on — so an edit changes what
+// the code DOES and never what it IS. A merchant who needs a different string deactivates this
+// one and creates the next; that is deliberately a new row, so the old campaign keeps its
+// redemptions.
+//
+// Two body shapes, and the presence of `kind` tells them apart:
+//   - the rules (`kind`, `amount`, the four limits), optionally with `active` — the sheet's save.
+//     A FULL replacement, not a merge: the form sends every field on every save, and a merge would
+//     make "I unticked the expiry" indistinguishable from "I did not mention it".
+//   - `{ active }` alone — the list's Activate/Deactivate action, which must not have to know the
+//     rules to flip a switch.
+// Rows already redeemed are untouched either way — lowering `max_uses` under the count taken
+// simply reads as fully used from now on.
+//
+// `active` is a PAUSE, not a delete, and an inactive voucher is therefore still editable — it is
+// the same campaign, waiting. Reactivation is where the partial unique index bites: the merchant
+// may have created a second live voucher with the same code in the meantime, and two live rows
+// cannot share one. That is a 409 `duplicate_code`, the same answer create gives, and the
+// dashboard tells them to deactivate the other one first.
+//
+// `requireOwnsChild` is the tenancy guard — the same hole as DELETE: `:id` proves the caller's
+// shop, not the voucher's.
+app.patch('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
+  const m = c.get('merchant')
+  const existing = c.get('child')
+  if (!existing) return c.json({ error: 'Not found' }, 404)
+  const b = await c.req.json().catch(() => ({} as any))
+
+  const patch: Record<string, unknown> = {}
+  if (b?.active !== undefined) {
+    if (typeof b.active !== 'boolean') return c.json({ error: 'Invalid active' }, 400)
+    patch.active = b.active
+  }
+  if (b?.kind !== undefined) {
+    const parsed = parseVoucherRules(b, m.timezone)
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+    Object.assign(patch, parsed.rules)
+  }
+  if (Object.keys(patch).length === 0) return c.json({ error: 'Nothing to update' }, 400)
+
+  const { data, error } = await admin.from('vouchers')
+    .update(patch)
+    .eq('id', existing.id)
+    .select()
+    .single()
+  if (error?.code === '23505') return c.json({ error: 'duplicate_code' }, 409)
+  if (error) return c.json({ error: 'Update failed' }, 500)
+  const counts = await redemptionCounts([existing.id as string])
+  return c.json(voucherMerchantView(data, m.timezone, counts[existing.id as string] ?? 0))
+})
+
+// A voucher's history: each redemption with the order it was spent on. The same tenancy guard
+// as PATCH and DELETE. What the rows may carry is decided in `voucherRedemptions` — the account
+// email behind a redemption never leaves the database on any route.
+app.get('/api/merchants/:id/vouchers/:voucherId/redemptions', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
+  const existing = c.get('child')
+  if (!existing) return c.json({ error: 'Not found' }, 404)
+  try {
+    return c.json(await voucherRedemptions(existing.id as string))
+  } catch (err) {
+    console.error('Voucher redemptions lookup failed', err instanceof Error ? err.message : String(err))
+    return c.json({ error: 'Lookup failed' }, 500)
+  }
+})
+
 // Voucher delete. requireMerchantOwns only proves the caller owns :id — it says nothing
 // about voucherId, so an owner of shop A could otherwise delete shop B's voucher by nesting
 // it under :id = A. Loading the voucher and checking merchant_id === :id before deleting is
 // what closes that hole (Global Constraint 2), mirroring the product DELETE handler above.
 // DEACTIVATE, not delete. A hard delete would take the redemption history with it, and
-// delete-and-recreate was also how a merchant silently reset `used_by`. Every read filters
-// `active`, so the code disappears from the dashboard and stops redeeming — the customer-facing
-// behaviour is identical to what a delete did.
+// delete-and-recreate was also how a merchant silently reset `used_by`. The same write as
+// `PATCH { active: false }` above, which is what the dashboard now sends — this verb survives
+// for any caller still speaking it, and because a DELETE that deletes would be the one thing
+// this route must never become.
 //
-// The unique index is PARTIAL (`(merchant_id, code) where active`), so retiring a code frees its
-// string: recreating it makes a NEW row with a new id, and the old campaign's redemptions stay
-// attached to the old campaign and count against nobody.
+// The unique index is PARTIAL (`(merchant_id, code) where active`), so deactivating a code frees
+// its string: creating it again makes a NEW row with a new id, and the old campaign's redemptions
+// stay attached to the old campaign and count against nobody.
 app.delete('/api/merchants/:id/vouchers/:voucherId', requireMerchantOwns, requireOwnsChild('vouchers', 'voucherId'), async (c) => {
   const voucherId = c.req.param('voucherId')
   const { error } = await admin.from('vouchers').update({ active: false }).eq('id', voucherId)
@@ -1426,9 +1477,43 @@ app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, requireOwns
   if ('status' in patch && !ORDER_STATUSES.includes(patch.status as string)) {
     return c.json({ error: 'Invalid status' }, 400)
   }
+
+  // A completed order's status is FINAL (ADR 0024). This is the enforcement point, not the UI:
+  // the drawer hides the control, but the control is not a boundary, and the one move this
+  // refusal exists for — completed → cancelled — RELEASES the voucher redemption the order spent
+  // (ADR 0023), on goods the shop already handed over.
+  //
+  // A null status MEANS 'new' (the storefront wrote the column late), so the coalesce matches the
+  // rest of this file. Only a status that DIFFERS is refused: an identical value changes nothing,
+  // and a retried patch must stay a no-op rather than becoming an error. Note, courier and awb
+  // stay writable on a completed order — a shop files an AWB after the fact, and nothing about
+  // that is a status change.
+  const currentStatus = (c.get('child')?.status as string | null) ?? 'new'
+  if ('status' in patch && currentStatus === 'completed' && patch.status !== currentStatus) {
+    return c.json({ error: 'order_completed' }, 409)
+  }
+
   if (Object.keys(patch).length === 0) return c.json({ error: 'No updatable fields' }, 400)
   const { data, error } = await admin.from('orders').update(patch).eq('id', orderId).select().single()
   if (error) return c.json({ error: 'Update failed' }, 500)
+
+  // Cancelling RELEASES the voucher redemption the order spent, and un-cancelling takes it back
+  // (ADR 0023). Driven off the status the order now HAS, not off the change — so a repeat is a
+  // no-op and a void that failed is repaired by the next patch, without this handler having to
+  // read what the status was.
+  //
+  // Deliberately NOT in one transaction with the update above: doing that means rewriting this
+  // whole patch (note, courier, awb, and the row shape the dashboard patches itself from) as raw
+  // SQL to close a failure that already errs the safe way — the order is cancelled and the use
+  // stays spent, which is exactly the behaviour before this existed. Logged, not swallowed: a
+  // merchant would otherwise never learn the slot did not come back.
+  if ('status' in patch) {
+    try {
+      await syncOrderRedemptionVoid(orderId, patch.status === 'cancelled')
+    } catch (err) {
+      console.error('Releasing the voucher redemption failed for order', orderId, err instanceof Error ? err.message : String(err))
+    }
+  }
   return c.json(data)
 })
 
@@ -1636,6 +1721,117 @@ app.post('/api/orders/invoice', async (c) => {
   if (error) return c.json({ error: 'lookup_failed' }, 500)
 
   return invoiceFor(c, order, merchant)
+})
+
+// ── Order reviews — the customer's own 1-5 stars on their own order ────────────────────────────
+//
+// Two doors, and they are the invoice doors' twins on purpose: the same two customers exist here
+// (a signed-in one holding a `user_id`, a guest holding nothing but the order number and the
+// phone they typed), so the same two proofs answer them. See
+// docs/superpowers/specs/2026-09-03-order-reviews-design.md.
+//
+// Both write through the service-role client. `orders` grants the browser nothing at all, so
+// there is no client path to close and no policy to lean on — the ownership check IS the route's.
+
+/**
+ * The write itself, shared by both doors. The caller has already PROVED the order is the one it
+ * may review; this does not re-check ownership and must never be reached before that proof.
+ *
+ * The parsed body is passed in rather than re-read, so the guest door reads the request once.
+ */
+interface ReviewableOrder {
+  id: string
+  status: string | null
+}
+
+async function writeOrderReview(c: Context, order: ReviewableOrder, body: unknown) {
+  // A cancelled order has nothing to rate, and the shop cannot act on the answer. 409 rather
+  // than 404: the customer proved this order, so pretending it is missing would be a lie they
+  // can see through.
+  if (order.status === 'cancelled') return c.json({ error: 'order_cancelled' }, 409)
+
+  const parsed = validateOrderReview(body)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+
+  // `review_at` is derived here and never taken from the body — the validator drops it, and this
+  // is the other half of that rule. A change to a review moves the timestamp: it records the last
+  // write, not the first.
+  const { data, error } = await admin
+    .from('orders')
+    .update({
+      review_rating: parsed.value.rating,
+      review_comment: parsed.value.comment,
+      review_at: new Date().toISOString(),
+    })
+    .eq('id', order.id)
+    .select('review_rating, review_comment, review_at')
+    .single()
+  if (error) {
+    console.error('Order review write failed:', error.message)
+    return c.json({ error: 'review_failed' }, 500)
+  }
+  return c.json(data)
+}
+
+// The signed-in customer's door, scoped by the order's `user_id`. Inline ownership check for the
+// same reason the payment-proof and invoice twins have one: `requireOwnsChild` proves MERCHANT
+// ownership, which is the wrong question for a customer. A stranger's order, a guest order and a
+// missing order all return the same 404, or the 404 becomes an oracle.
+app.post('/api/orders/:orderId/review', requireUser, async (c) => {
+  const user = c.get('user')
+  const { data: order, error } = await admin
+    .from('orders').select('id, status, user_id').eq('id', c.req.param('orderId')).maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+  if (!order || order.user_id !== user.id) return c.json({ error: 'not_found' }, 404)
+
+  const body = await c.req.json().catch(() => ({}))
+  return writeOrderReview(c, order, body)
+})
+
+/**
+ * The guest's door — the same proof `POST /api/orders/invoice` takes.
+ *
+ * A guest order carries `user_id = null` for ever, so the only thing that customer can prove is
+ * the order number and the phone they typed, matched on `phoneKey()` (ADR 0007's last-eight-digit
+ * rule). The shop is REQUIRED and is not decoration: an order number is unique per shop only.
+ *
+ * The pair is guessable, and ADR 0018 accepts that knowingly. `reviewSubmitIpWindow` is what
+ * bounds it; it is in memory, so a second backend instance doubles it (#101). What a successful
+ * guess wins here is the ability to leave a star rating on a stranger's order — no read of the
+ * order, and nothing in the response that a guesser did not already send.
+ */
+app.post('/api/orders/review', async (c) => {
+  if (!reviewSubmitIpWindow.allow(ipOf(c))) return c.json({ error: 'rate_limited' }, 429)
+
+  const body = await c.req.json().catch(() => ({}))
+  const slug = typeof body.shop === 'string' ? body.shop.trim().toLowerCase() : ''
+  const orderNumber = typeof body.orderNumber === 'string' ? body.orderNumber.trim().toUpperCase() : ''
+  // Null for a phone with no digits, which must never become a key: '' is what BOTH an absent
+  // phone and a phone-less order reduce to, and matching those would hand back the enumeration
+  // the phone requirement exists to remove.
+  const key = phoneKey(typeof body.phone === 'string' ? body.phone : '')
+  if (!slug || !orderNumber || !key) return c.json({ error: 'not_found' }, 404)
+
+  const { data: merchant, error: mErr } = await admin
+    .from('merchants').select('id').eq('slug', slug).maybeSingle()
+  if (mErr) return c.json({ error: 'lookup_failed' }, 500)
+  if (!merchant) return c.json({ error: 'not_found' }, 404)
+
+  // `user_id is null` is what keeps this the GUEST's door and not a second door onto everyone's
+  // orders. The guest invoice door omits it knowingly (ADR 0018: the document is the customer's
+  // own either way), but this one WRITES, so a guessed pair here would overwrite a signed-in
+  // customer's own rating. That customer already has a door — their token — and loses nothing.
+  const { data: order, error } = await admin
+    .from('orders').select('id, status')
+    .eq('merchant_id', merchant.id)
+    .eq('order_number', orderNumber)
+    .eq('customer_phone_key', key)
+    .is('user_id', null)
+    .maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+  if (!order) return c.json({ error: 'not_found' }, 404)
+
+  return writeOrderReview(c, order, body)
 })
 
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────
@@ -2204,6 +2400,13 @@ const verifyResendWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000
 // as one lookup. Same in-memory limiter weaknesses as everything else here, inherited knowingly.
 const placesIpWindow = createSlidingWindow({ limit: 300, windowMs: 60 * 60_000, now: () => Date.now() })
 
+// Referral-code checks from the signup form, per IP per hour. The endpoint is public and reads
+// one indexed column, so this bounds enumeration rather than spend: 8 hex characters is four
+// billion codes, and 60 an hour makes walking them pointless while leaving a merchant who
+// retypes a code far more room than they will ever use. Same in-memory weaknesses as every
+// other limiter here, inherited knowingly (#101).
+const referralCheckIpWindow = createSlidingWindow({ limit: 60, windowMs: 60 * 60_000, now: () => Date.now() })
+
 /** The caller's IP, from the proxy headers with the socket as the local-dev fallback. */
 function ipOf(c: { req: { header: (n: string) => string | undefined }; env: unknown }): string {
   const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming
@@ -2212,6 +2415,36 @@ function ipOf(c: { req: { header: (n: string) => string | undefined }; env: unkn
     incoming?.socket?.remoteAddress,
   )
 }
+
+// Does this referral code name a shop? Public and unauthenticated, because it answers the SIGNUP
+// form — the caller has no account yet, and catching a typo is only useful while the field is
+// still on screen. Without it a mistyped code is dropped in silence by resolveReferredByCode and
+// the merchant believes a referral was recorded.
+//
+// The answer is a bare boolean, deliberately. A code is 8 hex characters, so returning the
+// referrer's name would make this a merchant directory anyone can walk one guess at a time —
+// and it stays bare now that the answer also depends on the referrer's billing state, which is
+// theirs and not the caller's business. "Invalid" covers both "no such code" and "that shop
+// cannot refer today", on purpose.
+//
+// `valid` means the code names a shop that COULD earn the reward today (canShareReferral). It is
+// still not a promise: the payout is decided when the referred shop's first invoice pays
+// (referralReward.ts), against the referrer's billing state at that later moment. What this
+// stops is the opposite failure — a code handed out by a shop that already cannot earn, which
+// validates green here and forfeits in silence months later.
+app.get('/api/referrals/check', async (c) => {
+  if (!referralCheckIpWindow.allow(ipOf(c))) return c.json({ error: 'rate_limited' }, 429)
+  // The same normalization the stamp uses, so a code this route calls good is one that survives
+  // POST /api/merchants. A malformed code is not an error here — the form asks about it while
+  // the merchant is still typing.
+  const code = normalizeReferralCode(c.req.query('code'))
+  if (!code) return c.json({ valid: false })
+  try {
+    return c.json({ valid: await referralCodeIsShareable(code) })
+  } catch {
+    return c.json({ error: 'Lookup failed' }, 500)
+  }
+})
 
 // ── Referred shops ────────────────────────────────────────────────────────────
 // Replaces the my_referred_shops SECURITY DEFINER function. That function could read

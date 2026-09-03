@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useParams, Link } from 'react-router-dom'
-import { signUp, signIn, createMerchant } from '../store'
+import { signUp, signIn, createMerchant, checkReferralCode } from '../store'
 import { pixelTrack } from '../pixels/track'
 // TinyOrder's OWN ids, deliberately — a shop signing up is our conversion, never a merchant's.
 import { platformPixelIds } from '../pixels/ids'
@@ -8,6 +8,7 @@ import { trackEvent, toBilling } from '../analytics/events'
 import type { SignupFailure } from '../analytics/events'
 import { SignupError } from '../signupError'
 import { toSlugBase } from '../slug'
+import { normalizeReferralCode, referralCodeFromInput } from '../referralCode'
 import { MIN_PASSWORD_LENGTH } from '@bitetime/shared'
 import { useSession } from '../SessionContext'
 import { usePlatformPricing } from '../usePlatformPricing'
@@ -50,7 +51,6 @@ export default function SignupScreen() {
 
   const billing = pick(CYCLES, [path.a, path.b, params.get('billing')], 'monthly')
   const canceled = params.get('canceled') === '1'
-  const ref = params.get('ref') ?? undefined
 
   const [name, setName] = useState('')
   // No default (#161): pre-selecting an industry would collect a guess from every merchant who
@@ -65,6 +65,41 @@ export default function SignupScreen() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+
+  // The referral code, now a FIELD rather than only the `?ref=` a referrer's link carries (#265).
+  // A merchant who was told a code by mouth, or who opened the signup page themselves, had no way
+  // to enter one at all — and the backend drops a code it dislikes in silence, so a typo used to
+  // look exactly like a referral that worked.
+  const [refCode, setRefCode] = useState(() => referralCodeFromInput(params.get('ref') ?? ''))
+  // The answer for ONE code, held with the code it answers. Keeping the code alongside the verdict
+  // is what makes 'checking' a derived state rather than a second setState: a result for anything
+  // but the code in the box is a stale answer and reads as still checking. `valid: null` is the
+  // check we could not make at all.
+  const [refResult, setRefResult] = useState<{ code: string; valid: boolean | null } | null>(null)
+  const referredByCode = normalizeReferralCode(refCode)
+
+  // Ask the backend whether the code names a shop, one keystroke's pause after the merchant stops
+  // typing. Only a well-formed code is worth a request, and the effect keys on the NORMALIZED
+  // code, so re-typing the same code in another case asks nothing.
+  useEffect(() => {
+    if (!referredByCode) return
+    let active = true
+    const timer = setTimeout(async () => {
+      const r = await checkReferralCode(referredByCode)
+      if (!active) return
+      // A check we could not make must never stop a shop from opening: the code is sent either
+      // way and the worst case is the silence we already had. Only a definite "no shop uses this"
+      // holds the submit button.
+      setRefResult({ code: referredByCode, valid: r.ok ? r.data.valid : null })
+    }, 400)
+    return () => { active = false; clearTimeout(timer) }
+  }, [referredByCode])
+
+  const refStatus: 'idle' | 'checking' | 'valid' | 'unknown' | 'unverified' =
+    !referredByCode ? 'idle'
+      : refResult?.code !== referredByCode ? 'checking'
+        : refResult.valid === null ? 'unverified'
+          : refResult.valid ? 'valid' : 'unknown'
 
   // Fires once. A ref rather than state because nothing renders from it, and a re-render per
   // keystroke to record a fact that never changes again is a re-render for nothing.
@@ -81,6 +116,41 @@ export default function SignupScreen() {
     toSlugBase(name).then(base => { if (active) setSlugPreview(base || 'shop-…') })
     return () => { active = false }
   }, [name])
+
+  /**
+   * The line under the referral field: what it says, and what colour it says it in.
+   *
+   * Only a settled verdict is coloured. 'Code found' is green and 'no shop uses this' is red,
+   * because those are answers. The format hint stays grey — a merchant seven characters into an
+   * eight-character code has made no mistake yet, and a field that turns red at the first
+   * keystroke tells everyone off for typing. A check we could not make is grey for the same
+   * reason: it is our failure, not theirs, and it does not stop them.
+   */
+  const refNote: { text: string; tone: string } =
+    refCode.trim() === ''
+      ? { text: t('Someone invited you? Enter their code.', '有人邀请你？请输入其推荐码。'), tone: 'text-muted-foreground' }
+      : !referredByCode
+        ? { text: t('A referral code is 8 characters, 0–9 and A–F.', '推荐码为 8 位字符，只含 0–9 与 A–F。'), tone: 'text-muted-foreground' }
+        : refStatus === 'checking'
+          ? { text: t('Checking…', '检查中…'), tone: 'text-muted-foreground' }
+          : refStatus === 'valid'
+            ? { text: t('Code found.', '推荐码有效。'), tone: 'text-success-fg' }
+            : refStatus === 'unknown'
+              // Not "no shop uses this code" any more: the endpoint also refuses a code whose
+              // owner cannot earn the reward today (a trial, a failed payment, a subscription
+              // winding down), and saying the code does not exist would be untrue. It stays one
+              // message for both cases on purpose — which of the two it is, is the referrer's
+              // business, and a message that distinguished them would report a stranger's
+              // billing state to anyone holding 8 hex characters.
+              ? { text: t('This code cannot be used. Ask the person who invited you.',
+                          '此推荐码无法使用，请向邀请你的人确认。'), tone: 'text-danger-fg' }
+              : { text: t('We could not check this code. You can continue.',
+                          '暂时无法验证此推荐码，你可以继续。'), tone: 'text-muted-foreground' }
+
+  // A typed code the form cannot vouch for holds the button. Deliberately not a silent drop:
+  // the merchant is one keystroke from a code that works, and after signup there is no screen
+  // that lets them fix it.
+  const refBlocks = refCode.trim() !== '' && (!referredByCode || refStatus === 'checking' || refStatus === 'unknown')
 
   const cycleName = billing === 'yearly' ? t('Yearly', '按年') : t('Monthly', '按月')
   const planPrices = pricing.prices.pro
@@ -133,7 +203,7 @@ export default function SignupScreen() {
       // The backend creates the account pre-confirmed, so the sign-in below succeeds and the
       // shop is created in this same submit. The shop details still ride along on the auth
       // user's metadata as the fallback for a browser that dies between the two calls.
-      await signUp(name, email, password, { name, businessNature, currency, billing: billing as 'monthly' | 'yearly', ref })
+      await signUp(name, email, password, { name, businessNature, currency, billing: billing as 'monthly' | 'yearly', ref: referredByCode ?? undefined })
       try {
         await signIn(email, password)
       } catch {
@@ -142,7 +212,7 @@ export default function SignupScreen() {
         // which is exactly why it is worth reporting when it happens.
         fail('signin_failed'); return
       }
-      const created = await createMerchant({ name, billing, referredByCode: ref, businessNature, currency })
+      const created = await createMerchant({ name, billing, referredByCode: referredByCode ?? undefined, businessNature, currency })
       // An account with no shop. FinishSignupScreen picks this up from the parked metadata on
       // the next visit, so the merchant is not stranded — but the funnel has to see it, or the
       // drop looks like an abandoned form.
@@ -259,9 +329,34 @@ export default function SignupScreen() {
               <Label htmlFor="signup-3">{t('Password', '密码')}</Label>
               <PasswordInput id="signup-3" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} required minLength={MIN_PASSWORD_LENGTH} />
             </div>
+            {/* Last, and marked optional: most merchants have no code, and a field that looks
+                required in the middle of the form would ask every one of them for something they
+                cannot answer. `referralCodeFromInput` accepts the invite LINK too, because that is
+                what a referrer actually pastes into a chat. */}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="signup-ref">{t('Referral code (optional)', '推荐码（可选）')}</Label>
+              <Input
+                id="signup-ref"
+                value={refCode}
+                onChange={e => setRefCode(referralCodeFromInput(e.target.value))}
+                placeholder={t('e.g. 4F2A9C1B', '如 4F2A9C1B')}
+                autoComplete="off"
+                spellCheck={false}
+                className="font-mono tracking-[0.5px]"
+                aria-describedby="signup-ref-note"
+              />
+              {/* One line, always present, so the field never jumps as the answer arrives. */}
+              <p id="signup-ref-note" aria-live="polite" className={`text-[12px] leading-[1.4] ${refNote.tone}`}>
+                {refNote.text}
+              </p>
+            </div>
           </div>
-          {/* A Radix select carries no native `required`, so the button is the gate. */}
-          <Button type="submit" variant="default" size="md" className="py-3" disabled={busy || !businessNature}>
+          {/* A Radix select carries no native `required`, so the button is the gate — and the same
+              gate holds a referral code the merchant is still getting wrong. A code that is
+              malformed, still being checked, or known to name no shop stops the submit; an EMPTY
+              field and a code we could not check both pass, because neither is a mistake we can
+              prove. */}
+          <Button type="submit" variant="default" size="md" className="py-3" disabled={busy || !businessNature || refBlocks}>
             {busy ? t('Creating…', '创建中…') : t('Start free trial', '开始免费试用')}
           </Button>
           {/* Sits under the button, not above it: the merchant reads it at the moment the act

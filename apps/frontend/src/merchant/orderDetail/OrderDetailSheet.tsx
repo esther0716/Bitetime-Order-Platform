@@ -11,6 +11,7 @@ import InvoiceCard from './InvoiceCard'
 import CustomerCard from './CustomerCard'
 import TrackingCard from './TrackingCard'
 import NoteCard from './NoteCard'
+import ReviewCard from './ReviewCard'
 
 // The order-detail drawer, shared by OrdersView and CustomersView. Open when
 // `order` is non-null; owns its own note/courier/awb drafts and bubbles every
@@ -45,10 +46,16 @@ export default function OrderDetailSheet({
     setAwbDraft(order.awb ?? '')
   }
 
+  // `order_completed` is the backend refusing a status change on a completed order (ADR 0024).
+  // The footer already hides the control, so this reaches a merchant only when their view is
+  // stale — another device completed the order while this drawer was open. It says WHY, because
+  // the generic failure would read as a bug on a screen still showing the old status.
   function handleStatusChange(o: any, status: string) {
     setOrderStatus(o.id, status, merchant!.id).then(r => {
       if (r.ok) onOrderUpdated(r.data)
-      else toast.error(t('Could not update order status.', '无法更新订单状态。'))
+      else if (r.error.code === 'order_completed') {
+        toast.error(t('This order is done. Its status cannot change.', '此订单已结束，状态无法更改。'))
+      } else toast.error(t('Could not update order status.', '无法更新订单状态。'))
     })
   }
 
@@ -125,6 +132,8 @@ export default function OrderDetailSheet({
                 dirty={trackDirty}
                 readOnly={readOnly}
               />
+
+              <ReviewCard order={order} />
 
               <NoteCard
                 note={noteDraft}

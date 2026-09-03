@@ -23,6 +23,11 @@ export {
 } from './trialFeedback.js'
 export type { TrialFeedbackDraft, TrialFeedbackValidation } from './trialFeedback.js'
 export {
+  validateOrderReview,
+  ORDER_REVIEW_RATING_MIN, ORDER_REVIEW_RATING_MAX, ORDER_REVIEW_COMMENT_MAX_LENGTH,
+} from './orderReview.js'
+export type { OrderReviewDraft, OrderReviewValidation } from './orderReview.js'
+export {
   priceOrder, voucherError, voucherExpired, voucherBelowMinimum, voucherApplies,
   shippingFee, voucherFromRow, shopRates, shopTax,
   promoState, promoClaims, productFromRow, optionGroupsFromRow,
@@ -81,3 +86,5 @@ export {
 export { pendingShopMetadata, pendingShopFromMetadata, pendingShopFromBody } from './pendingShop.js'
 export type { PendingShop } from './pendingShop.js'
 export type { BrandColorError, BrandColorResult } from './brandColor.js'
+export { canShareReferral } from './referralSharing.js'
+export type { ReferralBillingSnapshot } from './referralSharing.js'

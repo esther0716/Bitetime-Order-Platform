@@ -4,7 +4,7 @@ import { Truck, ExternalLink, ChevronDown } from 'lucide-react'
 import { useMerchant } from '../MerchantContext'
 import { useSession } from '../SessionContext'
 import { Button } from '../components/ui/button'
-import { fetchMyInvoice, fetchMyOrdersAtShop, fetchMyPaymentProof, fetchMyMerchantPaymentProof, lookupProducts, signOut, ORDER_HISTORY_LIMIT, type PaymentProofSaved } from '../store'
+import { fetchMyInvoice, fetchMyOrdersAtShop, fetchMyPaymentProof, fetchMyMerchantPaymentProof, lookupProducts, reviewMyOrder, signOut, ORDER_HISTORY_LIMIT, type PaymentProofSaved } from '../store'
 import { StatusBadge } from '../orderStatus'
 import { ItemSelections } from '../ItemSelections'
 import { courierName, trackingUrl } from '../couriers'
@@ -19,6 +19,7 @@ import MoneyLine from './MoneyLine'
 import OrderTimeline from './OrderTimeline'
 import PaymentProofUpload from './PaymentProofUpload'
 import PaymentInstructions from './PaymentInstructions'
+import OrderReviewCard from './OrderReviewCard'
 import { canUploadPaymentProof } from '../paymentProof'
 import LanguageSelect from '../components/LanguageSelect'
 import InvoiceButton from '../components/InvoiceButton'
@@ -280,6 +281,40 @@ export default function OrderHistory() {
                         onUploaded={saved => patchLoadedOrder(o.id!, saved)}
                       />
                       <Tracking order={o} t={t} />
+                      {/* The same card the order-placed screen shows, and the only way a
+                          signed-in customer can change their mind afterwards. It writes through
+                          the signed-in door — history is signed-in-only by construction, so there
+                          is no guest branch to write here.
+
+                          A CANCELLED order keeps a review it already has and offers no form: the
+                          backend refuses the write with 409, but hiding the whole card would take
+                          away a rating the customer left while the order was live — which they
+                          would read as their words having been deleted. An unrated cancelled
+                          order shows nothing, because there is nothing to show and nothing to
+                          write. `key` on the order id keeps one row's card from carrying another
+                          row's state when the accordion switches. */}
+                      {(o.status !== 'cancelled' || o.review_rating) && (
+                        <OrderReviewCard
+                          key={o.id}
+                          className="mt-3"
+                          readOnly={o.status === 'cancelled'}
+                          initial={o.review_rating
+                            ? { rating: o.review_rating, comment: o.review_comment ?? null }
+                            : null}
+                          submit={async (rating, comment) => {
+                            const r = await reviewMyOrder(o.id!, rating, comment)
+                            // Patch the loaded row so the stored review survives collapsing and
+                            // re-opening this order, without refetching the whole list (which
+                            // would close the accordion).
+                            if (r.ok) patchLoadedOrder(o.id!, {
+                              review_rating: r.data.review_rating,
+                              review_comment: r.data.review_comment,
+                              review_at: r.data.review_at,
+                            })
+                            return r
+                          }}
+                        />
+                      )}
                       {/* The document, for the customer who came here to get one. The same bytes
                           the merchant and a guest are handed — one order has one invoice. */}
                       <InvoiceButton

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parseOrderList, searchTerm, ORDERS_PAGE_SIZE, MAX_ORDERS_PAGE_SIZE,
 } from '../../src/orderList.js'
+import { ORDER_STATUSES } from '../../src/writes.js'
 
 const q = (s: string) => new URLSearchParams(s)
 
@@ -10,14 +11,14 @@ describe('parseOrderList', () => {
     const r = parseOrderList(q(''))
     expect(r).toEqual({
       ok: true,
-      query: { page: 1, pageSize: ORDERS_PAGE_SIZE, sort: 'created_at', dir: 'desc', search: '' },
+      query: { page: 1, pageSize: ORDERS_PAGE_SIZE, sort: 'created_at', dir: 'desc', search: '', status: '' },
     })
   })
 
   it('reads a page, a size, a sort and a direction', () => {
     const r = parseOrderList(q('page=3&pageSize=10&sort=total&dir=asc'))
     expect(r.ok && r.query).toEqual({
-      page: 3, pageSize: 10, sort: 'total', dir: 'asc', search: '',
+      page: 3, pageSize: 10, sort: 'total', dir: 'asc', search: '', status: '',
     })
   })
 
@@ -59,6 +60,27 @@ describe('parseOrderList', () => {
   // The bound exists so a page this endpoint agrees to serve is one it can serve WHOLE.
   it('keeps its own bound under PostgREST\'s row cap', () => {
     expect(MAX_ORDERS_PAGE_SIZE).toBeLessThan(1000)
+  })
+
+  it('reads a status filter, and reads a blank one as every status', () => {
+    const one = parseOrderList(q('status=preparing'))
+    expect(one.ok && one.query.status).toBe('preparing')
+    const blank = parseOrderList(q('status='))
+    expect(blank.ok && blank.query.status).toBe('')
+  })
+
+  it('accepts every status an order can hold', () => {
+    for (const status of ORDER_STATUSES) {
+      expect(parseOrderList(q(`status=${status}`)).ok).toBe(true)
+    }
+  })
+
+  // Refused rather than dropped: a filter we ignore hands back every order the shop has under a
+  // heading that claims one status, and the merchant cannot tell that from a shop that really is
+  // all one status.
+  it('refuses a status no order can hold', () => {
+    expect(parseOrderList(q('status=shipped'))).toEqual({ ok: false, error: 'invalid_status' })
+    expect(parseOrderList(q('status=new,completed'))).toEqual({ ok: false, error: 'invalid_status' })
   })
 
   it('treats an absent parameter as the default, not as a bad one', () => {

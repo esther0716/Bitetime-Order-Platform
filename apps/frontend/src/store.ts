@@ -5,7 +5,7 @@ import { revenueQuery, type RevenueSelection } from './merchant/revenueRange';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
-import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher } from './types';
+import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher, VoucherRedemption } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForFile, apiSendForm, mapOk, toVoid } from './api'
@@ -629,8 +629,61 @@ export async function createMerchantVoucher(input: {
   return mapOk(r, voucherFromRow)
 }
 
-export async function deleteMerchantVoucher(id: string, merchantId: string): Promise<Result<void>> {
-  return toVoid(await apiSend(`/api/merchants/${merchantId}/vouchers/${id}`, 'DELETE', undefined, { auth: true }))
+/** Everything `createMerchantVoucher` takes except the code — see `updateMerchantVoucher`. */
+export interface VoucherRulesInput {
+  kind: string; amount: number; maxUses?: number | null;
+  perCustomerLimit?: number | null; expiresOn?: string | null; minOrder?: number | null;
+}
+
+/**
+ * Edit a voucher: the discount, every restriction and whether it is active — never the code.
+ *
+ * The code is what the merchant has printed and what customers are holding, so the server ignores
+ * one in the body and this signature does not offer one. A merchant who needs a different string
+ * deactivates this voucher and creates the next, which is deliberately a new campaign.
+ *
+ * Reactivating can be refused (`duplicate_code`, 409): the merchant may have created a second live
+ * voucher with the same code while this one was paused, and two live rows cannot share one.
+ */
+export async function updateMerchantVoucher(
+  id: string, merchantId: string, input: VoucherRulesInput & { active?: boolean },
+): Promise<Result<Voucher>> {
+  const r = await apiSend<any>(`/api/merchants/${merchantId}/vouchers/${id}`, 'PATCH', {
+    kind: input.kind,
+    amount: input.amount,
+    maxUses: input.maxUses ?? null,
+    perCustomerLimit: input.perCustomerLimit === undefined ? 1 : input.perCustomerLimit,
+    expiresOn: input.expiresOn ?? null,
+    minOrder: input.minOrder ?? null,
+    ...(input.active === undefined ? {} : { active: input.active }),
+  }, { auth: true })
+  return mapOk(r, voucherFromRow)
+}
+
+/** A voucher's history, newest first. See `VoucherRedemption`. */
+export async function fetchVoucherRedemptions(id: string, merchantId: string): Promise<Result<VoucherRedemption[]>> {
+  const r = await apiGet<any[]>(`/api/merchants/${merchantId}/vouchers/${id}/redemptions`, { auth: true })
+  return mapOk(r, rows => rows.map(row => ({
+    id: row.id,
+    redeemedAt: row.redeemed_at ?? null,
+    voidedAt: row.voided_at ?? null,
+    orderId: row.order_id ?? null,
+    orderNumber: row.order_number ?? null,
+    customerName: row.customer_name ?? null,
+    // postgres.js hands `numeric` back as a string.
+    discount: row.discount == null ? null : Number(row.discount),
+    orderStatus: row.order_status ?? null,
+  })))
+}
+
+/**
+ * Pause or resume a voucher without touching its rules — the list's own action, which must not
+ * have to know the discount to flip a switch. Deactivation is a PAUSE: the row keeps its code,
+ * its limits and its redemption count, and comes back exactly as it was.
+ */
+export async function setMerchantVoucherActive(id: string, merchantId: string, active: boolean): Promise<Result<Voucher>> {
+  const r = await apiSend<any>(`/api/merchants/${merchantId}/vouchers/${id}`, 'PATCH', { active }, { auth: true })
+  return mapOk(r, voucherFromRow)
 }
 
 // ── Referral program ─────────────────────────────────────────────────────────
@@ -639,6 +692,14 @@ export async function deleteMerchantVoucher(id: string, merchantId: string): Pro
 // profiles.referral_code for lookup.
 export function referralCodeOf(userId: string) {
   return (userId || '').replace(/-/g, '').slice(0, 8).toUpperCase();
+}
+
+// Does a referral code name a shop? The one referral read that is NOT scoped to the caller —
+// it answers the signup form, where there is no session yet and the code is exactly what the
+// caller typed. Safe for the same reason it is useful: it returns `{ valid }` and nothing else,
+// so a guessed code buys no name and no shop. See GET /api/referrals/check.
+export async function checkReferralCode(code: string): Promise<Result<{ valid: boolean }>> {
+  return apiGet<{ valid: boolean }>(`/api/referrals/check?code=${encodeURIComponent(code)}`)
 }
 
 // Shops that signed up with the current user's referral code.
@@ -841,6 +902,8 @@ export interface OrderListQuery {
   sort?: 'created_at' | 'order_number' | 'fulfil_date' | 'total'
   dir?: 'asc' | 'desc'
   search?: string
+  /** One of ORDER_STATUSES, or blank/absent for every status. */
+  status?: string
 }
 
 /**
@@ -864,6 +927,7 @@ export async function fetchMerchantOrders(
   if (opts.sort) q.set('sort', opts.sort)
   if (opts.dir) q.set('dir', opts.dir)
   if (opts.search?.trim()) q.set('search', opts.search.trim())
+  if (opts.status) q.set('status', opts.status)
   const qs = q.toString()
   return apiGet<OrderPage>(`/api/merchants/${merchantId}/orders${qs ? `?${qs}` : ''}`, { auth: true })
 }
@@ -902,6 +966,24 @@ export async function fetchOrderCount(
   const qs = status ? `?status=${encodeURIComponent(status)}` : ''
   const r = await apiGet<{ count: number }>(`/api/merchants/${merchantId}/orders/count${qs}`, { auth: true })
   return mapOk(r, d => d.count)
+}
+
+/**
+ * How many orders this shop has in each status, counted by Postgres in one statement.
+ *
+ * `search` is the list's own search box, so the tally over a filter chip counts the same rows
+ * the list under it would show. A status the shop has no orders in is absent from the map.
+ */
+export async function fetchOrderStatusCounts(
+  merchantId: string,
+  search = '',
+): Promise<Result<Record<string, number>>> {
+  if (!merchantId) return { ok: true, data: {} }
+  const qs = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ''
+  const r = await apiGet<{ counts: Record<string, number> }>(
+    `/api/merchants/${merchantId}/orders/status-counts${qs}`, { auth: true },
+  )
+  return mapOk(r, d => d.counts)
 }
 
 /**
@@ -1286,6 +1368,44 @@ export async function fetchGuestInvoice(
   phone: string,
 ): Promise<Result<{ blob: Blob; filename: string | null }>> {
   return apiSendForFile('/api/orders/invoice', { shop, orderNumber, phone }, { auth: false })
+}
+
+/** The three fields either review door writes back. */
+export interface OrderReview {
+  review_rating: number
+  review_comment: string | null
+  review_at: string
+}
+
+/**
+ * The signed-in customer's review of their own order. The order's `user_id` is what scopes it,
+ * so the token is the whole proof and nothing about the order needs to be re-stated.
+ */
+export async function reviewMyOrder(
+  orderId: string,
+  rating: number,
+  comment: string | null,
+): Promise<Result<OrderReview>> {
+  return apiSend<OrderReview>(`/api/orders/${orderId}/review`, 'POST', { rating, comment }, { auth: true })
+}
+
+/**
+ * The guest's review, through the same door their invoice comes from: the shop, the order number
+ * and the phone they typed. A guest order carries no `user_id`, so there is nothing else to prove.
+ */
+export async function reviewGuestOrder(
+  shop: string,
+  orderNumber: string,
+  phone: string,
+  rating: number,
+  comment: string | null,
+): Promise<Result<OrderReview>> {
+  return apiSend<OrderReview>(
+    '/api/orders/review',
+    'POST',
+    { shop, orderNumber, phone, rating, comment },
+    { auth: false },
+  )
 }
 
 // ── Merchant config & secrets ─────────────────────────────────────────────────

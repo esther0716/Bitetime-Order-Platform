@@ -752,12 +752,17 @@ async function claimVoucher(
   // counts, and they answer different questions: how many this PERSON has taken, and how many the
   // CODE has taken. `used_by` was a set, and a set cannot answer the first one now that a customer
   // may hold several (#241).
+  //
+  // `voided_at is null` is what makes releasing a cancelled order's redemption real. It is the
+  // ONLY count that frees a slot for a customer: every other reader of this table is a display
+  // figure, so a filter missing here would leave the dashboard saying a slot is free while the
+  // checkout kept refusing it. See ADR 0023.
   const [counts] = await tx<{ mine: string; total: string }[]>`
     select
       count(*) filter (where customer_key = ${entry}) as mine,
       count(*) as total
     from voucher_redemptions
-    where voucher_id = ${row.id}
+    where voucher_id = ${row.id} and voided_at is null
   `
   const mine = Number(counts?.mine ?? 0)
   const total = Number(counts?.total ?? 0)

@@ -198,6 +198,15 @@ export interface Order {
    *  it over WhatsApp). Separate from `payment_proof`, so neither side overwrites the other.
    *  Fetch it through `fetchMerchantPaymentProof`. */
   payment_proof_merchant?: string | null
+  /**
+   * The customer's own 1-5 star review of this order, and the optional text beside it. Null
+   * until they leave one. Written only through the two review doors; the merchant reads these
+   * and can never write them.
+   */
+  review_rating?: number | null
+  review_comment?: string | null
+  /** When the review was LAST written — a customer may change theirs. */
+  review_at?: string | null
   [key: string]: any
 }
 
@@ -245,6 +254,25 @@ export interface ShopCustomerPage {
 
 /** The orderings the list offers. Everything but `recent` is Pro. */
 export type ShopCustomerSort = 'recent' | 'spend' | 'orders'
+
+/**
+ * One line of a voucher's history, as the merchant's own route returns it. Everything here is a
+ * fact about the ORDER the code was spent on — the account email behind the redemption never
+ * leaves the backend (CONTEXT.md → Shop customer).
+ */
+export interface VoucherRedemption {
+  id: string
+  /** null on a backfilled row — no timestamp exists for a historical entry. */
+  redeemedAt: string | null
+  /** Set while the order is cancelled: the use has been returned. */
+  voidedAt: string | null
+  /** null on a backfilled row, or when the order was deleted. */
+  orderId: string | null
+  orderNumber: string | null
+  customerName: string | null
+  discount: number | null
+  orderStatus: string | null
+}
 
 export interface Voucher {
   code: string

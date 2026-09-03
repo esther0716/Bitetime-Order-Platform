@@ -217,4 +217,50 @@ describe('merchant order list, stats and count past the row cap', () => {
   it('refuses a status that is not one', async () => {
     expect((await get(`/api/merchants/${id}/orders/count?status=shipped`, token)).status).toBe(400)
   })
+
+  // ── The status filter and its tallies ───────────────────────────────────────
+
+  const list = async (qs: string) =>
+    (await (await get(`/api/merchants/${id}/orders${qs}`, token)).json()) as OrderPage
+
+  const tallies = async (qs = '') =>
+    ((await (await get(`/api/merchants/${id}/orders/status-counts${qs}`, token)).json()) as
+      { counts: Record<string, number> }).counts
+
+  it('narrows the list to one status, and says what that slice totals', async () => {
+    const page = await list('?status=cancelled')
+    expect(page.total).toBe(1)
+    expect(page.orders[0]!.order_number).toBe('CANCELLED')
+  })
+
+  // An absent status IS 'new', in the list exactly as in the count — one rule, one answer.
+  it('reads a row with no status at all as new', async () => {
+    const page = await list('?status=new')
+    expect(page.total).toBe(1)
+    expect(page.orders[0]!.order_number).toBe('NOSTATUS')
+  })
+
+  it('refuses a status the list cannot filter on', async () => {
+    expect((await get(`/api/merchants/${id}/orders?status=shipped`, token)).status).toBe(400)
+  })
+
+  it('tallies every status, over the whole history rather than a page of it', async () => {
+    expect(await tallies()).toEqual({ completed: BULK + 1, cancelled: 1, new: 1 })
+  })
+
+  // The one rule this feature states twice — the three searched columns, in PostgREST for the
+  // list and in SQL for the tallies. If they ever drift, a chip promises rows the list will not
+  // show, and this is what fails.
+  it('tallies the same rows the list itself would show, under a search', async () => {
+    const counts = await tallies('?search=Ah Meng')
+    for (const [status, count] of Object.entries(counts)) {
+      expect((await list(`?search=Ah Meng&status=${status}`)).total).toBe(count)
+    }
+    expect(counts).toEqual({ completed: 1, cancelled: 1 })
+  })
+
+  it("forbids another merchant from reading this shop's tallies", async () => {
+    expect((await get(`/api/merchants/${id}/orders/status-counts`, otherToken)).status).toBe(403)
+    expect((await get(`/api/merchants/${id}/orders/status-counts`)).status).toBe(401)
+  })
 })

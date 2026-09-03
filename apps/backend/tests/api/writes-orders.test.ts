@@ -194,6 +194,82 @@ describe('PATCH /api/merchants/:id/orders/:orderId', () => {
     await serviceClient().from('merchants').delete().eq('id', shopB)
   })
 
+  // ── A completed order's status is final (ADR 0024) ──────────────────────────────────────────
+  // The move this refusal exists for is completed → cancelled, which releases the voucher
+  // redemption the order spent (ADR 0023) on goods the shop already handed over. The drawer hides
+  // the control; this is the boundary.
+  it('409s on a status change away from completed and leaves the row intact', async () => {
+    await resetMerchant('ord-done-shop')
+    const owner = await makeUser('ord-done@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const id = await seedMerchant({ slug: 'ord-done-shop', owner_id: userId })
+    const orderId = await seedOrder({ merchant_id: id, status: 'completed' })
+
+    const res = await patch(`/api/merchants/${id}/orders/${orderId}`, { status: 'cancelled' }, token)
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'order_completed' })
+
+    const { data } = await serviceClient().from('orders').select('status').eq('id', orderId).single()
+    expect(data!.status).toBe('completed')
+
+    await serviceClient().from('orders').delete().eq('id', orderId)
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  it('still 400s on an INVALID status for a completed order', async () => {
+    // Order of checks: an unknown word is a bad request, not a locked order. Reversed, a client
+    // sending nonsense at a completed order would be told the order is the problem.
+    await resetMerchant('ord-done-bad-shop')
+    const owner = await makeUser('ord-done-bad@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const id = await seedMerchant({ slug: 'ord-done-bad-shop', owner_id: userId })
+    const orderId = await seedOrder({ merchant_id: id, status: 'completed' })
+
+    const res = await patch(`/api/merchants/${id}/orders/${orderId}`, { status: 'shipped' }, token)
+    expect(res.status).toBe(400)
+
+    await serviceClient().from('orders').delete().eq('id', orderId)
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  it('accepts an identical status on a completed order as a no-op', async () => {
+    await resetMerchant('ord-done-same-shop')
+    const owner = await makeUser('ord-done-same@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const id = await seedMerchant({ slug: 'ord-done-same-shop', owner_id: userId })
+    const orderId = await seedOrder({ merchant_id: id, status: 'completed' })
+
+    const res = await patch(`/api/merchants/${id}/orders/${orderId}`, { status: 'completed' }, token)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as OrderRow).status).toBe('completed')
+
+    await serviceClient().from('orders').delete().eq('id', orderId)
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
+  it('still writes note, courier and awb on a completed order', async () => {
+    // Only `status` is frozen. A shop files an AWB after the delivery, and that is not a status
+    // change — locking the whole patch would take the record away with the move.
+    await resetMerchant('ord-done-note-shop')
+    const owner = await makeUser('ord-done-note@example.com', 'password123')
+    const { token, userId } = await tokenOf(owner)
+    const id = await seedMerchant({ slug: 'ord-done-note-shop', owner_id: userId })
+    const orderId = await seedOrder({ merchant_id: id, status: 'completed' })
+
+    const res = await patch(`/api/merchants/${id}/orders/${orderId}`, {
+      note: 'handed to the customer', courier: 'jnt', awb: 'AWB999',
+    }, token)
+
+    expect(res.status).toBe(200)
+    const row = (await res.json()) as OrderRow
+    expect(row.status).toBe('completed')
+    expect(row.note).toBe('handed to the customer')
+    expect(row.awb).toBe('AWB999')
+
+    await serviceClient().from('orders').delete().eq('id', orderId)
+    await serviceClient().from('merchants').delete().eq('id', id)
+  })
+
   it('403 for a non-owner', async () => {
     await resetMerchant('ord-a-shop')
     const owner = await makeUser('ord-a-owner@example.com', 'password123')

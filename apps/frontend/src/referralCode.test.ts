@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeReferralCode, resolveReferredByCode } from './referralCode'
+import { normalizeReferralCode, resolveReferredByCode, referralCodeFromInput } from './referralCode'
 
 describe('normalizeReferralCode', () => {
   it('accepts an 8-char hex code, uppercased', () => {
@@ -32,5 +32,23 @@ describe('resolveReferredByCode', () => {
   })
   it('returns null for a malformed code', () => {
     expect(resolveReferredByCode('nope', 'FFFFFFFF')).toBeNull()
+  })
+})
+
+describe('referralCodeFromInput', () => {
+  it('uppercases and trims what the merchant typed', () => {
+    expect(referralCodeFromInput('  ab12cd34 ')).toBe('AB12CD34')
+  })
+  it('reads the code out of a pasted invite link', () => {
+    expect(referralCodeFromInput('https://tinyorder.app/merchant/signup?ref=ab12cd34')).toBe('AB12CD34')
+    expect(referralCodeFromInput('https://tinyorder.app/merchant/signup?billing=yearly&ref=AB12CD34')).toBe('AB12CD34')
+  })
+  it('keeps a wrong-length value whole, so the format check can say so', () => {
+    expect(referralCodeFromInput('ab12cd345')).toBe('AB12CD345')
+    expect(referralCodeFromInput('abc')).toBe('ABC')
+  })
+  it('returns an empty string for empty input', () => {
+    expect(referralCodeFromInput('')).toBe('')
+    expect(referralCodeFromInput('   ')).toBe('')
   })
 })
