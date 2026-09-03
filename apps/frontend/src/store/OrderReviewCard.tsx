@@ -70,7 +70,10 @@ export default function OrderReviewCard({
 
   const stars = (value: number, interactive: boolean) => (
     <div
-      className="flex gap-1"
+      // Centred, while the heading and the comment stay left: five glyphs on a card whose other
+      // rows are full-width fields read as a control, not as a line of text, and a control sits
+      // on the card's centre line.
+      className="flex gap-1 justify-center"
       role={interactive ? 'radiogroup' : undefined}
       aria-label={interactive ? t('Rating', '评分') : undefined}
     >
