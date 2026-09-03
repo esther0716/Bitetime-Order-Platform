@@ -1739,11 +1739,12 @@ app.post('/api/orders/invoice', async (c) => {
  *
  * The parsed body is passed in rather than re-read, so the guest door reads the request once.
  */
-async function writeOrderReview(
-  c: Context,
-  order: { id: string; status: string | null },
-  body: unknown,
-) {
+interface ReviewableOrder {
+  id: string
+  status: string | null
+}
+
+async function writeOrderReview(c: Context, order: ReviewableOrder, body: unknown) {
   // A cancelled order has nothing to rate, and the shop cannot act on the answer. 409 rather
   // than 404: the customer proved this order, so pretending it is missing would be a lie they
   // can see through.
@@ -1784,7 +1785,7 @@ app.post('/api/orders/:orderId/review', requireUser, async (c) => {
   if (!order || order.user_id !== user.id) return c.json({ error: 'not_found' }, 404)
 
   const body = await c.req.json().catch(() => ({}))
-  return writeOrderReview(c, order as { id: string; status: string | null }, body)
+  return writeOrderReview(c, order, body)
 })
 
 /**
@@ -1816,16 +1817,21 @@ app.post('/api/orders/review', async (c) => {
   if (mErr) return c.json({ error: 'lookup_failed' }, 500)
   if (!merchant) return c.json({ error: 'not_found' }, 404)
 
+  // `user_id is null` is what keeps this the GUEST's door and not a second door onto everyone's
+  // orders. The guest invoice door omits it knowingly (ADR 0018: the document is the customer's
+  // own either way), but this one WRITES, so a guessed pair here would overwrite a signed-in
+  // customer's own rating. That customer already has a door — their token — and loses nothing.
   const { data: order, error } = await admin
     .from('orders').select('id, status')
     .eq('merchant_id', merchant.id)
     .eq('order_number', orderNumber)
     .eq('customer_phone_key', key)
+    .is('user_id', null)
     .maybeSingle()
   if (error) return c.json({ error: 'lookup_failed' }, 500)
   if (!order) return c.json({ error: 'not_found' }, 404)
 
-  return writeOrderReview(c, order as { id: string; status: string | null }, body)
+  return writeOrderReview(c, order, body)
 })
 
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────

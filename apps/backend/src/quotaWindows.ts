@@ -124,18 +124,26 @@ export const ASSISTANT_MONTHLY_LIMIT = 60
 // Same in-memory weaknesses as every other limiter here, inherited knowingly: resets on redeploy,
 // and stops protecting anything past one backend instance (#101, Out of Scope). The fix, if this
 // ever needs one, is a Postgres counter of the shape `ai_usage` already has.
-const invoiceLookupMinuteWindow = createSlidingWindow({ limit: 10, windowMs: 60_000, now: () => Date.now() })
-const invoiceLookupHourWindow = createSlidingWindow({ limit: 60, windowMs: 60 * 60_000, now: () => Date.now() })
-
-export const invoiceLookupIpWindow = {
-  allow(key: string): boolean {
-    // BOTH windows record the hit — an early return from the minute window would leave the hour
-    // window under-counting exactly the caller it exists to stop.
-    const minute = invoiceLookupMinuteWindow.allow(key)
-    const hour = invoiceLookupHourWindow.allow(key)
-    return minute && hour
-  },
+/**
+ * A per-IP bound built from TWO windows, because one number cannot say both things — see the two
+ * paragraphs above. Each call gets its OWN pair of counters: two doors that share a shape must not
+ * share a budget, or a customer who used one is refused at the other.
+ */
+function createIpDoorWindow(perMinute: number, perHour: number) {
+  const minuteWindow = createSlidingWindow({ limit: perMinute, windowMs: 60_000, now: () => Date.now() })
+  const hourWindow = createSlidingWindow({ limit: perHour, windowMs: 60 * 60_000, now: () => Date.now() })
+  return {
+    allow(key: string): boolean {
+      // BOTH windows record the hit — an early return from the minute window would leave the hour
+      // window under-counting exactly the caller it exists to stop.
+      const minute = minuteWindow.allow(key)
+      const hour = hourWindow.allow(key)
+      return minute && hour
+    },
+  }
 }
+
+export const invoiceLookupIpWindow = createIpDoorWindow(10, 60)
 
 // The guest review door (POST /api/orders/review) proves the SAME guessable pair the guest
 // invoice door does — an order number and a phone — so it carries the same bound, and for the
@@ -147,18 +155,7 @@ export const invoiceLookupIpWindow = {
 //
 // Same in-memory weaknesses as every other limiter here, inherited knowingly: resets on redeploy,
 // and stops protecting anything past one backend instance (#101, Out of Scope).
-const reviewSubmitMinuteWindow = createSlidingWindow({ limit: 10, windowMs: 60_000, now: () => Date.now() })
-const reviewSubmitHourWindow = createSlidingWindow({ limit: 60, windowMs: 60 * 60_000, now: () => Date.now() })
-
-export const reviewSubmitIpWindow = {
-  allow(key: string): boolean {
-    // BOTH windows record the hit — an early return from the minute window would leave the hour
-    // window under-counting exactly the caller it exists to stop.
-    const minute = reviewSubmitMinuteWindow.allow(key)
-    const hour = reviewSubmitHourWindow.allow(key)
-    return minute && hour
-  },
-}
+export const reviewSubmitIpWindow = createIpDoorWindow(10, 60)
 
 // How many devices one MERCHANT account may hold at once. A device is one GoTrue session.
 //

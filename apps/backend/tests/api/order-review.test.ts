@@ -208,6 +208,19 @@ describe('POST /api/orders/review — the guest door', () => {
     expect((await readReview(order.id)).review_rating).toBeNull()
   })
 
+  // The guest door WRITES, unlike its invoice twin, so it must not reach an order that has an
+  // owner: a guessed number-and-phone pair would otherwise overwrite a signed-in customer's own
+  // rating. That customer has their own door and loses nothing.
+  it('refuses an order that belongs to a signed-in customer', async () => {
+    const order = await seedOrder(shop.merchantId, { user_id: customer.id })
+    const res = await guestReview({
+      shop: 'review-shop', orderNumber: order.order_number, phone: '+60 12-345 6789', rating: 1,
+    })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'not_found' })
+    expect((await readReview(order.id)).review_rating).toBeNull()
+  })
+
   it('refuses a cancelled order', async () => {
     const order = await seedOrder(shop.merchantId, { status: 'cancelled' })
     const res = await guestReview({

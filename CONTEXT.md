@@ -214,21 +214,22 @@ characters. It is three columns on `orders` (`review_rating`, `review_comment`, 
 not a table: a row cannot hold two reviews, so one review per order is structural, and the
 merchant's existing `select('*')` reads carry it with no join.
 
-The customer rates on the **order-placed screen**, immediately after checkout. This measures the
-ordering, not the food, and that is deliberate: a guest order carries `user_id = null` for ever,
-so the order-placed screen is the only screen a guest reliably sees. A signed-in customer can
-also rate and re-rate from their order history.
+The customer rates on the **order-placed screen**, immediately after checkout. The rating thus
+measures the checkout and not the food. This is deliberate. A guest order keeps `user_id = null`
+for ever. Thus the order-placed screen is the only screen that a guest sees again. A customer
+with an account can also rate the order, and rate it again, from the order history.
 
-Two doors write it, and they are the invoice doors' twins: `POST /api/orders/:orderId/review`
-scoped by the order's `user_id`, and `POST /api/orders/review` proving `(shop, order number,
-phone)` through `phoneKey()` under `reviewSubmitIpWindow`. A cancelled order refuses with 409;
-every other refusal is the same 404.
+Two endpoints write it. They are the equivalents of the two invoice endpoints.
+`POST /api/orders/:orderId/review` uses the order's `user_id`. `POST /api/orders/review` matches
+the shop, the order number and the phone with `phoneKey()`, under `reviewSubmitIpWindow`, and
+only for an order with no `user_id`. A cancelled order gets a 409. Each other refusal gets the
+same 404.
 
 The merchant READS it — a column in the order table, a card in the order drawer — and can never
 write it. Nothing is public: there is no shop average, no reply and no moderation.
 
-A guest who leaves the order-placed screen cannot change their review. `/invoice` is a door to a
-PDF, not a view of an order. Accepted, and stated in
+A guest who leaves the order-placed screen cannot change the review. `/invoice` gives a PDF, and
+does not show an order. This limit is accepted. See
 `docs/superpowers/specs/2026-09-03-order-reviews-design.md`.
 
 ## Invoice

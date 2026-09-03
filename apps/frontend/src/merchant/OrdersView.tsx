@@ -107,9 +107,10 @@ const columns: ColumnDef<any>[] = [
       <span>{(table.options.meta as OrderTableMeta).t('Rating', '评分')}</span>
     ),
     // The number beside ONE star, not five drawn stars: this cell sits in a dense table, and five
-    // glyphs in every row would out-shout the status badge next to it. An unrated order shows
-    // nothing at all — a row of five empty stars reads as "rated nothing", which is a different
-    // and untrue statement.
+    // glyphs in every row would out-shout the status badge next to it. A row of five EMPTY stars
+    // would be worse still — it reads as "rated nothing", which is a different and untrue
+    // statement. An unrated order gets the same em dash every other cell in this table uses for a
+    // value the order does not carry.
     cell: ({ row }) => {
       const rating = row.original.review_rating as number | null | undefined
       if (!rating) return <span className="text-muted-foreground">—</span>

@@ -5,6 +5,7 @@ import { useSession } from '../SessionContext'
 import { Button } from '../components/ui/button'
 import { Textarea } from '../components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { reviewErrorMessage } from './reviewError'
 import type { Result } from '../api'
 import type { OrderReview } from '../store'
 
@@ -23,18 +24,26 @@ import type { OrderReview } from '../store'
 export default function OrderReviewCard({
   initial,
   submit,
+  readOnly = false,
   className,
 }: {
   /** What is already stored for this order, or null when the customer has not rated it. */
   initial: { rating: number; comment: string | null } | null
   submit: (rating: number, comment: string | null) => Promise<Result<OrderReview>>
+  /**
+   * Show the stored review and offer no way to change it — a cancelled order, which the backend
+   * refuses with 409. It STILL shows what the customer left while the order was live; taking that
+   * off screen would read as their words having been deleted. Renders nothing when there is no
+   * stored review, because then there is nothing to show and nothing they may write.
+   */
+  readOnly?: boolean
   className?: string
 }) {
   const { t } = useSession()
   // `sent` is what is STORED. `editing` is whether the form is open. A card that opens with a
   // stored review shows it, and opens the form only when the customer asks to change it.
   const [sent, setSent] = useState(initial)
-  const [editing, setEditing] = useState(initial === null)
+  const [editing, setEditing] = useState(!readOnly && initial === null)
   const [rating, setRating] = useState(initial?.rating ?? 0)
   const [hover, setHover] = useState(0)
   const [comment, setComment] = useState(initial?.comment ?? '')
@@ -53,7 +62,9 @@ export default function OrderReviewCard({
       setSent({ rating: r.data.review_rating, comment: r.data.review_comment })
       setEditing(false)
     } else {
-      setError(r.error.message || t('Could not send your review', '无法提交你的评价'))
+      // The CODE, never `r.error.message`: `api.ts` fills that with the wire code itself (or the
+      // server's English validator sentence), and this side is bilingual.
+      setError(reviewErrorMessage(r.error.code, t))
     }
   }
 
@@ -85,6 +96,8 @@ export default function OrderReviewCard({
     </div>
   )
 
+  if (readOnly && !sent) return null
+
   return (
     // `text-left` is not decoration: the success view that mounts this is `text-center`, and an
     // inherited centre leaves the heading centred over left-aligned stars and a left-aligned
@@ -99,15 +112,17 @@ export default function OrderReviewCard({
           {sent.comment && (
             <p className="text-[13px] text-foreground break-words whitespace-pre-wrap">{sent.comment}</p>
           )}
-          <Button
-            type="button"
-            variant="link"
-            size="none"
-            className="self-start text-[13px]"
-            onClick={() => { setRating(sent.rating); setComment(sent.comment ?? ''); setEditing(true) }}
-          >
-            {t('Change my rating', '修改评价')}
-          </Button>
+          {!readOnly && (
+            <Button
+              type="button"
+              variant="link"
+              size="none"
+              className="self-start text-[13px]"
+              onClick={() => { setRating(sent.rating); setComment(sent.comment ?? ''); setEditing(true) }}
+            >
+              {t('Change my rating', '修改评价')}
+            </Button>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-3">

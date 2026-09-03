@@ -286,13 +286,18 @@ export default function OrderHistory() {
                           the signed-in door — history is signed-in-only by construction, so there
                           is no guest branch to write here.
 
-                          A cancelled order has nothing to rate and the backend refuses it with
-                          409, so the card is not offered. `key` on the order id keeps one row's
-                          card from carrying another row's state when the accordion switches. */}
-                      {o.status !== 'cancelled' && (
+                          A CANCELLED order keeps a review it already has and offers no form: the
+                          backend refuses the write with 409, but hiding the whole card would take
+                          away a rating the customer left while the order was live — which they
+                          would read as their words having been deleted. An unrated cancelled
+                          order shows nothing, because there is nothing to show and nothing to
+                          write. `key` on the order id keeps one row's card from carrying another
+                          row's state when the accordion switches. */}
+                      {(o.status !== 'cancelled' || o.review_rating) && (
                         <OrderReviewCard
                           key={o.id}
                           className="mt-3"
+                          readOnly={o.status === 'cancelled'}
                           initial={o.review_rating
                             ? { rating: o.review_rating, comment: o.review_comment ?? null }
                             : null}

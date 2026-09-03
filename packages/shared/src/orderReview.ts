@@ -1,6 +1,7 @@
 // Customer order reviews — validation for the 1-5 star rating a customer leaves on their own
 // order. Shared because both sides enforce it: the storefront card disables submit until a star
-// is picked and counts the comment down, and the backend refuses anything else. The database
+// is picked and refuses to send an over-long comment, and the backend refuses anything else. The
+// database
 // CHECK constraints in 20260903120000_order_reviews.sql are the final authority; this exists to
 // keep the browser and the server from disagreeing about what will be accepted. Mirrors
 // trialFeedback.ts's shape and reasoning.
