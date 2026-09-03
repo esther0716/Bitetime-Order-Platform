@@ -23,6 +23,11 @@ export {
 } from './trialFeedback.js'
 export type { TrialFeedbackDraft, TrialFeedbackValidation } from './trialFeedback.js'
 export {
+  validateOrderReview,
+  ORDER_REVIEW_RATING_MIN, ORDER_REVIEW_RATING_MAX, ORDER_REVIEW_COMMENT_MAX_LENGTH,
+} from './orderReview.js'
+export type { OrderReviewDraft, OrderReviewValidation } from './orderReview.js'
+export {
   priceOrder, voucherError, voucherExpired, voucherBelowMinimum, voucherApplies,
   shippingFee, voucherFromRow, shopRates, shopTax,
   promoState, promoClaims, productFromRow, optionGroupsFromRow,
