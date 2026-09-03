@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Star } from 'lucide-react'
+import { Pencil, Star } from 'lucide-react'
 import { ORDER_REVIEW_COMMENT_MAX_LENGTH } from '@bitetime/shared'
 import { useSession } from '../SessionContext'
 import { Button } from '../components/ui/button'
@@ -108,23 +108,32 @@ export default function OrderReviewCard({
     <div className={cn('bg-card border-[0.5px] border-border rounded-2xl p-[15px] text-left', className)}>
       {!editing && sent ? (
         <div className="flex flex-col gap-2">
-          <p className="text-[13px] text-muted-foreground">
-            {t('Thank you for rating this order.', '感谢你的评价。')}
-          </p>
+          {/* The line the pencil belongs to. An icon on its own row below the comment reads as a
+              stray glyph; on the card's own first line it reads as "edit this card", which is
+              what it does. */}
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[13px] text-muted-foreground">
+              {t('Thank you for rating this order.', '感谢你的评价。')}
+            </p>
+            {!readOnly && (
+              // Icon-only, so it keeps its NAME twice over: `aria-label` for a screen reader and
+              // `title` for the pointer. A pencil with neither is a button nobody can name.
+              <Button
+                type="button"
+                variant="link"
+                size="none"
+                aria-label={t('Change my rating', '修改评价')}
+                title={t('Change my rating', '修改评价')}
+                className="shrink-0 p-1 -m-1"
+                onClick={() => { setRating(sent.rating); setComment(sent.comment ?? ''); setEditing(true) }}
+              >
+                <Pencil size={16} strokeWidth={1.75} aria-hidden />
+              </Button>
+            )}
+          </div>
           {stars(sent.rating, false)}
           {sent.comment && (
             <p className="text-[13px] text-foreground break-words whitespace-pre-wrap">{sent.comment}</p>
-          )}
-          {!readOnly && (
-            <Button
-              type="button"
-              variant="link"
-              size="none"
-              className="self-start text-[13px]"
-              onClick={() => { setRating(sent.rating); setComment(sent.comment ?? ''); setEditing(true) }}
-            >
-              {t('Change my rating', '修改评价')}
-            </Button>
           )}
         </div>
       ) : (
