@@ -50,7 +50,7 @@ import { applyProductCopy } from './productCopyDb.js'
 import { parseOrderList, searchTerm } from './orderList.js'
 import { resolveRoutedDistance } from './routedDistance.js'
 import { liveDistanceDeps } from './distanceCache.js'
-import { invoiceLookupIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT, MERCHANT_DEVICE_LIMIT } from './quotaWindows.js'
+import { invoiceLookupIpWindow, reviewSubmitIpWindow, quoteIpWindow, quoteMerchantWindow, placesGlobalWindow, menuImportMerchantWindow, assistantMerchantWindow, MENU_IMPORT_LIFETIME_LIMIT, MENU_IMPORT_MONTHLY_LIMIT, ASSISTANT_MONTHLY_LIMIT, MERCHANT_DEVICE_LIMIT } from './quotaWindows.js'
 import { chooseEvictions, sessionIdFromToken, lastSeen } from './deviceLimit.js'
 import { listSessions, deleteSessions } from './deviceLimitDb.js'
 import { deviceIdentity } from './deviceLabel.js'
@@ -84,7 +84,7 @@ import {
   updateReleaseStatus, updateReleaseHumanization,
   listPublishedReleases, getPublishedReleaseByTag,
 } from './releasesDb.js'
-import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES, pendingShopFromBody, pendingShopMetadata, menuCategoriesFromRow } from '@bitetime/shared'
+import { canIssueInvoice, validateOrderReview, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURRENCY, validateOptionGroups, optionGroupsFromRow, validateFeedback, isFeedbackStatus, validateFeedbackImages, validateTrialFeedback, shopDistance, routedKm, distanceFee, REFUSAL_STATUS, QUOTE_REFUSAL_STATUS, DEFAULT_TIMEZONE, isTimezone, computeMerchantStats, ordersInWindow, windowTotals, todayInZone, granularityFor, fulfilmentConfig, validateCustomDates, MAX_CUSTOM_DATES, pendingShopFromBody, pendingShopMetadata, menuCategoriesFromRow } from '@bitetime/shared'
 import type { CartLine, Granularity } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename, type ReportWindow } from './report.js'
 import { resolveRevenueRange, type ResolvedRevenueRange } from './revenueWindow.js'
@@ -1721,6 +1721,111 @@ app.post('/api/orders/invoice', async (c) => {
   if (error) return c.json({ error: 'lookup_failed' }, 500)
 
   return invoiceFor(c, order, merchant)
+})
+
+// ── Order reviews — the customer's own 1-5 stars on their own order ────────────────────────────
+//
+// Two doors, and they are the invoice doors' twins on purpose: the same two customers exist here
+// (a signed-in one holding a `user_id`, a guest holding nothing but the order number and the
+// phone they typed), so the same two proofs answer them. See
+// docs/superpowers/specs/2026-09-03-order-reviews-design.md.
+//
+// Both write through the service-role client. `orders` grants the browser nothing at all, so
+// there is no client path to close and no policy to lean on — the ownership check IS the route's.
+
+/**
+ * The write itself, shared by both doors. The caller has already PROVED the order is the one it
+ * may review; this does not re-check ownership and must never be reached before that proof.
+ *
+ * The parsed body is passed in rather than re-read, so the guest door reads the request once.
+ */
+async function writeOrderReview(
+  c: Context,
+  order: { id: string; status: string | null },
+  body: unknown,
+) {
+  // A cancelled order has nothing to rate, and the shop cannot act on the answer. 409 rather
+  // than 404: the customer proved this order, so pretending it is missing would be a lie they
+  // can see through.
+  if (order.status === 'cancelled') return c.json({ error: 'order_cancelled' }, 409)
+
+  const parsed = validateOrderReview(body)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+
+  // `review_at` is derived here and never taken from the body — the validator drops it, and this
+  // is the other half of that rule. A change to a review moves the timestamp: it records the last
+  // write, not the first.
+  const { data, error } = await admin
+    .from('orders')
+    .update({
+      review_rating: parsed.value.rating,
+      review_comment: parsed.value.comment,
+      review_at: new Date().toISOString(),
+    })
+    .eq('id', order.id)
+    .select('review_rating, review_comment, review_at')
+    .single()
+  if (error) {
+    console.error('Order review write failed:', error.message)
+    return c.json({ error: 'review_failed' }, 500)
+  }
+  return c.json(data)
+}
+
+// The signed-in customer's door, scoped by the order's `user_id`. Inline ownership check for the
+// same reason the payment-proof and invoice twins have one: `requireOwnsChild` proves MERCHANT
+// ownership, which is the wrong question for a customer. A stranger's order, a guest order and a
+// missing order all return the same 404, or the 404 becomes an oracle.
+app.post('/api/orders/:orderId/review', requireUser, async (c) => {
+  const user = c.get('user')
+  const { data: order, error } = await admin
+    .from('orders').select('id, status, user_id').eq('id', c.req.param('orderId')).maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+  if (!order || order.user_id !== user.id) return c.json({ error: 'not_found' }, 404)
+
+  const body = await c.req.json().catch(() => ({}))
+  return writeOrderReview(c, order as { id: string; status: string | null }, body)
+})
+
+/**
+ * The guest's door — the same proof `POST /api/orders/invoice` takes.
+ *
+ * A guest order carries `user_id = null` for ever, so the only thing that customer can prove is
+ * the order number and the phone they typed, matched on `phoneKey()` (ADR 0007's last-eight-digit
+ * rule). The shop is REQUIRED and is not decoration: an order number is unique per shop only.
+ *
+ * The pair is guessable, and ADR 0018 accepts that knowingly. `reviewSubmitIpWindow` is what
+ * bounds it; it is in memory, so a second backend instance doubles it (#101). What a successful
+ * guess wins here is the ability to leave a star rating on a stranger's order — no read of the
+ * order, and nothing in the response that a guesser did not already send.
+ */
+app.post('/api/orders/review', async (c) => {
+  if (!reviewSubmitIpWindow.allow(ipOf(c))) return c.json({ error: 'rate_limited' }, 429)
+
+  const body = await c.req.json().catch(() => ({}))
+  const slug = typeof body.shop === 'string' ? body.shop.trim().toLowerCase() : ''
+  const orderNumber = typeof body.orderNumber === 'string' ? body.orderNumber.trim().toUpperCase() : ''
+  // Null for a phone with no digits, which must never become a key: '' is what BOTH an absent
+  // phone and a phone-less order reduce to, and matching those would hand back the enumeration
+  // the phone requirement exists to remove.
+  const key = phoneKey(typeof body.phone === 'string' ? body.phone : '')
+  if (!slug || !orderNumber || !key) return c.json({ error: 'not_found' }, 404)
+
+  const { data: merchant, error: mErr } = await admin
+    .from('merchants').select('id').eq('slug', slug).maybeSingle()
+  if (mErr) return c.json({ error: 'lookup_failed' }, 500)
+  if (!merchant) return c.json({ error: 'not_found' }, 404)
+
+  const { data: order, error } = await admin
+    .from('orders').select('id, status')
+    .eq('merchant_id', merchant.id)
+    .eq('order_number', orderNumber)
+    .eq('customer_phone_key', key)
+    .maybeSingle()
+  if (error) return c.json({ error: 'lookup_failed' }, 500)
+  if (!order) return c.json({ error: 'not_found' }, 404)
+
+  return writeOrderReview(c, order as { id: string; status: string | null }, body)
 })
 
 // ── Create a Stripe Checkout Session for the signed-in merchant ────────────────

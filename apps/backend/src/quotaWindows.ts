@@ -137,6 +137,29 @@ export const invoiceLookupIpWindow = {
   },
 }
 
+// The guest review door (POST /api/orders/review) proves the SAME guessable pair the guest
+// invoice door does — an order number and a phone — so it carries the same bound, and for the
+// same reason. A customer who mistypes their phone tries three or four times in a minute; a
+// script enumerating order numbers tries thousands.
+//
+// Its own windows, not a share of the invoice door's: a customer who downloaded their invoice and
+// then rates the order must not be refused for having used a different door a moment earlier.
+//
+// Same in-memory weaknesses as every other limiter here, inherited knowingly: resets on redeploy,
+// and stops protecting anything past one backend instance (#101, Out of Scope).
+const reviewSubmitMinuteWindow = createSlidingWindow({ limit: 10, windowMs: 60_000, now: () => Date.now() })
+const reviewSubmitHourWindow = createSlidingWindow({ limit: 60, windowMs: 60 * 60_000, now: () => Date.now() })
+
+export const reviewSubmitIpWindow = {
+  allow(key: string): boolean {
+    // BOTH windows record the hit — an early return from the minute window would leave the hour
+    // window under-counting exactly the caller it exists to stop.
+    const minute = reviewSubmitMinuteWindow.allow(key)
+    const hour = reviewSubmitHourWindow.allow(key)
+    return minute && hour
+  },
+}
+
 // How many devices one MERCHANT account may hold at once. A device is one GoTrue session.
 //
 // It sits here with the other platform figures rather than in deviceLimit.ts, so the numbers a
