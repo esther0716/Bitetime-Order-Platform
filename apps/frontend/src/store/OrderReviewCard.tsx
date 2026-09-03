@@ -86,7 +86,10 @@ export default function OrderReviewCard({
   )
 
   return (
-    <div className={cn('bg-card border-[0.5px] border-border rounded-2xl p-[15px]', className)}>
+    // `text-left` is not decoration: the success view that mounts this is `text-center`, and an
+    // inherited centre leaves the heading centred over left-aligned stars and a left-aligned
+    // link — beside the left-aligned payment card, which is its neighbour on that screen.
+    <div className={cn('bg-card border-[0.5px] border-border rounded-2xl p-[15px] text-left', className)}>
       {!editing && sent ? (
         <div className="flex flex-col gap-2">
           <p className="text-[13px] text-muted-foreground">
