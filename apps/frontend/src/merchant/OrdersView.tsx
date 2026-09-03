@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Star } from 'lucide-react'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import type { Lang, Translate } from '../types'
 import { useSession } from '../SessionContext'
@@ -98,6 +99,27 @@ const columns: ColumnDef<any>[] = [
     cell: ({ row, table }) => (
       <StatusBadge status={row.original.status || 'new'} t={(table.options.meta as OrderTableMeta).t} />
     ),
+  },
+  {
+    accessorKey: 'review_rating',
+    enableSorting: false,
+    header: ({ table }) => (
+      <span>{(table.options.meta as OrderTableMeta).t('Rating', '评分')}</span>
+    ),
+    // The number beside ONE star, not five drawn stars: this cell sits in a dense table, and five
+    // glyphs in every row would out-shout the status badge next to it. An unrated order shows
+    // nothing at all — a row of five empty stars reads as "rated nothing", which is a different
+    // and untrue statement.
+    cell: ({ row }) => {
+      const rating = row.original.review_rating as number | null | undefined
+      if (!rating) return <span className="text-muted-foreground">—</span>
+      return (
+        <span className="inline-flex items-center gap-1 whitespace-nowrap tabular-nums">
+          <Star size={14} strokeWidth={2} className="fill-primary text-primary" aria-hidden />
+          {rating}
+        </span>
+      )
+    },
   },
 ]
 

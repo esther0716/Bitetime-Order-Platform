@@ -11,6 +11,7 @@ import InvoiceCard from './InvoiceCard'
 import CustomerCard from './CustomerCard'
 import TrackingCard from './TrackingCard'
 import NoteCard from './NoteCard'
+import ReviewCard from './ReviewCard'
 
 // The order-detail drawer, shared by OrdersView and CustomersView. Open when
 // `order` is non-null; owns its own note/courier/awb drafts and bubbles every
@@ -131,6 +132,8 @@ export default function OrderDetailSheet({
                 dirty={trackDirty}
                 readOnly={readOnly}
               />
+
+              <ReviewCard order={order} />
 
               <NoteCard
                 note={noteDraft}
