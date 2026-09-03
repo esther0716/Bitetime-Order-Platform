@@ -117,6 +117,30 @@ export default function SignupScreen() {
     return () => { active = false }
   }, [name])
 
+  /**
+   * The line under the referral field: what it says, and what colour it says it in.
+   *
+   * Only a settled verdict is coloured. 'Code found' is green and 'no shop uses this' is red,
+   * because those are answers. The format hint stays grey — a merchant seven characters into an
+   * eight-character code has made no mistake yet, and a field that turns red at the first
+   * keystroke tells everyone off for typing. A check we could not make is grey for the same
+   * reason: it is our failure, not theirs, and it does not stop them.
+   */
+  const refNote: { text: string; tone: string } =
+    refCode.trim() === ''
+      ? { text: t('Someone invited you? Enter their code.', '有人邀请你？请输入其推荐码。'), tone: 'text-muted-foreground' }
+      : !referredByCode
+        ? { text: t('A referral code is 8 characters, 0–9 and A–F.', '推荐码为 8 位字符，只含 0–9 与 A–F。'), tone: 'text-muted-foreground' }
+        : refStatus === 'checking'
+          ? { text: t('Checking…', '检查中…'), tone: 'text-muted-foreground' }
+          : refStatus === 'valid'
+            ? { text: t('Code found.', '推荐码有效。'), tone: 'text-success-fg' }
+            : refStatus === 'unknown'
+              ? { text: t('No shop uses this code. Ask the person who invited you.',
+                          '没有店铺使用此推荐码，请向邀请你的人确认。'), tone: 'text-danger-fg' }
+              : { text: t('We could not check this code. You can continue.',
+                          '暂时无法验证此推荐码，你可以继续。'), tone: 'text-muted-foreground' }
+
   // A typed code the form cannot vouch for holds the button. Deliberately not a silent drop:
   // the merchant is one keystroke from a code that works, and after signup there is no screen
   // that lets them fix it.
@@ -316,20 +340,8 @@ export default function SignupScreen() {
                 aria-describedby="signup-ref-note"
               />
               {/* One line, always present, so the field never jumps as the answer arrives. */}
-              <p id="signup-ref-note" aria-live="polite" className="text-[12px] leading-[1.4] text-muted-foreground">
-                {refCode.trim() === ''
-                  ? t('Someone invited you? Enter their code.', '有人邀请你？请输入其推荐码。')
-                  : !referredByCode
-                    ? t('A referral code is 8 characters, 0–9 and A–F.', '推荐码为 8 位字符，只含 0–9 与 A–F。')
-                    : refStatus === 'checking'
-                      ? t('Checking…', '检查中…')
-                      : refStatus === 'valid'
-                        ? t('Code found.', '推荐码有效。')
-                        : refStatus === 'unknown'
-                          ? t('No shop uses this code. Ask the person who invited you.',
-                              '没有店铺使用此推荐码，请向邀请你的人确认。')
-                          : t('We could not check this code. You can continue.',
-                              '暂时无法验证此推荐码，你可以继续。')}
+              <p id="signup-ref-note" aria-live="polite" className={`text-[12px] leading-[1.4] ${refNote.tone}`}>
+                {refNote.text}
               </p>
             </div>
           </div>
