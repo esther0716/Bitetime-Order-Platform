@@ -81,3 +81,5 @@ export {
 export { pendingShopMetadata, pendingShopFromMetadata, pendingShopFromBody } from './pendingShop.js'
 export type { PendingShop } from './pendingShop.js'
 export type { BrandColorError, BrandColorResult } from './brandColor.js'
+export { canShareReferral } from './referralSharing.js'
+export type { ReferralBillingSnapshot } from './referralSharing.js'

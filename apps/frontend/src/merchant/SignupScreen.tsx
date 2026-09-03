@@ -136,8 +136,14 @@ export default function SignupScreen() {
           : refStatus === 'valid'
             ? { text: t('Code found.', '推荐码有效。'), tone: 'text-success-fg' }
             : refStatus === 'unknown'
-              ? { text: t('No shop uses this code. Ask the person who invited you.',
-                          '没有店铺使用此推荐码，请向邀请你的人确认。'), tone: 'text-danger-fg' }
+              // Not "no shop uses this code" any more: the endpoint also refuses a code whose
+              // owner cannot earn the reward today (a trial, a failed payment, a subscription
+              // winding down), and saying the code does not exist would be untrue. It stays one
+              // message for both cases on purpose — which of the two it is, is the referrer's
+              // business, and a message that distinguished them would report a stranger's
+              // billing state to anyone holding 8 hex characters.
+              ? { text: t('This code cannot be used. Ask the person who invited you.',
+                          '此推荐码无法使用，请向邀请你的人确认。'), tone: 'text-danger-fg' }
               : { text: t('We could not check this code. You can continue.',
                           '暂时无法验证此推荐码，你可以继续。'), tone: 'text-muted-foreground' }
 

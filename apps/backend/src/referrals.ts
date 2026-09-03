@@ -1,3 +1,4 @@
+import { canShareReferral } from '@bitetime/shared'
 import { sql } from './db.js'
 
 export interface ReferredShop {
@@ -84,4 +85,35 @@ export async function listEarnedRewards(userId: string): Promise<EarnedReward[]>
     currency: r.currency,
     created_at: r.created_at.toISOString(),
   }))
+}
+
+/**
+ * May the shop behind this referral code hand it out?
+ *
+ * Answers the signup form's typo check, which now asks a second question beyond "does this code
+ * name a shop": can that shop still earn anything for the referral? A code whose owner stopped
+ * paying is worse than a code that names nothing — it validates, gets stamped onto the new shop,
+ * and pays out nothing when the invoice clears months later.
+ *
+ * The rule itself is NOT in this SQL. `canShareReferral` decides, so this and the dashboard's own
+ * "should I show a code?" answer the question the same way; a WHERE clause spelling out the same
+ * three columns is the copy that drifts. The query's only job is to fetch the candidates.
+ *
+ * `left join` deliberately: a shop with no billing row at all must reach the rule (which refuses
+ * it), not be dropped by the join and mistaken for a code that names nothing.
+ *
+ * The 8-hex code can collide across owners, so this reads every match and asks whether ANY of
+ * them could share. That is the honest answer to "is this code usable" — which of them earns is
+ * `decideReferralReward`'s problem, and it refuses an ambiguous match outright.
+ */
+export async function referralCodeIsShareable(code: string): Promise<boolean> {
+  const rows = await sql<{ status: string | null; comped: boolean | null; cancel_at_period_end: boolean | null }[]>`
+    select b.status, b.comped, b.cancel_at_period_end
+    from public.merchants m
+    left join public.merchant_billing b on b.merchant_id = m.id
+    where m.referral_code = ${code}
+      and m.status = 'active'
+  `
+
+  return rows.some(row => canShareReferral(row))
 }

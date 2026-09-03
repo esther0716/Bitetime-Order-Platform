@@ -60,7 +60,7 @@ import { googlePlaceSuggest, googlePlaceDetail } from './maps.js'
 import { detectCountry } from './region.js'
 import { fetchBasePricing, createPricingCache, type PricingPayload } from './pricing.js'
 import { estimateFor } from './fx.js'
-import { listReferredShops, listEarnedRewards } from './referrals.js'
+import { listReferredShops, listEarnedRewards, referralCodeIsShareable } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
 import { placeOrder, OrderError, orderMerchantId, setOrderPaymentProof, setOrderMerchantPaymentProof } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue, updateFeedbackImages } from './feedback.js'
@@ -2311,11 +2311,16 @@ function ipOf(c: { req: { header: (n: string) => string | undefined }; env: unkn
 // the merchant believes a referral was recorded.
 //
 // The answer is a bare boolean, deliberately. A code is 8 hex characters, so returning the
-// referrer's name would make this a merchant directory anyone can walk one guess at a time.
+// referrer's name would make this a merchant directory anyone can walk one guess at a time —
+// and it stays bare now that the answer also depends on the referrer's billing state, which is
+// theirs and not the caller's business. "Invalid" covers both "no such code" and "that shop
+// cannot refer today", on purpose.
 //
-// `valid` means the code NAMES a shop and nothing more. Whether that referrer earns anything is
-// decided when the referred shop's first invoice pays (referralReward.ts) and depends on their
-// billing state at that later moment — an answer this endpoint cannot give and must not imply.
+// `valid` means the code names a shop that COULD earn the reward today (canShareReferral). It is
+// still not a promise: the payout is decided when the referred shop's first invoice pays
+// (referralReward.ts), against the referrer's billing state at that later moment. What this
+// stops is the opposite failure — a code handed out by a shop that already cannot earn, which
+// validates green here and forfeits in silence months later.
 app.get('/api/referrals/check', async (c) => {
   if (!referralCheckIpWindow.allow(ipOf(c))) return c.json({ error: 'rate_limited' }, 429)
   // The same normalization the stamp uses, so a code this route calls good is one that survives
@@ -2323,9 +2328,11 @@ app.get('/api/referrals/check', async (c) => {
   // the merchant is still typing.
   const code = normalizeReferralCode(c.req.query('code'))
   if (!code) return c.json({ valid: false })
-  const { data, error } = await admin.from('merchants').select('id').eq('referral_code', code).limit(1)
-  if (error) return c.json({ error: 'Lookup failed' }, 500)
-  return c.json({ valid: (data ?? []).length > 0 })
+  try {
+    return c.json({ valid: await referralCodeIsShareable(code) })
+  } catch {
+    return c.json({ error: 'Lookup failed' }, 500)
+  }
 })
 
 // ── Referred shops ────────────────────────────────────────────────────────────
