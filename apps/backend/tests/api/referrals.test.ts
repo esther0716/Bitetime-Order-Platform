@@ -151,3 +151,57 @@ describe('GET /api/referrals/shops', () => {
     expect(await shopsIn(res)).toEqual([])
   })
 })
+
+// The signup form's typo check (#265). Public and unauthenticated on purpose — it answers a
+// caller who has no account yet — so what is worth testing is that it says only whether a code
+// names a shop, and says it about a REAL merchants.referral_code rather than a shape.
+describe('GET /api/referrals/check', () => {
+  let ownerCode: string
+
+  beforeAll(async () => {
+    const owner = await makeUser('check-owner@example.com', 'password123')
+    const { data } = await owner.auth.getUser()
+    ownerCode = referralCodeOf(data.user!.id)
+    await seedMerchant({ slug: 'ref-check-owner', owner_id: data.user!.id, name: 'Check Owner Shop' })
+  })
+
+  afterAll(async () => {
+    await serviceClient().from('merchants').delete().eq('slug', 'ref-check-owner')
+  })
+
+  const check = (code: string) => app.request(`/api/referrals/check?code=${encodeURIComponent(code)}`)
+
+  it('reports a code that names a shop as valid', async () => {
+    const res = await check(ownerCode)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ valid: true })
+  })
+
+  it('accepts the code in lower case, exactly as the stamp does', async () => {
+    const res = await check(ownerCode.toLowerCase())
+
+    expect(await res.json()).toEqual({ valid: true })
+  })
+
+  it('reports a well-formed code that names no shop as invalid', async () => {
+    const res = await check('FFFFFFFF' === ownerCode ? 'EEEEEEEE' : 'FFFFFFFF')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ valid: false })
+  })
+
+  it('reports a malformed or missing code as invalid rather than erroring', async () => {
+    expect(await (await check('nope')).json()).toEqual({ valid: false })
+    expect(await (await app.request('/api/referrals/check')).json()).toEqual({ valid: false })
+  })
+
+  // The whole reason the answer is a bare boolean: a code is 8 hex characters, so anything
+  // naming the referrer would make this a merchant directory anyone can walk.
+  it('returns nothing about the shop behind the code', async () => {
+    const body = (await (await check(ownerCode)).json()) as Record<string, unknown>
+
+    expect(Object.keys(body)).toEqual(['valid'])
+    expect(JSON.stringify(body)).not.toContain('Check Owner Shop')
+  })
+})

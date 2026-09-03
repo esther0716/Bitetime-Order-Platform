@@ -88,7 +88,7 @@ import { canIssueInvoice, isCart, isBusinessNature, isCurrencyCode, DEFAULT_CURR
 import type { CartLine, Granularity } from '@bitetime/shared'
 import { buildRevenueWorkbook, reportFilename, type ReportWindow } from './report.js'
 import { resolveRevenueRange, type ResolvedRevenueRange } from './revenueWindow.js'
-import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, RESERVED_SLUGS } from './slug.js'
+import { resolveSlug, orderPrefix, referralCodeOf, resolveReferredByCode, normalizeReferralCode, RESERVED_SLUGS } from './slug.js'
 import { pickMerchantConfig, pickProfileFields, pickProductFields, pickOrderFields, ORDER_STATUSES } from './writes.js'
 
 export const app = new Hono<AppEnv>()
@@ -2289,6 +2289,13 @@ const verifyResendWindow = createSlidingWindow({ limit: 3, windowMs: 60 * 60_000
 // as one lookup. Same in-memory limiter weaknesses as everything else here, inherited knowingly.
 const placesIpWindow = createSlidingWindow({ limit: 300, windowMs: 60 * 60_000, now: () => Date.now() })
 
+// Referral-code checks from the signup form, per IP per hour. The endpoint is public and reads
+// one indexed column, so this bounds enumeration rather than spend: 8 hex characters is four
+// billion codes, and 60 an hour makes walking them pointless while leaving a merchant who
+// retypes a code far more room than they will ever use. Same in-memory weaknesses as every
+// other limiter here, inherited knowingly (#101).
+const referralCheckIpWindow = createSlidingWindow({ limit: 60, windowMs: 60 * 60_000, now: () => Date.now() })
+
 /** The caller's IP, from the proxy headers with the socket as the local-dev fallback. */
 function ipOf(c: { req: { header: (n: string) => string | undefined }; env: unknown }): string {
   const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming
@@ -2297,6 +2304,29 @@ function ipOf(c: { req: { header: (n: string) => string | undefined }; env: unkn
     incoming?.socket?.remoteAddress,
   )
 }
+
+// Does this referral code name a shop? Public and unauthenticated, because it answers the SIGNUP
+// form — the caller has no account yet, and catching a typo is only useful while the field is
+// still on screen. Without it a mistyped code is dropped in silence by resolveReferredByCode and
+// the merchant believes a referral was recorded.
+//
+// The answer is a bare boolean, deliberately. A code is 8 hex characters, so returning the
+// referrer's name would make this a merchant directory anyone can walk one guess at a time.
+//
+// `valid` means the code NAMES a shop and nothing more. Whether that referrer earns anything is
+// decided when the referred shop's first invoice pays (referralReward.ts) and depends on their
+// billing state at that later moment — an answer this endpoint cannot give and must not imply.
+app.get('/api/referrals/check', async (c) => {
+  if (!referralCheckIpWindow.allow(ipOf(c))) return c.json({ error: 'rate_limited' }, 429)
+  // The same normalization the stamp uses, so a code this route calls good is one that survives
+  // POST /api/merchants. A malformed code is not an error here — the form asks about it while
+  // the merchant is still typing.
+  const code = normalizeReferralCode(c.req.query('code'))
+  if (!code) return c.json({ valid: false })
+  const { data, error } = await admin.from('merchants').select('id').eq('referral_code', code).limit(1)
+  if (error) return c.json({ error: 'Lookup failed' }, 500)
+  return c.json({ valid: (data ?? []).length > 0 })
+})
 
 // ── Referred shops ────────────────────────────────────────────────────────────
 // Replaces the my_referred_shops SECURITY DEFINER function. That function could read

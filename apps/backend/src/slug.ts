@@ -48,7 +48,10 @@ export function referralCodeOf(userId: string) {
   return (userId || '').replace(/-/g, '').slice(0, 8).toUpperCase()
 }
 
-function normalizeReferralCode(raw: string | null | undefined): string | null {
+// Exported because the signup form's referral-code check (GET /api/referrals/check) needs the
+// same normalization the stamp does — a check that accepted a shape the stamp drops would
+// tell a merchant their code was fine and then store null.
+export function normalizeReferralCode(raw: string | null | undefined): string | null {
   const code = (raw ?? '').trim().toUpperCase()
   return /^[0-9A-F]{8}$/.test(code) ? code : null
 }

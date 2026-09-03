@@ -694,6 +694,14 @@ export function referralCodeOf(userId: string) {
   return (userId || '').replace(/-/g, '').slice(0, 8).toUpperCase();
 }
 
+// Does a referral code name a shop? The one referral read that is NOT scoped to the caller —
+// it answers the signup form, where there is no session yet and the code is exactly what the
+// caller typed. Safe for the same reason it is useful: it returns `{ valid }` and nothing else,
+// so a guessed code buys no name and no shop. See GET /api/referrals/check.
+export async function checkReferralCode(code: string): Promise<Result<{ valid: boolean }>> {
+  return apiGet<{ valid: boolean }>(`/api/referrals/check?code=${encodeURIComponent(code)}`)
+}
+
 // Shops that signed up with the current user's referral code.
 //
 // The code is never sent — the backend derives it from the bearer token, exactly as the
