@@ -1019,8 +1019,8 @@ export async function setOrderTracking(orderId: string, courier: string | null, 
 
 /**
  * Move the day an order is for. `fulfilDate` is `YYYY-MM-DD` and never empty — a date cannot be
- * cleared, only moved. The backend judges it on the shop's clock (`validateFulfilDateChange`)
- * and answers `past_date`, `beyond_horizon`, `invalid_date` or `order_completed` by name.
+ * cleared, only moved. The backend judges it by the shop's own Fulfilment settings, the same
+ * `isDateSelectable` intake applies, and answers `fulfil_date_unavailable` or `order_completed`.
  */
 export async function setOrderFulfilDate(orderId: string, fulfilDate: string, merchantId: string): Promise<Result<any>> {
   return apiSend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { fulfil_date: fulfilDate }, { auth: true })

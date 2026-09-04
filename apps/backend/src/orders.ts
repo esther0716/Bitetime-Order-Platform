@@ -1,5 +1,5 @@
 import type postgres from 'postgres'
-import { priceOrder, validateSelections, voucherFromRow, voucherExpired, voucherBelowMinimum, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, validateFulfilDateChange, DEFAULT_TIMEZONE, type FulfilDateChangeError } from '@bitetime/shared'
+import { priceOrder, validateSelections, voucherFromRow, voucherExpired, voucherBelowMinimum, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { CartLine, PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal, OrderEvent } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
 import { recordOrderEvents, SYSTEM_ACTOR, type OrderActor } from './orderEventsDb.js'
@@ -468,7 +468,7 @@ export function setOrderMerchantPaymentProof(orderId: string, path: string, merc
  * statement.
  */
 /** Why a merchant patch was not applied. Each is a wire code the drawer has words for. */
-export type PatchRefusal = 'order_completed' | FulfilDateChangeError
+export type PatchRefusal = 'order_completed' | 'fulfil_date_unavailable'
 
 export async function patchOrder(
   orderId: string,
@@ -476,13 +476,13 @@ export async function patchOrder(
   merchantUserId: string,
 ): Promise<{ events: OrderEvent[] } | { refused: PatchRefusal } | null> {
   return withTransaction(async (tx) => {
-    // The shop's clock rides along with the row: a date is judged against the SHOP's today, the
-    // same rule intake applies, and reading it under the lock is what makes the judgement match
-    // the row it is about. `fulfil_date::text` because the driver would otherwise hand a `date`
-    // column back as a JS Date, and the event's `from` must be the same `YYYY-MM-DD` string
-    // the `to` is.
-    const [before] = await tx<(OrderPatchBefore & { merchant_id: string; voucher_code: string | null; timezone: string | null })[]>`
-      select o.status, o.note, o.courier, o.awb, o.fulfil_date::text, o.merchant_id, o.voucher_code, m.timezone
+    // The shop's clock and its Fulfilment settings ride along with the row: a date is judged by
+    // the rule intake applies, against the SHOP's today, and reading both under the lock is what
+    // makes the judgement match the row it is about. `fulfil_date::text` because the driver would
+    // otherwise hand a `date` column back as a JS Date, and the event's `from` must be the same
+    // `YYYY-MM-DD` string the `to` is.
+    const [before] = await tx<(OrderPatchBefore & { merchant_id: string; voucher_code: string | null; timezone: string | null; config: unknown })[]>`
+      select o.status, o.note, o.courier, o.awb, o.fulfil_date::text, o.merchant_id, o.voucher_code, m.timezone, m.config
       from orders o join merchants m on m.id = o.merchant_id
       where o.id = ${orderId} for update of o
     `
@@ -498,8 +498,13 @@ export async function patchOrder(
       if (completed && patch.fulfil_date !== (before.fulfil_date ?? null)) {
         return { refused: 'order_completed' as const }
       }
-      const bad = validateFulfilDateChange(patch.fulfil_date, before.timezone ?? DEFAULT_TIMEZONE, new Date())
-      if (bad) return { refused: bad }
+      // The CUSTOMER's rule, on purpose: the shop's lead time, window, closed weekdays and
+      // ticked dates are what the merchant told the platform they can serve, and the drawer must
+      // not be a door around their own settings — a merchant who closes Mondays and then moves an
+      // order to a Monday has either changed their mind (the Fulfilment tab is where that goes)
+      // or mis-clicked. Same rule, same refusal code, as a stray POST to intake.
+      const open = isDateSelectable(patch.fulfil_date, fulfilmentConfig(before.config), before.timezone ?? DEFAULT_TIMEZONE, new Date())
+      if (!open) return { refused: 'fulfil_date_unavailable' as const }
     }
 
     await tx`update orders set ${tx(patch as Record<string, string | null>)} where id = ${orderId}`

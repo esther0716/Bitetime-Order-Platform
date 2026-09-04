@@ -1,5 +1,5 @@
 import { Copy } from 'lucide-react'
-import { customDateBounds, DEFAULT_TIMEZONE } from '@bitetime/shared'
+import { fulfilmentConfig, selectableDates, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import { useSession } from '../../SessionContext'
 import { formatAddress } from '../../address'
 import { formatCalendarDate } from '../../orderDate'
@@ -40,12 +40,13 @@ export default function CustomerCard({
   const address = order.address ? formatAddress(order.address) : null
   // The date is the merchant's to move on any order that is not DONE: a completed order's day is
   // as final as its status (ADR 0024), and the backend refuses it either way — this only decides
-  // whether to draw the picker. The picker's own floor and ceiling are the shop's today and the
-  // 90-day horizon, the same bounds `validateFulfilDateChange` judges the save by, so no day it
-  // offers is one the save refuses.
+  // whether to draw the picker. The picker offers exactly the days the shop's own Fulfilment
+  // settings offer a customer — `selectableDates`, the list the storefront picker is built from —
+  // so a Monday the shop closes is not clickable here either, and no day it offers is one the
+  // save refuses. Computed once per render, not per day: the calendar asks about every cell.
   const tz = merchant?.timezone ?? DEFAULT_TIMEZONE
   const dateEditable = !readOnly && (order.status || 'new') !== 'completed'
-  const horizon = dateEditable ? customDateBounds(tz, new Date())?.last : undefined
+  const open = dateEditable ? new Set(selectableDates(fulfilmentConfig(merchant?.config), tz, new Date())) : null
 
 
   return (
@@ -93,7 +94,7 @@ export default function CustomerCard({
               value={fulfilDate}
               onChange={onFulfilDate}
               tz={tz}
-              max={horizon}
+              isDisabled={iso => !open!.has(iso)}
               t={t}
               lang={lang}
               placeholder={t('Pick a date', '选择日期')}

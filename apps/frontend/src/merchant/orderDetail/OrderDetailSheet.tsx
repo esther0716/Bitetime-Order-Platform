@@ -113,10 +113,10 @@ export default function OrderDetailSheet({
     }).finally(() => setSavingTrack(false))
   }
 
-  // The date edit. Each refusal the backend names gets its own sentence, because the three are
-  // three different things to do: a day that has gone by, a day past the horizon the shop's own
-  // settings are bounded by, and a body the server could not read as a date at all (which the
-  // picker cannot produce — it reaches a merchant only through a stale build or a bug).
+  // The date edit. `fulfil_date_unavailable` is the backend refusing a day the shop's own
+  // Fulfilment settings do not offer. The picker already greys those days out, so it reaches a
+  // merchant only when the settings moved under an open drawer, or the day went by while it was
+  // open — and it says where the settings are, because the day looked open when it was picked.
   function handleDateSave() {
     if (!order || !dateDraft) return
     setSavingDate(true)
@@ -124,23 +124,12 @@ export default function OrderDetailSheet({
       if (r.ok) {
         applyWrite(r.data)
         toast.success(t('Date saved', '日期已保存'))
-        return
-      }
-      switch (r.error.code) {
-        case 'past_date':
-          toast.error(t('That day has passed. Pick today or later.', '该日期已过。请选择今天或之后的日期。'))
-          break
-        case 'beyond_horizon':
-          toast.error(t('That day is too far ahead. Pick a day within 90 days.', '该日期太远。请选择90天内的日期。'))
-          break
-        case 'invalid_date':
-          toast.error(t('That is not a valid date.', '该日期无效。'))
-          break
-        case 'order_completed':
-          toast.error(t('This order is done. Its date cannot change.', '此订单已结束，日期无法更改。'))
-          break
-        default:
-          toast.error(t('Could not save date.', '无法保存日期。'))
+      } else if (r.error.code === 'fulfil_date_unavailable') {
+        toast.error(t('Your shop is not taking orders for that day. Check Settings → Fulfilment.', '你的店铺在该日期不接单。请查看设置 → 配送日期。'))
+      } else if (r.error.code === 'order_completed') {
+        toast.error(t('This order is done. Its date cannot change.', '此订单已结束，日期无法更改。'))
+      } else {
+        toast.error(t('Could not save date.', '无法保存日期。'))
       }
     }).finally(() => setSavingDate(false))
   }

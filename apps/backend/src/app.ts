@@ -1507,10 +1507,9 @@ app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, requireOwns
     if (!result) return c.json({ error: 'not_found' }, 404)
     // The same refusal as the pre-check above, judged on the locked row (ADR 0024): the
     // pre-check answers the stale-drawer case fast, this one is the boundary. A refused DATE
-    // is a 400 rather than a 409 — the body is what was wrong, not the order's state — and it
-    // carries the shared rule's own name (`past_date`, `beyond_horizon`, `invalid_date`) so the
-    // drawer can say which.
-    if ('refused' in result) return c.json({ error: result.refused }, result.refused === 'order_completed' ? 409 : 400)
+    // carries intake's own `fulfil_date_unavailable` — the shop is not taking that day, by its
+    // own Fulfilment settings — at the 409 that code already carries on `REFUSAL_STATUS`.
+    if ('refused' in result) return c.json({ error: result.refused }, 409)
     events = result.events
   } catch (err) {
     console.error('Order patch failed for order', orderId, err instanceof Error ? err.message : String(err))

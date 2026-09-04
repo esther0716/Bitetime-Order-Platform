@@ -25,8 +25,12 @@ interface Props {
   onChange: (iso: string) => void
   /** The shop's timezone. Decides which day is "today", and so which days are past. */
   tz?: string | null
-  /** `YYYY-MM-DD`. Days after it render disabled, the way days before today do. */
-  max?: string
+  /**
+   * Which further days render DISABLED, by their `YYYY-MM-DD`, on top of the past. The order
+   * drawer passes the shop's own Fulfilment settings through it, so the picker offers exactly
+   * the days the save would accept.
+   */
+  isDisabled?: (iso: string) => boolean
   t: (en: string, zh: string) => string
   lang: 'en' | 'zh'
   /** What the trigger says with no date set. */
@@ -48,13 +52,12 @@ interface Props {
  * day assumes the calendar is broken. It is the shop's today and not the browser's, so a merchant
  * abroad sees the same floor their shop would.
  */
-export default function DateField({ value, onChange, tz, max, t, lang, placeholder, clearable, id }: Props) {
+export default function DateField({ value, onChange, tz, isDisabled, t, lang, placeholder, clearable, id }: Props) {
   const [open, setOpen] = useState(false)
   const today = toDate(todayInZone(tz ?? DEFAULT_TIMEZONE, new Date()))
   // A stored date in the PAST still renders — an existing promo whose end has gone by must show
   // the merchant what it says, not an empty field. Only picking a past day is refused.
   const selected = value ? toDate(value) : undefined
-  const last = max ? toDate(max) : undefined
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -84,7 +87,7 @@ export default function DateField({ value, onChange, tz, max, t, lang, placehold
           // `selected ?? today`, so reopening a set field lands on the month it is in rather than
           // on this one — otherwise editing next year's date starts with a year of scrolling.
           defaultMonth={selected ?? today}
-          disabled={last ? [{ before: today }, { after: last }] : { before: today }}
+          disabled={isDisabled ? [{ before: today }, (d: Date) => isDisabled(toIso(d))] : { before: today }}
           // A month and year dropdown, not twelve presses of an arrow: the dates these fields
           // hold are months out, and three years is past anything a shop would set.
           captionLayout="dropdown"

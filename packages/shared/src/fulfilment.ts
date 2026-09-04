@@ -271,29 +271,6 @@ export function validateCustomDates(dates: string[], tz: string, now: Date): Cus
   return null
 }
 
-export type FulfilDateChangeError = 'invalid_date' | 'past_date' | 'beyond_horizon'
-
-/**
- * Why a MERCHANT may not move an order to this date, or null.
- *
- * Deliberately looser than `isDateSelectable`, which is the CUSTOMER's rule: lead days, closed
- * weekdays and the custom allowlist say which days a shop sells to the public, and the merchant
- * is the shop. A shop that takes two days' notice can still agree, over WhatsApp, to have one
- * order ready tomorrow — and moving it to a day the picker never offered is the whole reason the
- * merchant is editing rather than the customer. What survives is what is true of every shop: the
- * date must be real, it cannot be behind the shop's today, and it cannot pass the horizon the
- * shop's own settings are bounded by. `today` is the shop clock, like every other rule here.
- */
-export function validateFulfilDateChange(date: string, tz: string, now: Date): FulfilDateChangeError | null {
-  const ms = dayMs(date)
-  if (ms === null) return 'invalid_date'
-  const b = customBoundsMs(tz, now)
-  if (!b) return null
-  if (ms < b.first) return 'past_date'
-  if (ms > b.last) return 'beyond_horizon'
-  return null
-}
-
 export type FulfilmentWarning =
   | { kind: 'none' }
   | { kind: 'review' }
