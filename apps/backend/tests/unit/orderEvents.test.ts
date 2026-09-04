@@ -5,7 +5,7 @@ import { orderPatchEvents } from '../../src/orderEvents.js'
 // actually changed, and none for a field written back to the value it already had — a retried
 // patch must stay a no-op on the log as well as on the row.
 describe('orderPatchEvents', () => {
-  const before = { status: 'new', note: null, courier: null, awb: null }
+  const before = { status: 'new', note: null, courier: null, awb: null, fulfil_date: '2026-07-21' }
 
   it('records a status move with both ends', () => {
     expect(orderPatchEvents(before, { status: 'preparing' })).toEqual([
@@ -45,6 +45,19 @@ describe('orderPatchEvents', () => {
     expect(orderPatchEvents({ ...before, courier: 'jnt' }, { status: 'ready', courier: 'jnt', awb: 'JT123' })).toEqual([
       { kind: 'status_changed', detail: { from: 'new', to: 'ready' } },
       { kind: 'awb_changed', detail: { from: null, to: 'JT123' } },
+    ])
+  })
+
+  it('records a date move with both ends, and nothing for a date written back unchanged', () => {
+    expect(orderPatchEvents(before, { fulfil_date: '2026-07-25' })).toEqual([
+      { kind: 'fulfil_date_changed', detail: { from: '2026-07-21', to: '2026-07-25' } },
+    ])
+    expect(orderPatchEvents(before, { fulfil_date: '2026-07-21' })).toEqual([])
+  })
+
+  it('records a legacy order gaining its first date as a move from nothing', () => {
+    expect(orderPatchEvents({ ...before, fulfil_date: null }, { fulfil_date: '2026-07-25' })).toEqual([
+      { kind: 'fulfil_date_changed', detail: { from: null, to: '2026-07-25' } },
     ])
   })
 })

@@ -1,6 +1,7 @@
 import type { OrderEvent, OrderEventKind } from '@bitetime/shared'
 import { STATUS_LABELS } from '../../orderStatus'
 import { courierName } from '../../couriers'
+import { formatCalendarDate } from '../../orderDate'
 import type { Translate } from '../../types'
 
 /**
@@ -42,6 +43,18 @@ export function orderEventLine(e: OrderEvent, t: Translate): string {
       const to = typeof e.detail.to === 'string' ? e.detail.to : null
       if (!to) return t('You cleared the tracking number', '你清除了运单号')
       return t(`You set the tracking number to ${to}`, `你将运单号设为${to}`)
+    }
+    case 'fulfil_date_changed': {
+      // The same formatter the header and the list use, so the log names the day the way the
+      // rest of the drawer does. `t` carries no language of its own, so the two sentences are
+      // rendered in both and `t` picks — the one place this file needs a date in each.
+      const to = typeof e.detail.to === 'string' ? e.detail.to : ''
+      const from = typeof e.detail.from === 'string' ? e.detail.from : null
+      if (!from) return t(`You set the date to ${formatCalendarDate(to, 'en')}`, `你将日期设为${formatCalendarDate(to, 'zh')}`)
+      return t(
+        `You moved the date from ${formatCalendarDate(from, 'en')} to ${formatCalendarDate(to, 'en')}`,
+        `你将日期从${formatCalendarDate(from, 'zh')}改为${formatCalendarDate(to, 'zh')}`,
+      )
     }
     case 'voucher_released':
       return t(`Voucher ${codeOf(e)} use returned`, `优惠券 ${codeOf(e)} 的使用次数已退回`)

@@ -467,19 +467,44 @@ export function setOrderMerchantPaymentProof(orderId: string, path: string, merc
  * id — and `patch` must already be through `pickOrderFields`: this spreads its keys into the
  * statement.
  */
+/** Why a merchant patch was not applied. Each is a wire code the drawer has words for. */
+export type PatchRefusal = 'order_completed' | 'fulfil_date_unavailable'
+
 export async function patchOrder(
   orderId: string,
   patch: OrderPatch,
   merchantUserId: string,
-): Promise<{ events: OrderEvent[] } | { refused: 'order_completed' } | null> {
+): Promise<{ events: OrderEvent[] } | { refused: PatchRefusal } | null> {
   return withTransaction(async (tx) => {
-    const [before] = await tx<(OrderPatchBefore & { merchant_id: string; voucher_code: string | null })[]>`
-      select status, note, courier, awb, merchant_id, voucher_code from orders
-      where id = ${orderId} for update
+    // The shop's clock and its Fulfilment settings ride along with the row: a date is judged by
+    // the rule intake applies, against the SHOP's today, and reading both under the lock is what
+    // makes the judgement match the row it is about. `fulfil_date::text` because the driver would
+    // otherwise hand a `date` column back as a JS Date, and the event's `from` must be the same
+    // `YYYY-MM-DD` string the `to` is.
+    const [before] = await tx<(OrderPatchBefore & { merchant_id: string; voucher_code: string | null; timezone: string | null; config: unknown })[]>`
+      select o.status, o.note, o.courier, o.awb, o.fulfil_date::text, o.merchant_id, o.voucher_code, m.timezone, m.config
+      from orders o join merchants m on m.id = o.merchant_id
+      where o.id = ${orderId} for update of o
     `
     if (!before) return null
-    if (patch.status !== undefined && (before.status ?? 'new') === 'completed' && patch.status !== 'completed') {
+    const completed = (before.status ?? 'new') === 'completed'
+    if (patch.status !== undefined && completed && patch.status !== 'completed') {
       return { refused: 'order_completed' as const }
+    }
+    if (patch.fulfil_date !== undefined) {
+      // A completed order's date is as final as its status (ADR 0024): the goods have been
+      // handed over, and the day they were handed over on is not the merchant's to rewrite.
+      // Only a date that DIFFERS is refused, for the same reason the status rule reads that way.
+      if (completed && patch.fulfil_date !== (before.fulfil_date ?? null)) {
+        return { refused: 'order_completed' as const }
+      }
+      // The CUSTOMER's rule, on purpose: the shop's lead time, window, closed weekdays and
+      // ticked dates are what the merchant told the platform they can serve, and the drawer must
+      // not be a door around their own settings — a merchant who closes Mondays and then moves an
+      // order to a Monday has either changed their mind (the Fulfilment tab is where that goes)
+      // or mis-clicked. Same rule, same refusal code, as a stray POST to intake.
+      const open = isDateSelectable(patch.fulfil_date, fulfilmentConfig(before.config), before.timezone ?? DEFAULT_TIMEZONE, new Date())
+      if (!open) return { refused: 'fulfil_date_unavailable' as const }
     }
 
     await tx`update orders set ${tx(patch as Record<string, string | null>)} where id = ${orderId}`

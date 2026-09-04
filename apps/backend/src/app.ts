@@ -1506,7 +1506,9 @@ app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, requireOwns
     const result = await patchOrder(orderId, patch, c.get('user').id)
     if (!result) return c.json({ error: 'not_found' }, 404)
     // The same refusal as the pre-check above, judged on the locked row (ADR 0024): the
-    // pre-check answers the stale-drawer case fast, this one is the boundary.
+    // pre-check answers the stale-drawer case fast, this one is the boundary. A refused DATE
+    // carries intake's own `fulfil_date_unavailable` — the shop is not taking that day, by its
+    // own Fulfilment settings — at the 409 that code already carries on `REFUSAL_STATUS`.
     if ('refused' in result) return c.json({ error: result.refused }, 409)
     events = result.events
   } catch (err) {

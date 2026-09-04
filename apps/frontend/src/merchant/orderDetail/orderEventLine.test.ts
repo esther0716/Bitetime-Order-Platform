@@ -42,6 +42,13 @@ describe('orderEventLine', () => {
     expect(orderEventLine(ev({ kind: 'awb_changed', detail: { from: 'JT123', to: null } }), en)).toBe('You cleared the tracking number')
   })
 
+  it('reads a date move as the day it landed on, and says when a legacy order gained one', () => {
+    expect(orderEventLine(ev({ kind: 'fulfil_date_changed', detail: { from: '2026-07-21', to: '2026-07-25' } }), en))
+      .toBe('You moved the date from 21 Jul 2026 to 25 Jul 2026')
+    expect(orderEventLine(ev({ kind: 'fulfil_date_changed', detail: { from: null, to: '2026-07-25' } }), en))
+      .toBe('You set the date to 25 Jul 2026')
+  })
+
   it('never shows the note', () => {
     expect(orderEventLine(ev({ kind: 'note_changed' }), en)).toBe('You edited the note')
   })

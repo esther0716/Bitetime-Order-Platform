@@ -230,6 +230,95 @@ describe('order log', () => {
       await patchOrder(orderId, { status: 'cancelled' })
       expect((await eventsOf(orderId)).map(e => e.kind)).toEqual(['status_changed'])
     })
+
+    // The date edit. The rule is the CUSTOMER's — `isDateSelectable`, the shop's own Fulfilment
+    // settings — judged on the shop's clock under the same lock as every other patch. A refused
+    // date records nothing.
+    describe('fulfil_date', () => {
+      function plusDays(days: number): string {
+        const today = todayInZone(DEFAULT_TIMEZONE, new Date())
+        return new Date(Date.parse(`${today}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
+      }
+      function weekdayOf(iso: string): number {
+        return new Date(`${iso}T00:00:00Z`).getUTCDay()
+      }
+      async function setFulfilment(fulfilment: Record<string, unknown>) {
+        const { error } = await serviceClient().from('merchants').update({ config: { fulfilment } }).eq('id', shop)
+        if (error) throw new Error(error.message)
+      }
+
+      beforeEach(async () => {
+        // Back to the shop every test file assumes: rolling, 0 / 14 / open every day.
+        await setFulfilment({ mode: 'rolling', lead_days: 0, window_days: 14, closed_weekdays: [] })
+      })
+
+      it('moves the date, records both ends, and hands the row back with the new day', async () => {
+        const orderId = await seedOrder(shop, 'new')
+        const to = plusDays(3)
+        const res = await patchOrder(orderId, { fulfil_date: to })
+        expect(res.status).toBe(200)
+        const body = (await res.json()) as { fulfil_date: string; events: EventRow[] }
+        expect(body.fulfil_date).toBe(to)
+        expect(body.events.map(e => e.kind)).toEqual(['fulfil_date_changed'])
+
+        expect(await eventsOf(orderId)).toEqual([
+          { kind: 'fulfil_date_changed', actor_kind: 'merchant', actor_id: owner.userId, detail: { from: null, to } },
+        ])
+      })
+
+      it('records nothing for the date saved unchanged', async () => {
+        const orderId = await seedOrder(shop, 'new')
+        const to = plusDays(2)
+        await patchOrder(orderId, { fulfil_date: to })
+        const again = await patchOrder(orderId, { fulfil_date: to })
+        expect(again.status).toBe(200)
+        expect(((await again.json()) as { events: EventRow[] }).events).toEqual([])
+        expect((await eventsOf(orderId)).length).toBe(1)
+      })
+
+      it("refuses a day the shop's own settings do not offer, and records nothing", async () => {
+        const orderId = await seedOrder(shop, 'new')
+        const tomorrow = plusDays(1)
+        await setFulfilment({ mode: 'rolling', lead_days: 2, window_days: 14, closed_weekdays: [weekdayOf(plusDays(5))] })
+        for (const [value, why] of [
+          [plusDays(-1), 'yesterday'],
+          [tomorrow, 'inside the lead time'],
+          [plusDays(5), 'a closed weekday'],
+          [plusDays(20), 'past the window'],
+          ['25/07/2026', 'not a date'],
+        ] as const) {
+          const res = await patchOrder(orderId, { fulfil_date: value })
+          expect(res.status, why).toBe(409)
+          expect(await res.json(), why).toEqual({ error: 'fulfil_date_unavailable' })
+        }
+        expect(await eventsOf(orderId)).toEqual([])
+      })
+
+      it('in custom mode, takes a ticked day and refuses an unticked one', async () => {
+        const orderId = await seedOrder(shop, 'new')
+        const ticked = plusDays(4)
+        await setFulfilment({ mode: 'custom', custom_dates: [ticked] })
+        expect((await patchOrder(orderId, { fulfil_date: plusDays(3) })).status).toBe(409)
+        const res = await patchOrder(orderId, { fulfil_date: ticked })
+        expect(res.status).toBe(200)
+        expect(((await res.json()) as { fulfil_date: string }).fulfil_date).toBe(ticked)
+      })
+
+      it('refuses to move the date of a completed order and records nothing (ADR 0024)', async () => {
+        const orderId = await seedOrder(shop, 'completed')
+        const res = await patchOrder(orderId, { fulfil_date: plusDays(1) })
+        expect(res.status).toBe(409)
+        expect(await res.json()).toEqual({ error: 'order_completed' })
+        expect(await eventsOf(orderId)).toEqual([])
+      })
+
+      it('refuses a body that tries to clear the date', async () => {
+        const orderId = await seedOrder(shop, 'new')
+        const res = await patchOrder(orderId, { fulfil_date: null })
+        expect(res.status).toBe(400)
+        expect(await res.json()).toEqual({ error: 'No updatable fields' })
+      })
+    })
   })
 
   describe('GET /api/merchants/:id/orders/:orderId/events', () => {
