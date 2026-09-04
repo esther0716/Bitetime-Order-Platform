@@ -2,6 +2,7 @@ import type postgres from 'postgres'
 import { priceOrder, validateSelections, voucherFromRow, voucherExpired, voucherBelowMinimum, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
 import type { CartLine, PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
+import { recordOrderEvents } from './orderEventsDb.js'
 import { phoneKey } from './phone.js'
 import { COUNTER_START, formatOrderNumber, orderDay } from './orderNumber.js'
 import { type DistanceDeps } from './distance.js'
@@ -341,6 +342,16 @@ export async function placeOrder(
     // still under the voucher's row lock, so a failure here rolls the order back — the property
     // that made the claim part of this transaction in the first place (#122's swallowed redeem).
     await claimed?.claim(id)
+
+    // The order's first event, in the same transaction (ADR 0025). The actor is the customer
+    // whether or not they have an account — a guest is a customer with no id, and the log tells
+    // the two apart by `actor_id` alone.
+    await recordOrderEvents(
+      tx,
+      { id, merchantId: input.merchantId },
+      { kind: 'customer', id: input.userId },
+      [{ kind: 'created', detail: { status } }],
+    )
 
     // The status is returned, not re-derived by the caller. It decides whether the order-placed
     // screen can offer the invoice at all (a `pending_payment` order cannot be issued one), and
