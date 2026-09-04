@@ -1,6 +1,6 @@
 import type { User } from '@supabase/auth-js';
 import { voucherFromRow, QUOTE_REFUSALS, validateFeedbackImages } from '@bitetime/shared';
-import type { FeedbackDraft, FeedbackStatus, Granularity, MerchantStats, OrderRefusal, PendingShop, QuoteRefusal } from '@bitetime/shared';
+import type { FeedbackDraft, FeedbackStatus, Granularity, MerchantStats, OrderEvent, OrderRefusal, PendingShop, QuoteRefusal } from '@bitetime/shared';
 import { revenueQuery, type RevenueSelection } from './merchant/revenueRange';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
@@ -1294,7 +1294,15 @@ export async function fetchPaymentProof(merchantId: string, orderId: string): Pr
  * the slip over WhatsApp instead of uploading it. A separate slot from the customer's, so filing
  * one never replaces the other. `auth: 'required'` — the route is merchant-owned.
  */
-export type MerchantProofSaved = { payment_proof_merchant: string; status: string }
+/** The merchant twin also returns the order events it recorded (#268), so the sheet can append
+ *  them to the log it is showing without a second request. */
+export type MerchantProofSaved = { payment_proof_merchant: string; status: string; events: OrderEvent[] }
+
+/** The order log (#268, CONTEXT.md → Order log), oldest first. Merchant dashboard only. */
+export async function fetchOrderEvents(merchantId: string, orderId: string): Promise<Result<OrderEvent[]>> {
+  const r = await apiGet<{ events: OrderEvent[] }>(`/api/merchants/${merchantId}/orders/${orderId}/events`, { auth: 'required' })
+  return mapOk(r, d => d.events)
+}
 
 export async function uploadMerchantPaymentProof(
   merchantId: string,
