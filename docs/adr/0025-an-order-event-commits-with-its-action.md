@@ -1,8 +1,8 @@
 # 25. An order event commits with the action that caused it
 
 Date: 2026-09-04
-Status: Accepted. Reverses the stance a comment in the merchant order PATCH took for the voucher
-void of [ADR 0023](0023-a-cancelled-order-returns-its-redemption.md).
+Status: Accepted. Reverses the *not in a transaction* decision of
+[ADR 0023](0023-a-cancelled-order-returns-its-redemption.md) for the voucher void.
 
 ## Context
 

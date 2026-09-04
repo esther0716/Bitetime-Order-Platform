@@ -217,6 +217,14 @@ describe('order log', () => {
       ])
     })
 
+    it('refuses to move a completed order and records nothing (ADR 0024, judged under the lock)', async () => {
+      const orderId = await seedOrder(shop, 'completed')
+      const res = await patchOrder(orderId, { status: 'cancelled' })
+      expect(res.status).toBe(409)
+      expect(await res.json()).toEqual({ error: 'order_completed' })
+      expect(await eventsOf(orderId)).toEqual([])
+    })
+
     it('records no voucher event for an order that spent none', async () => {
       const orderId = await seedOrder(shop, 'new')
       await patchOrder(orderId, { status: 'cancelled' })

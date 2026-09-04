@@ -1,5 +1,5 @@
 import { useSession } from '../../SessionContext'
-import { fmtDate } from '../../merchantDate'
+import { fmtDate, fmtTime } from '../../merchantDate'
 import DrawerCard from './DrawerCard'
 import { orderEventLine } from './orderEventLine'
 import type { OrderEvent } from '@bitetime/shared'
@@ -12,18 +12,21 @@ import type { Order } from '../../types'
  *
  * An order placed before the log has no `created` event. Its first line is read off the order's
  * own `created_at` — a fact the row already holds, not an invented event — and a muted line says
- * that nothing before the log began was recorded. `events` is null while the log is loading.
+ * that nothing before the log began was recorded. `events` is null while the log is loading and
+ * `'failed'` when the read did not come back — shown as its own line, because an empty log and
+ * a log that could not be read look identical and only one of them is true (ADR 0025).
  */
-export default function LogCard({ order, events }: { order: Order; events: OrderEvent[] | null }) {
+export default function LogCard({ order, events }: { order: Order; events: OrderEvent[] | null | 'failed' }) {
   const { t } = useSession()
 
-  const hasCreated = events?.some(e => e.kind === 'created') ?? true
+  const loaded = Array.isArray(events) ? events : null
+  const hasCreated = loaded?.some(e => e.kind === 'created') ?? true
   const lines: { key: string; at: string; text: string; muted?: boolean }[] = []
-  if (events && !hasCreated && order.created_at) {
+  if (loaded && !hasCreated && order.created_at) {
     lines.push({ key: 'placed', at: order.created_at, text: t('Order placed', '已下单') })
     lines.push({ key: 'gap', at: order.created_at, text: t('Changes before the log began were not recorded', '日志开始前的变更未被记录'), muted: true })
   }
-  for (const e of events ?? []) lines.push({ key: e.id, at: e.created_at, text: orderEventLine(e, t) })
+  for (const e of loaded ?? []) lines.push({ key: e.id, at: e.created_at, text: orderEventLine(e, t) })
 
   // Group by calendar day, in the merchant's own locale like every other dashboard date.
   const days: { day: string; lines: typeof lines }[] = []
@@ -38,6 +41,8 @@ export default function LogCard({ order, events }: { order: Order; events: Order
     <DrawerCard title={t('Log', '日志')}>
       {events === null ? (
         <p className="text-[13px] text-muted-foreground">{t('Loading…', '加载中…')}</p>
+      ) : events === 'failed' ? (
+        <p className="text-[13px] text-danger">{t('Could not load the log.', '无法加载日志。')}</p>
       ) : days.length === 0 ? (
         <p className="text-[13px] text-muted-foreground">{t('Nothing recorded yet.', '尚无记录。')}</p>
       ) : (
@@ -59,9 +64,4 @@ export default function LogCard({ order, events }: { order: Order; events: Order
       )}
     </DrawerCard>
   )
-}
-
-// The clock, to the minute, in the dashboard's pinned locale (see merchantDate.ts).
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-MY', { timeStyle: 'short' })
 }

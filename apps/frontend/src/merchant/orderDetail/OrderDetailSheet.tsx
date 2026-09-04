@@ -41,7 +41,7 @@ export default function OrderDetailSheet({
   // never shows the previous one's lines. Every write in this drawer returns the events it
   // recorded, and they are appended here rather than refetched — the same "patch your own row
   // from the response" rule the list follows, so three status presses cost three writes, not six.
-  const [events, setEvents] = useState<OrderEvent[] | null>(null)
+  const [events, setEvents] = useState<OrderEvent[] | null | 'failed'>(null)
 
   // Re-seed the drafts when a different order opens (adjust-state-during-render:
   // keyed on id so a status/note/tracking patch that replaces `order` mid-view
@@ -58,7 +58,7 @@ export default function OrderDetailSheet({
     if (!order?.id || !merchant?.id) return
     let live = true
     fetchOrderEvents(merchant.id, order.id).then(r => {
-      if (live) setEvents(r.ok ? r.data : [])
+      if (live) setEvents(r.ok ? r.data : 'failed')
     })
     return () => { live = false }
   }, [order?.id, merchant?.id])
@@ -67,7 +67,7 @@ export default function OrderDetailSheet({
   // list without the events — a list row must not grow a log — and the events join the card.
   function applyWrite(data: any) {
     const { events: written, ...row } = data ?? {}
-    if (Array.isArray(written) && written.length) setEvents(prev => [...(prev ?? []), ...written])
+    if (Array.isArray(written) && written.length) setEvents(prev => [...(Array.isArray(prev) ? prev : []), ...written])
     onOrderUpdated(row)
   }
 

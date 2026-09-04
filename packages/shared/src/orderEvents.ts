@@ -33,8 +33,7 @@ export const ORDER_EVENT_KINDS = [
 
 export type OrderEventKind = (typeof ORDER_EVENT_KINDS)[number]
 
-export const ORDER_ACTOR_KINDS = ['merchant', 'customer', 'system'] as const
-export type OrderActorKind = (typeof ORDER_ACTOR_KINDS)[number]
+export type OrderActorKind = 'merchant' | 'customer' | 'system'
 
 /** One row of the order log, as the merchant reads it. */
 export interface OrderEvent {
@@ -46,8 +45,4 @@ export interface OrderEvent {
   detail: Record<string, unknown>
   /** ISO 8601. */
   created_at: string
-}
-
-export function isOrderEventKind(v: unknown): v is OrderEventKind {
-  return typeof v === 'string' && (ORDER_EVENT_KINDS as readonly string[]).includes(v)
 }

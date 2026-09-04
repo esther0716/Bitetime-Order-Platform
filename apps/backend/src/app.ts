@@ -62,6 +62,7 @@ import { fetchBasePricing, createPricingCache, type PricingPayload } from './pri
 import { estimateFor } from './fx.js'
 import { listReferredShops, listEarnedRewards, referralCodeIsShareable } from './referrals.js'
 import { processReferralReward } from './referralRewardGrant.js'
+import type { OrderEvent } from '@bitetime/shared'
 import { listOrderEvents } from './orderEventsDb.js'
 import { placeOrder, patchOrder, OrderError, orderMerchantId, setOrderPaymentProof, setOrderMerchantPaymentProof } from './orders.js'
 import { insertFeedback, listFeedback, updateFeedbackStatus, updateFeedbackGithubIssue, updateFeedbackImages } from './feedback.js'
@@ -1500,10 +1501,13 @@ app.patch('/api/merchants/:id/orders/:orderId', requireMerchantOwns, requireOwns
   // used to be a supabase-js update with the void trailing it best-effort; the log needed a
   // transaction, and the void came in with it. `pickOrderFields` is still the only guard on
   // which columns the body can name — patchOrder spreads its keys into the statement.
-  let events
+  let events: OrderEvent[]
   try {
     const result = await patchOrder(orderId, patch, c.get('user').id)
     if (!result) return c.json({ error: 'not_found' }, 404)
+    // The same refusal as the pre-check above, judged on the locked row (ADR 0024): the
+    // pre-check answers the stale-drawer case fast, this one is the boundary.
+    if ('refused' in result) return c.json({ error: result.refused }, 409)
     events = result.events
   } catch (err) {
     console.error('Order patch failed for order', orderId, err instanceof Error ? err.message : String(err))

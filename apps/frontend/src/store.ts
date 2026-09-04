@@ -1289,11 +1289,6 @@ export async function fetchPaymentProof(merchantId: string, orderId: string): Pr
   return mapOk(r, d => d.blob)
 }
 
-/**
- * The SHOP's own copy of the receipt, filed from the order detail sheet when the customer sent
- * the slip over WhatsApp instead of uploading it. A separate slot from the customer's, so filing
- * one never replaces the other. `auth: 'required'` — the route is merchant-owned.
- */
 /** The merchant twin also returns the order events it recorded (#268), so the sheet can append
  *  them to the log it is showing without a second request. */
 export type MerchantProofSaved = { payment_proof_merchant: string; status: string; events: OrderEvent[] }
@@ -1304,6 +1299,11 @@ export async function fetchOrderEvents(merchantId: string, orderId: string): Pro
   return mapOk(r, d => d.events)
 }
 
+/**
+ * The SHOP's own copy of the receipt, filed from the order detail sheet when the customer sent
+ * the slip over WhatsApp instead of uploading it. A separate slot from the customer's, so filing
+ * one never replaces the other. `auth: 'required'` — the route is merchant-owned.
+ */
 export async function uploadMerchantPaymentProof(
   merchantId: string,
   orderId: string,

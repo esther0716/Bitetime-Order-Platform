@@ -2,8 +2,10 @@
 --
 -- APPEND-ONLY. An event is inserted in the same transaction as the write it records and is never
 -- updated or deleted — a log that can be edited is not a log. `service_role` is granted select
--- and insert only, so even the backend cannot rewrite history by accident; the browser roles
--- hold nothing, matching every table since 20260718130000_revoke_all_browser_grants.sql.
+-- and insert only; the browser roles hold nothing, matching every table since
+-- 20260718130000_revoke_all_browser_grants.sql. The backend's own writer is db.ts, which connects
+-- as the database owner and is bound by no grant — so on that path "never updated" is a rule
+-- orderEventsDb.ts keeps (it has no update or delete statement), not one Postgres enforces.
 --
 -- `merchant_id` is denormalised from the order. The merchant read proves tenancy through the
 -- order (requireOwnsChild), so the column is not what guards it; it exists so a per-shop read
