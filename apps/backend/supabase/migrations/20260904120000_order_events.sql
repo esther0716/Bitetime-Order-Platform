@@ -13,11 +13,16 @@
 -- `kind` is CHECKed against the closed list `packages/shared/src/orderEvents.ts` also holds, so
 -- a kind the drawer has not been taught cannot be written. Adding a kind means both places.
 --
+-- `id` is an identity bigint, not a uuid, and that is the log's ORDER. Every event one
+-- transaction writes shares one `now()`, so `created_at` cannot order the two events a payment
+-- proof produces (the upload, then the status it moved) — a random uuid tiebreak showed them
+-- either way round. An identity column is monotonic within the connection that inserts.
+--
 -- No backfill. An order placed before this migration has no events, and the drawer reads
 -- "placed" off the order's own created_at — the one fact the row already holds. A backfilled
 -- status history would be a guess written as a record.
 create table if not exists public.order_events (
-  id          uuid primary key default gen_random_uuid(),
+  id          bigint generated always as identity primary key,
   order_id    uuid not null references public.orders (id) on delete cascade,
   merchant_id uuid not null references public.merchants (id) on delete cascade,
   kind        text not null check (kind in (
@@ -37,8 +42,8 @@ create table if not exists public.order_events (
   created_at  timestamptz not null default now()
 );
 
-create index if not exists order_events_order_id_created_at_idx
-  on public.order_events (order_id, created_at);
+create index if not exists order_events_order_id_idx
+  on public.order_events (order_id, id);
 
 alter table public.order_events enable row level security;
 revoke all on public.order_events from anon, authenticated;

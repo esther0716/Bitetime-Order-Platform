@@ -1568,7 +1568,9 @@ app.post(
     // Returns the two fields the write moved — the path, and a status that may have left
     // pending_payment. The sheet patches its own list row from them rather than refetching, the
     // same shape every other order write on this route file hands back.
-    const row = await setOrderMerchantPaymentProof(orderId, path)
+    // The events this write recorded ride along (ADR 0025), so the sheet appends them to the
+    // log it is showing without a second request.
+    const row = await setOrderMerchantPaymentProof(orderId, path, c.get('user').id)
     return c.json({ ok: true, ...row })
   },
 )
@@ -3359,9 +3361,13 @@ app.post('/api/orders/:orderId/payment-proof', async (c) => {
 
   // Returns the two fields the write moved — the path, and a status that may have left
   // pending_payment. Order history patches its own row from them, so a customer uploading from
-  // there sees the timeline move without a reload. The merchant twin returns the same shape.
+  // there sees the timeline move without a reload. The merchant twin returns the same shape
+  // PLUS the order events it recorded; the customer does not see the log, so they are dropped
+  // here rather than handed to a browser that has no use for them.
   const row = await setOrderPaymentProof(orderId, path)
-  return c.json({ ok: true, ...row })
+  if (!row) return c.json({ error: 'not_found' }, 404)
+  const { events: _events, ...saved } = row
+  return c.json({ ok: true, ...saved })
 })
 
 // The two outbound adapters, held in a mutable object so tests can capture what

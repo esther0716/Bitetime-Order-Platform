@@ -47,13 +47,13 @@ export async function recordOrderEvents(
 export async function listOrderEvents(orderId: string): Promise<OrderEvent[]> {
   const rows = await sql<EventRow[]>`
     select id, kind, actor_kind, actor_id, detail, created_at from order_events
-    where order_id = ${orderId} order by created_at, id
+    where order_id = ${orderId} order by id
   `
   return rows.map(toEvent)
 }
 
 type EventRow = {
-  id: string
+  id: string | number
   kind: OrderEvent['kind']
   actor_kind: OrderActorKind
   actor_id: string | null
@@ -63,5 +63,5 @@ type EventRow = {
 
 // `timestamptz` arrives as a Date on this connection (db.ts); the wire carries ISO 8601.
 function toEvent(r: EventRow): OrderEvent {
-  return { id: r.id, kind: r.kind, actor_kind: r.actor_kind, actor_id: r.actor_id, detail: r.detail, created_at: r.created_at.toISOString() }
+  return { id: String(r.id), kind: r.kind, actor_kind: r.actor_kind, actor_id: r.actor_id, detail: r.detail, created_at: r.created_at.toISOString() }
 }

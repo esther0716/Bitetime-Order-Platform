@@ -1,8 +1,8 @@
 import type postgres from 'postgres'
 import { priceOrder, validateSelections, voucherFromRow, voucherExpired, voucherBelowMinimum, shopRates, shopTax, shopDistance, shopMethods, offersMethod, routedKm, isDistancePriced, productFromRow, promoClaims, fulfilmentConfig, isDateSelectable, DEFAULT_TIMEZONE } from '@bitetime/shared'
-import type { CartLine, PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal } from '@bitetime/shared'
+import type { CartLine, PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal, OrderEvent } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
-import { recordOrderEvents } from './orderEventsDb.js'
+import { recordOrderEvents, SYSTEM_ACTOR } from './orderEventsDb.js'
 import { phoneKey } from './phone.js'
 import { COUNTER_START, formatOrderNumber, orderDay } from './orderNumber.js'
 import { type DistanceDeps } from './distance.js'
@@ -392,19 +392,37 @@ export async function orderMerchantId(orderId: string): Promise<string | null> {
  * pending_payment into new. The CASE guard is deliberate: it moves an order OUT of
  * pending_payment and never overwrites any other status, so a proof landing after a merchant
  * already cancelled (or completed) the order leaves that decision alone.
+ *
+ * One transaction with the order log (ADR 0025): the upload event, and — when the gate cleared —
+ * a `status_changed` by the SYSTEM, because the customer attached a file and did not choose a
+ * workflow state. The actor is the order's own `user_id`: the customer door has no auth, and the
+ * order's owner is the only person that route lets upload for it. A guest is a customer with no
+ * id. The events are returned for the merchant twin's response; the customer's route drops them.
  */
 export async function setOrderPaymentProof(
   orderId: string,
   path: string,
-): Promise<{ payment_proof: string; status: string } | null> {
-  const rows = await sql<{ payment_proof: string; status: string }[]>`
-    update orders
-    set payment_proof = ${path},
-        status = case when status = 'pending_payment' then 'new' else status end
-    where id = ${orderId}
-    returning payment_proof, status
-  `
-  return rows[0] ?? null
+): Promise<{ payment_proof: string; status: string; events: OrderEvent[] } | null> {
+  return withTransaction(async (tx) => {
+    const rows = await tx<(ProofWriteRow & { payment_proof: string })[]>`
+      update orders o
+      set payment_proof = ${path},
+          status = case when o.status = 'pending_payment' then 'new' else o.status end
+      from (select id, status as prev_status from orders where id = ${orderId} for update) p
+      where o.id = p.id
+      returning o.payment_proof, o.status, p.prev_status, o.merchant_id, o.user_id
+    `
+    const row = rows[0]
+    if (!row) return null
+    const events = await recordOrderEvents(
+      tx,
+      { id: orderId, merchantId: row.merchant_id },
+      { kind: 'customer', id: row.user_id },
+      [{ kind: 'payment_proof_uploaded', detail: {} }],
+    )
+    events.push(...await recordGateCleared(tx, orderId, row))
+    return { payment_proof: row.payment_proof, status: row.status, events }
+  })
 }
 
 /**
@@ -415,19 +433,46 @@ export async function setOrderPaymentProof(
  * exactly as the merchant left it.
  *
  * A separate column, so filing this can never overwrite what the customer themselves attached.
+ * Same transaction shape as the customer's write; the actor is the merchant who filed it.
  */
 export async function setOrderMerchantPaymentProof(
   orderId: string,
   path: string,
-): Promise<{ payment_proof_merchant: string; status: string } | null> {
-  const rows = await sql<{ payment_proof_merchant: string; status: string }[]>`
-    update orders
-    set payment_proof_merchant = ${path},
-        status = case when status = 'pending_payment' then 'new' else status end
-    where id = ${orderId}
-    returning payment_proof_merchant, status
-  `
-  return rows[0] ?? null
+  merchantUserId: string,
+): Promise<{ payment_proof_merchant: string; status: string; events: OrderEvent[] } | null> {
+  return withTransaction(async (tx) => {
+    const rows = await tx<(ProofWriteRow & { payment_proof_merchant: string })[]>`
+      update orders o
+      set payment_proof_merchant = ${path},
+          status = case when o.status = 'pending_payment' then 'new' else o.status end
+      from (select id, status as prev_status from orders where id = ${orderId} for update) p
+      where o.id = p.id
+      returning o.payment_proof_merchant, o.status, p.prev_status, o.merchant_id, o.user_id
+    `
+    const row = rows[0]
+    if (!row) return null
+    const events = await recordOrderEvents(
+      tx,
+      { id: orderId, merchantId: row.merchant_id },
+      { kind: 'merchant', id: merchantUserId },
+      [{ kind: 'merchant_payment_proof_uploaded', detail: {} }],
+    )
+    events.push(...await recordGateCleared(tx, orderId, row))
+    return { payment_proof_merchant: row.payment_proof_merchant, status: row.status, events }
+  })
+}
+
+type ProofWriteRow = { status: string; prev_status: string | null; merchant_id: string; user_id: string | null }
+
+/** The status move a proof caused, if it caused one — recorded as the system's, not the uploader's. */
+function recordGateCleared(tx: postgres.TransactionSql, orderId: string, row: ProofWriteRow): Promise<OrderEvent[]> {
+  if (row.prev_status === row.status) return Promise.resolve([])
+  return recordOrderEvents(
+    tx,
+    { id: orderId, merchantId: row.merchant_id },
+    SYSTEM_ACTOR,
+    [{ kind: 'status_changed', detail: { from: row.prev_status ?? 'new', to: row.status } }],
+  )
 }
 
 /**
