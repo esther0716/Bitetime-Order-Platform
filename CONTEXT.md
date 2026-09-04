@@ -64,6 +64,8 @@ A shop offers dates in one of **two modes**, and the set is closed: `rolling` an
 **The horizon is 90 days**, one constant (`FULFILMENT_HORIZON_DAYS`) bounding both modes — but not identically, and the difference is worth stating because the constant's name suggests otherwise. In `custom` it is absolute: a ticked date more than 90 days out is never offered and cannot be saved. In `rolling` it clamps `window_days` **alone**, and `lead_days` (up to 30) still pushes the range out ahead of it, so a rolling shop can commit as far as day 119. That is the pre-existing behaviour of the two caps and is left alone deliberately; the feedback that asked for "up to 3 months" was about the ticked dates, and 90 days is that, expressed in the day-count arithmetic this module is already made of rather than a second concept and calendar-month maths.
 
 
+**The merchant may move an order's date, and their rule is looser than the customer's.** `PATCH /api/merchants/:id/orders/:orderId` takes `fulfil_date`, judged by `validateFulfilDateChange` — real calendar date, not behind the shop's today, not past the 90-day horizon — and nothing else. Lead days, closed weekdays and the custom allowlist say which days a shop sells to the *public*; the merchant is the shop, and a shop that takes two days' notice can still agree over WhatsApp to have one order ready tomorrow. The three refusals travel by name (`invalid_date`, `past_date`, `beyond_horizon`, all 400) so the drawer says which; a **completed** order's date is as final as its status and is refused with `order_completed` ([ADR 0024](docs/adr/0024-a-completed-order-is-final.md)). The date can be moved but never **cleared**: a null `fulfil_date` means "placed before #91", a fact and not a choice. Each move is a `fulfil_date_changed` event with both ends. The customer is not told — that is a merchant's conversation on WhatsApp, not the platform's — which is a deliberate gap, not an oversight.
+
 **A shop with no offerable date is paused, not closed.** The two reads agree by construction — `selectableDates` returns `[]` and `isDateSelectable` returns false — so the storefront and a scripted POST get the same answer, and a paused shop cannot be sold out from under its owner by a caller who skips the picker. `merchants.status` stays `active`: the menu, prices and photos still render and are still crawlable, and the customer is told at the date step that the shop is not taking orders. A configuration gap must not wear the suspended-shop screen; being suspended is something the platform did to you. A stray POST is refused with the existing `fulfil_date_unavailable` — the date *is* unavailable, so the vocabulary already has the honest word and gains no new one.
 
 **Pausing has exactly two causes.**
@@ -189,7 +191,7 @@ Not to be confused with the customer's **order history** (their own past orders 
 
 ## Order log
 
-The events of one order, oldest first, as the merchant reads them in the order drawer. The customer does not see it. A date change, once such a write exists, is one more event kind in this log and nothing new.
+The events of one order, oldest first, as the merchant reads them in the order drawer. The customer does not see it. A date change (`fulfil_date_changed`, see *Fulfilment date*) is one more event kind in this log and nothing new.
 
 ## Refusal
 

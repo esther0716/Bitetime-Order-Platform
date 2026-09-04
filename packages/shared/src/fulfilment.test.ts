@@ -4,6 +4,7 @@ import {
   todayInZone, isDateSelectable, selectableDates,
   FULFILMENT_HORIZON_DAYS, MAX_CUSTOM_DATES, DATES_ENDING_SOON_DAYS,
   customDateBounds, pruneCustomDates, validateCustomDates, fulfilmentWarning,
+  validateFulfilDateChange,
   type FulfilmentConfig,
 } from './fulfilment.js'
 
@@ -253,6 +254,36 @@ describe('validateCustomDates', () => {
 
   it('refuses more dates than the cap', () => {
     expect(validateCustomDates(consecutive(MAX_CUSTOM_DATES + 1), KL, NOON_MYT)).toBe('too_many')
+  })
+})
+
+describe('validateFulfilDateChange', () => {
+  it('accepts today on the shop clock, and the horizon itself', () => {
+    expect(validateFulfilDateChange('2026-07-20', KL, NOON_MYT)).toBeNull()
+    expect(validateFulfilDateChange('2026-10-18', KL, NOON_MYT)).toBeNull()
+  })
+
+  it('judges "today" on the SHOP clock, not UTC', () => {
+    // 01:00 on the 21st in KL: the 20th has gone.
+    expect(validateFulfilDateChange('2026-07-20', KL, LATE_MYT)).toBe('past_date')
+    expect(validateFulfilDateChange('2026-07-21', KL, LATE_MYT)).toBeNull()
+  })
+
+  it('refuses a past date and a date beyond the horizon by their own names', () => {
+    expect(validateFulfilDateChange('2026-07-19', KL, NOON_MYT)).toBe('past_date')
+    expect(validateFulfilDateChange('2026-10-19', KL, NOON_MYT)).toBe('beyond_horizon')
+  })
+
+  it('refuses anything that is not a real calendar date', () => {
+    expect(validateFulfilDateChange('', KL, NOON_MYT)).toBe('invalid_date')
+    expect(validateFulfilDateChange('20/07/2026', KL, NOON_MYT)).toBe('invalid_date')
+    expect(validateFulfilDateChange('2026-02-30', KL, NOON_MYT)).toBe('invalid_date')
+    expect(validateFulfilDateChange('2026-07-21T00:00:00Z', KL, NOON_MYT)).toBe('invalid_date')
+  })
+
+  it('ignores lead days, closed weekdays and the custom allowlist — the merchant is the shop', () => {
+    // 2026-07-26 is a Sunday; a customer would be refused, the merchant is not.
+    expect(validateFulfilDateChange('2026-07-26', KL, NOON_MYT)).toBeNull()
   })
 })
 

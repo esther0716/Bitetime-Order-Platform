@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { OrderEvent } from '@bitetime/shared'
 import { useSession } from '../../SessionContext'
-import { setOrderStatus, setOrderNote, setOrderTracking, fetchOrderEvents } from '../../store'
+import { setOrderStatus, setOrderNote, setOrderTracking, setOrderFulfilDate, fetchOrderEvents } from '../../store'
 import { toast } from 'sonner'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import OrderHeader from './OrderHeader'
@@ -37,6 +37,8 @@ export default function OrderDetailSheet({
   const [courierDraft, setCourierDraft] = useState('')
   const [awbDraft, setAwbDraft] = useState('')
   const [savingTrack, setSavingTrack] = useState(false)
+  const [dateDraft, setDateDraft] = useState('')
+  const [savingDate, setSavingDate] = useState(false)
   // The order log (#268). Null while loading; keyed on the order id below so a different order
   // never shows the previous one's lines. Every write in this drawer returns the events it
   // recorded, and they are appended here rather than refetched — the same "patch your own row
@@ -51,6 +53,7 @@ export default function OrderDetailSheet({
     setNoteDraft(order.note ?? '')
     setCourierDraft(order.courier ?? '')
     setAwbDraft(order.awb ?? '')
+    setDateDraft(order.fulfil_date ?? '')
     setEvents(null)
   }
 
@@ -110,10 +113,43 @@ export default function OrderDetailSheet({
     }).finally(() => setSavingTrack(false))
   }
 
+  // The date edit. Each refusal the backend names gets its own sentence, because the three are
+  // three different things to do: a day that has gone by, a day past the horizon the shop's own
+  // settings are bounded by, and a body the server could not read as a date at all (which the
+  // picker cannot produce — it reaches a merchant only through a stale build or a bug).
+  function handleDateSave() {
+    if (!order || !dateDraft) return
+    setSavingDate(true)
+    setOrderFulfilDate(order.id, dateDraft, merchant!.id).then(r => {
+      if (r.ok) {
+        applyWrite(r.data)
+        toast.success(t('Date saved', '日期已保存'))
+        return
+      }
+      switch (r.error.code) {
+        case 'past_date':
+          toast.error(t('That day has passed. Pick today or later.', '该日期已过。请选择今天或之后的日期。'))
+          break
+        case 'beyond_horizon':
+          toast.error(t('That day is too far ahead. Pick a day within 90 days.', '该日期太远。请选择90天内的日期。'))
+          break
+        case 'invalid_date':
+          toast.error(t('That is not a valid date.', '该日期无效。'))
+          break
+        case 'order_completed':
+          toast.error(t('This order is done. Its date cannot change.', '此订单已结束，日期无法更改。'))
+          break
+        default:
+          toast.error(t('Could not save date.', '无法保存日期。'))
+      }
+    }).finally(() => setSavingDate(false))
+  }
+
   const orderCurrency = order?.currency ?? merchant?.currency
   const noteDirty = order != null && noteDraft.trim() !== (order.note ?? '')
   const trackDirty = order != null &&
     (courierDraft !== (order.courier ?? '') || awbDraft.trim() !== (order.awb ?? ''))
+  const dateDirty = order != null && dateDraft !== '' && dateDraft !== (order.fulfil_date ?? '')
 
   return (
     <Sheet open={order !== null} onOpenChange={open => { if (!open) { onClose(); setDrawerFor(undefined) } }}>
@@ -144,7 +180,15 @@ export default function OrderDetailSheet({
                 onProofUploaded={saved => applyWrite({ ...order, ...saved })}
               />
               <InvoiceCard order={order} merchantId={merchant!.id} readOnly={readOnly} />
-              <CustomerCard order={order} />
+              <CustomerCard
+                order={order}
+                fulfilDate={dateDraft}
+                onFulfilDate={setDateDraft}
+                onSaveDate={handleDateSave}
+                savingDate={savingDate}
+                dateDirty={dateDirty}
+                readOnly={readOnly}
+              />
 
               <TrackingCard
                 order={order}

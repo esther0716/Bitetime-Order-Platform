@@ -25,6 +25,8 @@ interface Props {
   onChange: (iso: string) => void
   /** The shop's timezone. Decides which day is "today", and so which days are past. */
   tz?: string | null
+  /** `YYYY-MM-DD`. Days after it render disabled, the way days before today do. */
+  max?: string
   t: (en: string, zh: string) => string
   lang: 'en' | 'zh'
   /** What the trigger says with no date set. */
@@ -46,12 +48,13 @@ interface Props {
  * day assumes the calendar is broken. It is the shop's today and not the browser's, so a merchant
  * abroad sees the same floor their shop would.
  */
-export default function DateField({ value, onChange, tz, t, lang, placeholder, clearable, id }: Props) {
+export default function DateField({ value, onChange, tz, max, t, lang, placeholder, clearable, id }: Props) {
   const [open, setOpen] = useState(false)
   const today = toDate(todayInZone(tz ?? DEFAULT_TIMEZONE, new Date()))
   // A stored date in the PAST still renders — an existing promo whose end has gone by must show
   // the merchant what it says, not an empty field. Only picking a past day is refused.
   const selected = value ? toDate(value) : undefined
+  const last = max ? toDate(max) : undefined
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -81,7 +84,7 @@ export default function DateField({ value, onChange, tz, t, lang, placeholder, c
           // `selected ?? today`, so reopening a set field lands on the month it is in rather than
           // on this one — otherwise editing next year's date starts with a year of scrolling.
           defaultMonth={selected ?? today}
-          disabled={{ before: today }}
+          disabled={last ? [{ before: today }, { after: last }] : { before: today }}
           // A month and year dropdown, not twelve presses of an arrow: the dates these fields
           // hold are months out, and three years is past anything a shop would set.
           captionLayout="dropdown"

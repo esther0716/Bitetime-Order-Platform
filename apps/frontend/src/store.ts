@@ -1018,6 +1018,15 @@ export async function setOrderTracking(orderId: string, courier: string | null, 
 }
 
 /**
+ * Move the day an order is for. `fulfilDate` is `YYYY-MM-DD` and never empty — a date cannot be
+ * cleared, only moved. The backend judges it on the shop's clock (`validateFulfilDateChange`)
+ * and answers `past_date`, `beyond_horizon`, `invalid_date` or `order_completed` by name.
+ */
+export async function setOrderFulfilDate(orderId: string, fulfilDate: string, merchantId: string): Promise<Result<any>> {
+  return apiSend<any>(`/api/merchants/${merchantId}/orders/${orderId}`, 'PATCH', { fulfil_date: fulfilDate }, { auth: true })
+}
+
+/**
  * The shop's customers (#143), aggregated by the BACKEND.
  *
  * This used to fetch every order and group them here, on the raw `customer_wa` string. That was

@@ -14,6 +14,8 @@ export interface OrderPatchBefore {
   note: string | null
   courier: string | null
   awb: string | null
+  /** `YYYY-MM-DD`, null for an order placed before #91. */
+  fulfil_date: string | null
 }
 
 /** A merchant PATCH after `pickOrderFields` — only the keys present are being written. */
@@ -22,6 +24,7 @@ export interface OrderPatch {
   note?: string | null
   courier?: string | null
   awb?: string | null
+  fulfil_date?: string
 }
 
 /**
@@ -47,6 +50,9 @@ export function orderPatchEvents(before: OrderPatchBefore, patch: OrderPatch): O
   }
   if (patch.awb !== undefined && (patch.awb ?? null) !== (before.awb ?? null)) {
     out.push({ kind: 'awb_changed', detail: { from: before.awb ?? null, to: patch.awb ?? null } })
+  }
+  if (patch.fulfil_date !== undefined && patch.fulfil_date !== (before.fulfil_date ?? null)) {
+    out.push({ kind: 'fulfil_date_changed', detail: { from: before.fulfil_date ?? null, to: patch.fulfil_date } })
   }
   return out
 }
