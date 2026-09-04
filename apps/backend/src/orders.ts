@@ -3,6 +3,8 @@ import { priceOrder, validateSelections, voucherFromRow, voucherExpired, voucher
 import type { CartLine, PricedProduct, PricedVoucher, FulfilmentConfig, ShopTax, ShopDistance, ShopMethods, OrderRefusal, OrderEvent } from '@bitetime/shared'
 import { sql, withTransaction } from './db.js'
 import { recordOrderEvents, SYSTEM_ACTOR } from './orderEventsDb.js'
+import { orderPatchEvents, type OrderPatch, type OrderPatchBefore } from './orderEvents.js'
+import { syncOrderRedemptionVoid } from './voucherRedemptionsDb.js'
 import { phoneKey } from './phone.js'
 import { COUNTER_START, formatOrderNumber, orderDay } from './orderNumber.js'
 import { type DistanceDeps } from './distance.js'
@@ -459,6 +461,48 @@ export async function setOrderMerchantPaymentProof(
     )
     events.push(...await recordGateCleared(tx, orderId, row))
     return { payment_proof_merchant: row.payment_proof_merchant, status: row.status, events }
+  })
+}
+
+/**
+ * The merchant's PATCH of an order — status, note, courier, awb — as ONE transaction with the
+ * order log and the voucher void (ADR 0025). Reads the row under lock, writes the patch, records
+ * one event per field that actually moved, and voids or restores the redemption when the status
+ * crossed `cancelled` (ADR 0023) — logging that as the SYSTEM'S doing, since the merchant chose
+ * a status and not a voucher outcome. An empty patch is refused by the caller; a patch of
+ * identical values commits, changes nothing and records nothing.
+ *
+ * `null` when there is no such order. Tenancy is the caller's — `requireOwnsChild` proved the
+ * id — and `patch` must already be through `pickOrderFields`: this spreads its keys into the
+ * statement.
+ */
+export async function patchOrder(
+  orderId: string,
+  patch: OrderPatch,
+  merchantUserId: string,
+): Promise<{ events: OrderEvent[] } | null> {
+  return withTransaction(async (tx) => {
+    const [before] = await tx<(OrderPatchBefore & { merchant_id: string; voucher_code: string | null })[]>`
+      select status, note, courier, awb, merchant_id, voucher_code from orders
+      where id = ${orderId} for update
+    `
+    if (!before) return null
+
+    await tx`update orders set ${tx(patch as Record<string, string | null>)} where id = ${orderId}`
+
+    const order = { id: orderId, merchantId: before.merchant_id }
+    const events = await recordOrderEvents(tx, order, { kind: 'merchant', id: merchantUserId }, orderPatchEvents(before, patch))
+
+    if (patch.status !== undefined) {
+      const cancelled = patch.status === 'cancelled'
+      const moved = await syncOrderRedemptionVoid(tx, orderId, cancelled)
+      if (moved > 0) {
+        events.push(...await recordOrderEvents(tx, order, SYSTEM_ACTOR, [
+          { kind: cancelled ? 'voucher_released' : 'voucher_restored', detail: { code: before.voucher_code } },
+        ]))
+      }
+    }
+    return { events }
   })
 }
 

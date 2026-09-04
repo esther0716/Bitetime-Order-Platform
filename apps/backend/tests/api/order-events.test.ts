@@ -155,4 +155,101 @@ describe('order log', () => {
       expect(typeof body.events[0].created_at).toBe('string')
     })
   })
+
+  function patchOrder(orderId: string, patch: Record<string, unknown>) {
+    return app.request(`/api/merchants/${shop}/orders/${orderId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${owner.token}` },
+      body: JSON.stringify(patch),
+    })
+  }
+
+  describe('merchant patch', () => {
+    it('records a status move as the merchant and hands the event back with the row', async () => {
+      const orderId = await seedOrder(shop, 'new')
+      const res = await patchOrder(orderId, { status: 'preparing' })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { status: string; events: EventRow[] }
+      expect(body.status).toBe('preparing')
+      expect(body.events.map(e => e.kind)).toEqual(['status_changed'])
+
+      expect(await eventsOf(orderId)).toEqual([
+        { kind: 'status_changed', actor_kind: 'merchant', actor_id: owner.userId, detail: { from: 'new', to: 'preparing' } },
+      ])
+    })
+
+    it('records a note change without the note, and nothing for a note saved unchanged', async () => {
+      const orderId = await seedOrder(shop, 'new')
+      await patchOrder(orderId, { note: 'ring the bell' })
+      const again = await patchOrder(orderId, { note: 'ring the bell' })
+      expect(((await again.json()) as { events: EventRow[] }).events).toEqual([])
+
+      expect(await eventsOf(orderId)).toEqual([
+        { kind: 'note_changed', actor_kind: 'merchant', actor_id: owner.userId, detail: {} },
+      ])
+    })
+
+    it('records the voucher use a cancellation returns, and the one an un-cancel takes back', async () => {
+      await serviceClient().from('vouchers').delete().eq('merchant_id', shop).eq('code', 'LOG5')
+      const { error } = await serviceClient().from('vouchers')
+        .insert({ merchant_id: shop, code: 'LOG5', kind: 'fixed', amount: 5, max_uses: null, used_by: [] })
+      if (error) throw new Error(error.message)
+      const placed = await app.request('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${customer.token}` },
+        body: JSON.stringify({
+          merchantId: shop, customerName: 'Ah Meng', customerWa: '60123456789', mode: 'pickup',
+          cart: [{ productId, qty: 1, selections: [] }], quotedTotal: 8, fulfilDate: tomorrowInShopZone(), voucherCode: 'LOG5',
+        }),
+      })
+      expect(placed.status).toBe(200)
+      const { id: orderId } = (await placed.json()) as { id: string }
+
+      await patchOrder(orderId, { status: 'cancelled' })
+      await patchOrder(orderId, { status: 'cancelled' })   // a repeat records nothing
+      await patchOrder(orderId, { status: 'new' })
+
+      expect((await eventsOf(orderId)).slice(1)).toEqual([
+        { kind: 'status_changed', actor_kind: 'merchant', actor_id: owner.userId, detail: { from: 'new', to: 'cancelled' } },
+        { kind: 'voucher_released', actor_kind: 'system', actor_id: null, detail: { code: 'LOG5' } },
+        { kind: 'status_changed', actor_kind: 'merchant', actor_id: owner.userId, detail: { from: 'cancelled', to: 'new' } },
+        { kind: 'voucher_restored', actor_kind: 'system', actor_id: null, detail: { code: 'LOG5' } },
+      ])
+    })
+
+    it('records no voucher event for an order that spent none', async () => {
+      const orderId = await seedOrder(shop, 'new')
+      await patchOrder(orderId, { status: 'cancelled' })
+      expect((await eventsOf(orderId)).map(e => e.kind)).toEqual(['status_changed'])
+    })
+  })
+
+  describe('GET /api/merchants/:id/orders/:orderId/events', () => {
+    it('lists the log oldest first for the shop that owns the order', async () => {
+      const orderId = await seedOrder(shop, 'new')
+      await patchOrder(orderId, { status: 'preparing' })
+      await patchOrder(orderId, { status: 'ready' })
+
+      const res = await app.request(`/api/merchants/${shop}/orders/${orderId}/events`, {
+        headers: { Authorization: `Bearer ${owner.token}` },
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { events: (EventRow & { id: string; created_at: string })[] }
+      expect(body.events.map(e => e.detail.to)).toEqual(['preparing', 'ready'])
+      expect(typeof body.events[0].id).toBe('string')
+      expect(typeof body.events[0].created_at).toBe('string')
+    })
+
+    it("is a 404 for another shop's order nested under this shop", async () => {
+      const otherOwner = await tokenOf(await makeUser('order-events-stranger@test.dev', 'password123'))
+      await resetMerchant('order-events-other')
+      const other = await seedMerchant({ slug: 'order-events-other', owner_id: otherOwner.userId, status: 'active' })
+      const orderId = await seedOrder(other, 'new')
+
+      const res = await app.request(`/api/merchants/${shop}/orders/${orderId}/events`, {
+        headers: { Authorization: `Bearer ${owner.token}` },
+      })
+      expect(res.status).toBe(404)
+    })
+  })
 })
