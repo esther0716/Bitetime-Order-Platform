@@ -179,6 +179,18 @@ So:
 
 A suspended shop gets **no footer at all**, so no status write is reachable there; the note and the courier render as text.
 
+## Order event
+
+One thing that happened to one order, recorded as it happened: the order was created, a payment proof landed, the status moved, a note or tracking detail changed. An event names its **kind**, its **actor** and the moment. It is immutable and is never deleted — a log that can be edited is not a log — and it is recorded **with** the action, never after it: an action that cannot be logged does not happen ([ADR 0025](docs/adr/0025-an-order-event-commits-with-its-action.md)).
+
+The **actor** is who did it: the **merchant**, the **customer**, or the **system** (a change no person chose — the status flip a payment proof causes, the voucher use a cancellation returns). A guest is still a customer, just one with no account behind the act.
+
+Not to be confused with the customer's **order history** (their own past orders at a shop) or the storefront **timeline** (the four-step status tracker).
+
+## Order log
+
+The events of one order, oldest first, as the merchant reads them in the order drawer. The customer does not see it. A date change, once such a write exists, is one more event kind in this log and nothing new.
+
 ## Refusal
 
 A reason the backend would not take an order or price a delivery, named by a **wire code** the customer's browser can act on — as opposed to a bug, which carries no code and is never dressed up as one. The vocabulary is `packages/shared/src/refusal.ts`: the codes, what each one means, and the HTTP status it carries.
