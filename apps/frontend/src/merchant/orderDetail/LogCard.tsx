@@ -53,7 +53,7 @@ export default function LogCard({ order, events }: { order: Order; events: Order
               <ul className="flex flex-col gap-1">
                 {d.lines.map(l => (
                   <li key={l.key} className="flex gap-2.5 text-[13px]">
-                    <span className="shrink-0 tabular-nums text-muted-foreground w-[3.4em]">{l.muted ? '' : fmtTime(l.at)}</span>
+                    <span className="shrink-0 whitespace-nowrap tabular-nums text-muted-foreground w-[4.6em]">{l.muted ? '' : fmtTime(l.at)}</span>
                     <span className={l.muted ? 'text-muted-foreground italic' : 'text-foreground'}>{l.text}</span>
                   </li>
                 ))}
