@@ -56,6 +56,16 @@ export default function LogCard({ order, events }: { order: Order; events: Order
   }
   const lastKey = [...lines].reverse().find(l => !('gap' in l))?.key
 
+  // One rail per day. A day heading is plain text across the card, and the rail below it runs
+  // from the first node's centre to the last's — so the line never has to pass "through" a
+  // heading, which is what made the earlier single rail read as detached from its nodes.
+  const days: { day: string; lines: Line[] }[] = []
+  for (const l of lines) {
+    const last = days[days.length - 1]
+    if (last && last.day === l.day) last.lines.push(l)
+    else days.push({ day: l.day, lines: [l] })
+  }
+
   return (
     <DrawerCard title={t('Log', '日志')}>
       {events === null ? (
@@ -65,49 +75,61 @@ export default function LogCard({ order, events }: { order: Order; events: Order
       ) : lines.length === 0 ? (
         <p className="text-[13px] text-muted-foreground">{t('Nothing recorded yet.', '尚无记录。')}</p>
       ) : (
-        <ol className="relative flex flex-col" aria-label={t('Order log', '订单日志')}>
-          {/* The rail. Sits behind the nodes at their horizontal centre: the time column is
-              4.6em wide, then the row's 10px gap, then the size-7 (28px) node — so its centre is 4.6em + 24px. */}
-          <span aria-hidden className="absolute top-3 bottom-3 w-px bg-border" style={{ left: 'calc(4.6em + 23.5px)' }} />
-          {lines.map((l, i) => {
-            const newDay = i === 0 || lines[i - 1].day !== l.day
-            return (
-              <li key={l.key} className="relative flex flex-col">
-                {newDay && (
-                  <div className={cn('flex items-center gap-2.5', i > 0 && 'mt-2')}>
-                    <span className="w-[4.6em] shrink-0" />
-                    <span className="relative z-[1] flex size-7 shrink-0 items-center justify-center">
-                      <span className="size-2 rounded-pill border border-border bg-card" />
-                    </span>
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{l.day}</span>
-                  </div>
-                )}
-                {'gap' in l ? (
-                  <div className="flex items-start gap-2.5 py-1">
-                    <span className="w-[4.6em] shrink-0" />
-                    <span className="size-7 shrink-0" />
-                    <span className="text-[13px] italic text-muted-foreground pt-1">{l.text}</span>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-2.5 py-1">
-                    <span className="w-[4.6em] shrink-0 whitespace-nowrap pt-1.5 text-right text-[12px] tabular-nums text-muted-foreground">{l.time}</span>
-                    <span
-                      className={cn(
-                        'relative z-[1] flex size-7 shrink-0 items-center justify-center rounded-pill',
-                        l.key === lastKey
-                          ? 'bg-primary text-primary-foreground ring-4 ring-primary/15'
-                          : 'border-[0.5px] border-border bg-card text-ink-400',
-                      )}
-                    >
-                      <l.icon className="size-[15px]" strokeWidth={2} />
-                    </span>
-                    <span className={cn('text-[13px] pt-1.5', l.key === lastKey ? 'font-medium text-foreground' : 'text-foreground')}>{l.text}</span>
-                  </div>
-                )}
-              </li>
-            )
-          })}
-        </ol>
+        <div className="flex flex-col gap-3" aria-label={t('Order log', '订单日志')}>
+          {days.map(d => (
+            <section key={d.day} className="flex flex-col gap-1">
+              {/* Lighter than the card's own LBL caption — a day is a divider inside the log,
+                  not a second title beside "Log". */}
+              <h4 className="text-[11px] font-medium text-muted-foreground">{d.day}</h4>
+              <ol className="flex flex-col">
+                {d.lines.map((l, i) => (
+                  <li key={l.key} className="relative flex items-start gap-3 py-1.5">
+                    {/* The rail, one segment per row, drawn behind the size-7 (28px) nodes at
+                        their horizontal centre (13.5px). A node's segment starts at its own
+                        centre (6px row padding + 14px) and runs 20px past the row's bottom to
+                        the NEXT node's centre; a gap row's runs straight through. The last row
+                        draws none, so the rail ends on a node and never dangles into space. */}
+                    {i < d.lines.length - 1 && (
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'absolute left-[13.5px] -bottom-5 w-px',
+                          'gap' in l ? 'top-0' : 'top-5',
+                          // Dashed into the "not recorded" row — the storefront tracker's idiom
+                          // for a stretch the data does not cover.
+                          'gap' in d.lines[i + 1] ? 'border-l border-dashed border-border' : 'bg-border',
+                        )}
+                      />
+                    )}
+                    {'gap' in l ? (
+                      <>
+                        <span aria-hidden className="size-7 shrink-0" />
+                        <span className="min-w-0 flex-1 pt-1 text-[13px] italic text-muted-foreground">{l.text}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span
+                          className={cn(
+                            'relative z-[1] flex size-7 shrink-0 items-center justify-center rounded-pill',
+                            l.key === lastKey
+                              ? 'bg-primary text-primary-foreground ring-4 ring-primary/15'
+                              : 'border-[0.5px] border-border bg-card text-ink-400',
+                          )}
+                        >
+                          <l.icon className="size-[15px]" strokeWidth={2} />
+                        </span>
+                        <span className={cn('min-w-0 flex-1 pt-1.5 text-[13px] text-foreground', l.key === lastKey && 'font-medium')}>
+                          {l.text}
+                        </span>
+                        <span className="shrink-0 whitespace-nowrap pt-1.5 text-[12px] tabular-nums text-muted-foreground">{l.time}</span>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ))}
+        </div>
       )}
     </DrawerCard>
   )
