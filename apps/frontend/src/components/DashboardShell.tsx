@@ -269,7 +269,13 @@ function NavGroup({ item, subs, isActive, activeSub, onSelect }: {
                 render={<button type="button" />}
                 isActive={isActive && activeSub === c.key}
                 onClick={() => onSelect(item.key, c.key)}
-                className={cn(ROW_TEXT, 'h-auto w-full rounded-none px-2 py-[9px] pointer-coarse:py-2.5')}
+                className={cn(
+                  ROW_TEXT,
+                  'h-auto w-full rounded-none px-2 py-[9px] pointer-coarse:py-2.5',
+                  // Stock sets `data-[size=md]:text-sm`, an attribute selector that outranks the
+                  // plain `text-[13px]` in ROW_TEXT — the children drew a size up from their parent.
+                  'data-[size=md]:text-[13px]',
+                )}
               >
                 <span>{c.label}</span>
               </SidebarMenuSubButton>
