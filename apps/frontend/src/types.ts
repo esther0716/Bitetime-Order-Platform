@@ -239,10 +239,15 @@ export interface ShopCustomer {
 /**
  * Which slice of the shop's customers the list shows (#269) — the sidebar's two Customers
  * children. A **member** is a shop customer with an account: see CONTEXT.md → Shop customer.
+ * Twin of the backend's `ShopCustomerSegment` (`apps/backend/src/shopCustomers.ts`), like
+ * `ShopCustomerSort` above it: the backend is authoritative and refuses anything else.
  */
 export type ShopCustomerSegment = 'all' | 'members'
 
-/** The stat row above the list: the matched rows, summed. Scoped exactly like `total`. */
+/**
+ * The stat row above the list: the matched rows, summed. Scoped exactly like `total`. Twin of
+ * the backend's `ShopCustomerStats`, the wire shape it computes.
+ */
 export interface ShopCustomerStats {
   customers: number
   bookedOrders: number

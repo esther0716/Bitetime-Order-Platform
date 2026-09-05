@@ -182,9 +182,7 @@ export default function CustomersView({ segment }: { segment: ShopCustomerSegmen
           <p>
             {narrowed
               ? t('No customers match that.', '没有符合条件的顾客。')
-              : segment === 'members'
-                ? t('No members yet — a member is a customer who ordered while signed in.', '暂无会员 —— 会员是登录后下单的顾客。')
-                : t('No customers yet.', '暂无顾客。')}
+              : t(...SEGMENT_COPY[segment].empty)}
           </p>
         </div>
       ) : (
@@ -398,26 +396,43 @@ const STAT_ICON = { size: 15, strokeWidth: 1.75 }
  */
 function StatRow({ stats, segment }: { stats: ShopCustomerStats; segment: ShopCustomerSegment }) {
   const { t, merchant } = useSession()
-  const members = segment === 'members'
+  const copy = SEGMENT_COPY[segment]
   return (
     <div className="mb-4 grid grid-cols-3 gap-[10px] max-[520px]:grid-cols-1">
-      <StatCard
-        label={members ? t('Members', '会员') : t('Customers', '顾客')}
-        value={String(stats.customers)}
-        icon={<Users {...STAT_ICON} />}
-      />
-      <StatCard
-        label={members ? t('Orders from members', '会员订单') : t('Orders', '订单')}
-        value={String(stats.bookedOrders)}
-        icon={<ReceiptText {...STAT_ICON} />}
-      />
-      <StatCard
-        label={members ? t('Spent by members', '会员消费') : t('Spent', '消费额')}
-        value={formatMoney(stats.spend, merchant?.currency)}
-        icon={<Wallet {...STAT_ICON} />}
-      />
+      <StatCard label={t(...copy.customers)} value={String(stats.customers)} icon={<Users {...STAT_ICON} />} />
+      <StatCard label={t(...copy.bookedOrders)} value={String(stats.bookedOrders)} icon={<ReceiptText {...STAT_ICON} />} />
+      <StatCard label={t(...copy.spend)} value={formatMoney(stats.spend, merchant?.currency)} icon={<Wallet {...STAT_ICON} />} />
     </div>
   )
+}
+
+/**
+ * Every word that changes with the segment, in one place. "Booked", spelled out, because the
+ * Overview's KPI card says "Total orders" and counts cancelled ones; this figure does not, and
+ * two numbers on one dashboard must not wear one word for two meanings (CONTEXT.md → Shop
+ * customer, the `bookedOrders` rule).
+ */
+const SEGMENT_COPY: Record<ShopCustomerSegment, {
+  customers: [string, string]
+  bookedOrders: [string, string]
+  spend: [string, string]
+  count: (n: number) => [string, string]
+  empty: [string, string]
+}> = {
+  all: {
+    customers: ['Customers', '顾客'],
+    bookedOrders: ['Booked orders', '有效订单'],
+    spend: ['Spent', '消费额'],
+    count: n => [`${n} customer${n === 1 ? '' : 's'}`, `${n} 位顾客`],
+    empty: ['No customers yet.', '暂无顾客。'],
+  },
+  members: {
+    customers: ['Members', '会员'],
+    bookedOrders: ['Booked orders from members', '会员有效订单'],
+    spend: ['Spent by members', '会员消费'],
+    count: n => [`${n} member${n === 1 ? '' : 's'}`, `${n} 位会员`],
+    empty: ['No members yet — a member is a customer who ordered while signed in.', '暂无会员 —— 会员是登录后下单的顾客。'],
+  },
 }
 
 /**
@@ -433,11 +448,7 @@ function ListFooter({
   return (
     <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
       <div className="text-[12px] text-muted-foreground">
-        <p>
-          {segment === 'members'
-            ? t(`${total} member${total === 1 ? '' : 's'}`, `${total} 位会员`)
-            : t(`${total} customer${total === 1 ? '' : 's'}`, `${total} 位顾客`)}
-        </p>
+        <p>{t(...SEGMENT_COPY[segment].count(total))}</p>
         {unattributed > 0 && (
           <p className="mt-1">
             {t(

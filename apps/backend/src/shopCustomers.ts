@@ -118,6 +118,7 @@ export const DEFAULT_SHOP_CUSTOMER_SORT: ShopCustomerSort = 'recent'
  * `members` is the shop customers with an account — see CONTEXT.md → Shop customer → Member.
  * An enum rather than a `members` boolean so a third slice later (guests, say) is one more word
  * here and not a second flag whose combination with the first has to be given a meaning.
+ * The frontend carries a twin in `apps/frontend/src/types.ts`; this side is authoritative.
  */
 export type ShopCustomerSegment = 'all' | 'members'
 

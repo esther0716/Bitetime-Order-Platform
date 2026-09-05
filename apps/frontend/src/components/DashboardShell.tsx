@@ -66,9 +66,10 @@ const SIDEBAR_WIDTH = '210px'
 /**
  * Shared sidebar app-shell for the merchant and admin dashboards, on shadcn's `Sidebar`.
  *
- * Desktop (≥ 768px, shadcn's own breakpoint): a fixed rail, always visible. It is PINNED open —
- * `open` is controlled and never changes — because the shell draws no trigger on desktop, so a
- * rail that could collapse (the ⌘B shortcut `SidebarProvider` installs) would have no way back.
+ * Desktop (≥ 768px, shadcn's own breakpoint — the hand-rolled rail switched at 640px): a fixed
+ * rail, always visible. It is PINNED open — `open` is controlled and never changes — because the
+ * shell draws no trigger on desktop, so a rail that could collapse would have no way back. The
+ * stock ⌘B toggle is removed from `ui/sidebar.tsx` for the same reason.
  * Mobile: the rail becomes an off-canvas sheet, opened by a hamburger in a slim fixed top bar,
  * and a selection closes it.
  *
@@ -151,7 +152,7 @@ function Shell({ title, role, nav, active, activeSub, onSelect, backTo, footerEx
               </SidebarMenuItem>
             )}
             {nav.map(n => n.children ? (
-              <NavGroup key={n.key} item={n} children={n.children} isActive={active === n.key} activeSub={activeSub} onSelect={select} />
+              <NavGroup key={n.key} item={n} subs={n.children} isActive={active === n.key} activeSub={activeSub} onSelect={select} />
             ) : (
               <SidebarMenuItem key={n.key}>
                 <SidebarMenuButton
@@ -205,15 +206,19 @@ function Shell({ title, role, nav, active, activeSub, onSelect, backTo, footerEx
 }
 
 /**
- * One top-level row's look, restated over shadcn's defaults: full-bleed rows with the left-edge
- * indicator stripe, an ink hover and a brand-wash active state — what the rail drew before it
- * was shadcn's. `hover:text-primary` and the active stripe both read the accent, which is what
- * lets a branded dashboard tint them (BrandTheme).
+ * A row's look, restated over shadcn's defaults: the type, an ink hover and a brand-wash active
+ * state, shared by top-level rows and a group's children; then, for top-level rows only, the
+ * full-bleed box and the left-edge indicator stripe — what the rail drew before it was shadcn's.
+ * `hover:text-primary` and the stripe both read the accent, which is what lets a branded
+ * dashboard tint them (BrandTheme).
  */
-const ROW = cn(
-  'group relative h-auto w-full rounded-none px-5 py-[13px] gap-[10px] pointer-coarse:py-3.5',
+const ROW_TEXT = cn(
   'text-[13px] font-sans font-medium tracking-[0.01em] text-ink-700',
   'hover:text-primary data-active:bg-brand-100 data-active:text-primary data-active:font-semibold',
+)
+const ROW = cn(
+  ROW_TEXT,
+  'group relative h-auto w-full rounded-none px-5 py-[13px] gap-[10px] pointer-coarse:py-3.5',
   '[&_svg]:size-auto',
   // Indicator bar — left-edge vertical stripe, grown on hover and held on the active row.
   'before:absolute before:left-0 before:top-[20%] before:bottom-[20%] before:w-[3px]',
@@ -231,9 +236,10 @@ const ROW = cn(
  * rail on Overview, found the active child inside a closed group with nothing on screen to say
  * so. Adjusted during render, the way React asks for state derived from a prop change.
  */
-function NavGroup({ item, children, isActive, activeSub, onSelect }: {
+function NavGroup({ item, subs, isActive, activeSub, onSelect }: {
   item: NavItem
-  children: NavSubItem[]
+  /** Its children — not React's `children`, which is nodes; these are data. */
+  subs: NavSubItem[]
   isActive: boolean
   activeSub: string | undefined
   onSelect: (key: string, sub: string) => void
@@ -257,17 +263,13 @@ function NavGroup({ item, children, isActive, activeSub, onSelect }: {
       </CollapsibleTrigger>
       <CollapsibleContent>
         <SidebarMenuSub className="mx-0 ml-[30px] mr-3 px-0 pl-3 py-0 mb-1 gap-0 border-l-border">
-          {children.map(c => (
+          {subs.map(c => (
             <SidebarMenuSubItem key={c.key}>
               <SidebarMenuSubButton
                 render={<button type="button" />}
                 isActive={isActive && activeSub === c.key}
                 onClick={() => onSelect(item.key, c.key)}
-                className={cn(
-                  'h-auto w-full rounded-none px-2 py-[9px] pointer-coarse:py-2.5',
-                  'text-[13px] font-sans font-medium tracking-[0.01em] text-ink-700',
-                  'hover:text-primary data-active:bg-brand-100 data-active:text-primary data-active:font-semibold',
-                )}
+                className={cn(ROW_TEXT, 'h-auto w-full rounded-none px-2 py-[9px] pointer-coarse:py-2.5')}
               >
                 <span>{c.label}</span>
               </SidebarMenuSubButton>
