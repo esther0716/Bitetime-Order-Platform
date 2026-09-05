@@ -554,6 +554,16 @@ function DrawerContents({
                   {customer.hasAccount && <AccountMark />}
                 </SheetTitle>
                 {customer.wa && <span className="text-[13px]"><WaLink wa={customer.wa} /></span>}
+                {/* A member's account email (ADR 0026) — a mailto so it does the one thing an
+                    address on a contact card is for. Absent for a guest, who has none. */}
+                {customer.email && (
+                  <a
+                    href={`mailto:${customer.email}`}
+                    className="text-[13px] text-foreground underline-offset-2 hover:underline break-all"
+                  >
+                    {customer.email}
+                  </a>
+                )}
                 <span className="text-[12px] text-muted-foreground">
                   {t(
                     `${customer.bookedOrders} order${customer.bookedOrders === 1 ? '' : 's'} · ${formatMoney(customer.lifetimeSpend, merchant?.currency)} · avg ${formatMoney(customer.avgOrder, merchant?.currency)}`,

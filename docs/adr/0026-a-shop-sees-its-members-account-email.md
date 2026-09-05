@@ -19,7 +19,8 @@ so membership buys the shop nothing it can act on.
 
 ## Decision
 
-**A member's account email is shown to the shop, on the Members list, and nowhere else.**
+**A member's account email is shown to the shop: on the Members list, and on that customer's
+drawer, as a mailto.** Nowhere else.
 
 - The wire carries `email` on every shop customer row, null for a guest. The Members list draws
   the column; the All list does not, because a column that is a dash for most rows repeats the
