@@ -15,6 +15,7 @@ function group(g: Partial<ShopCustomerGroup>): ShopCustomerGroup {
     latestName: 'Ali',
     latestWa: '0123456789',
     hasAccount: false,
+    latestEmail: null,
     ...g,
   }
 }
@@ -120,6 +121,27 @@ describe('shopCustomers — folding groups into customers', () => {
       group({ status: 'new', hasAccount: true }),
     ])
     expect(r.customers[0]?.hasAccount).toBe(true)
+  })
+
+  it('carries a member’s account email, from their most recent signed-in order', () => {
+    const r = page([
+      group({ status: 'completed', lastAt: '2026-07-01T00:00:00Z', hasAccount: true, latestEmail: 'old@example.com' }),
+      group({ status: 'new', lastAt: '2026-07-20T00:00:00Z', hasAccount: true, latestEmail: 'new@example.com' }),
+    ])
+    expect(r.customers[0]?.email).toBe('new@example.com')
+  })
+
+  it('keeps the email a guest-only bucket cannot supply, however recent that bucket is', () => {
+    const r = page([
+      group({ status: 'completed', lastAt: '2026-07-01T00:00:00Z', hasAccount: true, latestEmail: 'ali@example.com' }),
+      group({ status: 'new', lastAt: '2026-07-20T00:00:00Z', hasAccount: false, latestEmail: null }),
+    ])
+    expect(r.customers[0]?.email).toBe('ali@example.com')
+  })
+
+  it('gives a guest no email, not an empty string', () => {
+    const r = page([group({ hasAccount: false })])
+    expect(r.customers[0]?.email).toBeNull()
   })
 })
 

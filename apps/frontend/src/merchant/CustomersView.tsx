@@ -196,6 +196,7 @@ export default function CustomersView({ segment }: { segment: ShopCustomerSegmen
                 <tr>
                   <th className={TH}>{t('Name', '姓名')}</th>
                   <th className={TH}>{t('WhatsApp', 'WhatsApp')}</th>
+                  {segment === 'members' && <th className={TH}>{t('Email', '邮箱')}</th>}
                   <th className={TH}>{t('Orders', '订单数')}</th>
                   <th className={TH}>{t('Spent', '消费额')}</th>
                   <th className={TH}>{t('Last Order', '最近订单')}</th>
@@ -217,9 +218,15 @@ export default function CustomersView({ segment }: { segment: ShopCustomerSegmen
                       </span>
                     </td>
                     <td className={TD}>{c.wa ? <WaLink wa={c.wa} stopClick /> : '—'}</td>
+                    {/* Members only (ADR 0026): on the All list a column that is a dash for
+                        most rows says "guests have no email", which the account mark already
+                        says, and costs every row the width. */}
+                    {segment === 'members' && (
+                      <td className={`${TD} max-w-[180px] truncate`} title={c.email ?? undefined}>{c.email ?? '—'}</td>
+                    )}
                     <td className={TD_COUNT}>{c.bookedOrders}</td>
-                    <td className={`${TD} tabular-nums`}>{formatMoney(c.lifetimeSpend, merchant?.currency)}</td>
-                    <td className={TD}>
+                    <td className={`${TD} tabular-nums whitespace-nowrap`}>{formatMoney(c.lifetimeSpend, merchant?.currency)}</td>
+                    <td className={`${TD} whitespace-nowrap`}>
                       <span className="flex flex-col">
                         <span>{fmtDate(c.lastOrderAt)}</span>
                         <span className="text-[11px] text-muted-foreground">{agoLabel(c.daysSinceLastOrder, t)}</span>
@@ -547,6 +554,16 @@ function DrawerContents({
                   {customer.hasAccount && <AccountMark />}
                 </SheetTitle>
                 {customer.wa && <span className="text-[13px]"><WaLink wa={customer.wa} /></span>}
+                {/* A member's account email (ADR 0026) — a mailto so it does the one thing an
+                    address on a contact card is for. Absent for a guest, who has none. */}
+                {customer.email && (
+                  <a
+                    href={`mailto:${customer.email}`}
+                    className="text-[13px] text-foreground underline-offset-2 hover:underline break-all"
+                  >
+                    {customer.email}
+                  </a>
+                )}
                 <span className="text-[12px] text-muted-foreground">
                   {t(
                     `${customer.bookedOrders} order${customer.bookedOrders === 1 ? '' : 's'} · ${formatMoney(customer.lifetimeSpend, merchant?.currency)} · avg ${formatMoney(customer.avgOrder, merchant?.currency)}`,

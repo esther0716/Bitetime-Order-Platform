@@ -40,6 +40,7 @@ interface CustomerRow {
   note: string | null
   tags: string[]
   hasAccount: boolean
+  email: string | null
 }
 interface CustomerPage {
   customers: CustomerRow[]
@@ -326,6 +327,19 @@ describe('shop customers', () => {
     expect(customer?.hasAccount).toBe(true)
   })
 
+  it("serves a member's account email, and none for a guest", async () => {
+    const signedIn = await makeUser('cust-mail@example.com', 'password123')
+    const { data } = await signedIn.auth.getSession()
+    await seedOrder(proId, { customer_phone_key: '44444444', customer_wa: '60144444444', user_id: data.session!.user.id })
+    await seedOrder(proId, { customer_phone_key: '55555555', customer_wa: '60155555555' })
+
+    const byKey = new Map(
+      (await pageOf(await get(`/api/merchants/${proId}/customers`, proToken))).customers.map(c => [c.phoneKey, c]),
+    )
+    expect(byKey.get('44444444')?.email).toBe('cust-mail@example.com')
+    expect(byKey.get('55555555')?.email).toBeNull()
+  })
+
   // ── The row cap this endpoint exists to escape ─────────────────────────────
 
   // Deliberately just OVER the cap rather than comfortably past it. This suite runs alongside
@@ -423,6 +437,7 @@ describe('shop customers', () => {
     const page = await pageOf(await get(`/api/merchants/${proId}/customers?segment=members`, proToken))
     expect(page.customers.map(c => c.phoneKey)).toEqual(['11111111'])
     expect(page.customers[0]?.bookedOrders).toBe(2)
+    expect(page.customers[0]?.email).toBe('cust-member@example.com')
     expect(page.stats).toEqual({ customers: 1, bookedOrders: 2, spend: 30 })
   })
 
