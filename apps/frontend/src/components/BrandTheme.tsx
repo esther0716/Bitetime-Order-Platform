@@ -54,6 +54,8 @@ export default function BrandTheme({ color, children }: {
     '--primary': t.accent,
     '--primary-foreground': t.accentFg,
     '--ring': t.accent,
+    // The dashboard rail's focus ring reads `--ring`, which :root has likewise already resolved.
+    '--sidebar-ring': t.accent,
   } as CSSProperties
   return <div data-brand="" style={style}>{children}</div>
 }
