@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ChevronRight, Menu } from 'lucide-react'
 import { useSession } from '../SessionContext'
@@ -66,9 +66,10 @@ const SIDEBAR_WIDTH = '210px'
 /**
  * Shared sidebar app-shell for the merchant and admin dashboards, on shadcn's `Sidebar`.
  *
- * Desktop (≥ 768px, shadcn's own breakpoint): a fixed rail, always visible. It is PINNED open —
- * `open` is controlled and never changes — because the shell draws no trigger on desktop, so a
- * rail that could collapse (the ⌘B shortcut `SidebarProvider` installs) would have no way back.
+ * Desktop (≥ 768px, shadcn's own breakpoint — the hand-rolled rail switched at 640px): a fixed
+ * rail, always visible. It is PINNED open — `open` is controlled and never changes — because the
+ * shell draws no trigger on desktop, so a rail that could collapse would have no way back. The
+ * stock ⌘B toggle is removed from `ui/sidebar.tsx` for the same reason.
  * Mobile: the rail becomes an off-canvas sheet, opened by a hamburger in a slim fixed top bar,
  * and a selection closes it.
  *
@@ -151,44 +152,7 @@ function Shell({ title, role, nav, active, activeSub, onSelect, backTo, footerEx
               </SidebarMenuItem>
             )}
             {nav.map(n => n.children ? (
-              <Collapsible
-                key={n.key}
-                // Open wherever the merchant is; closed groups elsewhere keep the rail short.
-                defaultOpen={active === n.key}
-                render={<SidebarMenuItem />}
-              >
-                <CollapsibleTrigger
-                  render={<SidebarMenuButton isActive={active === n.key} className={ROW} />}
-                >
-                  <NavRow item={n} />
-                  <ChevronRight
-                    size={16}
-                    strokeWidth={1.75}
-                    aria-hidden="true"
-                    className="ml-auto text-muted-foreground transition-transform duration-150 in-data-panel-open:rotate-90"
-                  />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub className="mx-0 ml-[30px] mr-3 px-0 pl-3 py-0 mb-1 gap-0 border-l-border">
-                    {n.children.map(c => (
-                      <SidebarMenuSubItem key={c.key}>
-                        <SidebarMenuSubButton
-                          render={<button type="button" />}
-                          isActive={active === n.key && activeSub === c.key}
-                          onClick={() => select(n.key, c.key)}
-                          className={cn(
-                            'h-auto w-full rounded-none px-2 py-[9px] pointer-coarse:py-2.5',
-                            'text-[13px] font-sans font-medium tracking-[0.01em] text-ink-700',
-                            'hover:text-primary data-active:bg-brand-100 data-active:text-primary data-active:font-semibold',
-                          )}
-                        >
-                          <span>{c.label}</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </Collapsible>
+              <NavGroup key={n.key} item={n} subs={n.children} isActive={active === n.key} activeSub={activeSub} onSelect={select} />
             ) : (
               <SidebarMenuItem key={n.key}>
                 <SidebarMenuButton
@@ -242,21 +206,86 @@ function Shell({ title, role, nav, active, activeSub, onSelect, backTo, footerEx
 }
 
 /**
- * One top-level row's look, restated over shadcn's defaults: full-bleed rows with the left-edge
- * indicator stripe, an ink hover and a brand-wash active state — what the rail drew before it
- * was shadcn's. `hover:text-primary` and the active stripe both read the accent, which is what
- * lets a branded dashboard tint them (BrandTheme).
+ * A row's look, restated over shadcn's defaults: the type, an ink hover and a brand-wash active
+ * state, shared by top-level rows and a group's children; then, for top-level rows only, the
+ * full-bleed box and the left-edge indicator stripe — what the rail drew before it was shadcn's.
+ * `hover:text-primary` and the stripe both read the accent, which is what lets a branded
+ * dashboard tint them (BrandTheme).
  */
-const ROW = cn(
-  'group relative h-auto w-full rounded-none px-5 py-[13px] gap-[10px] pointer-coarse:py-3.5',
+const ROW_TEXT = cn(
   'text-[13px] font-sans font-medium tracking-[0.01em] text-ink-700',
   'hover:text-primary data-active:bg-brand-100 data-active:text-primary data-active:font-semibold',
+)
+const ROW = cn(
+  ROW_TEXT,
+  'group relative h-auto w-full rounded-none px-5 py-[13px] gap-[10px] pointer-coarse:py-3.5',
   '[&_svg]:size-auto',
   // Indicator bar — left-edge vertical stripe, grown on hover and held on the active row.
   'before:absolute before:left-0 before:top-[20%] before:bottom-[20%] before:w-[3px]',
   'before:bg-primary before:rounded-[0_2px_2px_0] before:transition-transform before:duration-150',
   'before:scale-y-0 hover:before:scale-y-100 data-active:before:scale-y-100',
 )
+
+/**
+ * A collapsible group of children. Open wherever the merchant is; closed elsewhere, so the rail
+ * stays short.
+ *
+ * The open state is the merchant's — they may fold a group they are not in — but it is FORCED
+ * open the moment the group's own section becomes active. `defaultOpen` alone is read once at
+ * mount, so a merchant arriving by hash link or by the onboarding checklist, having mounted the
+ * rail on Overview, found the active child inside a closed group with nothing on screen to say
+ * so. Adjusted during render, the way React asks for state derived from a prop change.
+ */
+function NavGroup({ item, subs, isActive, activeSub, onSelect }: {
+  item: NavItem
+  /** Its children — not React's `children`, which is nodes; these are data. */
+  subs: NavSubItem[]
+  isActive: boolean
+  activeSub: string | undefined
+  onSelect: (key: string, sub: string) => void
+}) {
+  const [open, setOpen] = useState(isActive)
+  const [wasActive, setWasActive] = useState(isActive)
+  if (isActive !== wasActive) {
+    setWasActive(isActive)
+    if (isActive) setOpen(true)
+  }
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} render={<SidebarMenuItem />}>
+      <CollapsibleTrigger render={<SidebarMenuButton isActive={isActive} className={ROW} />}>
+        <NavRow item={item} />
+        <ChevronRight
+          size={16}
+          strokeWidth={1.75}
+          aria-hidden="true"
+          className="ml-auto text-muted-foreground transition-transform duration-150 in-data-panel-open:rotate-90"
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <SidebarMenuSub className="mx-0 ml-[30px] mr-3 px-0 pl-3 py-0 mb-1 gap-0 border-l-border">
+          {subs.map(c => (
+            <SidebarMenuSubItem key={c.key}>
+              <SidebarMenuSubButton
+                render={<button type="button" />}
+                isActive={isActive && activeSub === c.key}
+                onClick={() => onSelect(item.key, c.key)}
+                className={cn(
+                  ROW_TEXT,
+                  'h-auto w-full rounded-none px-2 py-[9px] pointer-coarse:py-2.5',
+                  // Stock sets `data-[size=md]:text-sm`, an attribute selector that outranks the
+                  // plain `text-[13px]` in ROW_TEXT — the children drew a size up from their parent.
+                  'data-[size=md]:text-[13px]',
+                )}
+              >
+                <span>{c.label}</span>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>
+          ))}
+        </SidebarMenuSub>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
 
 function NavRow({ item }: { item: NavItem }) {
   return (

@@ -324,6 +324,10 @@ One shop's record of one person who orders from it. **Not a `Customer`** — tha
 
 The list, its search, its sorting, its tag filter and the notes and tags themselves are one feature and every shop has all of it. Sorting, filtering, notes and tags were the paid half until the tier went (#222).
 
+**Member** — a shop customer whose `hasAccount` is true: at least one order under that phone key was placed signed in. Not a new identity and not a stored flag — it is derived from `orders.user_id`, which comes only from a verified JWT, so "member" means "has a platform account", and every account is an email + password, so it also means "has an email". The shop still never sees that email. The set is decided per **shop customer**, not per order: a phone with one signed-in order and nine guest orders is one member, and all ten orders are a member's orders. **Not the *Referral* section's "member"** — that word there means a merchant with a referral code, a different set with nothing in common but the spelling.
+
+**Segment** — which slice of a shop's customers the list is asked for: `all` or `members`. One word end to end — the sidebar child under Customers, the hash sub-segment, the query parameter — and an allowlist, refused rather than reinterpreted, so a third slice later is one more word and not a second flag. The stat row above the list (customers, booked orders, spend) is scoped exactly as the list's `total` is: after the segment, search and tag filter, before paging.
+
 ## Business nature
 
 What a shop sells, as one code from a **closed** vocabulary — `BUSINESS_NATURES` in `@bitetime/shared`, the `merchants_business_nature_check` CHECK, and `merchants.business_nature` (#161). Collected at signup, editable afterwards from Shop Settings → Shop. Platform-facing only: it is never shown to a customer, and it exists to answer one question — which industries the platform actually serves.
