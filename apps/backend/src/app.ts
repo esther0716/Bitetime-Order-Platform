@@ -40,6 +40,7 @@ import { invoiceFont } from './invoiceFont.js'
 import { phoneKey } from './phone.js'
 import {
   shopCustomers, isShopCustomerSort, pickShopCustomerFields, DEFAULT_SHOP_CUSTOMER_SORT,
+  isShopCustomerSegment, DEFAULT_SHOP_CUSTOMER_SEGMENT,
 } from './shopCustomers.js'
 import { shopCustomerGroups, shopCustomerRecords, upsertShopCustomer } from './shopCustomersDb.js'
 import { statsOrders, distinctCustomerCount, orderStatusCounts } from './ordersDb.js'
@@ -598,12 +599,17 @@ app.get('/api/merchants/:id/customers', requireMerchantOwns, async (c) => {
 
   const sort = q.get('sort') ?? DEFAULT_SHOP_CUSTOMER_SORT
   if (!isShopCustomerSort(sort)) return c.json({ error: 'invalid_sort' }, 400)
+  // Same refusal for the segment (#269): `members` is the sidebar's Members child, and anything
+  // else is a 400 rather than a list quietly answering a different question.
+  const segment = q.get('segment') ?? DEFAULT_SHOP_CUSTOMER_SEGMENT
+  if (!isShopCustomerSegment(segment)) return c.json({ error: 'invalid_segment' }, 400)
   const tag = q.get('tag') ?? undefined
 
   const [groups, records] = await Promise.all([shopCustomerGroups(m.id), shopCustomerRecords(m.id)])
   return c.json(shopCustomers(groups, records, {
     now: new Date(),
     sort,
+    segment,
     tag,
     search: q.get('search') ?? undefined,
     page: Number(q.get('page')) || undefined,
