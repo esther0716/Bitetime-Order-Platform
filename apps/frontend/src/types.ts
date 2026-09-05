@@ -231,6 +231,12 @@ export interface ShopCustomer {
   lastOrderAt: string
   daysSinceLastOrder: number
   hasAccount: boolean
+  /**
+   * A member's account email; null for a guest. Optional on THIS side only, like `stats`
+   * below: a browser on this code may face a backend that predates the field, and an absent
+   * email draws as none rather than crashing the row. Shown on the Members list (ADR 0026).
+   */
+  email?: string | null
   /** What this merchant wrote. Shop-private, and blank for most customers. */
   note: string | null
   tags: string[]

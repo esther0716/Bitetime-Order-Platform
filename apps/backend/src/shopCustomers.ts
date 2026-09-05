@@ -32,6 +32,12 @@ export interface ShopCustomerGroup {
   latestWa: string | null
   /** Whether any order in this bucket was placed by a signed-in customer. */
   hasAccount: boolean
+  /**
+   * The account email behind this bucket's most recent SIGNED-IN order — null when none was.
+   * The one field here read from outside `orders` (`auth.users`), and the one global-profile
+   * fact a shop is allowed to see: see ADR 0026.
+   */
+  latestEmail: string | null
 }
 
 /** What the merchant wrote down. Absent for most customers — the row is created on first write. */
@@ -54,6 +60,12 @@ export interface ShopCustomer {
   lastOrderAt: string
   daysSinceLastOrder: number
   hasAccount: boolean
+  /**
+   * A member's account email; null for a guest. The Members list shows it so a shop can reach
+   * the people who chose to hold an account with it (ADR 0026). Taken from the customer's most
+   * recent signed-in order, so an account change follows the same rule a name change does.
+   */
+  email: string | null
   note: string | null
   tags: string[]
 }
@@ -190,6 +202,9 @@ interface Acc {
   name: string | null
   wa: string | null
   hasAccount: boolean
+  email: string | null
+  /** When the bucket `email` came from was last ordered in — a guest bucket never moves it. */
+  emailAt: string | null
 }
 
 export function shopCustomers(
@@ -220,6 +235,8 @@ export function shopCustomers(
       name: null,
       wa: null,
       hasAccount: false,
+      email: null,
+      emailAt: null,
     }
 
     // The booked rule, borrowed rather than restated. A bucket IS its status, so one call
@@ -241,6 +258,13 @@ export function shopCustomers(
     }
 
     acc.hasAccount ||= g.hasAccount
+    // The email rides its own recency, not the name's: the most recent bucket is often a guest
+    // one (a member who checked out signed out last week), and that bucket must not blank the
+    // email the signed-in bucket before it supplied.
+    if (g.latestEmail !== null && (acc.emailAt === null || g.lastAt >= acc.emailAt)) {
+      acc.email = g.latestEmail
+      acc.emailAt = g.lastAt
+    }
     byKey.set(key, acc)
   }
 
@@ -262,6 +286,7 @@ export function shopCustomers(
       lastOrderAt: a.lastAt,
       daysSinceLastOrder: Math.floor((nowMs - Date.parse(a.lastAt)) / MS_PER_DAY),
       hasAccount: a.hasAccount,
+      email: a.email,
       // Absent for most customers — the row is written on the merchant's first note or tag,
       // never on their first order. Blank, not undefined: the wire shape stays the same
       // whether or not anyone has written anything.
