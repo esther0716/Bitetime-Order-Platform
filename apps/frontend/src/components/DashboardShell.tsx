@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ChevronRight, Menu } from 'lucide-react'
 import { useSession } from '../SessionContext'
@@ -151,44 +151,7 @@ function Shell({ title, role, nav, active, activeSub, onSelect, backTo, footerEx
               </SidebarMenuItem>
             )}
             {nav.map(n => n.children ? (
-              <Collapsible
-                key={n.key}
-                // Open wherever the merchant is; closed groups elsewhere keep the rail short.
-                defaultOpen={active === n.key}
-                render={<SidebarMenuItem />}
-              >
-                <CollapsibleTrigger
-                  render={<SidebarMenuButton isActive={active === n.key} className={ROW} />}
-                >
-                  <NavRow item={n} />
-                  <ChevronRight
-                    size={16}
-                    strokeWidth={1.75}
-                    aria-hidden="true"
-                    className="ml-auto text-muted-foreground transition-transform duration-150 in-data-panel-open:rotate-90"
-                  />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub className="mx-0 ml-[30px] mr-3 px-0 pl-3 py-0 mb-1 gap-0 border-l-border">
-                    {n.children.map(c => (
-                      <SidebarMenuSubItem key={c.key}>
-                        <SidebarMenuSubButton
-                          render={<button type="button" />}
-                          isActive={active === n.key && activeSub === c.key}
-                          onClick={() => select(n.key, c.key)}
-                          className={cn(
-                            'h-auto w-full rounded-none px-2 py-[9px] pointer-coarse:py-2.5',
-                            'text-[13px] font-sans font-medium tracking-[0.01em] text-ink-700',
-                            'hover:text-primary data-active:bg-brand-100 data-active:text-primary data-active:font-semibold',
-                          )}
-                        >
-                          <span>{c.label}</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </Collapsible>
+              <NavGroup key={n.key} item={n} children={n.children} isActive={active === n.key} activeSub={activeSub} onSelect={select} />
             ) : (
               <SidebarMenuItem key={n.key}>
                 <SidebarMenuButton
@@ -257,6 +220,64 @@ const ROW = cn(
   'before:bg-primary before:rounded-[0_2px_2px_0] before:transition-transform before:duration-150',
   'before:scale-y-0 hover:before:scale-y-100 data-active:before:scale-y-100',
 )
+
+/**
+ * A collapsible group of children. Open wherever the merchant is; closed elsewhere, so the rail
+ * stays short.
+ *
+ * The open state is the merchant's — they may fold a group they are not in — but it is FORCED
+ * open the moment the group's own section becomes active. `defaultOpen` alone is read once at
+ * mount, so a merchant arriving by hash link or by the onboarding checklist, having mounted the
+ * rail on Overview, found the active child inside a closed group with nothing on screen to say
+ * so. Adjusted during render, the way React asks for state derived from a prop change.
+ */
+function NavGroup({ item, children, isActive, activeSub, onSelect }: {
+  item: NavItem
+  children: NavSubItem[]
+  isActive: boolean
+  activeSub: string | undefined
+  onSelect: (key: string, sub: string) => void
+}) {
+  const [open, setOpen] = useState(isActive)
+  const [wasActive, setWasActive] = useState(isActive)
+  if (isActive !== wasActive) {
+    setWasActive(isActive)
+    if (isActive) setOpen(true)
+  }
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} render={<SidebarMenuItem />}>
+      <CollapsibleTrigger render={<SidebarMenuButton isActive={isActive} className={ROW} />}>
+        <NavRow item={item} />
+        <ChevronRight
+          size={16}
+          strokeWidth={1.75}
+          aria-hidden="true"
+          className="ml-auto text-muted-foreground transition-transform duration-150 in-data-panel-open:rotate-90"
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <SidebarMenuSub className="mx-0 ml-[30px] mr-3 px-0 pl-3 py-0 mb-1 gap-0 border-l-border">
+          {children.map(c => (
+            <SidebarMenuSubItem key={c.key}>
+              <SidebarMenuSubButton
+                render={<button type="button" />}
+                isActive={isActive && activeSub === c.key}
+                onClick={() => onSelect(item.key, c.key)}
+                className={cn(
+                  'h-auto w-full rounded-none px-2 py-[9px] pointer-coarse:py-2.5',
+                  'text-[13px] font-sans font-medium tracking-[0.01em] text-ink-700',
+                  'hover:text-primary data-active:bg-brand-100 data-active:text-primary data-active:font-semibold',
+                )}
+              >
+                <span>{c.label}</span>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>
+          ))}
+        </SidebarMenuSub>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
 
 function NavRow({ item }: { item: NavItem }) {
   return (
