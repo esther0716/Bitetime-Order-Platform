@@ -236,8 +236,28 @@ export interface ShopCustomer {
   tags: string[]
 }
 
+/**
+ * Which slice of the shop's customers the list shows (#269) — the sidebar's two Customers
+ * children. A **member** is a shop customer with an account: see CONTEXT.md → Shop customer.
+ */
+export type ShopCustomerSegment = 'all' | 'members'
+
+/** The stat row above the list: the matched rows, summed. Scoped exactly like `total`. */
+export interface ShopCustomerStats {
+  customers: number
+  bookedOrders: number
+  spend: number
+}
+
 export interface ShopCustomerPage {
   customers: ShopCustomer[]
+  /**
+   * Optional on THIS side only: the two halves deploy independently, and a browser running this
+   * code can be talking to a backend that has never heard of the field (the same reason
+   * `fetchShopCustomers` guards `shopTags`). Absent, the row is not drawn — there is no honest
+   * number to fill it with from one page of rows.
+   */
+  stats?: ShopCustomerStats
   /**
    * Every tag this shop has ever written, once each — what the drawer suggests from (#150).
    * Neither filtered nor paged: it is the vocabulary the tag filter chooses from.

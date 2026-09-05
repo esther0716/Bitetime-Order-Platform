@@ -5,7 +5,7 @@ import { revenueQuery, type RevenueSelection } from './merchant/revenueRange';
 import { auth, storage } from './supabase';
 import { RESERVED_SLUGS } from './slug';
 import { SignupError, signupErrorCode } from './signupError'
-import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher, VoucherRedemption } from './types';
+import type { AddressParts, AdminRelease, EarnedReward, FeedbackItem, Order, PublicRelease, ReferredShop, ReleaseDetail, ShopCustomer, ShopCustomerPage, ShopCustomerSegment, ShopCustomerSort, TrialFeedbackAdminItem, TrialFeedbackOwn, Voucher, VoucherRedemption } from './types';
 import type { SavedDetails } from './savedDetails';
 import { resetRedirectUrl } from './resetPassword';
 import { API_URL, apiGet, apiGetFile, apiSend, apiSendFile, apiSendForFile, apiSendForm, mapOk, toVoid } from './api'
@@ -1038,11 +1038,16 @@ export async function setOrderFulfilDate(orderId: string, fulfilDate: string, me
  */
 export async function fetchShopCustomers(
   merchantId: string,
-  opts: { sort?: ShopCustomerSort; tag?: string; search?: string; page?: number; pageSize?: number } = {},
+  opts: {
+    sort?: ShopCustomerSort; segment?: ShopCustomerSegment; tag?: string; search?: string; page?: number; pageSize?: number
+  } = {},
 ): Promise<Result<ShopCustomerPage>> {
-  if (!merchantId) return { ok: true, data: { customers: [], shopTags: [], total: 0, unattributedOrders: 0 } }
+  if (!merchantId) {
+    return { ok: true, data: { customers: [], shopTags: [], stats: { customers: 0, bookedOrders: 0, spend: 0 }, total: 0, unattributedOrders: 0 } }
+  }
   const q = new URLSearchParams()
   if (opts.sort) q.set('sort', opts.sort)
+  if (opts.segment) q.set('segment', opts.segment)
   if (opts.tag) q.set('tag', opts.tag)
   if (opts.search?.trim()) q.set('search', opts.search.trim())
   if (opts.page) q.set('page', String(opts.page))
