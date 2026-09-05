@@ -204,7 +204,7 @@
   --z-index-toast: var(--z-toast);
 }
 
-/* shadcn semantic tokens → brand. Chart + sidebar tokens included here (no brand counterpart). */
+/* shadcn semantic tokens → brand. Chart tokens included here (no brand counterpart). */
 :root {
   --background: var(--color-bg);
   --foreground: var(--color-text);
@@ -233,14 +233,19 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* The dashboard rail (components/ui/sidebar.tsx). Neutrals only, mirroring what the
+     hand-rolled shell drew before it: the muted ground, ink hover, the hairline border.
+     The ACTIVE row's brand wash is set at the call site, not here — `--sidebar-accent` is
+     both hover and active in stock shadcn, and hover must stay neutral. `--sidebar-ring`
+     reads the accent, so BrandTheme restates it (brandScope.test.ts enforces that). */
+  --sidebar: var(--color-bg-muted);
+  --sidebar-foreground: var(--color-text);
+  --sidebar-primary: var(--color-text);
+  --sidebar-primary-foreground: var(--color-bg-muted);
+  --sidebar-accent: var(--ink-200);
+  --sidebar-accent-foreground: var(--color-text);
+  --sidebar-border: var(--color-border);
+  --sidebar-ring: var(--ring);
 }
 
 /* Global reset lives in @layer base so Tailwind utilities (padding/margin etc.)
@@ -509,13 +514,14 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
   --border: var(--color-border);
   --input: var(--color-border);
   --ring: var(--color-accent);
-  /* Chart + sidebar tokens have no brand counterpart; stock shadcn values retained. */
+  /* Chart tokens have no brand counterpart; stock shadcn values retained. */
   --chart-1: oklch(0.87 0 0); --chart-2: oklch(0.556 0 0); --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0); --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0); --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376); --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0); --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%); --sidebar-ring: oklch(0.556 0 0);
+  /* The rail, as at :root — semantic tokens, so whatever tokens.css remaps for dark carries. */
+  --sidebar: var(--color-bg-muted); --sidebar-foreground: var(--color-text);
+  --sidebar-primary: var(--color-text); --sidebar-primary-foreground: var(--color-bg-muted);
+  --sidebar-accent: var(--ink-200); --sidebar-accent-foreground: var(--color-text);
+  --sidebar-border: var(--color-border); --sidebar-ring: var(--ring);
 }
 
 /* The day pickers (#210 custom order dates, #234 revenue range) carry NO CSS here.
@@ -548,6 +554,7 @@ body:has(.mm-land) { padding: 0; align-items: stretch; }
 [data-brand] .text-primary,
 [data-brand] .hover\:text-primary:hover,
 [data-brand] .focus\:text-primary:focus,
-[data-brand] .before\:text-primary:before {
+[data-brand] .before\:text-primary:before,
+[data-brand] .data-active\:text-primary[data-active] {
   color: var(--color-accent-text);
 }
